@@ -14,6 +14,49 @@ const start = () => reducer(initialState, { type: "user-sent", id: "u", text: "t
 const bash = { kind: "tool" as const, id: "b", name: "Bash", input: { command: "sleep 10" }, partialJson: "", status: "running" as const }
 const messages = (turns: any[], extra = {}) => render(createElement(MessageList, { turns, busy: false, readingWidth: 800, ...extra }))
 
+test("restored interruption settles an unfinished command", () => {
+  let s = agent(start(), { type: "assistant", parent_tool_use_id: null, message: { content: [{ type: "tool_use", id: "b", name: "Bash", input: { command: "sleep 10" } }] } })
+  s = reducer(s, { type: "turn-duration", durationMs: 1000, interrupted: true })
+  expect(s.turns.at(-1)).toMatchObject({ interrupted: true, blocks: [{ status: "stopped" }] })
+})
+
+test("MCP structured-only results remain readable", () => {
+  let s = agent(start(), { type: "assistant", parent_tool_use_id: null, message: { content: [{ type: "tool_use", id: "m", name: "mcp__local__query", input: {} }] } })
+  const raw = { content: [], structuredContent: { rows: [1, 2] }, _meta: { cursor: "next" } }
+  s = agent(s, { type: "user", parent_tool_use_id: null, message: { content: [{ type: "tool_result", tool_use_id: "m", content: [] }] }, tool_use_result: raw })
+  const tool = (s.turns[1] as any).blocks[0]
+  expect(tool.rawResult).toEqual(raw)
+  const html = render(createElement(ToolCard, { block: tool, defaultOpen: true }))
+  expect(html).toContain("rows")
+  expect(html).toContain("Raw result")
+})
+
+test("canonical Agent renders as a standalone subagent", async () => {
+  const { groupActivityBlocks, groupActivityRuns, toolActivityLabel } = await import("../src/agent/toolActivity")
+  const block = { ...bash, name: "Agent", input: { description: "Inspect files" } }
+  expect(groupActivityRuns(groupActivityBlocks([block]))[0]?.kind).toBe("standalone")
+  expect(toolActivityLabel(block)).toEqual({ action: "Starting subagent:", detail: "Inspect files" })
+})
+
+test("TodoWrite exposes the actual checklist", () => {
+  const html = render(createElement(ToolCard, { block: { ...bash, name: "TodoWrite", input: { todos: [{ content: "Inspect files", status: "completed" }, { content: "Run checks", status: "in_progress" }] }, status: "done", output: "Todos have been modified successfully" }, defaultOpen: true }))
+  expect(html).toContain("Inspect files")
+  expect(html).toContain("Run checks")
+  expect(html).toContain('aria-label="completed"')
+  expect(html).toContain('aria-label="in progress"')
+})
+
+test("hook failures stay visible and pending hooks settle on exit", () => {
+  let s = agent(start(), { type: "system", subtype: "hook_started", hook_id: "h", hook_name: "Check", hook_event: "PreToolUse" })
+  expect(messages(s.turns, { busy: true })).toContain("Check")
+  s = agent(s, { type: "system", subtype: "hook_response", hook_id: "h", hook_name: "Check", hook_event: "PreToolUse", stdout: "", stderr: "Hook failed", output: "Hook failed", exit_code: 1, outcome: "error" })
+  expect(messages(s.turns)).toContain("Hook failed")
+  expect((s.turns.at(-1) as any).blocks[0]).toMatchObject({ status: "error", exitCode: 1 })
+  s = agent(s, { type: "system", subtype: "hook_started", hook_id: "pending", hook_name: "Stop check", hook_event: "Stop" })
+  s = reducer(s, { type: "exit", code: 1 })
+  expect((s.turns.at(-1) as any).blocks.at(-1).status).toBe("stopped")
+})
+
 test("process exit settles tools while a transport disconnect stays uncertain", () => {
   const s = agent(start(), { type: "assistant", message: { content: [{ type: "tool_use", id: "b", name: "Bash", input: { command: "sleep 10" } }] }, parent_tool_use_id: null })
   const disconnected = reducer(s, { type: "connection", status: "closed" })
@@ -47,11 +90,14 @@ test("errors and stops belong to each reply even without activity", () => {
   }
 })
 
-test("busy finalized messages keep their live changes and failed activities visible", () => {
+test("busy messages keep live changes and recovered failures fold with the completed turn", () => {
   const turn = { role: "assistant", id: "a", streaming: false, blocks: [bash] }
   const diff = { files: [{ path: "a.ts", additions: 1, deletions: 0 }], additions: 1, deletions: 0 }
   expect(messages([turn], { busy: true, liveDiff: diff })).toContain("noa-live-diff")
-  expect(messages([{ ...turn, blocks: [{ ...bash, status: "error" }, { kind: "text", text: "Done", done: true }] }])).toContain("1 failed")
+  const ended = messages([{ ...turn, blocks: [{ ...bash, status: "error" }, { kind: "text", text: "Done", done: true }] }])
+  expect(ended).toContain("Done")
+  expect(ended).toContain('aria-expanded="false"')
+  expect(ended).not.toContain("1 failed")
 })
 
 test("Shell details preserve multiline commands and image failures retain diagnostics", () => {
@@ -138,7 +184,7 @@ test("disconnected approvals cannot be submitted", () => {
 })
 
 test("stopped activities keep their terminal state in summaries", () => {
-  const html = messages([{ role: "assistant", id: "a", streaming: false, blocks: [
+  const html = messages([{ role: "assistant", id: "a", streaming: false, interrupted: true, blocks: [
     { ...bash, status: "stopped" },
     { kind: "tool", id: "t2", name: "Read", input: { file_path: "a.ts" }, partialJson: "", status: "done" },
     { kind: "text", text: "Stopped", done: true },
@@ -166,4 +212,46 @@ test("unfinished replies do not reserve a final response action row", () => {
   const disconnected = reducer(live, { type: "connection", status: "closed" })
   expect(messages(disconnected.turns)).not.toContain('aria-label="Copy response"')
   expect(messages([turn])).toContain('aria-label="Copy response"')
+})
+
+test("streaming code can only be copied after its fence closes", () => {
+  const open = render(createElement(Markdown, { text: "```ts\nconst n = 1", streaming: true }))
+  const closed = render(createElement(Markdown, { text: "```ts\nconst n = 1\n```", streaming: true }))
+  expect(open).toContain("const")
+  expect(open).not.toContain('aria-label="Copy code"')
+  expect(closed).toContain('aria-label="Copy code"')
+})
+
+test("hook events cannot steal the active text stream", () => {
+  let s = agent(start(), { type: "stream_event", parent_tool_use_id: null, event: { type: "content_block_start", content_block: { type: "text" } } })
+  s = agent(s, { type: "stream_event", parent_tool_use_id: null, event: { type: "content_block_delta", delta: { type: "text_delta", text: "Before " } } })
+  s = agent(s, { type: "system", subtype: "hook_started", hook_id: "h", hook_name: "Check", hook_event: "PreToolUse" })
+  s = agent(s, { type: "stream_event", parent_tool_use_id: null, event: { type: "content_block_delta", delta: { type: "text_delta", text: "after" } } })
+  expect((s.turns.at(-1) as any).blocks[0].text).toBe("Before after")
+  expect((s.turns.at(-1) as any).blocks[1].name).toBe("Hook")
+})
+
+test("authoritative text preserves an intervening hook and its order", () => {
+  let s = agent(start(), { type: "stream_event", parent_tool_use_id: null, event: { type: "content_block_start", content_block: { type: "text" } } })
+  s = agent(s, { type: "system", subtype: "hook_started", hook_id: "h", hook_name: "Check", hook_event: "PreToolUse" })
+  s = agent(s, { type: "assistant", parent_tool_use_id: null, message: { content: [{ type: "text", text: "Complete" }] } })
+  expect((s.turns.at(-1) as any).blocks).toMatchObject([{ kind: "text", text: "Complete" }, { kind: "tool", name: "Hook" }])
+})
+
+test("partial TaskUpdate does not invent a pending state", () => {
+  const block = { ...bash, name: "TaskUpdate", status: "done" as const, input: { taskId: "7", subject: "Updated title" }, rawResult: { success: true, taskId: "7", updatedFields: ["subject"] } }
+  const html = render(createElement(ToolCard, { block, defaultOpen: true }))
+  expect(html).toContain("Updated title")
+  expect(html).not.toContain('aria-label="pending"')
+  const completed = render(createElement(ToolCard, { block: { ...block, input: { ...block.input, status: "completed" } }, defaultOpen: true }))
+  expect(completed).toContain('aria-label="completed"')
+})
+
+test("edit approval defaults to the Codex file summary instead of expanded replacement text", () => {
+  const html = render(createElement(PermissionCard, { permission: { requestId: "edit-summary", toolName: "Edit", input: { file_path: "src/render.ts", old_string: "OLD_ONLY_TOKEN", new_string: "NEW_ONLY_TOKEN\nreturn value" }, suggestions: [] }, onAnswer() {} }))
+  expect(html).toContain('aria-label="Preview proposed changes to src/render.ts"')
+  expect(html).toContain("+2")
+  expect(html).toContain("-1")
+  expect(html).not.toContain("OLD_ONLY_TOKEN")
+  expect(html).not.toContain("NEW_ONLY_TOKEN")
 })

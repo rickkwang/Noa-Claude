@@ -18,7 +18,7 @@ import { Composer } from "./components/Composer"
 import { EmptyState } from "./components/EmptyState"
 import { MessageList } from "./components/MessageList"
 import { DiffActionDialog } from "./components/TurnDiffCard"
-import { PermissionCard } from "./components/PermissionCard"
+import { PermissionCard, type QuestionDraft } from "./components/PermissionCard"
 import { QueuedMessages } from "./components/QueuedMessages"
 import { RightPanel, type PanelTab } from "./components/RightPanel"
 import { ResizeHandle } from "./components/ResizeHandle"
@@ -104,6 +104,7 @@ function Workspace({ cwd }: { cwd: string }) {
   const [rightOpen, setRightOpen] = useState(true)
   const [addingProject, setAddingProject] = useState(false)
   const [editingProject, setEditingProject] = useState<ProjectInfo>()
+  const [quote, setQuote] = useState<{ text: string; key: number }>()
   const [reference, setReference] = useState<{ path: string; key: number }>()
   const [editDraft, setEditDraft] = useState<{ text: string; images: ImageAttachment[]; key: number }>()
   const [queueEditId, setQueueEditId] = useState<string>()
@@ -113,7 +114,7 @@ function Workspace({ cwd }: { cwd: string }) {
   const [rightTab, setRightTab] = useState<PanelTab>("files")
   useEffect(() => { setTurnDiff(undefined) }, [session.key])
 
-  const { state, sendMessage, reloadCommands, interrupt, answerPermission, answerElicitation, removeQueued, moveQueued, updateQueued, steerQueued, setQueuePaused, runQueued, stopTask, setModel, setPermissionMode, setEffort, refreshContext, turnDiffAction, clearDiffAction, startAuthentication, waitForAuthentication, submitAuthenticationCode, closeAuthentication } =
+  const { state, sendMessage, reloadCommands, loadEarlier, interrupt, answerPermission, answerElicitation, removeQueued, moveQueued, updateQueued, steerQueued, setQueuePaused, runQueued, stopTask, setModel, setPermissionMode, setEffort, refreshContext, turnDiffAction, clearDiffAction, startAuthentication, waitForAuthentication, submitAuthenticationCode, closeAuthentication } =
     useAgent({
       cwd: session.cwd,
       resume: session.resume,
@@ -259,6 +260,18 @@ function Workspace({ cwd }: { cwd: string }) {
   }, [state.liveDiff, currentTurnDiff, rightOpen, rightTab])
 
   const activeId = state.sessionId ?? session.resume
+  const requestDraftPrefix = `${session.cwd}:${activeId ?? session.runtimeId}:`
+  const questionDrafts = useRef(new Map<string, QuestionDraft>())
+  const elicitationDrafts = useRef(new Map<string, Record<string, string[]>>())
+  useEffect(() => {
+    if (state.connection !== "ready") return
+    const prefix = requestDraftPrefix
+    const pending = new Set([...state.permissions, ...state.elicitations].map(request => prefix + request.requestId))
+    for (const drafts of [questionDrafts.current, elicitationDrafts.current]) {
+      for (const key of drafts.keys()) if (key.startsWith(prefix) && !pending.has(key)) drafts.delete(key)
+    }
+  }, [requestDraftPrefix, state.connection, state.permissions, state.elicitations])
+
   useEffect(() => {
     localStorage.setItem("noa-agent.current", JSON.stringify({ cwd: session.cwd, resume: activeId, runtimeId: session.runtimeId }))
   }, [session.cwd, session.runtimeId, activeId])
@@ -292,12 +305,14 @@ function Workspace({ cwd }: { cwd: string }) {
     const target = history.entries[index]
     if (!target) return
     setHistory({ ...history, index })
+    setQuote(undefined)
     setReference(undefined)
     setEditDraft(undefined)
     setQueueEditId(undefined)
     setSession((s) => ({ cwd: target.cwd, resume: target.resume, runtimeId: target.runtimeId ?? crypto.randomUUID(), key: s.key + 1 }))
   }
   const newSession = (dir?: string) => {
+    setQuote(undefined)
     setReference(undefined)
     setEditDraft(undefined)
     setQueueEditId(undefined)
@@ -307,6 +322,7 @@ function Workspace({ cwd }: { cwd: string }) {
   }
   const selectSession = (dir: string, id: string) => {
     if (dir === session.cwd && id === activeId) return
+    setQuote(undefined)
     setReference(undefined)
     setEditDraft(undefined)
     setQueueEditId(undefined)
@@ -315,7 +331,7 @@ function Workspace({ cwd }: { cwd: string }) {
     setSession((s) => ({ cwd: dir, resume: id, runtimeId, key: s.key + 1 }))
   }
   const [focusChange, setFocusChange] = useState<{ path: string; at: number }>()
-  const [focusFile, setFocusFile] = useState<{ path: string; at: number; line?: number }>()
+  const [focusFile, setFocusFile] = useState<{ path: string; at: number; line?: number; endLine?: number }>()
   const showWorkspacePane = (tab: "files" | "changes", path?: string) => {
     setRightOpen(true)
     setRightTab(tab)
@@ -604,7 +620,10 @@ function Workspace({ cwd }: { cwd: string }) {
               key={session.key}
               cwd={session.cwd}
               sessionId={activeId}
-              onOpenFile={(path, line) => { setRightOpen(true); setRightTab("files"); setFocusFile({ path, line, at: Date.now() }) }}
+              historyBefore={state.historyBefore}
+              historyLoading={state.historyLoading}
+              onLoadEarlier={loadEarlier}
+              onOpenFile={(path, line, endLine) => { setRightOpen(true); setRightTab("files"); setFocusFile({ path, line, endLine, at: Date.now() }) }}
               turns={state.turns}
               busy={state.busy}
               result={state.result}
@@ -623,6 +642,7 @@ function Workspace({ cwd }: { cwd: string }) {
               diffActionPending={pendingDiffAction}
               onRetry={retryLast}
               onEdit={editMessage}
+              onQuote={text => setQuote({ text, key: Date.now() })}
               tasks={state.tasks}
               onStopTask={stopTask}
               onOpenTask={() => {
@@ -670,14 +690,14 @@ function Workspace({ cwd }: { cwd: string }) {
                   )}
                 </div>
               )}
-              {state.permissions.length > 0 && (
-                <div className="flex max-h-[50vh] flex-col gap-2 overflow-y-auto p-px">
+              {(state.permissions.length > 0 || state.elicitations.length > 0) && (
+                <div className="flex min-h-0 max-h-[50vh] flex-col gap-2 overflow-y-auto p-px">
                   {state.permissions.map((permission) => (
-                    <PermissionCard key={permission.requestId} permission={permission} onAnswer={answerPermission} />
+                    <PermissionCard key={permission.requestId} permission={permission} onAnswer={answerPermission} draft={questionDrafts.current.get(requestDraftPrefix + permission.requestId)} onDraftChange={draft => questionDrafts.current.set(requestDraftPrefix + permission.requestId, draft)} />
                   ))}
+                  {state.elicitations.map((request) => <ElicitationCard key={request.requestId} request={request} onAnswer={answerElicitation} draft={elicitationDrafts.current.get(requestDraftPrefix + request.requestId)} onDraftChange={draft => elicitationDrafts.current.set(requestDraftPrefix + request.requestId, draft)} />)}
                 </div>
               )}
-              {state.elicitations.map((request) => <ElicitationCard key={request.requestId} request={request} onAnswer={answerElicitation} />)}
               {state.queue.length > 0 && (
                 <QueuedMessages
                   messages={state.queue}
@@ -707,6 +727,8 @@ function Workspace({ cwd }: { cwd: string }) {
                 key={session.key}
                 draftKey={`noa-agent.draft:${session.cwd}:${activeId ?? session.runtimeId}`}
                 reference={reference}
+                quote={quote}
+                onQuoteConsumed={() => setQuote(undefined)}
                 editDraft={editDraft ? { ...editDraft, queued: !!queueEditId, label: queueEditId ? "Edit queued message" : "Edit and resend" } : undefined}
                 onCancelEdit={() => {
                   setEditDraft(undefined)

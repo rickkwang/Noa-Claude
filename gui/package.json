@@ -10,10 +10,13 @@
     "desktop": "NOA_GUI_DEV=1 bun scripts/launch-desktop.mjs",
     "desktop:dist": "bun run build && bun scripts/launch-desktop.mjs",
     "test": "bun test",
-    "test:bridge": "bun run tests/bridge.e2e.ts"
+    "test:bridge": "bun run tests/bridge.e2e.ts",
+    "test:rendering": "bun scripts/e2e-conversation-remaining.ts"
   },
   "dependencies": {
     "@tabler/icons-react": "3.48.0",
+    "katex": "0.19.1",
+    "mermaid": "12.2.0",
     "react": "19.2.6",
     "react-dom": "19.2.6"
   },

@@ -121,6 +121,13 @@ export function toolActivityLabel(block: Pick<ToolBlock, "name" | "input" | "sta
         action: failed ? "Couldn’t find" : stopped ? "Stopped finding" : running ? "Finding" : "Found",
         detail: pattern || "files",
       }
+    case "WebSearch":
+      return { action: failed ? "Web search failed:" : stopped ? "Stopped searching:" : running ? "Searching the web:" : "Searched the web:", detail: oneLine(block.input.query) }
+    case "WebFetch":
+      return { action: failed ? "Couldn’t fetch" : stopped ? "Stopped fetching" : running ? "Fetching" : "Fetched", detail: oneLine(block.input.url) }
+    case "Hook":
+      return { action: failed ? "Hook failed:" : stopped ? "Hook stopped:" : running ? "Running hook:" : "Ran hook:", detail: oneLine(block.input.hook_name) }
+    case "Agent":
     case "Task":
       return {
         action: failed ? "Subagent failed:" : stopped ? "Subagent stopped:" : running ? "Starting subagent:" : "Ran subagent:",
@@ -260,7 +267,7 @@ export function isImageActivity(block: Pick<ToolBlock, "name" | "input" | "image
 }
 
 export function isStandaloneActivity(block: Pick<ToolBlock, "name" | "input" | "images">): boolean {
-  return block.name === "Task" || isImageActivity(block)
+  return block.name === "Agent" || block.name === "Task" || block.name === "Hook" || ["TodoWrite", "TaskCreate", "TaskUpdate", "TaskList", "TaskGet"].includes(block.name) || isImageActivity(block)
 }
 
 export function groupActivityBlocks(blocks: Block[]): ActivityUnit[] {

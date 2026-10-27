@@ -60,9 +60,9 @@ function wordChanges(before: Line, after: Line) {
   after.html = emphasis(after.html, added)
 }
 
-export default function CodeView({ path, content, diff = false, split = false, wrap = false, hunkScope, onHunkAction, findRequest = 0, onCloseFind, focusLine, focusRequest }: {
+export default function CodeView({ path, content, diff = false, split = false, wrap = false, hunkScope, onHunkAction, findRequest = 0, onCloseFind, focusLine, focusEndLine, focusRequest }: {
   path: string; content: string; diff?: boolean; split?: boolean; wrap?: boolean
-  focusLine?: number; focusRequest?: number; findRequest?: number; onCloseFind?: () => void
+  focusLine?: number; focusEndLine?: number; focusRequest?: number; findRequest?: number; onCloseFind?: () => void
   hunkScope?: string; onHunkAction?: (action: string, hunk: number) => void
 }) {
   const hunks = useMemo(() => {
@@ -106,7 +106,7 @@ export default function CodeView({ path, content, diff = false, split = false, w
     if (!focusLine || diff) return
     const row = root.current?.querySelectorAll<HTMLElement>(".noa-source-line")[focusLine - 1]
     row?.scrollIntoView({ block: "center" })
-  }, [focusLine, focusRequest, source, diff])
+  }, [focusLine, focusEndLine, focusRequest, source, diff])
   const input = useRef<HTMLInputElement>(null)
   const [finding, setFinding] = useState(false)
   const [query, setQuery] = useState("")
@@ -145,7 +145,7 @@ export default function CodeView({ path, content, diff = false, split = false, w
     <div ref={root} className={`noa-code-view ${wrap ? "is-wrapped" : ""} ${split && diff ? "is-split" : ""}`} tabIndex={0} aria-label={diff ? "File diff" : "File content"}>
       {finding && <div className="noa-code-search"><input ref={input} aria-label="Find in file" value={query} onChange={(event) => { setQuery(event.target.value); setMatch(0) }} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); setMatch((n) => n + (event.shiftKey ? -1 : 1)) } else if (event.key === "Escape") { closeFind() } }} /><span>{matches ? (match % matches + matches) % matches + 1 : 0}/{matches}</span><button type="button" className="noa-panel-button" aria-label="Previous match" onClick={() => setMatch((n) => n - 1)}>↑</button><button type="button" className="noa-panel-button" aria-label="Next match" onClick={() => setMatch((n) => n + 1)}>↓</button><button type="button" className="noa-panel-button" aria-label="Close find" onClick={closeFind}>×</button></div>}
       {content.split("\n").length > 3000 && <p className="noa-panel-notice">Large file: showing up to 3,000 lines. Open the file in your editor to read the remaining lines.</p>}
-      {!diff ? source.map((html, i) => <div className="noa-source-line" data-reference-line={focusLine === i + 1 || undefined} key={i}><span className="noa-code-number">{i + 1}</span><code dangerouslySetInnerHTML={{ __html: html || " " }} /></div>)
+      {!diff ? source.map((html, i) => <div className="noa-source-line" data-reference-line={focusLine && i + 1 >= focusLine && i + 1 <= (focusEndLine ?? focusLine) ? "true" : undefined} key={i}><span className="noa-code-number">{i + 1}</span><code dangerouslySetInnerHTML={{ __html: html || " " }} /></div>)
         : hunks.length ? hunks.map((hunk, i) => <section key={i} className="noa-diff-hunk"><div className="noa-diff-hunk-header"><span>{hunk.label}</span>{hunkScope && <span className="noa-hunk-actions"><button type="button" className="noa-panel-button" aria-label={`${hunkScope === "staged" ? "Unstage" : "Stage"} hunk ${i + 1}`} onClick={() => onHunkAction?.(hunkScope === "staged" ? "unstage-hunk" : "stage-hunk", i)}>{hunkScope === "staged" ? "Unstage hunk" : "Stage hunk"}</button><button type="button" className="noa-panel-button" aria-label={`Revert hunk ${i + 1}`} onClick={() => onHunkAction?.("revert-hunk", i)}>Revert hunk</button></span>}</div>{split ? hunk.pairs.map(([old, next], j) => <div className="noa-diff-pair" key={j}>{cell(old, "old")}{cell(next, "next")}</div>) : hunk.lines.map((line, j) => <div key={j}>{cell(line)}</div>)}</section>)
         : <p className="noa-panel-empty">{content.includes("Binary") ? "Binary file changed" : content ? "File mode, rename or other metadata change. No text hunks." : "No changes in this view"}</p>}
     </div>

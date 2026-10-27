@@ -26,7 +26,7 @@ interface RightPanelProps {
   onReference: (path: string) => void
   onWorkspaceChange?: () => void
   focusChange?: { path: string; at: number }
-  focusFile?: { path: string; at: number; line?: number }
+  focusFile?: { path: string; at: number; line?: number; endLine?: number }
   turnDiff?: { diff: TurnDiff; path?: string; key: number }
 }
 
@@ -44,14 +44,16 @@ export function RightPanel({ state, onStopTask, cwd, sessionId, onRefreshContext
     const nextId = TABS[e.key === "Home" ? 0 : e.key === "End" ? TABS.length - 1 : (index + (e.key === "ArrowRight" ? 1 : TABS.length - 1)) % TABS.length]?.id
     if (!nextId) return
     onTab(nextId)
-    e.currentTarget.querySelector<HTMLElement>(`[data-tab="${nextId}"]`)?.focus()
+    const next = e.currentTarget.querySelector<HTMLElement>(`[data-tab="${nextId}"]`)
+    next?.focus({ preventScroll: true })
+    next?.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "instant" })
   }
 
   return (
     <div className="flex h-full min-h-0 w-full flex-col bg-[var(--surface-page,#F9F9F7)] font-ui">
-      <div className="flex h-11 shrink-0 items-center gap-1 px-2">
+      <div className="flex h-11 shrink-0 items-center gap-1 pl-2 pr-12">
         <div
-          className="flex min-w-0 flex-1 items-center gap-1"
+          className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto whitespace-nowrap hide-scrollbar"
           role="tablist"
           aria-label="Panel tabs"
           onKeyDown={onTabKey}
@@ -69,7 +71,7 @@ export function RightPanel({ state, onStopTask, cwd, sessionId, onRefreshContext
                 aria-selected={active}
                 tabIndex={active ? 0 : -1}
                 onClick={() => onTab(t.id)}
-                className={`h-6 rounded-md px-2 text-body transition-colors ${
+                className={`h-6 shrink-0 rounded-md px-2 text-body transition-colors ${
                   active
                     ? "bg-[color-mix(in_srgb,var(--text-primary,#2D2D2B)_7.5%,transparent)] text-[var(--text-primary,#2D2D2B)]"
                     : "noa-sidebar-hover-surface-subtle text-[var(--sidebar-text-muted,#898781)] hover:text-[var(--text-primary,#2D2D2B)]"
@@ -206,7 +208,7 @@ function ActivityTab({ state, onStopTask }: { state: AgentState; onStopTask: (id
                 turn.role === "assistant"
                   ? turn.blocks.map((block, i) =>
                       block.kind === "tool" ? (
-                        <ToolCard key={`${turn.id}-${i}`} block={block} />
+                        <ToolCard key={`${turn.id}-${i}`} block={block} tasks={state.tasks} task={state.tasks.find(task => task.id === block.id || task.toolUseId === block.id)} />
                       ) : (block.kind === "text" || block.kind === "thinking") ? (
                         <p key={`${turn.id}-${i}`} className="whitespace-pre-wrap text-caption">
                           {block.text}
@@ -234,7 +236,7 @@ function ActivityTab({ state, onStopTask }: { state: AgentState; onStopTask: (id
     <div className="noa-segmented" role="radiogroup" aria-label="Filter activity">
       {FILTERS.map((f) => <button key={f.id} type="button" role="radio" aria-checked={filter === f.id} onClick={() => setFilter(f.id)}>{f.label}<span>{counts[f.id]}</span></button>)}
     </div>
-    <div className="noa-activity-list">{visible.length ? visible.map((tool) => <ToolCard key={tool.id} block={tool} />) : <p className="noa-panel-empty">{tools.length ? "No matching activity" : "Tool calls will appear here"}</p>}</div>
+    <div className="noa-activity-list">{visible.length ? visible.map((tool) => <ToolCard key={tool.id} block={tool} tasks={state.tasks} task={state.tasks.find(task => task.id === tool.id || task.toolUseId === tool.id)} />) : <p className="noa-panel-empty">{tools.length ? "No matching activity" : "Tool calls will appear here"}</p>}</div>
     <div className="noa-panel-sections"><Section title="Diagnostics" count={state.logs.length}><pre className="noa-activity-log">{state.logs.join("\n") || "No agent diagnostics"}</pre></Section></div>
   </div>
 }

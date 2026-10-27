@@ -1,9 +1,10 @@
 // Reads the agent's transcripts (<config>/projects/<sanitized cwd>/<id>.jsonl)
 // so the GUI can list past sessions and rebuild their history.
-import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs"
+import { appendFileSync, closeSync, openSync, readSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs"
+import { StringDecoder } from "node:string_decoder"
 import { homedir } from "node:os"
 import { dirname, join } from "node:path"
-import type { ContentBlock, ImageBlock, TurnDiff } from "../src/agent/protocol"
+import type { AgentMessage, ContentBlock, ImageBlock, TurnDiff } from "../src/agent/protocol"
 import { sanitizePath } from "../../src/utils/sessionStoragePortable"
 
 export const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -90,24 +91,14 @@ export function readTurnDiffs(cwd: string, id: string): TurnDiffRecord[] {
 }
 
 /** Find the user message that opened the turn, starting at the transcript offset. */
-export function findTurnUserMessage(cwd: string, id: string, offset: number): string | undefined {
+export function findTurnUserMessage(cwd: string, id: string, offset: number, onlyAfterOffset = false): string | undefined {
   const file = transcriptPath(cwd, id)
   if (!existsSync(file)) return undefined
-  const raw = readFileSync(file)
-  const parse = (buffer: Buffer) => {
-    for (const line of buffer.toString("utf8").split("\n")) {
-      if (!line) continue
-      try {
-        const entry = JSON.parse(line) as Entry
-        if (entry.type === "user" && entry.uuid && !entry.isSidechain && !entry.isMeta && !entry.isCompactSummary)
-          return entry.uuid
-      } catch {
-        // Live transcript tail may be incomplete.
-      }
-    }
+  const firstUser = (entries: Iterable<Entry>) => {
+    for (const entry of entries) if (entry.uuid && userText(entry) !== null) return entry.uuid
     return undefined
   }
-  return parse(raw.subarray(offset)) ?? parse(raw)
+  return firstUser(scanEntries(file, offset)) ?? (onlyAfterOffset ? undefined : firstUser(scanEntries(file)))
 }
 
 export interface TurnResultRecord { index: number; userMessageId?: string; durationMs: number; error: string }
@@ -115,6 +106,14 @@ export function appendTurnResult(cwd: string, id: string, record: TurnResultReco
   const file = join(projectDir(cwd), `${id}.turn-results.jsonl`)
   mkdirSync(dirname(file), { recursive: true })
   appendFileSync(file, `${JSON.stringify(record)}\n`)
+}
+
+interface TimelineRecord { turn: number; afterUuid?: string; message: AgentMessage }
+
+export function appendTimelineEvent(cwd: string, id: string, record: TimelineRecord): void {
+  const file = join(projectDir(cwd), `${id}.gui-events.jsonl`)
+  mkdirSync(dirname(file), { recursive: true, mode: 0o700 })
+  appendFileSync(file, `${JSON.stringify(record)}\n`, { mode: 0o600 })
 }
 
 interface Entry {
@@ -132,21 +131,35 @@ interface Entry {
   compactMetadata?: { trigger?: "manual" | "auto" }
   message?: { id?: string; content?: unknown }
   toolUseResult?: unknown
+  mcpMeta?: Record<string, unknown>
   customTitle?: string
 }
 
-function readEntries(file: string): Entry[] {
-  const entries: Entry[] = []
-  for (const line of readFileSync(file, "utf8").split("\n")) {
-    if (!line) continue
-    try {
-      entries.push(JSON.parse(line))
-    } catch {
-      // A partially written line at the end of a live transcript; skip it.
+function* scanEntries(file: string, offset = 0): Generator<Entry> {
+  const fd = openSync(file, "r")
+  const buffer = Buffer.alloc(64 * 1024)
+  const decoder = new StringDecoder("utf8")
+  let pending = ""
+  let position = offset
+  try {
+    let size: number
+    while ((size = readSync(fd, buffer, 0, buffer.length, position)) > 0) {
+      position += size
+      pending += decoder.write(buffer.subarray(0, size))
+      let start = 0, end: number
+      while ((end = pending.indexOf("\n", start)) !== -1) {
+        const line = pending.slice(start, end)
+        start = end + 1
+        if (line) { try { yield JSON.parse(line) } catch { /* Partial or invalid record. */ } }
+      }
+      pending = pending.slice(start)
     }
-  }
-  return entries
+    pending += decoder.end()
+    if (pending) { try { yield JSON.parse(pending) } catch { /* A live final line may be incomplete. */ } }
+  } finally { closeSync(fd) }
 }
+
+function readEntries(file: string): Entry[] { return [...scanEntries(file)] }
 
 function userText(entry: Entry): string | null {
   if (entry.type !== "user" || entry.isMeta || entry.isCompactSummary || entry.isSidechain) return null
@@ -181,7 +194,7 @@ export function countUserTurns(cwd: string, id: string): number {
   const file = transcriptPath(cwd, id)
   if (!existsSync(file)) return 0
   let count = 0
-  for (const entry of readEntries(file)) {
+  for (const entry of scanEntries(file)) {
     if (entry.isSidechain) continue
     if (entry.type === "system" && entry.subtype === "local_command" && entry.content?.startsWith("/")) {
       count++
@@ -265,15 +278,17 @@ export function renameSession(cwd: string, id: string, title: string): void {
   appendFileSync(file, `${JSON.stringify({ type: "custom-title", customTitle: name, sessionId: id })}\n`)
 }
 
-async function conversationChain(file: string, entries: Entry[]): Promise<Entry[]> {
-  if (!entries.some((entry) => entry.uuid)) return entries
+async function conversationChain(file: string, includeSidechain = false): Promise<Entry[]> {
   // Load the CLI's recovery rules, including compact/snip and orphaned tool results.
   const modulePath = "../../src/utils/sessionStorage.ts"
   const { loadTranscriptFile, buildConversationChain } = await import(modulePath)
   const { messages, leafUuids } = await loadTranscriptFile(file) as { messages: Map<string, Entry>; leafUuids: Set<string> }
+  let hasUuid = false
+  for (const entry of messages.values()) if (entry.uuid) { hasUuid = true; break }
+  if (!hasUuid) return readEntries(file)
   let leaf: Entry | undefined
   for (const entry of messages.values()) {
-    if (entry.isSidechain || (entry.type !== "user" && entry.type !== "assistant")) continue
+    if ((!includeSidechain && entry.isSidechain) || (entry.type !== "user" && entry.type !== "assistant")) continue
     if (leafUuids.size && !leafUuids.has(entry.uuid!)) continue
     if (!leaf || (entry.timestamp ?? "") >= (leaf.timestamp ?? "")) leaf = entry
   }
@@ -283,26 +298,89 @@ async function conversationChain(file: string, entries: Entry[]): Promise<Entry[
 // History items use the same shapes as live stream-json messages, so the
 // client feeds them through the same reducer.
 export type HistoryItem =
-  | { kind: "user"; text: string; images?: ImageBlock[] }
+  | { kind: "user"; id?: string; text: string; images?: ImageBlock[] }
   | { kind: "turn-duration"; durationMs: number; interrupted?: boolean; error?: string }
   | { kind: "compaction"; trigger: "manual" | "auto" }
   | { kind: "turn-diff"; diff: TurnDiff }
   | {
       kind: "agent"
       messageId?: string
-      message: { type: "assistant" | "user"; message: { content: ContentBlock[] }; parent_tool_use_id: null }
+      message: AgentMessage
     }
+
+export function historyPage(items: HistoryItem[], before = items.length): { items: HistoryItem[]; before: number } {
+  const end = Math.max(0, Math.min(before, items.length))
+  let start = end, users = 0
+  while (start > 0) {
+    start--
+    if (items[start]?.kind === "user" && ++users >= 40) break
+  }
+  // A background result can arrive in a later turn. Keep its originating call in the page.
+  const calls = new Map<string, number>()
+  const hooks = new Map<string, number>()
+  let userStart = 0
+  for (let i = 0; i < end; i++) {
+    const item = items[i]!
+    if (item.kind === "user") userStart = i
+    if (item.kind === "agent" && item.message.type === "assistant") {
+      for (const block of item.message.message.content) if (block.type === "tool_use") calls.set(block.id, userStart)
+    }
+    if (item.kind === "agent" && item.message.type === "system" && item.message.subtype === "hook_started") hooks.set(item.message.hook_id, userStart)
+  }
+  for (let i = end - 1; i >= start; i--) {
+    const item = items[i]!
+    if (item.kind !== "agent") continue
+    const message = item.message
+    if (message.type === "system" && (message.subtype === "hook_response" || message.subtype === "hook_progress")) start = Math.min(start, hooks.get(message.hook_id) ?? start)
+    const ids = "parent_tool_use_id" in message && message.parent_tool_use_id ? [message.parent_tool_use_id] : []
+    if (message.type === "system" && ["task_started", "task_progress", "task_notification"].includes(message.subtype) && "tool_use_id" in message && message.tool_use_id) ids.push(message.tool_use_id)
+    if (message.type === "user" && Array.isArray(message.message.content)) for (const block of message.message.content) if (block.type === "tool_result") ids.push(block.tool_use_id)
+    for (const id of ids) start = Math.min(start, calls.get(id) ?? start)
+  }
+  return { items: items.slice(start, end), before: start }
+}
+
+async function restoreAgentHistory(items: HistoryItem[], cwd: string, session: string, tool: Extract<ContentBlock, { type: "tool_use" }>, result: Record<string, any>, failed: boolean, visited: Set<string>): Promise<void> {
+  if (typeof result.agentId !== "string" || !/^[a-zA-Z0-9_-]+$/.test(result.agentId)) return
+  if (visited.has(result.agentId)) return
+  visited.add(result.agentId)
+  items.push({ kind: "agent", message: {
+    type: "system", subtype: "task_notification", task_id: result.agentId, tool_use_id: tool.id,
+    description: typeof tool.input.description === "string" ? tool.input.description : "Subagent",
+    status: failed ? "failed" : result.status === "completed" ? "completed" : "unknown",
+    usage: typeof result.totalDurationMs === "number" ? { duration_ms: result.totalDurationMs, total_tokens: result.totalTokens ?? 0, tool_uses: result.totalToolUseCount ?? 0 } : undefined,
+  } })
+  const file = join(projectDir(cwd), session, "subagents", `agent-${result.agentId}.jsonl`)
+  if (!existsSync(file) || statSync(file).size > 50 * 1024 * 1024) return
+  const calls = new Map<string, Extract<ContentBlock, { type: "tool_use" }>>()
+  let children: Entry[]
+  try { children = await conversationChain(file, true) }
+  catch { return }
+  for (const child of children) {
+    if ((child.type !== "assistant" && child.type !== "user") || !Array.isArray(child.message?.content)) continue
+    const content = child.message.content as ContentBlock[]
+    items.push({ kind: "agent", message: { type: child.type, parent_tool_use_id: tool.id, message: { content }, ...(child.type === "user" ? { tool_use_result: child.toolUseResult } : {}) } })
+    for (const block of content) {
+      if (block.type === "tool_use") calls.set(block.id, block)
+      if (block.type === "tool_result" && child.toolUseResult && typeof child.toolUseResult === "object") {
+        const nested = calls.get(block.tool_use_id)
+        if (nested && (nested.name === "Agent" || nested.name === "Task")) await restoreAgentHistory(items, cwd, session, nested, child.toolUseResult as Record<string, any>, block.is_error === true, visited)
+      }
+    }
+  }
+}
 
 export async function loadHistory(cwd: string, id: string): Promise<HistoryItem[] | null> {
   if (!SESSION_ID.test(id)) return null
   const file = join(projectDir(cwd), `${id}.jsonl`)
   if (!existsSync(file)) return null
 
-  const entries = readEntries(file)
+  const entries = await conversationChain(file)
   const owner = entries.find((entry) => typeof entry.cwd === "string")?.cwd
   if (owner && canonicalCwd(owner) !== canonicalCwd(cwd)) return null
 
   const items: HistoryItem[] = []
+  const restoredAgents = new Set<string>()
   const byUser = new Map<string, TurnDiff>()
   const byIndex = new Map<number, TurnDiff>()
   for (const record of readTurnDiffs(cwd, id)) {
@@ -333,10 +411,41 @@ export async function loadHistory(cwd: string, id: string): Promise<HistoryItem[
     if (diff) items.push({ kind: "turn-diff", diff })
     currentUserMessageId = undefined
   }
+  const byAnchor = new Map<string, AgentMessage[]>()
+  const byTurn = new Map<number, AgentMessage[]>()
+  const eventFile = join(projectDir(cwd), `${id}.gui-events.jsonl`)
+  if (existsSync(eventFile)) for (const line of readFileSync(eventFile, "utf8").split("\n")) {
+    if (!line) continue
+    try {
+      const record = JSON.parse(line) as TimelineRecord
+      const bucket = (record.afterUuid ? byAnchor.get(record.afterUuid) : byTurn.get(record.turn)) ?? []
+      bucket.push(record.message)
+      if (record.afterUuid) byAnchor.set(record.afterUuid, bucket)
+      else byTurn.set(record.turn, bucket)
+    } catch { /* A live sidecar tail may be incomplete. */ }
+  }
+  if (byTurn.size) {
+    let rawTurn = 0
+    for (const entry of scanEntries(file)) {
+      if ((entry.type === "system" && entry.subtype === "local_command" && entry.content?.startsWith("/")) || userText(entry) !== null) {
+        rawTurn++
+        const messages = byTurn.get(rawTurn)
+        if (messages && entry.uuid) {
+          byAnchor.set(entry.uuid, [...(byAnchor.get(entry.uuid) ?? []), ...messages])
+          byTurn.delete(rawTurn)
+        }
+      }
+    }
+  }
+  for (const message of byTurn.get(0) ?? []) items.push({ kind: "agent", message })
+  byTurn.delete(0)
   let interrupted = false
-  for (const entry of await conversationChain(file, entries)) {
+  let recordIndex = 0
+  for (const entry of entries) {
+    const userId = entry.uuid ?? `${id}:user:${recordIndex}`
+    recordIndex++
     if (entry.isSidechain) continue
-
+    try {
     if (entry.type === "system" && entry.subtype === "compact_boundary") {
       items.push({ kind: "compaction", trigger: entry.compactMetadata?.trigger ?? "auto" })
       continue
@@ -354,7 +463,7 @@ export async function loadHistory(cwd: string, id: string): Promise<HistoryItem[
       else if (entry.content.startsWith("/")) {
         if (currentUserMessageId === undefined) turnNumber++
         currentUserMessageId = entry.uuid ?? currentUserMessageId
-        items.push({ kind: "user", text: entry.content })
+        items.push({ kind: "user", id: userId, text: entry.content })
       }
       continue
     }
@@ -366,11 +475,9 @@ export async function loadHistory(cwd: string, id: string): Promise<HistoryItem[
       const messageId = entry.message?.id
       const last = items[items.length - 1]
       // The transcript stores one entry per content block; merge them back into one message.
-      if (last?.kind === "agent" && messageId && last.messageId === messageId) {
+      if (last?.kind === "agent" && last.message.type === "assistant" && messageId && last.messageId === messageId) {
         const content = last.message.message.content
-        for (const block of blocks) {
-          if (!content.some((c) => JSON.stringify(c) === JSON.stringify(block))) content.push(block)
-        }
+        content.push(...blocks)
       } else {
         items.push({
           kind: "agent",
@@ -393,11 +500,20 @@ export async function loadHistory(cwd: string, id: string): Promise<HistoryItem[
       if (currentUserMessageId !== undefined) flushTurnDiff()
       if (currentUserMessageId === undefined) turnNumber++
       currentUserMessageId = entry.uuid ?? currentUserMessageId
-      items.push({ kind: "user", text: text ?? "", images: Array.isArray(content) ? content.filter((b: any) => b?.type === "image") : undefined })
+      items.push({ kind: "user", id: userId, text: text ?? "", images: Array.isArray(content) ? content.filter((b: any) => b?.type === "image") : undefined })
       continue
     }
 
     if (entry.type === "user" && Array.isArray(content) && content.some((b: any) => b?.type === "tool_result")) {
+      const result = entry.toolUseResult as Record<string, any> | undefined
+      if (result && typeof result.agentId === "string" && /^[a-zA-Z0-9_-]+$/.test(result.agentId)) {
+        const toolResult = content.find((block: any) => block.type === "tool_result")
+        const tool = items.flatMap(item => item.kind === "agent" && item.message.type === "assistant" ? item.message.message.content : [])
+          .find(block => block.type === "tool_use" && block.id === toolResult?.tool_use_id)
+        if (tool?.type === "tool_use" && (tool.name === "Agent" || tool.name === "Task")) {
+          await restoreAgentHistory(items, cwd, id, tool, result, toolResult.is_error === true, restoredAgents)
+        }
+      }
       items.push({
         kind: "agent",
         message: {
@@ -405,13 +521,20 @@ export async function loadHistory(cwd: string, id: string): Promise<HistoryItem[
           message: {
             content: content.map((block: any) =>
               block?.type === "tool_result"
-                ? { ...block, tool_use_result: entry.toolUseResult }
+                ? { ...block, tool_use_result: entry.mcpMeta ? { content: entry.toolUseResult, ...entry.mcpMeta } : entry.toolUseResult }
                 : block,
             ) as ContentBlock[],
           },
           parent_tool_use_id: null,
         },
       })
+    }
+    } finally {
+      for (const message of (entry.uuid ? byAnchor.get(entry.uuid) : undefined) ?? []) items.push({ kind: "agent", message })
+      if (entry.type === "user" && userText(entry) !== null) {
+        for (const message of byTurn.get(turnNumber) ?? []) items.push({ kind: "agent", message })
+        byTurn.delete(turnNumber)
+      }
     }
   }
   flushTurnDiff()

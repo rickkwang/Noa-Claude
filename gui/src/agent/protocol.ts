@@ -20,6 +20,7 @@ export interface ElicitationRequest {
   message: string
   mode?: "form" | "url"
   url?: string
+  elicitation_id?: string
   requested_schema?: Record<string, unknown>
 }
 
@@ -31,18 +32,22 @@ export type ContentBlock =
   | { type: "tool_result"; tool_use_id: string; content: unknown; is_error?: boolean; tool_use_result?: unknown }
 
 export type StreamEvent =
+  | { type: "message_start"; message: { id: string } }
+  | { type: "message_stop" }
   | {
       type: "content_block_start"
+      index?: number
       content_block: { type: "text" } | { type: "thinking" } | { type: "tool_use"; id: string; name: string }
     }
   | {
       type: "content_block_delta"
+      index?: number
       delta:
         | { type: "text_delta"; text: string }
         | { type: "thinking_delta"; thinking: string }
         | { type: "input_json_delta"; partial_json: string }
     }
-  | { type: "content_block_stop" }
+  | { type: "content_block_stop"; index?: number }
 
 export interface PermissionRequest {
   subtype: "can_use_tool"
@@ -108,9 +113,12 @@ export type ControlPayload =
   | { kind: "commands"; commands: SlashCommand[] }
 
 export type AgentMessage =
+  | { type: "system"; subtype: "elicitation_complete"; mcp_server_name: string; elicitation_id: string }
+  | { type: "system"; subtype: "hook_started" | "hook_progress" | "hook_response"; hook_id: string; hook_name: string; hook_event: string; stdout?: string; stderr?: string; output?: string; exit_code?: number; outcome?: "success" | "error" | "cancelled" }
+  | { type: "tool_progress"; tool_use_id: string; tool_name: string; parent_tool_use_id: string | null; elapsed_time_seconds: number; heartbeat?: boolean }
   | { type: "system"; subtype: "compact_boundary"; compact_metadata: { trigger: "manual" | "auto"; pre_tokens?: number } }
   | { type: "system"; subtype: "api_retry"; attempt: number; max_retries: number; retry_delay_ms: number; error_status?: number | null }
-  | { type: "system"; subtype: "task_started" | "task_progress" | "task_notification"; task_id: string; tool_use_id?: string; description?: string; summary?: string; status?: "completed" | "failed" | "stopped"; last_tool_name?: string; output_file?: string; usage?: { total_tokens: number; tool_uses: number; duration_ms: number } }
+  | { type: "system"; subtype: "task_started" | "task_progress" | "task_notification"; task_id: string; tool_use_id?: string; description?: string; summary?: string; status?: "completed" | "failed" | "stopped" | "unknown"; last_tool_name?: string; output_file?: string; usage?: { total_tokens: number; tool_uses: number; duration_ms: number } }
   | { type: "system"; subtype: "status" | "session_state_changed"; status?: string | null; permissionMode?: PermissionMode; state?: "idle" | "running" | "requires_action" }
   | {
       type: "system"
@@ -120,7 +128,7 @@ export type AgentMessage =
       session_id: string
     }
   | { type: "stream_event"; event: StreamEvent; parent_tool_use_id: string | null }
-  | { type: "assistant"; message: { content: ContentBlock[] }; parent_tool_use_id: string | null }
+  | { type: "assistant"; message: { id?: string; content: ContentBlock[] }; parent_tool_use_id: string | null }
   | {
       type: "user"
       message: { content: ContentBlock[] | string }
@@ -180,11 +188,11 @@ export interface TurnDiffActionResult {
 export type Envelope =
   | { kind: "interrupt" }
   | { kind: "attached"; runtimeId: string }
-  | { kind: "history"; items: HistoryItem[] }
+  | { kind: "history"; items: HistoryItem[]; before?: number; prepend?: boolean }
   | { kind: "user"; id: string; content: UserContent }
   | { kind: "queue"; messages: QueuedMessage[]; paused?: boolean }
   | { kind: "agent"; message: AgentMessage }
-  | { kind: "turn-diff"; diff: TurnDiff }
+  | { kind: "turn-diff"; diff: TurnDiff; updateOnly?: boolean }
   // While a turn runs, the bridge streams its diff so the composer can show a
   // live summary, as Codex does above the composer.
   | { kind: "turn-diff-live"; diff: TurnDiff }
@@ -199,7 +207,8 @@ export type Envelope =
 
 // Messages the GUI writes to the agent's stdin.
 export type Outgoing =
-  | { type: "user"; message: { role: "user"; content: UserContent }; parent_tool_use_id: null }
+  | { type: "history_before"; before: number }
+  | { type: "user"; message: { role: "user"; content: UserContent }; parent_tool_use_id: null; uuid?: string }
   | { type: "queue_remove"; id: string }
   | { type: "queue_move"; id: string; toIndex: number }
   | { type: "queue_update"; id: string; content: UserContent }
@@ -236,12 +245,12 @@ export type ControlRequest =
 
 // Shape of the bridge's /api/sessions/:id response.
 export type HistoryItem =
-  | { kind: "user"; text: string; images?: ImageBlock[] }
+  | { kind: "user"; id?: string; text: string; images?: ImageBlock[] }
   | { kind: "turn-duration"; durationMs: number; interrupted?: boolean; error?: string }
   | { kind: "compaction"; trigger: "manual" | "auto" }
-  | { kind: "turn-diff"; diff: TurnDiff }
+  | { kind: "turn-diff"; diff: TurnDiff; updateOnly?: boolean }
   | {
       kind: "agent"
       messageId?: string
-      message: { type: "assistant" | "user"; message: { content: ContentBlock[] }; parent_tool_use_id: null }
+      message: AgentMessage
     }

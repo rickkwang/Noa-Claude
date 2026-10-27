@@ -20,8 +20,12 @@ const button = "noa-approval-button noa-press border border-[var(--divider-subtl
 export function ElicitationCard({
   request,
   onAnswer,
+  draft,
+  onDraftChange,
 }: {
-  request: ElicitationRequest & { requestId: string }
+  draft?: Record<string, string[]>
+  onDraftChange?: (draft: Record<string, string[]>) => void
+  request: ElicitationRequest & { requestId: string; completed?: boolean }
   onAnswer: (id: string, action: "accept" | "decline" | "cancel", content?: Record<string, unknown>) => void
 }) {
   const schema = request.requested_schema
@@ -37,6 +41,10 @@ export function ElicitationCard({
     <form
       aria-label={`Input requested by ${request.mcp_server_name}`}
       className="noa-approval-card flex max-h-[50vh] shrink-0 flex-col gap-3 overflow-y-auto rounded-3xl border border-[var(--divider-subtle)] p-4"
+      onChange={(event) => {
+        const data = new FormData(event.currentTarget)
+        onDraftChange?.(Object.fromEntries(fields.map(([name]) => [name, data.getAll(name).map(String)])))
+      }}
       onSubmit={(event) => {
         event.preventDefault()
         const data = new FormData(event.currentTarget)
@@ -64,6 +72,7 @@ export function ElicitationCard({
     >
       <div className="text-caption text-[var(--sidebar-text-muted)]">{request.mcp_server_name} needs your input</div>
       <p className="m-0 text-body whitespace-pre-wrap">{request.message}</p>
+      {request.completed && <p role="status" className="text-body">Authorization complete. Continue to return to the task.</p>}
       {request.mode === "url" ? (
         url ? (
           <a href={url} target="_blank" rel="noreferrer" className="break-all text-body text-[var(--accent-color)]">
@@ -89,7 +98,7 @@ export function ElicitationCard({
                 name={name}
                 multiple
                 required={required.includes(name)}
-                defaultValue={Array.isArray(field.default) ? field.default.map(String) : []}
+                defaultValue={draft?.[name] ?? (Array.isArray(field.default) ? field.default.map(String) : [])}
                 onChange={(event) => event.currentTarget.setCustomValidity("")}
                 className="rounded-md border border-[var(--divider-subtle)] bg-[var(--surface-page)] px-2 py-1"
               >
@@ -103,7 +112,7 @@ export function ElicitationCard({
               <select
                 name={name}
                 required={required.includes(name)}
-                defaultValue={String(field.default ?? "")}
+                defaultValue={draft?.[name]?.[0] ?? String(field.default ?? "")}
                 className="h-8 rounded-md border border-[var(--divider-subtle)] bg-[var(--surface-page)] px-2"
               >
                 <option value="">Choose…</option>
@@ -117,7 +126,7 @@ export function ElicitationCard({
               <input
                 name={name}
                 type="checkbox"
-                defaultChecked={field.default === true}
+                defaultChecked={draft?.[name] ? draft[name]!.includes("on") : field.default === true}
                 className="self-start accent-[var(--accent-color)]"
               />
             ) : (
@@ -138,7 +147,7 @@ export function ElicitationCard({
                 minLength={field.minLength}
                 maxLength={field.maxLength}
                 required={required.includes(name)}
-                defaultValue={field.default === undefined ? "" : String(field.default)}
+                defaultValue={draft?.[name]?.[0] ?? (field.default === undefined ? "" : String(field.default))}
                 className="h-8 rounded-md border border-[var(--divider-subtle)] bg-transparent px-2 outline-none focus:border-[var(--accent-color)]"
               />
             )}
@@ -161,7 +170,7 @@ export function ElicitationCard({
           disabled={request.mode === "url" ? !url : !supported}
           className={`${button} bg-[var(--text-primary)] text-[var(--surface-page)] disabled:opacity-40`}
         >
-          {request.mode === "url" ? "I’ve authorized" : "Continue"}
+          {request.completed ? "Continue" : request.mode === "url" ? "I’ve authorized" : "Continue"}
         </button>
       </div>
     </form>

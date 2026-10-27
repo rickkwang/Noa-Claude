@@ -351,7 +351,9 @@ This repository is a reconstruction based on publicly exposed source code. The o
 
 Run `bun run --cwd gui desktop` to build and open the local Electron GUI. This is an implemented, non-baseline development surface, separate from the CLI workflow. Its right panel supports a searchable file tree, text/image previews, guarded text editing, working-tree/staged/unstaged review with unified or split diffs, per-file and staged/unstaged-hunk stage/unstage/revert, Noa context breakdowns, and tool activity. Git and file actions are local; they do not commit, push, or publish.
 
-Previews are limited to 512 KiB and code rendering to 3,000 lines. This GUI does not claim complete Codex desktop feature parity. Run `node scripts/e2e-gui-workspace.mjs` for isolated workspace API verification.
+Text/image file previews are limited to 512 KiB and code rendering to 3,000 lines. Local audio/video uses workspace-scoped byte-range streaming. This GUI does not claim complete Codex desktop feature parity. Run `node scripts/e2e-gui-workspace.mjs` for isolated workspace API verification.
+
+Conversation rendering includes local math and Mermaid diagrams, code previews and wrapping, rich table/response copying, workspace citations and review comments, selection quoting, and primitive MCP forms. The bridge preserves structured tool results, Hook and subagent activity, and interrupted history. Earlier messages load in turn pages; unresolved background calls stay with their results. Verify native rendering with `bun run --cwd gui scripts/e2e-conversation.ts` and `bun run --cwd gui test:rendering`. The latter uses HTTP and the production CSP, including native modal/download/navigation checks.
 
 The built desktop GUI uses `http://127.0.0.1:18787` so browser settings and drafts remain available across launches. A second launch focuses the existing window; the desktop bridge requires port 18787 to be free.
 

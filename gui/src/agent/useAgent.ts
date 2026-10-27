@@ -4,6 +4,7 @@ import type {
   ContextUsage,
   ControlRequest,
   Envelope,
+  AgentMessage,
   UserContent,
   ModelInfo,
   Outgoing,
@@ -101,9 +102,32 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
       control({ subtype: "initialize" }, "initialize")
     }
 
+    let deltaFrame: number | undefined
+    let pendingDeltas: Extract<AgentMessage, { type: "stream_event" }>[] = []
+    const flushDeltas = () => {
+      if (deltaFrame !== undefined) cancelAnimationFrame(deltaFrame)
+      deltaFrame = undefined
+      for (const message of pendingDeltas) dispatch({ type: "agent", message })
+      pendingDeltas = []
+    }
+
     socket.onmessage = (event) => {
       if (!isCurrent()) return
       const envelope = JSON.parse(String(event.data)) as Envelope
+      if (envelope.kind === "agent" && envelope.message.type === "stream_event" && envelope.message.event.type === "content_block_delta") {
+        const message = envelope.message
+        const previous = pendingDeltas[pendingDeltas.length - 1]
+        const next = message.event
+        const last = previous?.event
+        if (previous?.parent_tool_use_id === message.parent_tool_use_id && last?.type === "content_block_delta" && next.type === "content_block_delta" && last.index === next.index && last.delta.type === next.delta.type) {
+          if (last.delta.type === "text_delta" && next.delta.type === "text_delta") last.delta.text += next.delta.text
+          else if (last.delta.type === "thinking_delta" && next.delta.type === "thinking_delta") last.delta.thinking += next.delta.thinking
+          else if (last.delta.type === "input_json_delta" && next.delta.type === "input_json_delta") last.delta.partial_json += next.delta.partial_json
+        } else pendingDeltas.push(message)
+        deltaFrame ??= requestAnimationFrame(flushDeltas)
+        return
+      }
+      flushDeltas()
       switch (envelope.kind) {
         case "interrupt":
           dispatch({ type: "interrupt-requested" })
@@ -111,7 +135,7 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
         case "attached":
           break
         case "turn-diff":
-          dispatch({ type: "turn-diff", diff: envelope.diff })
+          dispatch({ type: "turn-diff", diff: envelope.diff, updateOnly: envelope.updateOnly })
           break
         case "turn-diff-live":
           dispatch({ type: "turn-diff-live", diff: envelope.diff })
@@ -125,13 +149,7 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
           })
           break
         case "history":
-          for (const item of envelope.items) {
-            if (item.kind === "user") dispatch({ type: "history-user", id: crypto.randomUUID(), text: item.text, images: item.images })
-            else if (item.kind === "turn-duration") dispatch({ type: "turn-duration", durationMs: item.durationMs, interrupted: item.interrupted, error: item.error })
-            else if (item.kind === "compaction") dispatch({ type: "compaction", trigger: item.trigger })
-            else if (item.kind === "turn-diff") dispatch({ type: "turn-diff", diff: item.diff })
-            else dispatch({ type: "agent", message: item.message })
-          }
+          dispatch({ type: "history", items: envelope.items, before: envelope.before, prepend: envelope.prepend })
           break
         case "user":
           dispatch({ type: "user-sent", id: envelope.id, content: envelope.content })
@@ -174,7 +192,7 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
 
     socket.onclose = () => {
       clearInitializationTimer()
-      if (isCurrent()) dispatch({ type: "connection", status: "closed" })
+      if (isCurrent()) { flushDeltas(); dispatch({ type: "connection", status: "closed" }) }
     }
 
     function routeResponse(kind: ResponseKind, response: unknown) {
@@ -240,6 +258,8 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
     }
 
     return () => {
+      if (deltaFrame !== undefined) cancelAnimationFrame(deltaFrame)
+      pendingDeltas = []
       clearInitializationTimer()
       socketRef.current = null
       socket.close()
@@ -269,6 +289,11 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
     },
     [control],
   )
+
+  const loadEarlier = useCallback(() => {
+    if (!state.historyBefore || state.historyLoading) return
+    if (write({ type: "history_before", before: state.historyBefore })) dispatch({ type: "history-loading" })
+  }, [write, state.historyBefore, state.historyLoading])
 
   const refreshContext = useCallback(() => control({ subtype: "get_context_usage" }, "context_usage"), [control])
 
@@ -338,7 +363,7 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
   }, [control])
   const closeAuthentication = useCallback(() => dispatch({ type: "auth-close" }), [])
 
-  return { state: ownerRef.current === runtimeId ? state : initialState, sendMessage, reloadCommands, answerElicitation, removeQueued, moveQueued, updateQueued, steerQueued, setQueuePaused, runQueued, stopTask, interrupt, answerPermission, setModel, setPermissionMode, setEffort, refreshContext, turnDiffAction, clearDiffAction, startAuthentication, waitForAuthentication, submitAuthenticationCode, closeAuthentication }
+  return { state: ownerRef.current === runtimeId ? state : initialState, sendMessage, reloadCommands, loadEarlier, answerElicitation, removeQueued, moveQueued, updateQueued, steerQueued, setQueuePaused, runQueued, stopTask, interrupt, answerPermission, setModel, setPermissionMode, setEffort, refreshContext, turnDiffAction, clearDiffAction, startAuthentication, waitForAuthentication, submitAuthenticationCode, closeAuthentication }
 }
 
 export function parseAuthorizationCode(raw: string): { authorizationCode: string; state: string } | undefined {

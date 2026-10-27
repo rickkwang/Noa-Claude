@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { IconFileDiff } from "@tabler/icons-react"
 import type { TurnDiff, TurnDiffActionResult, TurnDiffFile } from "../agent/protocol"
-import { ChevronDown, ChevronRight, ChevronUp } from "../lib/icons"
+import { ChevronDown, ChevronRight, ChevronUp, RotateCcw } from "../lib/icons"
 import { useConfirm } from "./ConfirmDialog"
 
 export function TurnDiffCard({ diff, onOpen, onAction, pending }: {
@@ -28,14 +28,16 @@ export function TurnDiffCard({ diff, onOpen, onAction, pending }: {
           onClick={() => onOpen(single ? diff.files[0]!.path : undefined)}
           aria-label={`${title}. View changes`}
         >
-          <IconFileDiff size={14} className="shrink-0 text-[var(--sidebar-text-muted)]" aria-hidden="true" />
-          <span className="min-w-0 flex-1 truncate text-body font-medium text-[var(--text-primary)]">{title}</span>
-          <span className="noa-turn-diff-default">
-            <Stats file={diff} />
-          </span>
-          <span className="noa-turn-diff-hover">
-            View changes
-            <ChevronRight size={12} aria-hidden="true" />
+          <span className="noa-turn-diff-icon"><IconFileDiff size={22} aria-hidden="true" /></span>
+          <span className="noa-turn-diff-heading">
+            <span className="truncate text-body font-medium text-[var(--text-primary)]">{title}</span>
+            <span className="noa-turn-diff-default">
+              <Stats file={diff} />
+            </span>
+            <span className="noa-turn-diff-hover">
+              View changes
+              <ChevronRight size={12} aria-hidden="true" />
+            </span>
           </span>
         </button>
         {canAct && (
@@ -59,8 +61,10 @@ export function TurnDiffCard({ diff, onOpen, onAction, pending }: {
             title={action === "undo" ? "Undo" : "Reapply"}
           >
             {pending ? (action === "reapply" ? "Reapplying…" : "Undoing…") : action === "reapply" ? "Reapply" : "Undo"}
+            <RotateCcw size={14} aria-hidden="true" className={action === "reapply" ? "-scale-x-100" : undefined} />
           </button>
         )}
+        <button type="button" className="noa-turn-diff-view" onClick={() => onOpen(single ? diff.files[0]!.path : undefined)}>View changes</button>
       </div>
       {!single && (
         <div className="noa-turn-diff-list">

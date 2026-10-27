@@ -3,7 +3,7 @@ import { existsSync, statSync } from "node:fs"
 import { resolve, sep } from "node:path"
 import { SESSION_ID, listSessions, loadHistory, renameSession } from "./sessions"
 import { addProject, listProjects, removeProject } from "./projects"
-import { workspaceRequest } from "./workspace"
+import { mediaResponse, workspaceRequest } from "./workspace"
 import { attachAgent, agentMessage, detachAgent, listAgentRuns, type SocketData } from "./agents"
 
 const REPO_ROOT = resolve(import.meta.dir, "../..")
@@ -42,6 +42,13 @@ Bun.serve<SocketData>({
     if (origin && origin !== url.origin && !["http://localhost:5173", "http://127.0.0.1:5173"].includes(origin))
       return json({ error: "Origin not allowed" }, 403)
     const cwd = resolveCwd(url.searchParams.get("cwd"))
+
+    if (url.pathname === "/api/media") {
+      if (req.method !== "GET" && req.method !== "HEAD") return json({ error: "Method not allowed" }, 405)
+      if (!cwd) return json({ error: "cwd is not a directory" }, 400)
+      try { return await mediaResponse(cwd, url.searchParams.get("path") ?? "", req) }
+      catch (error) { return json({ error: (error as Error).message }, 400) }
+    }
 
     if (["/api/files", "/api/file", "/api/changes", "/api/diff", "/api/git-action"].includes(url.pathname)) {
       if (req.method !== "GET" && !(req.method === "POST" && ["/api/file", "/api/git-action"].includes(url.pathname))) return json({ error: "Method not allowed" }, 405)
@@ -148,3 +155,6 @@ Bun.serve<SocketData>({
 })
 
 console.log(`Noa GUI bridge listening on http://localhost:${PORT}`)
+// Load the transcript recovery code while the user is choosing a session.
+const transcriptModule = "../../src/utils/sessionStorage.ts"
+void import(transcriptModule).catch(() => {})

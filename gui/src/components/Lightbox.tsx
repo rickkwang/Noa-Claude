@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode, type Ref } from "react"
 import { createPortal } from "react-dom"
-import { ChevronLeft, ChevronRight, RotateCcw, X, ZoomIn, ZoomOut } from "../lib/icons"
+import { ChevronLeft, ChevronRight, Download, RotateCcw, X, ZoomIn, ZoomOut } from "../lib/icons"
 
 export interface LightboxItem {
   src: string
@@ -44,6 +44,7 @@ export function Lightbox({ items, index, onIndex, onClose }: {
   const imageRef = useRef<HTMLImageElement>(null)
   const stageRef = useRef<HTMLDivElement>(null)
   const closeRef = useRef<HTMLButtonElement>(null)
+  const dialogRef = useRef<HTMLDialogElement>(null)
   const restoreFocus = useRef<HTMLElement | null>(null)
   const scaleRef = useRef(1)
   const movedRef = useRef(false)
@@ -55,12 +56,15 @@ export function Lightbox({ items, index, onIndex, onClose }: {
   // Lock the page behind the viewer and hand focus back when it closes.
   useEffect(() => {
     restoreFocus.current = document.activeElement as HTMLElement | null
+    const dialog = dialogRef.current!
+    dialog.showModal()
     closeRef.current?.focus()
     const overflow = document.body.style.overflow
     document.body.style.overflow = "hidden"
     return () => {
+      dialog.close()
       document.body.style.overflow = overflow
-      restoreFocus.current?.focus?.()
+      restoreFocus.current?.focus?.({ preventScroll: true })
     }
   }, [])
 
@@ -151,8 +155,9 @@ export function Lightbox({ items, index, onIndex, onClose }: {
   }
 
   return createPortal(
-    <div
-      className="noa-lightbox fixed inset-0 z-[100] flex flex-col bg-[rgba(20,20,19,0.9)] text-white backdrop-blur-md"
+    <dialog ref={dialogRef}
+      onCancel={event => { event.preventDefault(); onClose() }}
+      className="noa-lightbox fixed inset-0 z-[100] m-0 flex h-screen max-h-none w-screen max-w-none flex-col border-0 bg-[rgba(20,20,19,0.9)] p-0 text-white backdrop-blur-md"
       role="dialog"
       aria-modal="true"
       aria-label={item?.name ?? "Image preview"}
@@ -163,6 +168,7 @@ export function Lightbox({ items, index, onIndex, onClose }: {
         <LightboxButton label="Zoom out" onClick={() => applyZoom(0.8)}><ZoomOut size={16} /></LightboxButton>
         <LightboxButton label="Zoom in" onClick={() => applyZoom(1.25)}><ZoomIn size={16} /></LightboxButton>
         <LightboxButton label="Reset zoom" onClick={() => setTransform(RESET)}><RotateCcw size={15} /></LightboxButton>
+        {item && /^(?:data:image\/|blob:|\/api\/)/i.test(item.src) && <LightboxButton label="Save copy" onClick={() => { const link = document.createElement("a"); link.href = item.src; link.download = item.name ?? "image"; link.click() }}><Download size={16} /></LightboxButton>}
         <LightboxButton label="Close" onClick={onClose} ref={closeRef}><X size={17} /></LightboxButton>
       </div>
 
@@ -202,7 +208,7 @@ export function Lightbox({ items, index, onIndex, onClose }: {
       <div className="flex h-9 shrink-0 items-center justify-center px-3 text-[11px] text-white/45">
         Scroll to zoom · Drag to pan · Esc to close
       </div>
-    </div>,
+    </dialog>,
     document.body,
   )
 }

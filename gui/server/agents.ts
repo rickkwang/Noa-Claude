@@ -1,6 +1,6 @@
 import type { ServerWebSocket, Subprocess } from "bun"
 import { join } from "node:path"
-import { appendTurnResult, appendTurnDiff, countUserTurns, findTurnDiff, findTurnUserMessage, loadHistory, readTurnDiffs, setTurnDiffReverted, transcriptPath } from "./sessions"
+import { SESSION_ID, appendTimelineEvent, appendTurnResult, appendTurnDiff, countUserTurns, findTurnDiff, findTurnUserMessage, historyPage, loadHistory, readTurnDiffs, setTurnDiffReverted, transcriptPath } from "./sessions"
 import { projectAdditionalDirectories } from "./projects"
 import {
   applyTurnDiff,
@@ -29,9 +29,12 @@ interface AgentRun {
   cwd: string
   additionalDirectories: string[]
   sessionId?: string
+  pendingTimeline?: { sessionId: string; turn: number; offset: number; message: AgentMessage }[]
+  lastTranscriptUuid?: string
   proc: Subprocess<"pipe", "pipe", "pipe">
   clients: Set<ServerWebSocket<SocketData>>
   journal: Envelope[]
+  history?: import("./sessions").HistoryItem[]
   queue: QueuedMessage[]
   busy: boolean
   queuePaused?: boolean
@@ -80,7 +83,20 @@ function afterWorkspaceOperation<T>(cwd: string, operation: () => Promise<T>): P
 function queueEnvelope(run: AgentRun): Envelope {
   return { kind: "queue", messages: [...run.queue], paused: run.queuePaused }
 }
-function emit(run: AgentRun, envelope: Envelope) {
+export function emit(run: AgentRun, envelope: Envelope) {
+  if (envelope.kind === "turn-diff" && envelope.updateOnly) {
+    for (const item of run.history ?? []) if (item.kind === "turn-diff" && item.diff.turnIndex === envelope.diff.turnIndex) item.diff = envelope.diff
+  }
+  if (envelope.kind === "agent") {
+    const message = envelope.message
+    if (message.type === "tool_progress") run.journal = run.journal.filter(entry => !(entry.kind === "agent" && entry.message.type === "tool_progress" && entry.message.tool_use_id === message.tool_use_id))
+    if (message.type === "system" && (message.subtype === "hook_progress" || message.subtype === "hook_response")) run.journal = run.journal.filter(entry => !(entry.kind === "agent" && entry.message.type === "system" && entry.message.subtype === "hook_progress" && entry.message.hook_id === message.hook_id))
+    if (message.type === "system" && message.subtype === "task_progress") run.journal = run.journal.filter(entry => !(entry.kind === "agent" && entry.message.type === "system" && entry.message.subtype === "task_progress" && entry.message.task_id === message.task_id))
+  }
+  if (envelope.kind === "log" && run.journal.filter(entry => entry.kind === "log").length >= 50) {
+    const oldest = run.journal.findIndex(entry => entry.kind === "log")
+    run.journal.splice(oldest, 1)
+  }
   if (envelope.kind === "queue") run.journal = run.journal.filter((entry) => entry.kind !== "queue")
   // Keep only the latest live summary so a reconnect cannot replay every
   // intermediate patch, and never replay transient action dialogs.
@@ -88,16 +104,23 @@ function emit(run: AgentRun, envelope: Envelope) {
     run.journal = run.journal.filter((entry) => entry.kind !== "turn-diff-live")
   if (envelope.kind === "turn-diff")
     run.journal = run.journal.filter((entry) => entry.kind !== "turn-diff-live")
-  if (envelope.kind === "agent" && envelope.message.type === "assistant") {
+  if (envelope.kind === "agent" && envelope.message.type === "stream_event" && envelope.message.event.type === "message_stop") {
     const parent = envelope.message.parent_tool_use_id
-    run.journal = run.journal.filter(
-      (entry) =>
-        !(
-          entry.kind === "agent" &&
-          entry.message.type === "stream_event" &&
-          entry.message.parent_tool_use_id === parent
-        ),
-    )
+    let start = run.journal.length - 1
+    while (start >= 0) {
+      const entry = run.journal[start]!
+      if (entry.kind === "agent" && entry.message.type === "stream_event" && entry.message.parent_tool_use_id === parent && entry.message.event.type === "message_start") break
+      start--
+    }
+    if (start >= 0) {
+      const message = (run.journal[start] as Extract<Envelope, { kind: "agent" }>).message as Extract<AgentMessage, { type: "stream_event" }>
+      const id = message.event.type === "message_start" ? message.event.message.id : undefined
+      const tail = run.journal.slice(start)
+      const starts = tail.filter(entry => entry.kind === "agent" && entry.message.type === "stream_event" && entry.message.parent_tool_use_id === parent && entry.message.event.type === "content_block_start").length
+      const confirmed = tail.flatMap(entry => entry.kind === "agent" && entry.message.type === "assistant" && entry.message.parent_tool_use_id === parent && entry.message.message.id === id ? entry.message.message.content : []).length
+      // Only discard deltas after this model message is complete and canonical blocks exist.
+      if (starts > 0 && confirmed >= starts) run.journal = run.journal.filter((entry, index) => index < start || !(entry.kind === "agent" && entry.message.type === "stream_event" && entry.message.parent_tool_use_id === parent))
+    }
   }
   if (envelope.kind !== "turn-diff-action") run.journal.push(envelope)
   for (const client of run.clients) client.send(JSON.stringify(envelope))
@@ -122,6 +145,18 @@ async function lines(stream: ReadableStream<Uint8Array>, onLine: (line: string) 
   }
   if (buffer) onLine(buffer)
 }
+function flushTimeline(run: AgentRun) {
+  run.pendingTimeline = (run.pendingTimeline ?? []).filter(record => {
+    try {
+      const afterUuid = findTurnUserMessage(run.cwd, record.sessionId, record.offset, true)
+      if (!afterUuid) return true
+      appendTimelineEvent(run.cwd, record.sessionId, { turn: record.turn, afterUuid, message: record.message })
+    }
+    catch (error) { emit(run, { kind: "log", text: `Could not save activity: ${String(error)}` }) }
+    return false
+  })
+}
+
 async function startNext(run: AgentRun) {
   await afterWorkspaceOperation(run.cwd, () => startNextSerialized(run))
 }
@@ -142,10 +177,13 @@ async function startNextSerialized(run: AgentRun) {
     return
   }
   run.queue.shift()
+  flushTimeline(run)
+  run.pendingTimeline = []
+  run.lastTranscriptUuid = undefined
   run.turn = { index, transcriptOffset, startedAt: Date.now(), before, changes: createChangeCollector() }
   emit(run, queueEnvelope(run))
   emit(run, { kind: "user", id: next.id, content: next.content })
-  write(run, { type: "user", message: { role: "user", content: next.content }, parent_tool_use_id: null })
+  write(run, { type: "user", message: { role: "user", content: next.content }, parent_tool_use_id: null, uuid: next.id })
 }
 
 function trackTurnResult(run: AgentRun, message: AgentMessage) {
@@ -209,7 +247,7 @@ async function turnDiffAction(run: AgentRun, turnIndex: number, action: "undo" |
     )
     if (result.ok) {
       const updated = setTurnDiffReverted(run.cwd, run.sessionId, turnIndex, action === "undo")
-      if (updated) emit(run, { kind: "turn-diff", diff: updated.diff })
+      if (updated) emit(run, { kind: "turn-diff", diff: updated.diff, updateOnly: true })
     }
     emit(run, { kind: "turn-diff-action", turnIndex, action, result })
   })
@@ -339,7 +377,8 @@ export function attachAgent(ws: ServerWebSocket<SocketData>, root: string) {
       current.historyReady = loadHistory(run.cwd, ws.data.resume)
         .then((items) => {
           if (!items) throw new Error("Task history not found")
-          current.journal.unshift({ kind: "history", items })
+          current.history = items
+          current.journal.unshift({ kind: "history", ...historyPage(items) })
         })
         .catch((error) => {
           emit(current, { kind: "log", text: `Cannot restore task: ${String(error)}` })
@@ -377,6 +416,21 @@ export function attachAgent(ws: ServerWebSocket<SocketData>, root: string) {
         } else for (const client of current.clients) client.send(JSON.stringify({ kind: "agent", message }))
         return
       }
+      if ((message.type === "assistant" || message.type === "user" || message.type === "result") && !message.parent_tool_use_id) flushTimeline(current)
+      if ((message.type === "assistant" || message.type === "user") && !message.parent_tool_use_id) current.lastTranscriptUuid = (message as { uuid?: string }).uuid ?? current.lastTranscriptUuid
+      if (message.type === "system" && ["hook_started", "hook_response", "task_started", "task_notification"].includes(message.subtype)) {
+        const sessionId = current.sessionId ?? (message as { session_id?: string }).session_id
+        if (sessionId && SESSION_ID.test(sessionId)) {
+          try {
+            const turn = current.turn?.index ?? current.turnCounter
+            const offset = current.turn?.transcriptOffset ?? 0
+            const afterUuid = current.lastTranscriptUuid ?? (current.turn ? findTurnUserMessage(current.cwd, sessionId, offset, true) : undefined)
+            if (!afterUuid && turn > 0) (current.pendingTimeline ??= []).push({ sessionId, turn, offset, message })
+            else appendTimelineEvent(current.cwd, sessionId, { turn, afterUuid, message })
+          }
+          catch (error) { emit(current, { kind: "log", text: `Could not save activity: ${String(error)}` }) }
+        }
+      }
       if (message.type === "system" && message.subtype === "init") current.sessionId = message.session_id
       if (message.type === "control_request") current.waiting.add(message.request_id)
       if (message.type === "control_cancel_request") current.waiting.delete(message.request_id)
@@ -403,6 +457,7 @@ export function attachAgent(ws: ServerWebSocket<SocketData>, root: string) {
     }).catch((error) => emit(current, { kind: "log", text: String(error) }))
     lines(proc.stderr, (text) => emit(current, { kind: "log", text })).catch(() => {})
     proc.exited.then((code) => {
+      try { flushTimeline(current) } catch (error) { emit(current, { kind: "log", text: `Could not save activity: ${String(error)}` }) }
       if (current.turn && current.sessionId && current.turnSucceeded === undefined && !current.turn.interrupted) {
         try {
           appendTurnResult(current.cwd, current.sessionId, {
@@ -438,6 +493,11 @@ export async function agentMessage(ws: ServerWebSocket<SocketData>, raw: string 
   try {
     message = JSON.parse(raw)
   } catch {
+    return
+  }
+  if (message.type === "history_before") {
+    if (Number.isInteger(message.before) && message.before > 0 && run.history && message.before <= run.history.length)
+      ws.send(JSON.stringify({ kind: "history", prepend: true, ...historyPage(run.history, message.before) }))
     return
   }
   if (message.type === "turn_diff_action") {
@@ -482,7 +542,7 @@ export async function agentMessage(ws: ServerWebSocket<SocketData>, raw: string 
       run.queue.splice(index, 1)
       emit(run, queueEnvelope(run))
       emit(run, { kind: "user", id: item.id, content: item.content })
-      write(run, { type: "user", message: { role: "user", content: item.content }, parent_tool_use_id: null })
+      write(run, { type: "user", message: { role: "user", content: item.content }, parent_tool_use_id: null, uuid: item.id })
     }
   } else if (message.type === "queue_pause") {
     run.queuePaused = message.paused

@@ -22,6 +22,34 @@ async function inside(cwd: string, path: string, missing = false): Promise<strin
   return missing ? target : physical
 }
 
+const MEDIA_TYPES: Record<string, string> = {
+  ".mp3": "audio/mpeg", ".wav": "audio/wav", ".m4a": "audio/mp4", ".aac": "audio/aac", ".ogg": "audio/ogg", ".opus": "audio/ogg", ".flac": "audio/flac",
+  ".mp4": "video/mp4", ".m4v": "video/mp4", ".mov": "video/quicktime", ".webm": "video/webm",
+}
+
+export async function mediaResponse(cwd: string, path: string, request: Request): Promise<Response> {
+  const target = await inside(cwd, path)
+  const type = MEDIA_TYPES[extname(target).toLowerCase()]
+  if (!type) return new Response("Unsupported media type", { status: 415 })
+  const file = Bun.file(target)
+  const info = await stat(target)
+  if (!info.isFile()) return new Response("Not a media file", { status: 400 })
+  const headers = new Headers({ "Content-Type": type, "Accept-Ranges": "bytes", "X-Content-Type-Options": "nosniff" })
+  if (new URL(request.url).searchParams.has("download")) headers.set("Content-Disposition", `attachment; filename*=UTF-8''${encodeURIComponent(path.split("/").pop()!)}`)
+  let start = 0, end = info.size - 1
+  const range = request.headers.get("range")
+  if (range) {
+    const match = /^bytes=(\d*)-(\d*)$/.exec(range)
+    if (!match || (!match[1] && !match[2])) return new Response(null, { status: 416, headers: { "Content-Range": `bytes */${info.size}` } })
+    if (!match[1]) start = Math.max(0, info.size - Number(match[2]))
+    else { start = Number(match[1]); if (match[2]) end = Math.min(end, Number(match[2])) }
+    if (start > end || start >= info.size) return new Response(null, { status: 416, headers: { "Content-Range": `bytes */${info.size}` } })
+    headers.set("Content-Range", `bytes ${start}-${end}/${info.size}`)
+  }
+  headers.set("Content-Length", String(Math.max(0, end - start + 1)))
+  return new Response(request.method === "HEAD" ? null : file.slice(start, end + 1), { status: range ? 206 : 200, headers })
+}
+
 async function git(cwd: string, args: string[], accepted = [0], input?: string) {
   const proc = Bun.spawn(["git", "--no-optional-locks", "-C", cwd, ...args], {
     stdout: "pipe", stderr: "pipe", stdin: input === undefined ? "ignore" : new Blob([input]),
@@ -183,7 +211,7 @@ export async function workspaceRequest(url: URL, cwd: string, body?: unknown): P
       } finally { await unlink(temporary).catch(() => {}) }
       return { content, revision: digest(content), kind: "text" }
     }
-    const mime = ({ ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".webp": "image/webp" } as Record<string, string>)[extname(path).toLowerCase()]
+    const mime = ({ ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".webp": "image/webp", ".avif": "image/avif", ".svg": "image/svg+xml" } as Record<string, string>)[extname(path).toLowerCase()]
     if (mime) return { kind: "image", dataUrl: `data:${mime};base64,${file.bytes.toString("base64")}` }
     return { kind: file.binary ? "binary" : "text", content: file.binary ? "Binary file cannot be previewed" : file.content, revision: file.revision }
   }

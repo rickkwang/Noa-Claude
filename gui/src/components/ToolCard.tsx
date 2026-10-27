@@ -1,21 +1,25 @@
-import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react"
+import { useContext, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react"
 import { createPortal } from "react-dom"
 import type { AgentTask, Block, ToolBlock, Turn } from "../agent/reducer"
 import { formatElapsed, toolActivityLabel, toolDiffStats, toolElapsedMs } from "../agent/toolActivity"
 import { BookOpen, Check, ChevronRight, ChevronUp, Copy, Edit2, List, Photo, Search, Stop, Terminal, Tool, Users, X } from "../lib/icons"
 import { Collapsible } from "./Collapsible"
 import { Lightbox, type LightboxItem } from "./Lightbox"
-import { CodeBlock, Markdown } from "./Markdown"
+import { CodeBlock, Markdown, OutputContext } from "./Markdown"
 
 // A tool call as a quiet activity line; body details stay collapsed until requested.
-export function ToolCard({ block, defaultOpen = false, task, onStopTask, onOpenTask }: {
+export function ToolCard({ block, defaultOpen = false, active = block.status === "running", task, tasks, onStopTask, onOpenTask }: {
   block: ToolBlock
   defaultOpen?: boolean
+  active?: boolean
   task?: AgentTask
+  tasks?: AgentTask[]
   onStopTask?: (id: string) => void
   onOpenTask?: () => void
 }) {
+  const { onOpenImages } = useContext(OutputContext)
   const baseLabel = toolActivityLabel(block)
+  const live = task ? task.status === "running" : active && block.status === "running"
   const label = task
     ? {
         action: task.status === "unknown" ? "Subagent disconnected:" : task.status === "running" ? "Subagent working:" : task.status === "failed" ? "Subagent failed:" : task.status === "stopped" ? "Subagent stopped:" : "Subagent finished:",
@@ -26,6 +30,7 @@ export function ToolCard({ block, defaultOpen = false, task, onStopTask, onOpenT
   const userToggled = useRef(false)
   const [preview, setPreview] = useState<number>()
   const [rawOpen, setRawOpen] = useState(false)
+  const rawCode = rawOpen ? (block.rawResult !== undefined ? JSON.stringify(block.rawResult, null, 2) : block.output) : undefined
   const [now, setNow] = useState(Date.now())
   const Icon = toolIcon(block)
   const diffStats = toolDiffStats(block)
@@ -42,10 +47,10 @@ export function ToolCard({ block, defaultOpen = false, task, onStopTask, onOpenT
     if (!userToggled.current) setOpen(defaultOpen)
   }, [defaultOpen])
   useEffect(() => {
-    if (block.status !== "running") return
+    if (!live) return
     const timer = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(timer)
-  }, [block.status])
+  }, [live])
 
   return (
     <div className="group/tool not-prose text-body" data-tool-activity={block.id}>
@@ -59,7 +64,7 @@ export function ToolCard({ block, defaultOpen = false, task, onStopTask, onOpenT
         }}
         className="flex min-h-7 w-full min-w-0 cursor-pointer items-center gap-1.5 overflow-hidden whitespace-nowrap rounded-sm px-3 py-1.5 text-left text-[length:var(--text-chat-sm)] leading-5 select-none text-[color-mix(in_srgb,var(--text-primary)_45%,transparent)] hover:bg-[color-mix(in_srgb,var(--text-primary)_6%,transparent)] hover:text-[var(--text-primary,#2D2D2B)]">
         <Icon size={14} className="shrink-0" aria-hidden="true" />
-        <span className={`min-w-0 flex-1 truncate ${block.status === "running" ? "noa-shimmer" : ""}`}>
+        <span className={`min-w-0 flex-1 truncate ${live ? "noa-shimmer" : ""}`}>
           <span>{label.action}</span>
           {label.detail && <span> {label.detail}</span>}
         </span>
@@ -74,26 +79,27 @@ export function ToolCard({ block, defaultOpen = false, task, onStopTask, onOpenT
       </button>
       <Collapsible open={open}>
         <div className="mt-1 mb-2 flex flex-col gap-2 ps-1">
-          {task ? <TaskDetail task={task} onStopTask={onStopTask} onOpenTask={onOpenTask} /> : renderBody(block, () => setRawOpen(true), () => setOpen(false))}
+          {task ? <TaskDetail task={task} tasks={tasks} onStopTask={onStopTask} onOpenTask={onOpenTask} /> : <ToolBody block={block} active={active} onRaw={() => setRawOpen(true)} onCollapse={() => setOpen(false)} />}
           {!!block.images?.length && (
             <ToolImages
               images={block.images}
-              onOpen={(items, index) => setPreview(index)}
+              onOpen={(items, index) => onOpenImages ? onOpenImages(items, index) : setPreview(index)}
               preview={preview}
               onPreview={setPreview}
             />
           )}
         </div>
       </Collapsible>
-      {rawOpen && block.output && (
-        <RawOutputDialog title={label.action} language={block.name.startsWith("mcp__") ? "json" : "output"} code={block.output} onClose={() => setRawOpen(false)} />
+      {rawOpen && rawCode && (
+        <RawOutputDialog title={label.action} language={block.name.startsWith("mcp__") ? "json" : "output"} code={rawCode} onClose={() => setRawOpen(false)} />
       )}
     </div>
   )
 }
 
-function TaskDetail({ task, onStopTask, onOpenTask }: {
+function TaskDetail({ task, tasks, onStopTask, onOpenTask }: {
   task: AgentTask
+  tasks?: AgentTask[]
   onStopTask?: (id: string) => void
   onOpenTask?: () => void
 }) {
@@ -110,7 +116,7 @@ function TaskDetail({ task, onStopTask, onOpenTask }: {
           {task.usage.tool_uses} tools · {(task.usage.duration_ms / 1000).toFixed(1)}s · {task.usage.total_tokens.toLocaleString()} tokens
         </span>
       )}
-      {task.turns.length > 0 && <TaskTranscript turns={task.turns} />}
+      {task.turns.length > 0 && <TaskTranscript turns={task.turns} tasks={tasks} active={task.status === "running"} />}
       {(onOpenTask || (onStopTask && task.status === "running" && task.id !== task.toolUseId)) && (
         <div className="mt-1 flex gap-2 border-t border-[var(--divider-subtle)] pt-2">
           {onOpenTask && (
@@ -129,19 +135,19 @@ function TaskDetail({ task, onStopTask, onOpenTask }: {
   )
 }
 
-function TaskTranscript({ turns }: { turns: Turn[] }) {
+function TaskTranscript({ turns, tasks, active }: { turns: Turn[]; tasks?: AgentTask[]; active: boolean }) {
   return (
     <div className="noa-task-transcript mt-1 flex max-h-80 flex-col gap-2 overflow-y-auto border-t border-[var(--divider-subtle)] pt-2">
       {turns.map((turn) => turn.role === "assistant" ? (
-        turn.blocks.map((block, index) => <TaskBlock key={`${turn.id}:${index}`} block={block} />)
+        turn.blocks.map((block, index) => <TaskBlock key={`${turn.id}:${index}`} block={block} tasks={tasks} active={active} />)
       ) : null)}
     </div>
   )
 }
 
-function TaskBlock({ block }: { block: Block }) {
+function TaskBlock({ block, tasks, active }: { block: Block; tasks?: AgentTask[]; active: boolean }) {
   if (block.kind === "text") return <Markdown text={block.text} />
-  if (block.kind === "tool") return <ToolCard block={block} />
+  if (block.kind === "tool") return <ToolCard block={block} active={active} tasks={tasks} task={tasks?.find(task => task.id === block.id || task.toolUseId === block.id)} />
   return null
 }
 
@@ -149,8 +155,8 @@ function toolIcon(block: ToolBlock) {
   const file = str(block.input.file_path)
   if (block.status === "stopped" && block.name === "Bash") return Stop
   if (block.name === "Bash") return Terminal
-  if (block.name === "Grep" || block.name === "Glob") return Search
-  if (block.name === "Task") return Users
+  if (block.name === "Grep" || block.name === "Glob" || block.name === "WebSearch" || block.name === "WebFetch") return Search
+  if (block.name === "Agent" || block.name === "Task") return Users
   if (/\.(?:avif|gif|jpe?g|png|webp)$/i.test(file)) return Photo
   if (block.name === "Edit" || block.name === "MultiEdit" || block.name === "Write") return Edit2
   if (block.name === "Read") return BookOpen
@@ -166,13 +172,36 @@ function basename(path: string): string {
   return path.split("/").filter(Boolean).pop() ?? path
 }
 
-function renderBody(block: ToolBlock, onRaw: () => void, onCollapse: () => void) {
+function ToolBody({ block, active, onRaw, onCollapse }: { block: ToolBlock; active: boolean; onRaw: () => void; onCollapse: () => void }) {
   const i = block.input
   const output = block.output?.trim() ? <CodeBlock lang="output" code={block.output} /> : null
   const image = /\.(?:avif|gif|jpe?g|png|webp)$/i.test(str(i.file_path))
   if (block.name === "ViewImage" || (block.name === "Read" && (image || block.images?.length))) return block.status === "error" || !block.images?.length ? output : null
 
+  if (block.name.startsWith("mcp__")) {
+    const result = block.rawResult as { structuredContent?: unknown } | undefined
+    return <>
+      {output}
+      {result?.structuredContent !== undefined && <CodeBlock lang="json" code={JSON.stringify(result.structuredContent, null, 2)} />}
+      {block.rawResult !== undefined && <button type="button" onClick={onRaw} className="self-start rounded-md px-2 py-1 text-caption text-[var(--accent-color)]">Raw result</button>}
+      {!output && block.rawResult === undefined && <EmptyToolBody label={block.status === "running" ? "Waiting for result…" : "No output"} />}
+    </>
+  }
   switch (block.name) {
+    case "WebSearch": {
+      const result = block.rawResult as { results?: ({ content: { title: string; url: string; snippet?: string }[] } | string)[] } | undefined
+      return <div className="flex flex-col gap-3">{result?.results?.map((group, index) => typeof group === "string" ? <Markdown key={index} text={group} /> : <div key={index} className="flex flex-col gap-2">{group.content.map((hit, i) => <div key={i}>{/^https?:\/\//i.test(hit.url) ? <a href={hit.url} target="_blank" rel="noreferrer" className="text-[var(--accent-color)] underline">{hit.title}</a> : <span>{hit.title}</span>}{hit.snippet && <p className="m-0 mt-1 text-caption">{hit.snippet}</p>}</div>)}</div>) ?? output}</div>
+    }
+    case "WebFetch": {
+      const result = block.rawResult as { url?: string; result?: string; code?: number } | undefined
+      return <div className="flex flex-col gap-2">{result?.url && /^https?:\/\//i.test(result.url) && <a href={result.url} target="_blank" rel="noreferrer" className="break-all text-caption text-[var(--accent-color)]">{result.url}{result.code ? ` · HTTP ${result.code}` : ""}</a>}{result?.result ? <Markdown text={result.result} /> : output}</div>
+    }
+    case "TodoWrite":
+    case "TaskCreate":
+    case "TaskUpdate":
+    case "TaskList":
+    case "TaskGet":
+      return <><TaskChecklist block={block} active={active} />{output}</>
     case "Bash":
       return <ShellOutput block={block} onCollapse={onCollapse} />
     case "Read":
@@ -218,6 +247,22 @@ function renderBody(block: ToolBlock, onRaw: () => void, onCollapse: () => void)
         </div>
       ) : <EmptyToolBody label={block.status === "running" ? "Waiting for result…" : "No details available"} />
   }
+}
+
+function TaskChecklist({ block, active }: { block: ToolBlock; active: boolean }) {
+  const result = block.rawResult as { newTodos?: Record<string, unknown>[]; tasks?: Record<string, unknown>[]; task?: Record<string, unknown> } | undefined
+  const entries = result?.newTodos ?? result?.tasks ?? (result?.task ? [result.task] : Array.isArray(block.input.todos) ? block.input.todos : [block.input])
+  return <ul className="m-0 flex list-none flex-col gap-1 p-0" aria-label="Task checklist">
+    {entries.map((entry, index) => {
+      const text = str(entry.content) || str(entry.subject) || str(entry.taskId)
+      if (!text) return null
+      const status = str(entry.status) || (block.name === "TaskUpdate" ? "" : "pending")
+      return <li key={index} className="flex items-start gap-2 text-[var(--text-secondary)]">
+        {status && <span aria-label={status.replaceAll("_", " ")} className={active && status === "in_progress" ? "noa-shimmer" : undefined}>{status === "completed" ? "✓" : status === "in_progress" ? "◉" : status === "deleted" ? "−" : "○"}</span>}
+        <span className={status === "completed" ? "opacity-60" : undefined}>{text}</span>
+      </li>
+    })}
+  </ul>
 }
 
 function RawOutputDialog({ title, language, code, onClose }: {
@@ -390,7 +435,7 @@ function ShellOutput({ block, onCollapse }: { block: ToolBlock; onCollapse: () =
             event.preventDefault()
             setCommandExpanded((value) => !value)
           }}
-          className={`m-0 cursor-pointer whitespace-pre-wrap break-words pe-8 ps-3 font-mono text-[length:var(--code-font-size)] leading-[max(1.5em,20px)] text-[var(--text-secondary,#5D5D5D)] ${commandExpanded ? "" : "line-clamp-2"}`}
+          className={`noa-selectable m-0 cursor-pointer whitespace-pre-wrap break-words pe-8 ps-3 font-mono text-[length:var(--code-font-size)] leading-[max(1.5em,20px)] text-[var(--text-secondary,#5D5D5D)] ${commandExpanded ? "" : "line-clamp-2"}`}
         >
           <span className="text-[var(--text-tertiary,#8F8F8F)]">$</span> {command}
         </pre>
@@ -407,7 +452,7 @@ function ShellOutput({ block, onCollapse }: { block: ToolBlock; onCollapse: () =
       {output ? (
         <div className="group/output relative">
           <div ref={outputRef} role="region" aria-label="Command output" tabIndex={0} onKeyDown={(event) => { if (event.key === "Home" || event.key === "End") { event.preventDefault(); event.currentTarget.scrollTop = event.key === "Home" ? 0 : event.currentTarget.scrollHeight } }} className="noa-shell-output" data-overflow={overflowing}>
-            <pre className="m-0 px-3 py-2 font-mono text-[length:var(--code-font-size)] leading-[max(1.5em,20px)] whitespace-pre">{output}</pre>
+            <pre className="noa-selectable m-0 px-3 py-2 font-mono text-[length:var(--code-font-size)] leading-[max(1.5em,20px)] whitespace-pre">{output}</pre>
           </div>
           <button
             type="button"
@@ -447,7 +492,7 @@ function ShellOutput({ block, onCollapse }: { block: ToolBlock; onCollapse: () =
 
 function DiffView({ oldText, newText }: { oldText: string; newText: string }) {
   return (
-    <pre className="m-0 overflow-auto rounded-panel bg-[var(--bg-secondary,#F9F9F7)] py-1 font-mono text-[length:var(--code-font-size)] leading-[1.55] max-h-80">
+    <pre className="noa-selectable m-0 overflow-auto rounded-panel bg-[var(--bg-secondary,#F9F9F7)] py-1 font-mono text-[length:var(--code-font-size)] leading-[1.55] max-h-80">
       {oldText.split("\n").map((line, i) => (
         <div key={`-${i}`} className="whitespace-pre-wrap bg-[rgba(212,85,85,0.12)] px-3">
           -{line}

@@ -1,5 +1,6 @@
 import type {
   AccountInfo,
+  HistoryItem,
   AgentMessage,
   ElicitationRequest,
   ImageBlock,
@@ -23,8 +24,10 @@ export type ToolBlock = {
   name: string
   input: Record<string, unknown>
   partialJson: string
+  streamIndex?: number
   status: "running" | "done" | "error" | "stopped" | "unknown"
   output?: string
+  rawResult?: unknown
   images?: ImageBlock[]
   exitCode?: number
   interrupted?: boolean
@@ -37,8 +40,8 @@ export type RetryBlock = { kind: "retry"; attempt: number; maxRetries: number; d
 export type Block =
   | CompactionBlock
   | RetryBlock
-  | { kind: "text"; text: string; done?: boolean }
-  | { kind: "thinking"; text: string; done: boolean; startedAt?: number }
+  | { kind: "text"; text: string; done?: boolean; streamIndex?: number }
+  | { kind: "thinking"; text: string; done: boolean; startedAt?: number; streamIndex?: number }
   | ToolBlock
 
 export type Turn =
@@ -48,6 +51,9 @@ export type Turn =
       id: string
       blocks: Block[]
       streaming: boolean
+      messageId?: string
+      stoppedStreamIndex?: number
+      pendingAssistant?: { content: ContentBlock[]; messageId: string }
       startedAt?: number
       durationMs?: number
       interrupted?: boolean
@@ -97,13 +103,15 @@ export interface AgentState {
   }
   contextUsage?: ContextUsage
   turns: Turn[]
+  historyBefore?: number
+  historyLoading?: boolean
   // Compact diff summary while the current turn is still running.
   liveDiff?: TurnDiff
   // Result of an Undo/Reapply request, shown in a dialog.
   diffAction?: { turnIndex: number; action: "undo" | "reapply"; result: TurnDiffActionResult; id: number }
   busy: boolean
   stopping?: boolean
-  elicitations: (ElicitationRequest & { requestId: string })[]
+  elicitations: (ElicitationRequest & { requestId: string; completed?: boolean })[]
   tasks: AgentTask[]
   queue: QueuedMessage[]
   queuePaused: boolean
@@ -116,6 +124,8 @@ export interface AgentState {
 }
 
 export type Action =
+  | { type: "history"; items: HistoryItem[]; before?: number; prepend?: boolean }
+  | { type: "history-loading" }
   | { type: "reset" }
   | { type: "queue"; messages: QueuedMessage[]; paused?: boolean }
   | { type: "connection"; status: AgentState["connection"] }
@@ -124,7 +134,7 @@ export type Action =
   | { type: "turn-duration"; durationMs: number; interrupted?: boolean; error?: string }
   | { type: "exit"; code: number | null }
   | { type: "compaction"; trigger: "manual" | "auto" }
-  | { type: "turn-diff"; diff: TurnDiff }
+  | { type: "turn-diff"; diff: TurnDiff; updateOnly?: boolean }
   | { type: "turn-diff-live"; diff: TurnDiff }
   | { type: "turn-diff-action"; turnIndex: number; action: "undo" | "reapply"; result: TurnDiffActionResult }
   | { type: "diff-action-clear" }
@@ -162,6 +172,45 @@ const MAX_LOGS = 50
 
 export function reducer(state: AgentState, action: Action): AgentState {
   switch (action.type) {
+    case "history-loading": return { ...state, historyLoading: true }
+    case "history": {
+      let restored = initialState
+      for (const item of action.items) {
+        if (item.kind === "user") restored = reducer(restored, { type: "history-user", id: item.id ?? crypto.randomUUID(), text: item.text, images: item.images })
+        else if (item.kind === "turn-duration") restored = reducer(restored, { ...item, type: "turn-duration" })
+        else if (item.kind === "compaction") restored = reducer(restored, { type: "compaction", trigger: item.trigger })
+        else if (item.kind === "turn-diff") restored = reducer(restored, { type: "turn-diff", diff: item.diff })
+        else restored = reducer(restored, { type: "agent", message: item.message })
+      }
+      const turns = settlePending(restored.turns, "unknown").map(turn => turn.role === "assistant" && turn.blocks.some(block => block.kind === "tool" && block.status === "unknown") ? { ...turn, incomplete: true } : turn)
+      const tasks = restored.tasks.map(task => ({ ...task, turns: settlePending(task.turns, "unknown") }))
+      let combined = action.prepend ? [...turns, ...state.turns] : turns
+      if (action.prepend) {
+        const latest = new Map<string, ToolBlock>()
+        for (const turn of state.turns) if (turn.role === "assistant") for (const block of turn.blocks) if (block.kind === "tool" && block.name === "Hook") latest.set(block.id, block)
+        const seen = new Set<string>()
+        combined = combined.map(turn => {
+          if (turn.role !== "assistant") return turn
+          let resolved = false
+          const blocks = turn.blocks.flatMap((block): Block[] => {
+            if (block.kind !== "tool" || block.name !== "Hook") return [block]
+            if (seen.has(block.id)) return []
+            seen.add(block.id)
+            const current = latest.get(block.id)
+            if (!current) return [block]
+            resolved ||= block.status === "unknown" && current.status !== "unknown"
+            return [{ ...block, ...current }]
+          })
+          return { ...turn, blocks, incomplete: resolved && !blocks.some(block => block.kind === "tool" && block.status === "unknown") ? false : turn.incomplete }
+        })
+      }
+      return { ...state, historyBefore: action.before, historyLoading: false,
+        turns: combined,
+        tasks: [...tasks.filter(task => !state.tasks.some(current => current.id === task.id)), ...state.tasks.map(current => {
+          const earlier = tasks.find(task => task.id === current.id)
+          return earlier && !current.turns.length ? { ...earlier, ...current, turns: earlier.turns, usage: current.usage ?? earlier.usage } : current
+        })] }
+    }
     case "queue":
       return { ...state, queue: action.messages, queuePaused: action.paused ?? state.queuePaused }
     case "reset":
@@ -209,7 +258,7 @@ export function reducer(state: AgentState, action: Action): AgentState {
     case "turn-duration":
       return {
         ...state,
-        turns: stampTurn(action.error ? settlePending(state.turns, "stopped") : state.turns, action.durationMs, action.interrupted, action.error),
+        turns: stampTurn(action.error || action.interrupted ? settlePending(state.turns, "stopped") : state.turns, action.durationMs, action.interrupted, action.error),
       }
     case "turn-diff": {
       // A bridge update carries turnIndex and replaces that turn in place; the
@@ -219,6 +268,7 @@ export function reducer(state: AgentState, action: Action): AgentState {
         : state.turns.findIndex(
             (turn) => turn.role === "assistant" && turn.diff?.turnIndex === action.diff.turnIndex,
           )
+      if (action.updateOnly && matching === -1) return state
       const fallback = state.turns.map((turn) => turn.role === "assistant" && turn.blocks.some((block) => block.kind !== "compaction" && block.kind !== "retry")).lastIndexOf(true)
       const index = matching === -1 ? fallback : matching
       if (index === -1) return state
@@ -293,25 +343,46 @@ function applyAgentMessage(state: AgentState, m: AgentMessage): AgentState {
 
   switch (m.type) {
     case "system":
+      if (m.subtype === "elicitation_complete") return { ...state, notice: `${m.mcp_server_name} authorization completed`, elicitations: state.elicitations.map(request => request.mcp_server_name === m.mcp_server_name && request.elicitation_id === m.elicitation_id ? { ...request, completed: true } : request) }
+      if (m.subtype === "hook_started" || m.subtype === "hook_progress" || m.subtype === "hook_response") {
+        const id = `hook:${m.hook_id}`
+        const existing = findTool(state.turns, id)
+        const block: ToolBlock = {
+          ...existing,
+          kind: "tool", id, name: "Hook",
+          input: { hook_name: m.hook_name, hook_event: m.hook_event },
+          partialJson: "",
+          status: m.subtype !== "hook_response" ? "running" : m.outcome === "error" ? "error" : m.outcome === "cancelled" ? "stopped" : "done",
+          output: m.output || [m.stdout, m.stderr].filter(Boolean).join("\n") || existing?.output,
+          exitCode: m.exit_code ?? existing?.exitCode,
+          startedAt: existing?.startedAt ?? Date.now(),
+          endedAt: m.subtype === "hook_response" ? Date.now() : undefined,
+        }
+        return { ...state, turns: existing
+          ? state.turns.map(turn => turn.role === "assistant" && turn.blocks.includes(existing) ? { ...turn, blocks: turn.blocks.map(b => b === existing ? block : b) } : turn)
+          : appendNotice(state.turns, block) }
+      }
       if (m.subtype === "task_started" || m.subtype === "task_progress" || m.subtype === "task_notification") {
         const existing = state.tasks.find((t) => t.id === m.task_id || (m.tool_use_id !== undefined && (t.id === m.tool_use_id || t.toolUseId === m.tool_use_id)))
         const task: AgentTask = {
           id: m.task_id,
           toolUseId: m.tool_use_id ?? existing?.toolUseId,
           description: m.description ?? existing?.description ?? "Background task",
-          status: m.status ?? existing?.status ?? "running",
+          status: m.status === "unknown" && existing && ["completed", "failed", "stopped"].includes(existing.status) ? existing.status : m.status ?? existing?.status ?? "running",
           summary: m.summary ?? existing?.summary,
           outputFile: m.output_file ?? existing?.outputFile,
           lastTool: m.last_tool_name ?? existing?.lastTool,
           usage: m.usage ?? existing?.usage,
-          turns: existing?.turns ?? [],
+          turns: m.status === "completed" || m.status === "failed" || m.status === "stopped"
+            ? settlePending(existing?.turns ?? [], "stopped")
+            : existing?.turns ?? [],
         }
         return { ...state, tasks: [...state.tasks.filter((t) => t !== existing), task] }
       }
       if (m.subtype === "compact_boundary") return { ...state, status: undefined, turns: updateCompaction(state.turns, "done", m.compact_metadata.trigger) }
       if (m.subtype === "api_retry") return { ...state, turns: appendNotice(settleRetry(state.turns), { kind: "retry", attempt: m.attempt, maxRetries: m.max_retries, delayMs: m.retry_delay_ms, errorStatus: m.error_status }) }
       if (m.subtype === "status") return { ...state, status: m.status ?? undefined, permissionMode: m.permissionMode ?? state.permissionMode, turns: m.status === "compacting" ? updateCompaction(state.turns, "running") : state.turns }
-      if (m.subtype === "session_state_changed") return { ...state, status: m.state, busy: m.state === "idle" ? false : state.busy }
+      if (m.subtype === "session_state_changed") return { ...state, status: m.state, busy: m.state === "idle" ? false : state.busy, turns: m.state === "idle" ? settlePending(state.turns, "stopped") : state.turns }
       if (m.subtype !== "init") return state
       return {
         ...state,
@@ -320,11 +391,32 @@ function applyAgentMessage(state: AgentState, m: AgentMessage): AgentState {
         permissionMode: m.permissionMode,
       }
 
-    case "stream_event":
-      return { ...state, turns: applyStreamEvent(settleRetry(state.turns), m.event) }
+    case "tool_progress":
+      return { ...state, turns: state.turns.map(turn => turn.role !== "assistant" ? turn : { ...turn, blocks: turn.blocks.map(block => block.kind === "tool" && block.id === m.tool_use_id && block.status === "running" && block.startedAt === undefined ? { ...block, startedAt: Date.now() - m.elapsed_time_seconds * 1000 } : block) }) }
 
-    case "assistant":
-      return { ...state, turns: finalizeAssistant(settleRetry(state.turns), m.message.content) }
+    case "stream_event": {
+      let turns = applyStreamEvent(settleRetry(state.turns), m.event)
+      const index = streamingIndex(turns)
+      const turn = index === -1 ? undefined : turns[index] as Extract<Turn, { role: "assistant" }>
+      if (m.event.type === "content_block_stop" && turn?.pendingAssistant)
+        turns = finalizeAssistant(turns, turn.pendingAssistant.content, turn.pendingAssistant.messageId)
+      return { ...state, turns }
+    }
+
+    case "assistant": {
+      const turns = settleRetry(state.turns)
+      const index = streamingIndex(turns)
+      const turn = index === -1 ? undefined : turns[index] as Extract<Turn, { role: "assistant" }>
+      // The CLI yields a canonical block before forwarding its indexed stop event.
+      if (turn && m.message.id && turn.messageId === m.message.id && m.message.content.length === 1 && turn.stoppedStreamIndex === undefined) {
+        const block = m.message.content[0]!
+        return { ...state, turns: turns.map((current, i) => i !== index ? current : { ...turn,
+          pendingAssistant: { content: m.message.content, messageId: m.message.id! },
+          blocks: turn.blocks.map(prior => block.type === "tool_use" && prior.kind === "tool" && prior.id === block.id ? { ...prior, input: block.input, partialJson: "" } : prior),
+        }) }
+      }
+      return { ...state, turns: finalizeAssistant(turns, m.message.content, m.message.id) }
+    }
 
     case "user":
       if (typeof m.message.content === "string") return state
@@ -392,9 +484,16 @@ function withAssistant(turns: Turn[], index: number, update: (blocks: Block[]) =
   return next
 }
 
+function isStreamBlock(block: Block): boolean {
+  return block.kind === "text" || block.kind === "thinking" || (block.kind === "tool" && block.name !== "Hook")
+}
+
 function applyStreamEvent(turns: Turn[], event: StreamEvent): Turn[] {
   let index = streamingIndex(turns)
   let next = turns
+
+  if (event.type === "message_start") return [...closeStreaming(turns), { role: "assistant", id: crypto.randomUUID(), messageId: event.message.id, blocks: [], streaming: true, startedAt: Date.now() }]
+  if (event.type === "message_stop") return closeStreaming(turns)
 
   if (event.type === "content_block_start") {
     if (index === -1) {
@@ -408,7 +507,7 @@ function applyStreamEvent(turns: Turn[], event: StreamEvent): Turn[] {
         : block.type === "thinking"
           ? { kind: "thinking", text: "", done: false, startedAt: Date.now() }
           : { kind: "tool", id: block.id, name: block.name, input: {}, partialJson: "", status: "running", startedAt: Date.now() }
-    return withAssistant(next, index, (blocks) => [...blocks, created])
+    return withAssistant(next, index, (blocks) => [...blocks, { ...created, streamIndex: event.index }])
   }
 
   if (index === -1) return turns
@@ -416,27 +515,34 @@ function applyStreamEvent(turns: Turn[], event: StreamEvent): Turn[] {
   if (event.type === "content_block_delta") {
     const delta = event.delta
     return withAssistant(next, index, (blocks) => {
-      const last = blocks[blocks.length - 1]
+      let lastIndex = event.index === undefined ? blocks.length - 1 : blocks.findIndex(block => isStreamBlock(block) && "streamIndex" in block && block.streamIndex === event.index)
+      if (event.index === undefined) while (lastIndex >= 0 && !isStreamBlock(blocks[lastIndex]!)) lastIndex--
+      const last = blocks[lastIndex]
       if (!last) return blocks
       if (delta.type === "text_delta" && last.kind === "text") {
-        return [...blocks.slice(0, -1), { ...last, text: last.text + delta.text }]
+        return blocks.map((b, i) => i === lastIndex ? { ...last, text: last.text + delta.text } : b)
       }
       if (delta.type === "thinking_delta" && last.kind === "thinking") {
-        return [...blocks.slice(0, -1), { ...last, text: last.text + delta.thinking }]
+        return blocks.map((b, i) => i === lastIndex ? { ...last, text: last.text + delta.thinking } : b)
       }
       if (delta.type === "input_json_delta" && last.kind === "tool") {
-        return [...blocks.slice(0, -1), { ...last, partialJson: last.partialJson + delta.partial_json }]
+        return blocks.map((b, i) => i === lastIndex ? { ...last, partialJson: last.partialJson + delta.partial_json } : b)
       }
       return blocks
     })
   }
 
   if (event.type === "content_block_stop") {
-    return withAssistant(next, index, (blocks) => {
-      const last = blocks[blocks.length - 1]
-      if (last?.kind !== "thinking") return blocks
-      return [...blocks.slice(0, -1), { ...last, done: true }]
+    const stopped = withAssistant(next, index, (blocks) => {
+      let lastIndex = event.index === undefined ? blocks.length - 1 : blocks.findIndex(block => isStreamBlock(block) && "streamIndex" in block && block.streamIndex === event.index)
+      if (event.index === undefined) while (lastIndex >= 0 && !isStreamBlock(blocks[lastIndex]!)) lastIndex--
+      const last = blocks[lastIndex]
+      if (last?.kind !== "thinking" && last?.kind !== "text") return blocks
+      return blocks.map((b, i) => i === lastIndex ? { ...last, done: true } : b)
     })
+    const current = stopped[index] as Extract<Turn, { role: "assistant" }>
+    stopped[index] = { ...current, stoppedStreamIndex: event.index }
+    return stopped
   }
 
   return turns
@@ -444,17 +550,22 @@ function applyStreamEvent(turns: Turn[], event: StreamEvent): Turn[] {
 
 // The complete assistant message is authoritative: it replaces whatever the
 // stream accumulated, and keeps tool results that already arrived.
-function finalizeAssistant(turns: Turn[], content: ContentBlock[]): Turn[] {
+function finalizeAssistant(turns: Turn[], content: ContentBlock[], messageId?: string): Turn[] {
   const index = streamingIndex(turns)
   const currentBlocks = index !== -1 ? (turns[index] as Extract<Turn, { role: "assistant" }>).blocks : []
+  const currentTurn = index !== -1 ? turns[index] as Extract<Turn, { role: "assistant" }> : undefined
+  const target = messageId && currentTurn?.messageId === messageId && content.length === 1 && currentTurn.stoppedStreamIndex !== undefined
+    ? currentBlocks.findIndex(block => isStreamBlock(block) && "streamIndex" in block && block.streamIndex === currentTurn.stoppedStreamIndex) : -1
+  const streamedBlocks = target === -1 ? currentBlocks.filter(isStreamBlock) : [currentBlocks[target]!]
   let blockIndex = 0
   const blocks: Block[] = content.flatMap((block): Block[] => {
-    const prior = currentBlocks[blockIndex++]
-    if (block.type === "text") return [{ kind: "text", text: block.text, done: true }]
+    const prior = streamedBlocks[blockIndex++]
+    if (block.type === "text") return [{ kind: "text", text: block.text, done: true, streamIndex: prior && "streamIndex" in prior ? prior.streamIndex : undefined }]
     if (block.type === "thinking") return [{
       kind: "thinking",
       text: block.thinking,
       done: true,
+      streamIndex: prior && "streamIndex" in prior ? prior.streamIndex : undefined,
       startedAt: prior?.kind === "thinking" ? prior.startedAt : undefined,
     }]
     if (block.type === "tool_use") {
@@ -466,8 +577,10 @@ function finalizeAssistant(turns: Turn[], content: ContentBlock[]): Turn[] {
           name: block.name,
           input: block.input,
           partialJson: "",
+          streamIndex: existing?.streamIndex,
           status: existing?.status ?? "running",
           output: existing?.output,
+          rawResult: existing?.rawResult,
           images: existing?.images,
           exitCode: existing?.exitCode,
           interrupted: existing?.interrupted,
@@ -479,13 +592,21 @@ function finalizeAssistant(turns: Turn[], content: ContentBlock[]): Turn[] {
     return []
   })
 
+  if (target !== -1 && currentTurn) return turns.map((turn, i) => i === index ? { ...currentTurn, stoppedStreamIndex: undefined, pendingAssistant: undefined, blocks: currentBlocks.map((block, b) => b === target ? blocks[0]! : block) } : turn)
+
   if (index !== -1) {
     const next = [...turns]
     const current = turns[index] as Extract<Turn, { role: "assistant" }>
+    let replacement = 0
+    const merged = current.blocks.flatMap((block): Block[] => {
+      if (!isStreamBlock(block)) return [block]
+      return replacement < blocks.length ? [blocks[replacement++]!] : []
+    })
+    merged.push(...blocks.slice(replacement))
     next[index] = {
       role: "assistant",
       id: current.id,
-      blocks: [...current.blocks.filter(b => b.kind === "compaction" || b.kind === "retry"), ...blocks],
+      blocks: merged,
       streaming: false,
       startedAt: current.startedAt,
       durationMs: current.durationMs,
@@ -516,6 +637,7 @@ function applyToolResults(turns: Turn[], content: ContentBlock[], toolUseResult?
           ...b,
           status: content.interrupted ? "stopped" : result.is_error ? "error" : "done",
           output: content.output,
+          rawResult: result.tool_use_result ?? toolUseResult,
           images: content.images,
           exitCode: content.exitCode,
           interrupted: content.interrupted,
@@ -526,7 +648,7 @@ function applyToolResults(turns: Turn[], content: ContentBlock[], toolUseResult?
   })
 }
 
-function appendNotice(turns: Turn[], block: CompactionBlock | RetryBlock): Turn[] {
+function appendNotice(turns: Turn[], block: Block): Turn[] {
   const last = turns.at(-1)
   if (last?.role === "assistant") return [...turns.slice(0, -1), { ...last, blocks: [...last.blocks, block] }]
   return [...turns, { role: "assistant", id: crypto.randomUUID(), streaming: false, blocks: [block] }]
@@ -556,7 +678,8 @@ function settleRetry(turns: Turn[]): Turn[] {
 }
 
 function settlePending(turns: Turn[], status: "unknown" | "stopped"): Turn[] {
-  return closeStreaming(turns).map(t => t.role === "assistant" ? { ...t, blocks: t.blocks.map(b => {
+  return turns.map(t => t.role === "assistant" ? { ...t, streaming: false, pendingAssistant: undefined, stoppedStreamIndex: undefined, blocks: t.blocks.map(b => {
+    if (b.kind === "thinking" || b.kind === "text") return { ...b, done: true }
     if (b.kind === "tool" && (b.status === "running" || b.status === "unknown")) return { ...b, status, endedAt: Date.now() }
     if (b.kind === "compaction" && (b.status === "running" || b.status === "unknown")) return { ...b, status }
     if (b.kind === "retry") return { ...b, done: true }
@@ -572,6 +695,8 @@ function closeStreaming(turns: Turn[]): Turn[] {
   next[index] = {
     ...turn,
     streaming: false,
+    pendingAssistant: undefined,
+    stoppedStreamIndex: undefined,
     blocks: turn.blocks.map((b) =>
       b.kind === "thinking" || b.kind === "text" ? { ...b, done: true } : b,
     ),

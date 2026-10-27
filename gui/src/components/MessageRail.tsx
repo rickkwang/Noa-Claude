@@ -4,7 +4,6 @@ import { Markdown } from "./Markdown"
 
 export interface MessageRailItem {
   id: string
-  ordinal: number
   label: string
   preview: string
 }
@@ -27,20 +26,19 @@ function escapeId(id: string): string {
   return typeof CSS !== "undefined" && CSS.escape ? CSS.escape(id) : id.replace(/"/g, '\\"')
 }
 
-function readBookmarks(storageKey: string | undefined): Set<number> {
+function readBookmarks(storageKey: string | undefined): Set<string> {
   if (!storageKey) return new Set()
   try {
     const parsed = JSON.parse(localStorage.getItem(storageKey) ?? "[]")
-    if (Array.isArray(parsed)) return new Set(parsed.filter((value): value is number => Number.isInteger(value)))
+    if (Array.isArray(parsed)) return new Set(parsed.filter((value): value is string => typeof value === "string"))
   } catch {}
   return new Set()
 }
 
 export function MessageRail({ items, activeIds, sessionId, onJump }: MessageRailProps) {
-  // Turn ids are regenerated when history reloads, so bookmarks key on the
-  // user-message ordinal instead; the parent remounts this component per session.
-  const storageKey = sessionId ? `noa-agent.bookmarks.${sessionId}` : undefined
-  const [bookmarks, setBookmarks] = useState<Set<number>>(() => readBookmarks(storageKey))
+  // User ids are shared by the live bridge and the persisted transcript.
+  const storageKey = sessionId ? `noa-agent.bookmarks.v2.${sessionId}` : undefined
+  const [bookmarks, setBookmarks] = useState<Set<string>>(() => readBookmarks(storageKey))
   const [previewId, setPreviewId] = useState<string | null>(null)
   const [hotId, setHotId] = useState<string | null>(null)
   const [anchorY, setAnchorY] = useState(0)
@@ -221,7 +219,7 @@ export function MessageRail({ items, activeIds, sessionId, onJump }: MessageRail
   const active = new Set(activeIds)
   const hotIndex = hotId == null ? -1 : items.findIndex((item) => item.id === hotId)
   const preview = previewId == null ? undefined : items.find((item) => item.id === previewId)
-  const previewBookmarked = preview ? bookmarks.has(preview.ordinal) : false
+  const previewBookmarked = preview ? bookmarks.has(preview.id) : false
 
   function onLayerBlur(event: FocusEvent<HTMLDivElement>) {
     if (!event.currentTarget.contains(event.relatedTarget as Node | null)) closeNow()
@@ -252,7 +250,7 @@ export function MessageRail({ items, activeIds, sessionId, onJump }: MessageRail
           {items.map((item, index) => {
             const distance = hotIndex === -1 ? -1 : Math.abs(index - hotIndex)
             const progress = NEIGHBOR_PROGRESS[distance] ?? 0
-            const bookmarked = bookmarks.has(item.ordinal)
+            const bookmarked = bookmarks.has(item.id)
             return (
               <button
                 key={item.id}
@@ -310,8 +308,8 @@ export function MessageRail({ items, activeIds, sessionId, onJump }: MessageRail
                 event.stopPropagation()
                 setBookmarks((current) => {
                   const next = new Set(current)
-                  if (next.has(preview.ordinal)) next.delete(preview.ordinal)
-                  else next.add(preview.ordinal)
+                  if (next.has(preview.id)) next.delete(preview.id)
+                  else next.add(preview.id)
                   return next
                 })
               }}

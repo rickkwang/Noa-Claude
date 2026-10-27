@@ -233,3 +233,85 @@ An actual process exit settles pending tools; a transport loss records uncertain
 and does not claim the CLI stopped. Errors belong to their reply, with bridge-owned
 failure metadata in `<session>.turn-results.jsonl` so history can restore them.
 User interruption is excluded from failure metadata. CLI transcripts are not rewritten.
+
+
+## Conversation rendering follow-through
+
+Reference remains the locally installed Codex 26.1021.31345 packed implementation.
+Noa adapts its display capabilities to stream-json: indexed text/thinking/tool blocks,
+frame-batched deltas, completed-prefix Markdown reuse, local KaTeX/Mermaid, scoped
+media range requests, file citations/review comments, selection quoting, rich copy,
+and table/code previews. Remote subresources remain blocked; HTML previews use an
+opaque sandbox with scripts disabled. Mermaid is loaded only for complete diagrams.
+
+Completed successful turns fold commentary, tool activity, process images and checklist
+snapshots into Worked for, including recovered tool failures. The final answer, workspace
+diff and running background tasks remain visible. Noa waits for turn completion because
+stream-json has no Codex final-answer phase marker. Interrupted/incomplete turns stay open.
+Terminal and idle events settle pending reasoning/tools; historical checklist states do
+not animate after the turn ends. Genuine running background tasks retain their animation.
+The workspace diff card keeps its snapshot wording and Undo confirmation, with a persistent
+View changes button, totals under the title and three initial file rows.
+
+History still uses the CLI's canonical branch/compaction recovery, avoiding a second
+raw-file copy. The renderer loads earlier turns in pages, expanding the page when a
+background result needs an older call. GUI-only Hook/task lifecycle records live in
+`<session>.gui-events.jsonl`, anchored to transcript UUIDs; they never change model
+messages. Nested Agent transcripts use the existing session/subagents paths.
+
+Verification: `bun test`, `bun run typecheck`, `bun run test:bridge`, and
+`bun scripts/e2e-conversation.ts` from `gui/`. The Electron check uses synthetic data
+and an isolated profile; its snapshots are component fixtures, not user conversations.
+
+
+## Recovery and format boundary verification
+
+Active indexed streams remain in the bridge journal until a completed model message
+has canonical blocks. Disk task inference cannot replace completed/failed/stopped
+lifecycle records. Paging protects background tool/task and Hook dependencies;
+loading older pages reconciles Hook identity and retains earlier child output.
+The bridge supplies user UUIDs to the existing SDK input field, so live messages
+and disk history share bookmark identity. UUID-less legacy entries receive stable
+session/record identities. Bookmarks use a v2 ID-based key; old ordinal keys remain
+untouched because a page-local ordinal cannot be reliably mapped after paging.
+
+Math follows the installed Codex delimiter rules: `\(...\)`, `\[...\]`,
+paired runs of at least two dollars, and `math` fences. Single dollars remain text,
+preserving shell variables. Display math takes precedence over setext headings.
+Details/summary is parsed into structured Markdown, not executed as raw HTML;
+code fences and indented code protect literal closing tags. File citation aliases,
+Codex line/label coercion, and review ranges reach the file viewer's line highlights.
+Lightbox uses a native modal dialog and offers local image downloads. Alt+Up/Down
+navigates prompts, including from the composer; form/menu/modal and IME input retain
+priority, and older pages are loaded when the previous prompt is not mounted.
+
+`bun run test:rendering` serves component fixtures over loopback HTTP with the
+production CSP and media handler. It asserts replay/task/Hook output, math, ranges,
+details, UUID bookmarks, MCP/Todo/Hook DOM content, native Tab confinement,
+`will-download` completion, and native Alt prompt navigation. These are component
+fixtures, not a claim that their synthetic events exercised the full CLI. The
+separate `test:bridge` suite exercises the real CLI and asserts live/disk user UUID
+identity. `e2e-conversation.ts` also now asserts MCP/Todo/Hook rendering directly.
+
+The rendering check accepts `gui-path output-path light|dark` arguments. It also
+mounts the real App with isolated transport fixtures at 1440, 1100 and 960px, plus
+960×600 with simultaneous approval, MCP input and a long composer draft. Assertions
+cover theme colours, source-backed diff typography, code palettes, diagram themes,
+panel-tab keyboard visibility, horizontal containment and footer/control bounds.
+Code colours follow the installed Absolutely Light/Dark theme; the composer uses
+Codex's `min(25dvh, var(--composer-editor-max-height, 25dvh))` editor limit. Pending
+requests share a scrollable region and the footer stays within its content column.
+
+Edit approvals follow the installed pending-request panel's `Yn` file summary and
+its diff-preview tooltip: an inset filename/statistics row, an 800ms hover delay,
+and a viewport-bounded preview that also opens from keyboard focus. Escape closes
+the preview without deciding the approval. Noa previews replacement fragments,
+so it does not present fragment line numbers or newline markers as file context.
+
+
+Activity sidecars created before the first transcript use private directory/file
+modes (0700/0600). Undo/Reapply emits an update-only turn diff: clients do not
+attach it to a different loaded turn, and the server refreshes paged history.
+Open conversation image viewers live above folded or virtualized message rows,
+so turn completion does not dismiss them. Approval preview dismissal also cancels
+its pending hover timer, including when the window resizes.

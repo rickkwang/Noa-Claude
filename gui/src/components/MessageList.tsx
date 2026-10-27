@@ -15,6 +15,7 @@ import {
 import { ArrowDown, AlertTriangle, BookOpen, Check, ChevronDown, ChevronRight, Copy, Edit2, Photo, Terminal, Tool } from "../lib/icons"
 import { Collapsible } from "./Collapsible"
 import { ErrorBoundary } from "./ErrorBoundary"
+import { copyContent } from "./RichContent"
 import { Markdown, OutputContext } from "./Markdown"
 import { MessageRail, type MessageRailItem } from "./MessageRail"
 import { ToolCard } from "./ToolCard"
@@ -23,7 +24,7 @@ import { LiveDiffSummary, TurnDiffCard } from "./TurnDiffCard"
 interface MessageListProps {
   turns: Turn[]
   cwd?: string
-  onOpenFile?: (path: string, line?: number) => void
+  onOpenFile?: (path: string, line?: number, endLine?: number) => void
   busy: boolean
   result?: AgentState["result"]
   readingWidth: number
@@ -33,10 +34,14 @@ interface MessageListProps {
   diffActionPending?: number
   onRetry?: () => void
   onEdit?: (text: string, images?: ImageBlock[]) => void
+  onQuote?: (text: string) => void
   tasks?: AgentTask[]
   onStopTask?: (id: string) => void
   onOpenTask?: () => void
   sessionId?: string
+  historyBefore?: number
+  historyLoading?: boolean
+  onLoadEarlier?: () => void
 }
 
 // Follows the bottom while the user is near it; a scroll away releases the pin.
@@ -45,25 +50,41 @@ const JUMP_THRESHOLD = 24
 const TURN_GAP = 16
 const TURN_OVERSCAN = 2
 const ESTIMATED_TURN_HEIGHT = 160
+const scrollPositions = new Map<string, { top: number; pinned: boolean; heights: Map<string, number> }>()
 
-export function MessageList({ turns, cwd, onOpenFile, busy, result, readingWidth, liveDiff, onTurnDiff, onTurnDiffAction, diffActionPending, onRetry, onEdit, tasks, onStopTask, onOpenTask, sessionId }: MessageListProps) {
+export function MessageList({ turns, cwd, onOpenFile, busy, result, readingWidth, liveDiff, onTurnDiff, onTurnDiffAction, diffActionPending, onRetry, onEdit, onQuote, tasks, onStopTask, onOpenTask, sessionId, historyBefore, historyLoading, onLoadEarlier }: MessageListProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
   const layoutRef = useRef<HTMLDivElement>(null)
-  const pinnedRef = useRef(true)
+  const scrollKey = sessionId ? `${cwd}:${sessionId}` : undefined
+  const savedScroll = scrollKey ? scrollPositions.get(scrollKey) : undefined
+  const pinnedRef = useRef(savedScroll?.pinned ?? true)
+  const restoredRef = useRef(false)
+  const firstTurnRef = useRef(turns[0]?.id)
+  const previousLayoutOffset = useRef(0)
   const scrollFrame = useRef<number | undefined>(undefined)
-  const heightsRef = useRef(new Map<string, number>())
+  const heightsRef = useRef(new Map(savedScroll?.heights))
   const offsetsRef = useRef(new Map<string, number>())
   const focusedTurn = useRef<string | undefined>(undefined)
+  const pendingPrevious = useRef<string | undefined>(undefined)
   const jumpToken = useRef(0)
   const [showJump, setShowJump] = useState(false)
+  const [selection, setSelection] = useState<{ text: string; left: number; top: number }>()
   const [preview, setPreview] = useState<{ items: LightboxItem[]; index: number }>()
-  const [viewport, setViewport] = useState({ top: 0, height: 0 })
+  const [viewport, setViewport] = useState({ top: savedScroll?.top ?? 0, height: 0 })
   const [, setMeasured] = useState(0)
 
   useLayoutEffect(() => {
     const el = scrollRef.current
     if (!el) return
+    const previousFirst = firstTurnRef.current
+    const offset = layoutRef.current?.offsetTop ?? 0
+    if (previousFirst && previousFirst !== turns[0]?.id && offsetsRef.current.has(previousFirst) && !pinnedRef.current)
+      el.scrollTop += offsetsRef.current.get(previousFirst)! + offset - previousLayoutOffset.current
+    firstTurnRef.current = turns[0]?.id
+    previousLayoutOffset.current = offset
+    if (!restoredRef.current && savedScroll && !savedScroll.pinned) el.scrollTop = savedScroll.top
+    restoredRef.current = true
     if (pinnedRef.current) el.scrollTop = el.scrollHeight
     setViewport({ top: el.scrollTop, height: el.clientHeight })
   }, [turns])
@@ -81,9 +102,32 @@ export function MessageList({ turns, cwd, onOpenFile, busy, result, readingWidth
     }
   }, [])
 
+  useLayoutEffect(() => {
+    const element = scrollRef.current
+    return () => {
+      if (!scrollKey || !element) return
+      scrollPositions.delete(scrollKey)
+      scrollPositions.set(scrollKey, { top: element.scrollTop, pinned: pinnedRef.current, heights: new Map(heightsRef.current) })
+      if (scrollPositions.size > 30) scrollPositions.delete(scrollPositions.keys().next().value!)
+    }
+  }, [scrollKey])
+
+  function captureSelection() {
+    const selected = window.getSelection()
+    if (!onQuote || !selected || selected.isCollapsed || !selected.rangeCount) { setSelection(undefined); return }
+    const node = selected.anchorNode?.parentElement?.closest("[data-response-content]")
+    if (!node || !node.contains(selected.focusNode)) { setSelection(undefined); return }
+    const text = selected.toString()
+    if (!text.trim()) { setSelection(undefined); return }
+    const rect = selected.getRangeAt(0).getBoundingClientRect()
+    setSelection({ text, left: Math.min(rect.left, window.innerWidth - 160), top: Math.min(rect.bottom + 8, window.innerHeight - 48) })
+  }
+
   function onScroll() {
+    setSelection(undefined)
     const el = scrollRef.current
     if (!el) return
+    if (el.scrollTop < 80 && historyBefore && !historyLoading) onLoadEarlier?.()
     const distance = el.scrollHeight - el.scrollTop - el.clientHeight
     pinnedRef.current = distance <= PIN_THRESHOLD
     setShowJump(distance > JUMP_THRESHOLD)
@@ -119,9 +163,9 @@ export function MessageList({ turns, cwd, onOpenFile, busy, result, readingWidth
     if (previousHeight === height) return
     heightsRef.current.set(id, height)
     const el = scrollRef.current
-    if (el && previousHeight !== undefined && !pinnedRef.current) {
+    if (el && !pinnedRef.current) {
       const top = offsetsRef.current.get(id)
-      if (top !== undefined && top < el.scrollTop) el.scrollTop += height - previousHeight
+      if (top !== undefined && top < el.scrollTop) el.scrollTop += height - (previousHeight ?? ESTIMATED_TURN_HEIGHT)
     }
     setMeasured((value) => value + 1)
     if (pinnedRef.current) requestAnimationFrame(() => {
@@ -160,7 +204,6 @@ export function MessageList({ turns, cwd, onOpenFile, busy, result, readingWidth
     }
     railItems.push({
       id: segment.id,
-      ordinal: railItems.length,
       label: firstLine(segment.text) || "(No content)",
       preview,
     })
@@ -188,6 +231,7 @@ export function MessageList({ turns, cwd, onOpenFile, busy, result, readingWidth
     const scroller = scrollRef.current
     const row = layout.find((candidate) => candidate.segment.id === id)
     if (!scroller || !row) return
+    pendingPrevious.current = undefined
     // A newer jump owns the viewport; older align/flash work must stand down.
     const token = ++jumpToken.current
     pinnedRef.current = false
@@ -236,6 +280,35 @@ export function MessageList({ turns, cwd, onOpenFile, busy, result, readingWidth
     requestAnimationFrame(flash)
   }
 
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (!event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || event.isComposing || event.defaultPrevented || !["ArrowUp", "ArrowDown"].includes(event.key)) return
+      const target = event.target instanceof Element ? event.target : null
+      const composer = target?.matches('textarea[aria-label="Task instruction"]')
+      if (target?.closest("[role=dialog], [role=menu], .noa-code-view") || document.querySelector("dialog[open]")) return
+      if (!composer && target?.closest("input, textarea, select, [contenteditable]")) return
+      if (target && target !== document.body && !composer && !target.closest(".noa-agent-scroll, .noa-message-rail")) return
+      const current = railItems.findIndex(item => item.id === activeRailIds[0])
+      const next = current + (event.key === "ArrowUp" ? -1 : 1)
+      if (next < 0 && historyBefore && onLoadEarlier) {
+        event.preventDefault(); pendingPrevious.current = railItems[0]?.id; onLoadEarlier(); return
+      }
+      const item = railItems[next]
+      if (!item) return
+      event.preventDefault()
+      scrollToSegment(item.id, "auto")
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [railItems, activeRailIds, historyBefore, onLoadEarlier])
+
+  useLayoutEffect(() => {
+    const id = pendingPrevious.current
+    if (!id) return
+    const index = railItems.findIndex(item => item.id === id)
+    if (index > 0) { pendingPrevious.current = undefined; scrollToSegment(railItems[index - 1]!.id, "auto") }
+  }, [turns])
+
   function renderSegment(segment: Segment, index: number) {
     if (segment.role === "user") {
       return (
@@ -268,10 +341,14 @@ export function MessageList({ turns, cwd, onOpenFile, busy, result, readingWidth
   }
 
   return (
-    <OutputContext value={{ cwd, onOpenFile }}><div className="relative flex min-h-0 flex-1 flex-col">
+    <OutputContext value={{ cwd, onOpenFile, onOpenImages: (items, index) => setPreview({ items, index }) }}><div className="relative flex min-h-0 flex-1 flex-col">
     <div
       ref={scrollRef}
       onScroll={onScroll}
+      onWheel={() => { pendingPrevious.current = undefined }}
+      onPointerDownCapture={() => { pendingPrevious.current = undefined }}
+      onMouseUp={captureSelection}
+      onKeyUp={captureSelection}
       onFocusCapture={(event) => {
         const turn = event.target instanceof Element ? event.target.closest<HTMLElement>("[data-virtual-turn-id]") : null
         if (turn?.dataset.virtualTurnId) focusedTurn.current = turn.dataset.virtualTurnId
@@ -281,6 +358,7 @@ export function MessageList({ turns, cwd, onOpenFile, busy, result, readingWidth
       {/* Codex reserves 48px around the transcript column so the rail lives in the
           gutter and its expanded tick never crosses the text on narrow windows. */}
       <div ref={contentRef} className="mx-auto flex flex-col gap-4 px-5 pt-8" style={{ width: "calc(100% - 48px)", maxWidth: readingWidth, paddingBottom: "calc(var(--composer-overlay, 0px) + 32px)" }}>
+        {!!historyBefore && <button type="button" disabled={historyLoading} onClick={onLoadEarlier} className="self-center rounded-lg px-3 py-2 text-caption text-[var(--text-secondary)]">{historyLoading ? "Loading earlier messages…" : "Load earlier messages"}</button>}
         <div ref={layoutRef} className="relative w-full" style={{ height: layoutHeight }}>
           {visibleRows.map((row) => (
             <VirtualTurnRow key={row.segment.id} id={row.segment.id} top={row.top} onHeight={measureTurn}>
@@ -322,6 +400,7 @@ export function MessageList({ turns, cwd, onOpenFile, busy, result, readingWidth
         {busy && <span className="noa-scroll-bottom-dots" aria-hidden="true"><span /><span /><span /></span>}
         <ArrowDown size={14} className={busy ? "noa-scroll-bottom-arrow" : undefined} />
       </button>
+      {selection && <button type="button" className="fixed z-50 rounded-lg border border-[var(--divider-subtle)] bg-[var(--bg-card)] px-3 py-2 text-caption shadow-lg" style={{ left: selection.left, top: selection.top }} onMouseDown={event => event.preventDefault()} onClick={() => { onQuote?.(selection.text); window.getSelection()?.removeAllRanges(); setSelection(undefined) }}>Quote selection</button>}
       {preview && <Lightbox items={preview.items} index={preview.index} onIndex={(index) => setPreview({ ...preview, index })} onClose={() => setPreview(undefined)} />}
     </div></OutputContext>
   )
@@ -509,12 +588,12 @@ function AssistantSegment({ segment, busy, durationMs, interrupted, liveDiff, ta
   const finalIndex = runs.map((run) => run.kind).lastIndexOf("text")
   // Trailing tool calls after the final answer still fold into the turn; Codex
   // collapses as soon as the final assistant message has started.
-  const canCollapse = !busy && !segment.streaming && !interrupted && !segment.error && !segment.incomplete && !segment.blocks.some(b => b.kind === "tool" && (b.status === "error" || b.status === "unknown" || b.status === "stopped")) && finalIndex > 0 && runs.slice(0, finalIndex).some(run => run.kind === "text" || run.kind === "activity")
+  const canCollapse = !busy && !segment.streaming && !interrupted && !segment.error && !segment.incomplete && finalIndex > 0 && runs.slice(0, finalIndex).some(run => run.kind !== "status")
   const collapsedCount = finalIndex > 0
     ? runs.reduce(
         (count, run, index) => index === finalIndex
           ? count
-          : count + (run.kind === "activity" ? run.blocks.length : run.kind === "text" ? 1 : 0),
+          : count + (run.kind === "activity" ? run.blocks.length : run.kind === "text" || run.kind === "standalone" ? 1 : 0),
         0,
       )
     : 0
@@ -547,13 +626,13 @@ function AssistantSegment({ segment, busy, durationMs, interrupted, liveDiff, ta
 
   function renderText(run: Extract<ActivityRun, { kind: "text" }>, index: number, workedFor?: ReactNode) {
     return (
-      <div key={index} className="group/message flex flex-col gap-1">
+      <div key={index} data-response className="group/message flex flex-col gap-1">
         {workedFor}
-        <BlockView
+        <div data-response-content><BlockView
           block={run.block}
           streaming={segment.streaming && run.block === segment.blocks[segment.blocks.length - 1]}
           streamKey={streamKeyFor(run.block)}
-        />
+        /></div>
         {!busy && !segment.streaming && !interrupted && !segment.error && !segment.incomplete && index === finalTextIndex && (
           <MessageActions text={run.block.text} complete={run.block.done ?? true} />
         )}
@@ -562,7 +641,7 @@ function AssistantSegment({ segment, busy, durationMs, interrupted, liveDiff, ta
   }
 
   function renderStandalone(block: ToolBlock, index: number) {
-    return <ToolCard key={`standalone-${index}`} block={block} defaultOpen={!!block.images?.length || block.name === "Task"} task={tasks?.find(task => task.id === block.id || task.toolUseId === block.id)} onStopTask={onStopTask} onOpenTask={onOpenTask} />
+    return <ToolCard key={`standalone-${index}`} block={block} active={busy} defaultOpen={!!block.images?.length || (block.name === "Agent" || block.name === "Task" || block.name === "Hook" || ["TodoWrite", "TaskCreate", "TaskUpdate", "TaskList", "TaskGet"].includes(block.name))} tasks={tasks} task={tasks?.find(task => task.id === block.id || task.toolUseId === block.id)} onStopTask={onStopTask} onOpenTask={onOpenTask} />
   }
 
   const turnDiff = segment.diff && onTurnDiff
@@ -579,7 +658,7 @@ function AssistantSegment({ segment, busy, durationMs, interrupted, liveDiff, ta
   if (canCollapse && activityCollapsed) {
     return (
       <div className="group flex flex-col gap-3">
-        {runs.filter((run) => run.kind === "status" || run.kind === "standalone").map((run, i) => run.kind === "status" ? <StatusBlock key={`status-${i}`} block={run.block} /> : run.kind === "standalone" ? renderStandalone(run.block, i) : null)}
+        {runs.map((run, i) => run.kind === "status" ? <StatusBlock key={`status-${i}`} block={run.block} /> : run.kind === "standalone" && tasks?.some(task => task.status === "running" && (task.id === run.block.id || task.toolUseId === run.block.id)) ? renderStandalone(run.block, i) : null)}
         <WorkedFor
           durationMs={durationMs}
           count={durationMs === undefined ? collapsedCount : undefined}
@@ -704,6 +783,7 @@ function ActivityGroup({ blocks, tasks, streamKeyFor, onStopTask, onOpenTask }: 
               <ToolCard
                 key={`tool-${block.id}-${i}`}
                 block={block}
+                tasks={tasks}
                 task={tasks?.find((candidate) => candidate.id === block.id || candidate.toolUseId === block.id)}
                 defaultOpen={false}
                 onStopTask={onStopTask}
@@ -783,7 +863,7 @@ function UserBubble({ text }: { text: string }) {
       <div
         ref={ref}
         data-user-message-bubble=""
-        className={`max-w-[70%] whitespace-pre-wrap break-words rounded-[22px] bg-[color-mix(in_srgb,var(--accent-color)_8%,transparent)] px-4 py-2.5 text-[length:var(--font-text-md-size)] leading-[var(--font-text-md-line-height)] ${
+        className={`noa-selectable max-w-[70%] whitespace-pre-wrap break-words rounded-[22px] bg-[color-mix(in_srgb,var(--accent-color)_8%,transparent)] px-4 py-2.5 text-[length:var(--font-text-md-size)] leading-[var(--font-text-md-line-height)] ${
           expanded
             ? ""
             : `relative max-h-[20lh] overflow-hidden ${folded ? "[mask-image:linear-gradient(to_bottom,black_calc(100%_-_3rem),transparent)] after:pointer-events-none after:absolute after:bottom-1 after:right-3 after:content-['…'] after:text-[var(--sidebar-text-muted,#898781)]" : ""}`
@@ -840,8 +920,11 @@ function MessageActions({ text, kind = "assistant", onEdit, complete = true }: {
     <div className={`${kind === "assistant" ? "-ml-1 mt-0.5 min-h-5 gap-0.5" : "mx-0.5 mb-1 gap-2"} flex leading-4 opacity-0 transition-opacity group-hover/message:opacity-100 focus-within:opacity-100`}>
       <button
         type="button"
-        onClick={async () => {
-          try { await navigator.clipboard.writeText(text) } catch { setCopyError(true); return }
+        onClick={async event => {
+          try {
+            if (kind === "assistant") await copyContent(event.currentTarget.closest("[data-response]")?.querySelector<HTMLElement>("[data-response-content]") ?? null, text)
+            else await navigator.clipboard.writeText(text)
+          } catch { setCopyError(true); return }
           setCopyError(false)
           setCopied(true)
           setTimeout(() => setCopied(false), 2000)

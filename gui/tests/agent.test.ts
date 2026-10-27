@@ -27,6 +27,16 @@ function transcript(cwd: string, entries: object[]) {
   writeFileSync(join(dir, `${id}.jsonl`), entries.map((entry) => JSON.stringify({ cwd, ...entry })).join("\n") + "\n")
   return id
 }
+test("history preserves identical blocks at distinct transcript positions", async () => {
+  const cwd = "/private/tmp/repeated-content-blocks"
+  const id = transcript(cwd, [
+    { type: "user", uuid: "u", parentUuid: null, message: { content: "Repeat" } },
+    { type: "assistant", uuid: "a", parentUuid: "u", message: { id: "m", content: [{ type: "text", text: "same" }] } },
+    { type: "assistant", uuid: "b", parentUuid: "a", message: { id: "m", content: [{ type: "text", text: "same" }] } },
+  ])
+  expect((await loadHistory(cwd, id))?.[1]).toMatchObject({ kind: "agent", message: { message: { content: [{ type: "text", text: "same" }, { type: "text", text: "same" }] } } })
+})
+
 test("long project paths use the CLI transcript directory", async () => {
   const cwd = `/private/tmp/${"a".repeat(99)}/${"b".repeat(99)}/project`
   const id = transcript(cwd, [{ type: "user", message: { content: "long path task" } }])
@@ -401,7 +411,7 @@ test("history hides internal transcript envelopes and interruption markers", asy
     { type: "user", message: { content: "Visible request" } },
   ])
   const history = await loadHistory(cwd, id)
-  expect(history).toEqual([{ kind: "user", text: "Visible request" }])
+  expect(history).toEqual([{ kind: "user", id: `${id}:user:3`, text: "Visible request" }])
   expect(listSessions(cwd)[0]?.title).toBe("Visible request")
 })
 
@@ -414,7 +424,7 @@ test("history restores turn duration and interruption state", async () => {
     { type: "system", subtype: "turn_duration", durationMs: 4321 },
   ])
   expect(await loadHistory(cwd, id)).toEqual([
-    { kind: "user", text: "Run the checks", images: undefined },
+    { kind: "user", id: `${id}:user:0`, text: "Run the checks", images: undefined },
     {
       kind: "agent",
       messageId: "answer",
@@ -719,4 +729,108 @@ test("manual compact history shows the command before its completion", async () 
   const history = await loadHistory("/private/tmp/compact-command-order", id)
   expect(history?.[0]).toMatchObject({ kind: "user", text: "/compact" })
   expect(history?.[1]).toMatchObject({ kind: "compaction", trigger: "manual" })
+})
+
+test("disk history restores Agent identity, terminal status and child tool results", async () => {
+  const cwd = "/private/tmp/restored-agent"
+  const id = transcript(cwd, [
+    { type: "user", uuid: "u", parentUuid: null, message: { content: "Inspect" } },
+    { type: "assistant", uuid: "a", parentUuid: "u", message: { id: "m", content: [{ type: "tool_use", id: "agent-tool", name: "Agent", input: { description: "Inspect files" } }] } },
+    { type: "user", uuid: "r", parentUuid: "a", message: { content: [{ type: "tool_result", tool_use_id: "agent-tool", content: "Done" }] }, toolUseResult: { status: "completed", agentId: "child-1", totalDurationMs: 100, totalTokens: 20, totalToolUseCount: 1 } },
+  ])
+  const childDir = join(config, "projects", sanitizePath(cwd), id, "subagents")
+  mkdirSync(childDir, { recursive: true })
+  writeFileSync(join(childDir, "agent-child-1.jsonl"), [
+    { type: "user", uuid: "cu", parentUuid: null, isSidechain: true, message: { content: "Inspect files" } },
+    { type: "assistant", uuid: "ca", parentUuid: "cu", isSidechain: true, message: { id: "cm", content: [{ type: "tool_use", id: "read", name: "Read", input: { file_path: "a.ts" } }] } },
+    { type: "user", uuid: "cr", parentUuid: "ca", isSidechain: true, message: { content: [{ type: "tool_result", tool_use_id: "read", content: "file contents" }] } },
+  ].map(entry => JSON.stringify({ cwd, ...entry })).join("\n"))
+  let state = initialState
+  for (const item of (await loadHistory(cwd, id)) ?? []) {
+    if (item.kind === "agent") state = reducer(state, { type: "agent", message: item.message })
+  }
+  expect(state.tasks[0]).toMatchObject({ id: "child-1", toolUseId: "agent-tool", status: "completed", description: "Inspect files", turns: [{ blocks: [{ name: "Read", status: "done", output: "file contents" }] }] })
+})
+
+test("hook timeline survives disk restoration at its transcript anchor", async () => {
+  const { appendTimelineEvent } = await import("../server/sessions")
+  const cwd = "/private/tmp/restored-hook-timeline"
+  const id = transcript(cwd, [
+    { type: "user", uuid: "u", parentUuid: null, message: { content: "Run" } },
+    { type: "assistant", uuid: "a", parentUuid: "u", message: { id: "m1", content: [{ type: "text", text: "Before hook" }] } },
+    { type: "assistant", uuid: "b", parentUuid: "a", message: { id: "m2", content: [{ type: "text", text: "After hook" }] } },
+  ])
+  appendTimelineEvent(cwd, id, { turn: 1, afterUuid: "a", message: { type: "system", subtype: "hook_started", hook_id: "h", hook_name: "Check", hook_event: "Stop" } })
+  appendTimelineEvent(cwd, id, { turn: 1, afterUuid: "a", message: { type: "system", subtype: "hook_response", hook_id: "h", hook_name: "Check", hook_event: "Stop", output: "Check failed", outcome: "error", exit_code: 1 } })
+  const state = reducer(initialState, { type: "history", items: (await loadHistory(cwd, id))! })
+  const blocks = state.turns.flatMap(turn => turn.role === "assistant" ? turn.blocks : [])
+  expect(blocks).toMatchObject([{ text: "Before hook" }, { kind: "tool", status: "error", output: "Check failed" }, { text: "After hook" }])
+})
+
+test("nested Agent disk transcripts restore as separately addressable tasks", async () => {
+  const cwd = "/private/tmp/nested-restored-agent"
+  const id = transcript(cwd, [
+    { type: "user", message: { content: "Inspect" } },
+    { type: "assistant", message: { content: [{ type: "tool_use", id: "outer", name: "Agent", input: { description: "Outer" } }] } },
+    { type: "user", message: { content: [{ type: "tool_result", tool_use_id: "outer", content: "Done" }] }, toolUseResult: { status: "completed", agentId: "child" } },
+  ])
+  const folder = join(config, "projects", sanitizePath(cwd), id, "subagents")
+  mkdirSync(folder, { recursive: true })
+  writeFileSync(join(folder, "agent-child.jsonl"), [
+    { type: "assistant", isSidechain: true, message: { content: [{ type: "tool_use", id: "inner", name: "Agent", input: { description: "Inner" } }] } },
+    { type: "user", isSidechain: true, message: { content: [{ type: "tool_result", tool_use_id: "inner", content: "Nested done" }] }, toolUseResult: { status: "completed", agentId: "nested" } },
+  ].map(entry => JSON.stringify({ cwd, ...entry })).join("\n"))
+  writeFileSync(join(folder, "agent-nested.jsonl"), JSON.stringify({ cwd, type: "assistant", isSidechain: true, message: { content: [{ type: "text", text: "Nested child result" }] } }))
+  const state = reducer(initialState, { type: "history", items: (await loadHistory(cwd, id))! })
+  expect(state.tasks.map(task => [task.id, task.toolUseId])).toEqual([["child", "outer"], ["nested", "inner"]])
+  expect(state.tasks[1]?.turns[0]).toMatchObject({ blocks: [{ text: "Nested child result" }] })
+})
+
+test("legacy timeline turn ordinals resolve through raw UUIDs after abandoned branches", async () => {
+  const { appendTimelineEvent } = await import("../server/sessions")
+  const cwd = "/private/tmp/timeline-branch-anchor"
+  const id = transcript(cwd, [
+    { type: "user", uuid: "u1", parentUuid: null, timestamp: "2026-01-01T00:00:00Z", message: { content: "First" } },
+    { type: "user", uuid: "old", parentUuid: "u1", timestamp: "2026-01-01T00:00:01Z", message: { content: "Abandoned" } },
+    { type: "user", uuid: "u2", parentUuid: "u1", timestamp: "2026-01-01T00:00:02Z", message: { content: "Second" } },
+    { type: "user", uuid: "u3", parentUuid: "u2", timestamp: "2026-01-01T00:00:03Z", message: { content: "Third" } },
+  ])
+  appendTimelineEvent(cwd, id, { turn: 4, message: { type: "system", subtype: "hook_started", hook_id: "h", hook_name: "Current hook", hook_event: "PreToolUse" } })
+  const history = (await loadHistory(cwd, id))!
+  expect(history.filter(item => item.kind === "user").map(item => item.text)).toEqual(["First", "Second", "Third"])
+  expect(history.at(-1)).toMatchObject({ kind: "agent", message: { subtype: "hook_started", hook_name: "Current hook" } })
+})
+
+test("turn anchors ignore late background results before the next real prompt", () => {
+  const cwd = "/private/tmp/strict-user-anchor"
+  const id = transcript(cwd, [{ type: "user", uuid: "first", message: { content: "First" } }])
+  const file = transcriptPath(cwd, id)
+  const offset = statSync(file).size
+  appendFileSync(file, JSON.stringify({ cwd, type: "user", uuid: "background-result", message: { content: [{ type: "tool_result", tool_use_id: "old-tool", content: "done" }] } }) + "\n")
+  expect(findTurnUserMessage(cwd, id, offset, true)).toBeUndefined()
+  appendFileSync(file, JSON.stringify({ cwd, type: "user", uuid: "next-prompt", message: { content: "Next" } }) + "\n")
+  expect(findTurnUserMessage(cwd, id, offset, true)).toBe("next-prompt")
+})
+
+test("persisted Agent terminal state outranks async launch inference", async () => {
+  const { appendTimelineEvent } = await import("../server/sessions")
+  const cwd = "/private/tmp/completed-before-launch-result"
+  const id = transcript(cwd, [
+    { type: "user", uuid: "u", parentUuid: null, message: { content: "Inspect" } },
+    { type: "assistant", uuid: "a", parentUuid: "u", message: { content: [{ type: "tool_use", id: "tool", name: "Agent", input: { description: "Inspect" } }] } },
+    { type: "user", uuid: "r", parentUuid: "a", message: { content: [{ type: "tool_result", tool_use_id: "tool", content: "Launched" }] }, toolUseResult: { status: "async_launched", agentId: "child" } },
+  ])
+  appendTimelineEvent(cwd, id, { turn: 1, afterUuid: "a", message: { type: "system", subtype: "task_notification", task_id: "child", tool_use_id: "tool", status: "completed", summary: "Done" } })
+  const state = reducer(initialState, { type: "history", items: (await loadHistory(cwd, id))! })
+  expect(state.tasks[0]).toMatchObject({ status: "completed", summary: "Done" })
+})
+
+test("legacy user messages also retain bookmark identity across history reloads", async () => {
+  const cwd = "/private/tmp/legacy-bookmark-identity"
+  const id = transcript(cwd, [{ type: "user", message: { content: "Same prompt" } }, { type: "user", message: { content: "Same prompt" } }])
+  const first = (await loadHistory(cwd, id))!.filter(item => item.kind === "user").map(item => item.id)
+  const second = (await loadHistory(cwd, id))!.filter(item => item.kind === "user").map(item => item.id)
+  expect(first.every(Boolean)).toBe(true)
+  expect(new Set(first).size).toBe(2)
+  expect(second).toEqual(first)
 })

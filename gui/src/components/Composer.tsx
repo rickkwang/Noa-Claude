@@ -58,6 +58,8 @@ interface ComposerProps {
   onMode: (mode: PermissionMode) => void
   draftKey: string
   reference?: { path: string; key: number }
+  quote?: { text: string; key: number }
+  onQuoteConsumed?: () => void
   // Loads an existing user message back into the composer when the user clicks Edit.
   editDraft?: { text: string; images: ImageAttachment[]; key: number; label?: string; queued?: boolean }
   onCancelEdit?: () => void
@@ -89,6 +91,8 @@ export function Composer({
   onMode,
   draftKey,
   reference,
+  quote,
+  onQuoteConsumed,
   editDraft,
   onCancelEdit,
   effort,
@@ -231,6 +235,18 @@ export function Composer({
     setReferences((items) => (items.includes(reference.path) ? items : [...items, reference.path]))
     textareaRef.current?.focus()
   }, [reference])
+
+  useEffect(() => {
+    if (!quote) return
+    setText(value => `${value}${value.trim() ? "\n\n" : ""}${quote.text.split("\n").map(line => `> ${line}`).join("\n")}\n\n`)
+    onQuoteConsumed?.()
+    requestAnimationFrame(() => {
+      const element = textareaRef.current
+      if (!element) return
+      element.focus()
+      element.setSelectionRange(element.value.length, element.value.length)
+    })
+  }, [quote?.key])
 
   // Editing a sent message replaces the draft with its text and images.
   useEffect(() => {
@@ -746,7 +762,7 @@ export function Composer({
           aria-label="Task instruction"
           disabled={disabled}
           rows={1}
-          className="w-full min-h-[44px] max-h-60 resize-none border-none bg-transparent px-3 py-0 text-body leading-5 outline-none placeholder:text-[color-mix(in_srgb,var(--text-primary)_50%,transparent)]"
+          className="w-full min-h-[44px] max-h-[min(25dvh,var(--composer-editor-max-height,25dvh))] resize-none border-none bg-transparent px-3 py-0 text-body leading-5 outline-none placeholder:text-[color-mix(in_srgb,var(--text-primary)_50%,transparent)]"
         />
         {argumentCommand?.argumentHint && !submenu && <p className="m-0 px-3 pb-1 text-caption text-[var(--sidebar-text-muted)]">/{argumentCommand.name} {argumentCommand.argumentHint}</p>}
         <div className="noa-agent-footer mb-2 mt-1 flex min-h-7 items-center justify-between gap-[5px] px-2">

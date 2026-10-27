@@ -819,6 +819,7 @@ html[data-translucent-sidebar="enabled"]:where(:not([data-settings-open="true"])
 /* ── Status text: light-theme hues lifted for dark floors ── */
 [data-theme="dark"] .text-\[\#A93B3B\] { color: #E08A8A !important; }
 [data-theme="dark"] .text-\[\#C24444\] { color: #E08A8A !important; }
+[data-theme="dark"] .text-\[\#168447\] { color: #69C98B !important; }
 [data-theme="dark"] .text-\[\#953333\] { color: #E08A8A !important; }
 [data-theme="dark"] .text-\[\#74491A\] { color: #E5B17E !important; }
 [data-theme="dark"] .text-\[\#A26721\] { color: #E5B17E !important; }
@@ -1966,15 +1967,6 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
 .noa-code-view.is-wrapped .noa-diff-pair { min-width: 0; }
 .noa-diff-pair .noa-code-line { grid-template-columns: 36px 16px minmax(0, 1fr); }
 .noa-diff-pair .noa-code-line:first-child { border-right: 1px solid var(--divider-subtle); }
-.noa-code-view .hljs-comment, .noa-code-view .hljs-quote { color: var(--sidebar-text-muted); }
-.noa-code-view .hljs-keyword, .noa-code-view .hljs-selector-tag, .noa-code-view .hljs-literal { color: #A626A4; }
-.noa-code-view .hljs-string, .noa-code-view .hljs-regexp, .noa-code-view .hljs-addition { color: #3F7E35; }
-.noa-code-view .hljs-number, .noa-code-view .hljs-attr, .noa-code-view .hljs-symbol { color: #986801; }
-.noa-code-view .hljs-title, .noa-code-view .hljs-built_in, .noa-code-view .hljs-type { color: #2868A8; }
-[data-theme="dark"] .noa-code-view .hljs-keyword, [data-theme="dark"] .noa-code-view .hljs-literal { color: #C792EA; }
-[data-theme="dark"] .noa-code-view .hljs-string, [data-theme="dark"] .noa-code-view .hljs-regexp { color: #A3C98E; }
-[data-theme="dark"] .noa-code-view .hljs-number, [data-theme="dark"] .noa-code-view .hljs-attr { color: #E7BD86; }
-[data-theme="dark"] .noa-code-view .hljs-title, [data-theme="dark"] .noa-code-view .hljs-built_in, [data-theme="dark"] .noa-code-view .hljs-type { color: #82AAFF; }
 .noa-panel-muted { margin: 0; color: var(--sidebar-text-muted); font-size: var(--text-caption); }
 .noa-code-search { position: sticky; top: 0; left: 0; z-index: 2; display: flex; justify-content: flex-end; align-items: center; gap: 4px; padding: 2px 8px; background: var(--surface-page); font-family: var(--font-ui); font-size: var(--text-caption); border-bottom: 1px solid var(--divider-subtle); }
 .noa-code-search input { min-width: 0; width: 160px; padding: 2px 5px; border: 1px solid var(--divider-subtle); border-radius: 5px; background: var(--bg-card); }
@@ -2087,24 +2079,27 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
 .noa-scroll-bottom:hover { color: var(--text-primary); }
 .noa-scroll-bottom[data-show="false"] { opacity: 0; pointer-events: none; }
 /* Per-turn diff card, as Codex's TurnDiffContent: header + up to three file rows. */
-.noa-turn-diff-card { margin-top: 2px; overflow: hidden; border: 1px solid var(--divider-subtle); border-radius: 10px; background: color-mix(in srgb, var(--bg-card) 70%, transparent); }
+.noa-turn-diff-card { margin-top: 2px; overflow: hidden; border: 1px solid var(--divider-subtle); border-radius: 12px; background: color-mix(in srgb, var(--bg-card) 70%, transparent); }
 .noa-live-diff { display: inline-flex; max-width: 100%; align-items: center; gap: 6px; align-self: center; padding: 2px 6px; border-radius: 6px; color: var(--sidebar-text-muted); font-size: var(--text-caption); }
 .noa-live-diff:hover { color: var(--text-primary); background: color-mix(in srgb, var(--text-primary) 5%, transparent); }
-.noa-turn-diff-headrow { display: flex; align-items: center; }
-.noa-turn-diff-header { display: flex; min-width: 0; flex: 1; min-height: 36px; align-items: center; gap: 8px; padding: 4px 10px; text-align: left; }
-.noa-turn-diff-action { margin-right: 8px; flex-shrink: 0; height: 26px; padding: 0 8px; border-radius: 6px; font-size: var(--text-caption); color: var(--text-secondary); white-space: nowrap; }
+.noa-turn-diff-headrow { display: flex; align-items: center; gap: 8px; padding-right: 12px; }
+.noa-turn-diff-icon { display: flex; width: 40px; height: 40px; align-items: center; justify-content: center; flex-shrink: 0; border-radius: 10px; background: color-mix(in srgb, var(--text-primary) 3%, transparent); color: var(--text-secondary); }
+.noa-turn-diff-heading { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 2px; }
+.noa-turn-diff-view { flex-shrink: 0; padding: 5px 9px; border: 1px solid var(--divider-subtle); border-radius: 10px; font-size: var(--text-caption); color: var(--text-primary); white-space: nowrap; }
+.noa-turn-diff-view:hover { background: color-mix(in srgb, var(--text-primary) 4%, transparent); }
+.noa-turn-diff-header { display: flex; min-width: 0; flex: 1; min-height: 64px; align-items: center; gap: 10px; padding: 12px; text-align: left; }
+.noa-turn-diff-action { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; height: 26px; padding: 0 8px; border-radius: 6px; font-size: var(--text-caption); color: var(--text-secondary); white-space: nowrap; }
 .noa-turn-diff-action:hover:not(:disabled) { background: color-mix(in srgb, var(--text-primary) 7%, transparent); color: var(--text-primary); }
 .noa-turn-diff-action:disabled { opacity: .55; cursor: default; }
 .noa-turn-diff-header:hover { background: color-mix(in srgb, var(--text-primary) 4%, transparent); }
-.noa-turn-diff-default { display: inline-flex; flex-shrink: 0; }
-.noa-turn-diff-hover { display: none; flex-shrink: 0; align-items: center; gap: 2px; color: var(--text-secondary); }
+.noa-turn-diff-default { display: inline-flex; flex-shrink: 0; font-size: var(--text-chat-sm); }
+.noa-turn-diff-hover { display: none; flex-shrink: 0; font-size: var(--text-chat-sm); align-items: center; gap: 2px; color: var(--text-secondary); }
 .noa-turn-diff-header:hover .noa-turn-diff-default,
 .noa-turn-diff-header:focus-visible .noa-turn-diff-default { display: none; }
 .noa-turn-diff-header:hover .noa-turn-diff-hover,
 .noa-turn-diff-header:focus-visible .noa-turn-diff-hover { display: inline-flex; }
 .noa-turn-diff-list { display: flex; flex-direction: column; border-top: 1px solid var(--divider-subtle); }
-.noa-turn-diff-row { display: flex; width: 100%; min-width: 0; min-height: 36px; align-items: center; gap: 8px; padding: 4px 10px; text-align: left; color: var(--text-primary); }
-.noa-turn-diff-row + .noa-turn-diff-row { border-top: 1px solid color-mix(in srgb, var(--text-primary) 4%, transparent); }
+.noa-turn-diff-row { display: flex; width: 100%; min-width: 0; min-height: 36px; align-items: center; gap: 8px; padding: 4px 12px; text-align: left; color: var(--text-primary); }
 .noa-turn-diff-row:hover { background: color-mix(in srgb, var(--text-primary) 4%, transparent); }
 .noa-turn-diff-row .noa-middle-path { flex: 1; }
 .noa-turn-diff-more { display: flex; width: 100%; min-height: 32px; align-items: center; justify-content: center; gap: 4px; border-top: 1px solid var(--divider-subtle); color: var(--sidebar-text-muted); font-size: var(--text-caption); }
@@ -2119,8 +2114,8 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
 .noa-turn-scope { justify-content: space-between; }
 @media (prefers-reduced-motion: reduce) { .noa-scroll-bottom { transition: none; } }
 /* Floating composer: the page colour ramps in over 32px above the card so text dissolves instead of being cut. */
-.noa-conversation-footer { position: absolute; inset-inline: 0 var(--noa-scrollbar-strip); bottom: 0; z-index: 20; padding: 32px 21px 12px 29px; background: linear-gradient(to bottom, color-mix(in srgb, var(--surface-page, #F9F9F7) 0%, transparent), var(--surface-page, #F9F9F7) 32px); pointer-events: none; }
-.noa-conversation-footer > * { pointer-events: auto; }
+.noa-conversation-footer { position: absolute; inset-inline: 0 var(--noa-scrollbar-strip); bottom: 0; z-index: 20; display: flex; max-height: 100%; flex-direction: column; padding: 32px 21px 12px 29px; background: linear-gradient(to bottom, color-mix(in srgb, var(--surface-page, #F9F9F7) 0%, transparent), var(--surface-page, #F9F9F7) 32px); pointer-events: none; }
+.noa-conversation-footer > * { min-height: 0; width: 100%; pointer-events: auto; }
 /* Codex's loading shimmer: a stable base with a narrow highlight band. */
 .noa-shimmer {
   --noa-shimmer-foreground: var(--text-secondary, #5D5D5D);
@@ -2192,7 +2187,7 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
 }
 
 /* Per-file change list, opened on hover/focus above the summary (Codex: min-w-64, max-h-72, rows px-3 py-1.5). */
-.noa-turn-diff-stats { display: inline-flex; flex-shrink: 0; gap: 4px; font-size: var(--text-caption); font-variant-numeric: tabular-nums; color: var(--sidebar-text-muted); }
+.noa-turn-diff-stats { display: inline-flex; flex-shrink: 0; gap: 4px; font-size: inherit; font-variant-numeric: tabular-nums; color: var(--sidebar-text-muted); }
 .noa-turn-diff-stats .is-added { color: #168447; } .noa-turn-diff-stats .is-removed { color: #C24444; }
 [data-theme="dark"] .noa-turn-diff-stats .is-added { color: #69C98B; } [data-theme="dark"] .noa-turn-diff-stats .is-removed { color: #EE8A8A; }
 
@@ -2292,6 +2287,8 @@ body.noa-session-dragging * { cursor: grabbing !important; }
 }
 
 .noa-approval-card { background: color-mix(in srgb, var(--text-primary) 3%, var(--bg-card)); }
+[data-approval-diff-preview] :is(.noa-code-number, .noa-diff-hunk-header, .noa-code-line.is-meta) { display: none; }
+[data-approval-diff-preview] .noa-code-line { grid-template-columns: 16px minmax(0, 1fr); }
 .noa-approval-button { height: 28px; padding: 0 8px; border-radius: 999px; font-size: var(--text-chat-sm); line-height: 18px; white-space: nowrap; }
 .noa-code-block { background: color-mix(in srgb, var(--text-primary) 3%, var(--surface-page)); }
 @supports (corner-shape: superellipse(1.1)) {
@@ -2321,12 +2318,13 @@ body.noa-session-dragging * { cursor: grabbing !important; }
 .noa-activity-scroll > [data-tool-activity] > button:hover { color: var(--text-primary); }
 .noa-activity-scroll > [data-tool-activity] > button > svg:first-child { width: 16px; height: 16px; }
 
-/* Match the conversation code palette to the existing file viewer. */
-.noa-code-block .hljs-keyword, .noa-code-block .hljs-selector-tag, .noa-code-block .hljs-type { color: #A626A4; }
-.noa-code-block .hljs-string, .noa-code-block .hljs-regexp { color: #3F7E35; }
-.noa-code-block .hljs-number, .noa-code-block .hljs-attr, .noa-code-block .hljs-literal { color: #986801; }
-.noa-code-block .hljs-title, .noa-code-block .hljs-built_in { color: #2868A8; }
-.noa-code-block .hljs-comment, .noa-code-block .hljs-quote { color: var(--sidebar-text-muted); }
+/* Installed Codex Absolutely Light/Dark token colours, shared by chat and file code. */
+:is(.noa-code-block, .noa-code-view) :is(.hljs-keyword, .hljs-selector-tag, .hljs-number, .hljs-literal) { color: #FF5F38 !important; }
+:is(.noa-code-block, .noa-code-view) :is(.hljs-string, .hljs-regexp, .hljs-symbol) { color: #00C853 !important; }
+:is(.noa-code-block, .noa-code-view) .hljs-type { color: #D28E73 !important; }
+:is(.noa-code-block, .noa-code-view) :is(.hljs-title, .hljs-built_in, .hljs-attr, .hljs-variable, .hljs-template-variable, .hljs-name, .hljs-tag, .hljs-meta) { color: var(--text-primary) !important; }
+:is(.noa-code-block, .noa-code-view) :is(.hljs-comment, .hljs-quote) { color: #939391 !important; font-style: normal; }
+[data-theme="dark"] :is(.noa-code-block, .noa-code-view) :is(.hljs-comment, .hljs-quote) { color: #B2B2B0 !important; }
 @supports (animation-timeline: scroll()) {
   .noa-shell-output[data-overflow="true"] {
     --edge-fade-distance: 32px;
@@ -2343,6 +2341,7 @@ body.noa-session-dragging * { cursor: grabbing !important; }
 
 /* Codex local conversation Markdown (_MarkdownRoot_16avx_2), scaled to Noa's chat font. */
 .noa-output-markdown {
+  --tw-prose-links: var(--accent-color);
   --output-space: calc(var(--font-text-md-size) / 4);
   font-size: var(--font-text-md-size);
   line-height: var(--font-text-md-line-height);

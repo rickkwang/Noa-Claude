@@ -343,6 +343,9 @@ try {
     (e) => e.kind === "agent" && e.message.type === "system" && e.message.subtype === "init",
   ) as any
   assert.ok(initMessage?.message.session_id)
+  const acknowledged = second.events.find(event => event.kind === "user") as Extract<Envelope, { kind: "user" }>
+  const diskHistory = await (await fetch(`http://127.0.0.1:${port}/api/sessions/${initMessage.message.session_id}?${new URLSearchParams({ cwd })}`)).json() as any[]
+  assert.ok(diskHistory.some(item => item.kind === "user" && item.id === acknowledged.id), "Live user identity must survive disk restoration")
   second.socket.close()
   const third = connect(crypto.randomUUID(), initMessage.message.session_id)
   await third.initialize()
@@ -521,6 +524,7 @@ try {
   ) as Extract<Envelope, { kind: "turn-diff-action" }>
   assert.ok(reapply.result.ok, JSON.stringify(reapply.result))
   assert.equal(readFileSync(join(cwd, "turn-diff.txt"), "utf8"), "one\ntwo\n")
+  assert.ok(diffRun.events.some((event) => event.kind === "turn-diff" && event.diff.turnIndex === 1 && event.updateOnly === true), "Undo/Reapply must identify an update of an existing turn")
   console.log("PASS a turn diff can be undone and reapplied")
 
   const priorResults = diffRun.results().length
