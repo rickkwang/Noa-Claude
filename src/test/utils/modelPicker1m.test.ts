@@ -151,10 +151,16 @@ describe('native-1M model-setting normalization', () => {
     expect(renderModelName(resolved)).toBe('Fable 5.1')
   })
 
-  test('keeps opus[1m] visible, matching upstream display semantics', () => {
+  test('normalizes opus[1m] away now that Opus is natively 1M', () => {
     const resolved = parseUserSpecifiedModel('opus[1m]')
-    expect(resolved).toBe('claude-opus-5-5[1m]')
-    expect(renderModelName(resolved)).toBe('Opus 5.5 (1M context)')
+    expect(resolved).toBe('claude-opus-5-5')
+    expect(renderModelName(resolved)).toBe('Opus 5.5')
+  })
+
+  test('keeps the [1m] suffix on opt-in models like Sonnet 4.6', () => {
+    const resolved = parseUserSpecifiedModel('claude-sonnet-4-6[1m]')
+    expect(resolved).toBe('claude-sonnet-4-6[1m]')
+    expect(renderModelName(resolved)).toBe('Sonnet 4.6 (1M context)')
   })
 
   test('resolves an alias with [1m] when 1M context is disabled', () => {

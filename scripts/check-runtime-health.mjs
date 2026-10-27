@@ -1687,14 +1687,18 @@ function checkOpusUserPaths() {
   // getPublicModelDisplayName for opus-4-7
   const opus47DisplayName = getPublicModelDisplayName(getModelStrings().opus47);
   assert(opus47DisplayName === 'Opus 4.7', `getPublicModelDisplayName(opus47) should return 'Opus 4.7', got: ${opus47DisplayName}`);
+  // Opus 4.7+ is natively 1M: the inert [1m] suffix is normalized away.
   const opus47_1mDisplayName = getPublicModelDisplayName(getModelStrings().opus47 + '[1m]');
-  assert(opus47_1mDisplayName === 'Opus 4.7 (1M context)', `opus47[1m] display name should be 'Opus 4.7 (1M context)', got: ${opus47_1mDisplayName}`);
+  assert(opus47_1mDisplayName === 'Opus 4.7', `opus47[1m] display name should be 'Opus 4.7', got: ${opus47_1mDisplayName}`);
 
   // getPublicModelDisplayName for opus-5
   const opus5DisplayName = getPublicModelDisplayName(getModelStrings().opus5);
   assert(opus5DisplayName === 'Opus 5', `getPublicModelDisplayName(opus5) should return 'Opus 5', got: ${opus5DisplayName}`);
   const opus5_1mDisplayName = getPublicModelDisplayName(getModelStrings().opus5 + '[1m]');
-  assert(opus5_1mDisplayName === 'Opus 5 (1M context)', `opus5[1m] display name should be 'Opus 5 (1M context)', got: ${opus5_1mDisplayName}`);
+  assert(opus5_1mDisplayName === 'Opus 5', `opus5[1m] display name should be 'Opus 5', got: ${opus5_1mDisplayName}`);
+  // Opt-in models keep the marker.
+  const opus46_1mDisplayName = getPublicModelDisplayName(getModelStrings().opus46 + '[1m]');
+  assert(opus46_1mDisplayName === 'Opus 4.6 (1M context)', `opus46[1m] display name should be 'Opus 4.6 (1M context)', got: ${opus46_1mDisplayName}`);
 
   // getPublicModelDisplayName for opus-5-5
   const opus55DisplayName = getPublicModelDisplayName(getModelStrings().opus55);

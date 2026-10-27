@@ -40,7 +40,7 @@ import {
 } from './model.js'
 import { has1mContext, is1mContextDisabled } from '../context.js'
 import { getGlobalConfig } from '../config.js'
-import { hasNative1mContext } from './native1m.js'
+import { is1mSuffixInert } from './native1m.js'
 import { getActiveProviderModelNames } from './providerModels.js'
 
 // @[MODEL LAUNCH]: Update all the available and default model option strings below.
@@ -233,14 +233,16 @@ function getOpus46Option(fastMode = false): ModelOption {
   }
 }
 
-export function getOpus48_1MOption(fastMode = false): ModelOption {
-  const is3P = getAPIProvider() !== 'firstParty'
+// Overflow opt-in row: Opus 4.6 is the newest model whose 1M window is still
+// behind the suffix (upstream's picker offers no [1m] rows for natively-1M
+// models — the marker was dropped from their names and ids entirely).
+export function getOpus46_1MOption(fastMode = false): ModelOption {
   return {
-    value: is3P ? getModelStrings().opus48 + '[1m]' : 'opus[1m]',
-    label: 'Opus (1M context)',
-    description: `Opus 4.8 with 1M context · Best for everyday, complex tasks${getOpusPricingSuffix(fastMode, getModelStrings().opus48)}`,
+    value: getModelStrings().opus46 + '[1m]',
+    label: 'Opus 4.6 (1M context)',
+    description: `Opus 4.6 for long sessions${getOpusPricingSuffix(fastMode, getModelStrings().opus46)}`,
     descriptionForModel:
-      'Opus 4.8 with 1M context window - for long sessions with large codebases',
+      'Opus 4.6 with 1M context window - for long sessions with large codebases',
   }
 }
 
@@ -267,24 +269,15 @@ function getOpus55Option(fastMode = false): ModelOption {
   }
 }
 
-export function getOpus55_1MOption(fastMode = false): ModelOption {
-  const is3P = getAPIProvider() !== 'firstParty'
-  const model = getModelStrings().opus55
+// Overflow opt-in row: Sonnet 4.6 with the 1M beta. The only "Sonnet (1M)"
+// variant left — Sonnet 5+ is natively 1M, so its suffix was dropped.
+export function getSonnet46_1MOption(): ModelOption {
   return {
-    value: is3P ? model + '[1m]' : 'opus[1m]',
-    label: 'Opus (1M context)',
-    description: `Opus 5.5 with 1M context · For complex work and everyday tasks${getOpusPricingSuffix(fastMode, model)}`,
+    value: getModelStrings().sonnet46 + '[1m]',
+    label: 'Sonnet 4.6 (1M context)',
+    description: `Sonnet 4.6 with 1M context${getFirstPartyPricingSuffix(COST_TIER_3_15)}`,
     descriptionForModel:
-      'Opus 5.5 with 1M context window - for long sessions with large codebases',
-  }
-}
-
-export function getMaxOpus55_1MOption(fastMode = false): ModelOption {
-  const billingInfo = isClaudeAISubscriber() ? ' · Draws from usage credits' : ''
-  return {
-    value: 'opus[1m]',
-    label: 'Opus (1M context)',
-    description: `Opus 5.5 with 1M context${billingInfo}${getOpusPricingSuffix(fastMode, getModelStrings().opus55)}`,
+      'Sonnet 4.6 with 1M context window - for long sessions with large codebases',
   }
 }
 
@@ -310,17 +303,6 @@ function getFable5Option(): ModelOption {
     description: `Fable 5 · Most capable for your hardest and longest-running tasks${getFirstPartyPricingSuffix(COST_TIER_10_50)}`,
     descriptionForModel:
       'Fable 5 - most capable for your hardest and longest-running tasks',
-  }
-}
-
-export function getSonnet55_1MOption(): ModelOption {
-  const is3P = getAPIProvider() !== 'firstParty'
-  return {
-    value: is3P ? getModelStrings().sonnet55 + '[1m]' : 'sonnet[1m]',
-    label: 'Sonnet (1M context)',
-    description: `Sonnet 5.5 with 1M context · Most efficient for simpler tasks${getFirstPartyPricingSuffix(COST_TIER_2_10)}`,
-    descriptionForModel:
-      'Sonnet 5.5 with 1M context window - for long sessions with large codebases',
   }
 }
 
@@ -388,20 +370,12 @@ function getMaxOpusOption(fastMode = false): ModelOption {
   }
 }
 
-export function getMaxSonnet55_1MOption(): ModelOption {
-  const billingInfo = isClaudeAISubscriber() ? ' · Draws from usage credits' : ''
-  return {
-    value: 'sonnet[1m]',
-    label: 'Sonnet (1M context)',
-    description: `Sonnet 5.5 with 1M context${billingInfo}${getFirstPartyPricingSuffix(COST_TIER_2_10)}`,
-  }
-}
-
 function getMergedOpus1MOption(fastMode = false): ModelOption {
   const is3P = getAPIProvider() !== 'firstParty'
-  // The merged row always represents whatever the `opus` alias resolves to, so
-  // it follows getDefaultOpusModel (Opus 5.5 on 1P/Bedrock/Vertex, 4.6 on Foundry) rather than
-  // pinning a version string.
+  // The merged row represents whatever the `opus` alias resolves to and is
+  // only reachable while that default is an opt-in 1M model (e.g. pinned to
+  // Opus 4.6 via ANTHROPIC_DEFAULT_OPUS_MODEL) — isOpus1mMergeEnabled gates
+  // it off for natively-1M Opus.
   const model = getDefaultOpusModel()
   const name = getMarketingNameForModel(model) ?? 'Opus'
   const pricing =
@@ -568,10 +542,8 @@ function getModelOptionsBase(fastMode = false): ModelOption[] {
     return [
       getDefaultOptionForUser(),
       ...antModelOptions,
-      getMergedOpus1MOption(fastMode),
       getFable51Option(),
       getSonnet55Option(),
-      getSonnet55_1MOption(),
       getHaikuOption(),
     ]
   }
@@ -580,16 +552,13 @@ function getModelOptionsBase(fastMode = false): ModelOption[] {
     if (isOpusDefaultSubscriber()) {
       // Opus-default plans (see isOpusDefaultSubscriber): main rows in the
       // upstream catalog order (Opus, Sonnet, Fable, Haiku) + overflow.
+      // No "(1M context)" rows: every current-tier model is natively 1M.
       const premiumOptions = [getDefaultOptionForUser(fastMode)]
-      if (!isOpus1mMergeEnabled() && checkOpus1mAccess()) {
-        premiumOptions.push(getMaxOpus55_1MOption(fastMode))
+      if (isOpus1mMergeEnabled()) {
+        premiumOptions.push(getMergedOpus1MOption(fastMode))
       }
 
       premiumOptions.push(MaxSonnet55Option)
-      if (checkSonnet1mAccess()) {
-        premiumOptions.push(getMaxSonnet55_1MOption())
-      }
-
       premiumOptions.push(getFable51Option())
 
       premiumOptions.push(MaxHaiku55Option)
@@ -599,17 +568,11 @@ function getModelOptionsBase(fastMode = false): ModelOption[] {
 
     // Free and Sonnet-only plans: Sonnet is default, show Opus as alternative
     const standardOptions = [getDefaultOptionForUser(fastMode)]
-    if (checkSonnet1mAccess()) {
-      standardOptions.push(getMaxSonnet55_1MOption())
-    }
 
     if (isOpus1mMergeEnabled()) {
       standardOptions.push(getMergedOpus1MOption(fastMode))
     } else {
       standardOptions.push(getMaxOpusOption())
-      if (checkOpus1mAccess()) {
-        standardOptions.push(getMaxOpus55_1MOption())
-      }
     }
 
     standardOptions.push(getFable51Option())
@@ -618,20 +581,21 @@ function getModelOptionsBase(fastMode = false): ModelOption[] {
     return withDefaultFamilyRow(standardOptions, 'sonnet', fastMode)
   }
 
-  // PAYG 1P API: Default + Opus 5.5 + Sonnet 5.5 + Fable 5.1 + Haiku (+1M
-  // variants where they survive the native-1M merge) + overflow rows.
+  // PAYG 1P API: Default + Opus 5.5 + Sonnet 5.5 + Fable 5.1 + Haiku +
+  // overflow rows. Sonnet 4.6 keeps the sole "(1M context)" row — the only
+  // listed model whose 1M window is still an opt-in.
   if (getAPIProvider() === 'firstParty') {
     const payg1POptions = [getDefaultOptionForUser(fastMode)]
-    if (!isOpus1mMergeEnabled() && checkOpus1mAccess()) {
-      payg1POptions.push(getOpus55_1MOption(fastMode))
+    if (isOpus1mMergeEnabled()) {
+      payg1POptions.push(getMergedOpus1MOption(fastMode))
     }
     payg1POptions.push(getSonnet55Option())
-    if (checkSonnet1mAccess()) {
-      payg1POptions.push(getSonnet55_1MOption())
-    }
     payg1POptions.push(getFable51Option())
     payg1POptions.push(getHaikuOption())
     payg1POptions.push(...getOverflowOptions(fastMode))
+    if (checkSonnet1mAccess()) {
+      payg1POptions.push(getSonnet46_1MOption())
+    }
     return withDefaultFamilyRow(payg1POptions, 'opus', fastMode)
   }
 
@@ -658,9 +622,6 @@ function getModelOptionsBase(fastMode = false): ModelOption[] {
     // Sonnet 5.5 is not the third-party default (upstream's alias table pins
     // every cloud provider to Sonnet 4.5), so it needs its own row.
     payg3pOptions.push(getSonnet55Option())
-    if (checkSonnet1mAccess()) {
-      payg3pOptions.push(getSonnet55_1MOption())
-    }
   }
 
   payg3pOptions.push(getFable51Option())
@@ -675,16 +636,23 @@ function getModelOptionsBase(fastMode = false): ModelOption[] {
   // Overflow rows pin versioned ids, so they never collide with a custom env
   // main row — offer them regardless of custom model configuration (the
   // pre-rework 3P list likewise kept the other family's rows when a custom
-  // model replaced one family).
+  // model replaced one family). The 4.6 [1m] opt-in rows sit right after
+  // their base rows, matching upstream's 3P list.
   const overflow = getOverflowOptions(fastMode)
-  if (checkOpus1mAccess()) {
-    // Opus 4.8 is not natively 1M on 3P, so its [1m] opt-in stays a real row
-    // there (on 1P the native-1M merge drops it against the base row).
-    const idx = overflow.findIndex(o => o.value === getModelStrings().opus48)
+  if (checkSonnet1mAccess()) {
+    const idx = overflow.findIndex(o => o.value === getModelStrings().sonnet46)
     overflow.splice(
       idx === -1 ? overflow.length : idx + 1,
       0,
-      getOpus48_1MOption(fastMode),
+      getSonnet46_1MOption(),
+    )
+  }
+  if (checkOpus1mAccess()) {
+    const idx = overflow.findIndex(o => o.value === getModelStrings().opus46)
+    overflow.splice(
+      idx === -1 ? overflow.length : idx + 1,
+      0,
+      getOpus46_1MOption(fastMode),
     )
   }
   payg3pOptions.push(...overflow)
@@ -851,8 +819,9 @@ export function getModelOptions(fastMode = false): ModelOption[] {
       getMaxOpusOption(fastMode),
     ]))
   } else if (customModel === 'opus[1m]' && getAPIProvider() === 'firstParty') {
-    // With 1M-merge enabled, an Opus default already represents Opus 1M.
-    if (isDefaultOpus() && isOpus1mMergeEnabled()) {
+    // Legacy pin from the 1M-merge era. It resolves to the same model as a
+    // bare Opus default now, so the Default row already represents it.
+    if (isDefaultOpus()) {
       return filterModelOptionsByAllowlist(mergeNative1mOptions(options))
     }
     return filterModelOptionsByAllowlist(mergeNative1mOptions([
@@ -877,14 +846,11 @@ export function getModelOptions(fastMode = false): ModelOption[] {
 }
 
 /**
- * Collapse redundant `[1m]` picker rows for models that already serve 1M
- * natively (see native1m.ts): the base row and the `[1m]` row resolve to the
- * same window, and the "(1M context)" label falsely implies the base row is
- * smaller. The base row's description is annotated with "1M context" instead.
- *
- * The `[1m]` row is kept when it IS the current selection (so the picker can
- * still highlight it) or when no matching base row exists (e.g. the merged
- * Opus 1M entry, which replaces the plain Opus row entirely).
+ * Collapse redundant `[1m]` picker rows for models whose suffix is inert (see
+ * native1m.ts): the base row and the `[1m]` row resolve to the same window,
+ * and the "(1M context)" label falsely implies the base row is smaller.
+ * Opt-in models (Sonnet/Opus 4.6) keep both rows — there the suffix still
+ * buys the larger window.
  *
  * Exported for tests.
  */
@@ -894,29 +860,21 @@ export function mergeNative1mOptions(options: ModelOption[]): ModelOption[] {
   }
   const values = new Set(options.map(o => o.value))
 
-  // A base row and its `[1m]` sibling resolve to the same window once the
-  // model is natively 1M, so exactly one of the pair may survive — keeping
-  // both renders duplicate choices. Upstream suppresses the `[1m]` builder in
-  // this case and keeps the base row; do the same here. Historical saved
-  // `[1m]` settings are normalized by migrateOpusToOpus1m.
+  // A base row and its `[1m]` sibling resolve identically once the model's
+  // suffix is inert, so exactly one of the pair may survive — keeping both
+  // renders duplicate choices. Upstream suppresses the `[1m]` builder in this
+  // case and keeps the base row; do the same here.
   const dropped = new Set<string>()
   for (const value of values) {
     if (typeof value !== 'string' || value.endsWith('[1m]')) {
       continue
     }
     const oneM = `${value}[1m]`
-    if (
-      values.has(oneM) &&
-      hasNative1mContext(parseUserSpecifiedModel(value))
-    ) {
+    if (values.has(oneM) && is1mSuffixInert(parseUserSpecifiedModel(value))) {
       dropped.add(oneM)
     }
   }
 
-  // Surviving `[1m]` rows keep their "(1M context)" label: upstream renders a
-  // `[1m]` model string that way wherever it appears (see the display-name
-  // path), so rewriting it here would put the picker at odds with the banner.
-  // The redundancy is fixed by not offering the row, not by relabelling it.
   return options.filter(
     opt => typeof opt.value !== 'string' || !dropped.has(opt.value),
   )

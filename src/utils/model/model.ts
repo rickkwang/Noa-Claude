@@ -28,6 +28,7 @@ import { type APIProvider, getAPIProvider, isDirectFirstParty } from './provider
 import { LIGHTNING_BOLT } from '../../constants/figures.js'
 import { isModelAllowed } from './modelAllowlist.js'
 import { type ModelAlias, isModelAlias } from './aliases.js'
+import { is1mSuffixInert, stripIneffective1mSuffix } from './native1m.js'
 import { capitalize } from '../stringUtils.js'
 
 export type ModelShortName = string
@@ -544,6 +545,13 @@ export function isOpus1mMergeEnabled(): boolean {
   if (is1mContextDisabled() || getAPIProvider() !== 'firstParty') {
     return false
   }
+  // The merge folds a paid 1M upgrade into the default Opus entry. Current
+  // Opus is natively 1M, so there is nothing to fold — the merged row and the
+  // `opus[1m]` pin only exist while the alias resolves to an opt-in model
+  // (e.g. ANTHROPIC_DEFAULT_OPUS_MODEL pinning Opus 4.6).
+  if (is1mSuffixInert(getDefaultOpusModel())) {
+    return false
+  }
   // These auth lookups throw when no credentials are configured at all. Fail
   // closed: an account we cannot classify does not get `opus[1m]` pinned.
   try {
@@ -581,49 +589,44 @@ export function renderModelSetting(setting: ModelName | ModelAlias): string {
 /**
  * Returns a human-readable display name for known public models, or null
  * if the model is not recognized as a public model.
+ *
+ * The "(1M context)" marker only exists for opt-in models — those carrying
+ * upstream's `supports_1m_suffix` without being natively 1M (Sonnet/Opus 4.6
+ * and older). Suffix-inert ids are normalized first, so a legacy
+ * `claude-sonnet-5-5[1m]` renders as plain "Sonnet 5.5".
  */
 export function getPublicModelDisplayName(model: ModelName): string | null {
-  switch (model) {
+  switch (stripIneffective1mSuffix(model)) {
     case getModelStrings().fable51:
       return 'Fable 5.1'
-    case getModelStrings().fable51 + '[1m]':
-      return 'Fable 5.1 (1M context)'
     case getModelStrings().fable5:
       return 'Fable 5'
-    case getModelStrings().fable5 + '[1m]':
-      return 'Fable 5 (1M context)'
     case getModelStrings().opus55:
       return 'Opus 5.5'
-    case getModelStrings().opus55 + '[1m]':
-      return 'Opus 5.5 (1M context)'
     case getModelStrings().opus5:
       return 'Opus 5'
-    case getModelStrings().opus5 + '[1m]':
-      return 'Opus 5 (1M context)'
     case getModelStrings().opus48:
       return 'Opus 4.8'
-    case getModelStrings().opus48 + '[1m]':
-      return 'Opus 4.8 (1M context)'
     case getModelStrings().opus47:
       return 'Opus 4.7'
-    case getModelStrings().opus47 + '[1m]':
-      return 'Opus 4.7 (1M context)'
     case getModelStrings().opus46:
       return 'Opus 4.6'
     case getModelStrings().opus46 + '[1m]':
       return 'Opus 4.6 (1M context)'
     case getModelStrings().opus45:
       return 'Opus 4.5'
+    case getModelStrings().opus45 + '[1m]':
+      return 'Opus 4.5 (1M context)'
     case getModelStrings().opus41:
       return 'Opus 4.1'
+    case getModelStrings().opus41 + '[1m]':
+      return 'Opus 4.1 (1M context)'
     case getModelStrings().opus40:
       return 'Opus 4'
-    case getModelStrings().sonnet55 + '[1m]':
-      return 'Sonnet 5.5 (1M context)'
+    case getModelStrings().opus40 + '[1m]':
+      return 'Opus 4 (1M context)'
     case getModelStrings().sonnet55:
       return 'Sonnet 5.5'
-    case getModelStrings().sonnet5 + '[1m]':
-      return 'Sonnet 5 (1M context)'
     case getModelStrings().sonnet5:
       return 'Sonnet 5'
     case getModelStrings().sonnet46 + '[1m]':
@@ -646,6 +649,8 @@ export function getPublicModelDisplayName(model: ModelName): string | null {
       return 'Haiku 5.5'
     case getModelStrings().haiku45:
       return 'Haiku 4.5'
+    case getModelStrings().haiku45 + '[1m]':
+      return 'Haiku 4.5 (1M context)'
     case getModelStrings().haiku35:
       return 'Haiku 3.5'
     default:
@@ -715,6 +720,16 @@ export function getPublicModelName(model: ModelName): string {
 export function parseUserSpecifiedModel(
   modelInput: ModelName | ModelAlias | undefined | null,
 ): ModelName {
+  // Every resolution path funnels through here, so this is the single point
+  // where an inert `[1m]` is normalized away (upstream's `vz` inside `Bt`):
+  // `sonnet[1m]` resolves to bare `claude-sonnet-5-5`, while an opt-in target
+  // like `claude-sonnet-4-6[1m]` keeps its suffix.
+  return stripIneffective1mSuffix(parseUserSpecifiedModelInner(modelInput))
+}
+
+function parseUserSpecifiedModelInner(
+  modelInput: ModelName | ModelAlias | undefined | null,
+): ModelName {
   if (typeof modelInput !== 'string') {
     return getDefaultSonnetModel()
   }
@@ -739,15 +754,8 @@ export function parseUserSpecifiedModel(
         return getDefaultHaikuModel() + (has1mTag ? '[1m]' : '')
       case 'opus':
         return getDefaultOpusModel() + (has1mTag ? '[1m]' : '')
-      case 'fable': {
-        // Fable carries no `supports_1m_suffix` upstream, and the suffix is a
-        // no-op on a natively-1M model, so it is normalised away on direct
-        // first-party rather than being echoed back in every display name.
-        return (
-          getDefaultFableModel() +
-          (has1mTag && !isDirectFirstParty() ? '[1m]' : '')
-        )
-      }
+      case 'fable':
+        return getDefaultFableModel() + (has1mTag ? '[1m]' : '')
       case 'best':
         return getBestModel()
       default:
@@ -792,7 +800,7 @@ export function parseUserSpecifiedModel(
 
 /**
  * Resolves a skill's `model:` frontmatter against the current model, carrying
- * the `[1m]` suffix over when the target family supports it.
+ * the `[1m]` suffix over when the target family is an opt-in 1M model.
  *
  * A skill author writing `model: opus` means "use opus-class reasoning" — not
  * "downgrade to 200K". If the user is on opus[1m] at 230K tokens and invokes a
@@ -800,10 +808,11 @@ export function parseUserSpecifiedModel(
  * context window from 1M to 200K, which trips autocompact at 23% apparent usage
  * and surfaces "Context limit reached" even though nothing overflowed.
  *
- * We only carry [1m] when the target actually supports it (sonnet/opus). A skill
- * with `model: haiku` on a 1M session still downgrades — haiku has no 1M variant,
- * so the autocompact that follows is correct. Skills that already specify [1m]
- * are left untouched.
+ * We only carry [1m] when the target's suffix actually does something (opt-in
+ * models like Sonnet/Opus 4.6). A natively-1M target gains nothing from the
+ * suffix, and a target without any 1M variant (haiku) still downgrades — the
+ * autocompact that follows is correct. Skills that already specify [1m] are
+ * left untouched.
  */
 export function resolveSkillModelOverride(
   skillModel: string,
@@ -814,7 +823,8 @@ export function resolveSkillModelOverride(
   }
   // modelSupports1M matches on canonical IDs ('claude-opus-4-6', 'claude-sonnet-4');
   // a bare 'opus' alias falls through getCanonicalName unmatched. Resolve first.
-  if (modelSupports1M(parseUserSpecifiedModel(skillModel))) {
+  const resolved = parseUserSpecifiedModel(skillModel)
+  if (modelSupports1M(resolved) && !is1mSuffixInert(resolved)) {
     return skillModel + '[1m]'
   }
   return skillModel
@@ -861,29 +871,32 @@ export function getMarketingNameForModel(modelId: string | undefined): string | 
     return undefined
   }
 
-  const has1m = modelId.toLowerCase().includes('[1m]')
-  const canonical = getCanonicalName(modelId)
+  // Marketing names never carry a context marker — upstream looks the name up
+  // on the suffix-stripped id (`Im(Wn(...))`), so `opus[1m]` and `opus` name
+  // the same model. The "(1M context)" phrasing lives in the display-name
+  // path, gated on opt-in models only.
+  const canonical = getCanonicalName(modelId.replace(/\[1m\]/gi, ''))
 
   if (canonical.includes('claude-fable-5-1')) {
-    return has1m ? 'Fable 5.1 (with 1M context)' : 'Fable 5.1'
+    return 'Fable 5.1'
   }
   if (canonical.includes('claude-fable-5')) {
-    return has1m ? 'Fable 5 (with 1M context)' : 'Fable 5'
+    return 'Fable 5'
   }
   if (canonical.includes('claude-opus-5-5')) {
-    return has1m ? 'Opus 5.5 (with 1M context)' : 'Opus 5.5'
+    return 'Opus 5.5'
   }
   if (canonical.includes('claude-opus-5')) {
-    return has1m ? 'Opus 5 (with 1M context)' : 'Opus 5'
+    return 'Opus 5'
   }
   if (canonical.includes('claude-opus-4-8')) {
-    return has1m ? 'Opus 4.8 (with 1M context)' : 'Opus 4.8'
+    return 'Opus 4.8'
   }
   if (canonical.includes('claude-opus-4-7')) {
-    return has1m ? 'Opus 4.7 (with 1M context)' : 'Opus 4.7'
+    return 'Opus 4.7'
   }
   if (canonical.includes('claude-opus-4-6')) {
-    return has1m ? 'Opus 4.6 (with 1M context)' : 'Opus 4.6'
+    return 'Opus 4.6'
   }
   if (canonical.includes('claude-opus-4-5')) {
     return 'Opus 4.5'
@@ -895,19 +908,19 @@ export function getMarketingNameForModel(modelId: string | undefined): string | 
     return 'Opus 4'
   }
   if (canonical.includes('claude-sonnet-5-5')) {
-    return has1m ? 'Sonnet 5.5 (with 1M context)' : 'Sonnet 5.5'
+    return 'Sonnet 5.5'
   }
   if (canonical.includes('claude-sonnet-5')) {
-    return has1m ? 'Sonnet 5 (with 1M context)' : 'Sonnet 5'
+    return 'Sonnet 5'
   }
   if (canonical.includes('claude-sonnet-4-6')) {
-    return has1m ? 'Sonnet 4.6 (with 1M context)' : 'Sonnet 4.6'
+    return 'Sonnet 4.6'
   }
   if (canonical.includes('claude-sonnet-4-5')) {
-    return has1m ? 'Sonnet 4.5 (with 1M context)' : 'Sonnet 4.5'
+    return 'Sonnet 4.5'
   }
   if (canonical.includes('claude-sonnet-4')) {
-    return has1m ? 'Sonnet 4 (with 1M context)' : 'Sonnet 4'
+    return 'Sonnet 4'
   }
   if (canonical.includes('claude-3-7-sonnet')) {
     return 'Claude 3.7 Sonnet'
@@ -916,7 +929,7 @@ export function getMarketingNameForModel(modelId: string | undefined): string | 
     return 'Claude 3.5 Sonnet'
   }
   if (canonical.includes('claude-haiku-5-5')) {
-    return has1m ? 'Haiku 5.5 (with 1M context)' : 'Haiku 5.5'
+    return 'Haiku 5.5'
   }
   if (canonical.includes('claude-haiku-4-5')) {
     return 'Haiku 4.5'

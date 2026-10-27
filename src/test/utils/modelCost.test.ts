@@ -10,7 +10,7 @@ import {
   getModelPricingString,
   getOpusCostTierForModel,
 } from '../../utils/modelCost.js'
-import { getSonnet55_1MOption } from '../../utils/model/modelOptions.js'
+import { getSonnet46_1MOption } from '../../utils/model/modelOptions.js'
 
 const originalBaseUrl = process.env.ANTHROPIC_BASE_URL
 const originalDisableFastMode = process.env.CLAUDE_CODE_DISABLE_FAST_MODE
@@ -106,6 +106,6 @@ describe('Sonnet 5 pricing', () => {
     const usage = { input_tokens: 1, output_tokens: 1 } as never
 
     expect(getModelCosts('claude-sonnet-5', usage)).toBe(COST_TIER_3_15)
-    expect(getSonnet55_1MOption().description).not.toContain('$')
+    expect(getSonnet46_1MOption().description).not.toContain('$')
   })
 })

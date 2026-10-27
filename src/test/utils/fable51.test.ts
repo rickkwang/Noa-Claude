@@ -51,9 +51,8 @@ describe('Fable 5.1 identity', () => {
 
   test('renders its own marketing name', () => {
     expect(getMarketingNameForModel('claude-fable-5-1')).toBe('Fable 5.1')
-    expect(getMarketingNameForModel('claude-fable-5-1[1m]')).toBe(
-      'Fable 5.1 (with 1M context)',
-    )
+    // Marketing names never carry the inert [1m] marker.
+    expect(getMarketingNameForModel('claude-fable-5-1[1m]')).toBe('Fable 5.1')
     expect(getMarketingNameForModel('claude-fable-5')).toBe('Fable 5')
   })
 
