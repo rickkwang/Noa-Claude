@@ -165,16 +165,6 @@ function EggPlayer({ egg }: { egg: OpenEgg }) {
     }
   }, [internal_eventEmitter, scene])
 
-  // A resize reflows the banner, so the logo's landing spot is stale: end the egg
-  // at once rather than fly the cubes back to where the logo no longer is.
-  const sizeRef = useRef({ columns, rows })
-  useEffect(() => {
-    const size = sizeRef.current
-    if (size.columns === columns && size.rows === rows) return
-    sizeRef.current = { columns, rows }
-    scene.close(seconds())
-    scene.close(seconds())
-  }, [columns, rows, scene])
 
   // Claim the wheel too: an unclaimed one would scroll the transcript under the
   // egg, and the exit would re-form the old snapshot and then jump.
