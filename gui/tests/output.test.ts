@@ -8,11 +8,37 @@ import { Markdown } from "../src/components/Markdown"
 import { ToolCard } from "../src/components/ToolCard"
 import { PermissionCard } from "../src/components/PermissionCard"
 import { Collapsible } from "../src/components/Collapsible"
+import { RightPanel } from "../src/components/RightPanel"
 
 const agent = (s: AgentState, message: object) => reducer(s, { type: "agent", message } as any)
 const start = () => reducer(initialState, { type: "user-sent", id: "u", text: "task" })
 const bash = { kind: "tool" as const, id: "b", name: "Bash", input: { command: "sleep 10" }, partialJson: "", status: "running" as const }
 const messages = (turns: any[], extra = {}) => render(createElement(MessageList, { turns, busy: false, readingWidth: 800, ...extra }))
+
+test("activity identifies partial history and distinguishes input from approval", () => {
+  const oldStorage = globalThis.localStorage
+  Object.defineProperty(globalThis, "localStorage", { configurable: true, value: { getItem: () => null } })
+  try {
+    const state = { ...initialState, connection: "ready" as const, historyBefore: 10, elicitations: [{ requestId: "input" }] as any }
+    const html = render(createElement(RightPanel, { state, cwd: "/project", tab: "activity", onTab: () => {}, onStopTask: () => {}, onRefreshContext: () => {}, onLoadEarlier: () => {}, onReference: () => {}, workspaceRefreshKey: 0 }))
+    expect(html).toContain("Waiting for input")
+    expect(html).toContain("Showing loaded activity")
+    expect(html).toContain("Load earlier")
+    expect(html).not.toContain("Waiting for approval")
+  } finally { Object.defineProperty(globalThis, "localStorage", { configurable: true, value: oldStorage }) }
+})
+
+test("context request state retains the last measurement after an error or disconnect", () => {
+  const usage = { totalTokens: 100, maxTokens: 1000, percentage: 10 } as any
+  let state = reducer(initialState, { type: "control", payload: { kind: "context_usage", usage } })
+  state = reducer(state, { type: "context-request" })
+  expect(state.contextLoading).toBe(true)
+  state = reducer(state, { type: "context-error", error: "Unavailable" })
+  expect(state).toMatchObject({ contextLoading: false, contextError: "Unavailable", contextUsage: usage })
+  state = reducer(state, { type: "context-request" })
+  state = reducer(state, { type: "connection", status: "closed" })
+  expect(state).toMatchObject({ contextLoading: false, contextUsage: usage })
+})
 
 test("restored interruption settles an unfinished command", () => {
   let s = agent(start(), { type: "assistant", parent_tool_use_id: null, message: { content: [{ type: "tool_use", id: "b", name: "Bash", input: { command: "sleep 10" } }] } })

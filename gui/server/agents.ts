@@ -53,6 +53,7 @@ interface AgentRun {
     finalizing?: Promise<void>
   }
   waiting: Set<string>
+  activeTasks: Set<string>
   title?: string
   initialization?: Extract<AgentMessage, { type: "control_response" }>
   initializationRequest?: string
@@ -64,7 +65,7 @@ const runs = new Map<string, AgentRun>()
 const workspaceOperations = new Map<string, Promise<void>>()
 
 function reclaimIfIdle(run: AgentRun): void {
-  if (!run.clients.size && !run.busy && !run.queue.length && !run.waiting.size && !run.exited) {
+  if (!run.clients.size && !run.busy && !run.queue.length && !run.waiting.size && !run.activeTasks?.size && !run.exited) {
     run.proc.kill()
     runs.delete(run.id)
   }
@@ -84,6 +85,15 @@ function queueEnvelope(run: AgentRun): Envelope {
   return { kind: "queue", messages: [...run.queue], paused: run.queuePaused }
 }
 export function emit(run: AgentRun, envelope: Envelope) {
+  let finishedTask = false
+  if (envelope.kind === "agent" && envelope.message.type === "system") {
+    const message = envelope.message
+    if (message.subtype === "task_started" || message.subtype === "task_progress") (run.activeTasks ??= new Set()).add(message.task_id)
+    else if (message.subtype === "task_notification" && ["completed", "failed", "stopped"].includes(message.status ?? "")) {
+      run.activeTasks?.delete(message.task_id)
+      finishedTask = true
+    }
+  }
   if (envelope.kind === "turn-diff" && envelope.updateOnly) {
     for (const item of run.history ?? []) if (item.kind === "turn-diff" && item.diff.turnIndex === envelope.diff.turnIndex) item.diff = envelope.diff
   }
@@ -124,6 +134,7 @@ export function emit(run: AgentRun, envelope: Envelope) {
   }
   if (envelope.kind !== "turn-diff-action") run.journal.push(envelope)
   for (const client of run.clients) client.send(JSON.stringify(envelope))
+  if (finishedTask) reclaimIfIdle(run)
 }
 function write(run: AgentRun, message: unknown) {
   run.proc.stdin.write(`${JSON.stringify(message)}\n`)
@@ -215,22 +226,22 @@ function scheduleLiveDiff(run: AgentRun) {
   }, wait)
 }
 
-async function computeLiveDiff(run: AgentRun) {
+export async function computeLiveDiff(run: AgentRun) {
   const turn = run.turn
   if (!turn || turn.finalizing) return
   turn.liveAt = Date.now()
   // Tool-result patches are the live source in Codex too; the completed card
   // still uses the full tree, which also catches shell-made edits.
-  const diff = await collectDiff(run.cwd, turn.changes).catch(() => null)
-  if (diff?.files.length && run.turn === turn && !turn.finalizing)
-    emit(run, { kind: "turn-diff-live", diff: { ...diff, turnIndex: turn.index } })
+  const diff = await collectDiff(run.cwd, turn.changes).catch(() => undefined)
+  if (diff !== undefined && run.turn === turn && !turn.finalizing)
+    emit(run, { kind: "turn-diff-live", diff: { ...(diff ?? { files: [], additions: 0, deletions: 0 }), turnIndex: turn.index } })
 }
 
 async function turnDiffAction(run: AgentRun, turnIndex: number, action: "undo" | "reapply") {
   const fail = (result: TurnDiffActionResult) =>
     emit(run, { kind: "turn-diff-action", turnIndex, action, result })
   await afterWorkspaceOperation(run.cwd, async () => {
-    if ([...runs.values()].some((active) => active.cwd === run.cwd && !active.exited && (active.busy || active.waiting.size)))
+    if ([...runs.values()].some((active) => active.cwd === run.cwd && !active.exited && (active.busy || active.waiting.size || active.activeTasks.size)))
       return fail({ ok: false, errorCode: "apply-failed", error: "Wait for running tasks in this workspace to finish before changing a workspace snapshot.", appliedPaths: [], skippedPaths: [], conflictedPaths: [] })
     if (!run.sessionId)
       return fail({ ok: false, errorCode: "no-patch", appliedPaths: [], skippedPaths: [], conflictedPaths: [] })
@@ -253,7 +264,7 @@ async function turnDiffAction(run: AgentRun, turnIndex: number, action: "undo" |
   })
 }
 
-function finalizeTurnDiff(run: AgentRun): Promise<void> {
+export function finalizeTurnDiff(run: AgentRun): Promise<void> {
   const turn = run.turn
   if (!turn) return Promise.resolve()
   if (turn.finalizing) return turn.finalizing
@@ -271,8 +282,16 @@ function finalizeTurnDiff(run: AgentRun): Promise<void> {
           : null
         if (fallback) diff = mergeTurnDiffs(diff, fallback)
         // Outside git, rebuild the turn from the tool results the CLI returned.
-        if (!diff) diff = await collectDiff(run.cwd, turn.changes).catch(() => null)
-        if (!diff || diff.files.length === 0) return
+        let collected = false
+        if (!diff) {
+          const result = await collectDiff(run.cwd, turn.changes).catch(() => undefined)
+          if (result !== undefined) { diff = result; collected = true }
+        }
+        if (!diff || diff.files.length === 0) {
+          if ((turn.before && after && turn.before.tree === after.tree && !fallback) || (!turn.before && collected))
+            emit(run, { kind: "turn-diff-live", diff: { files: [], additions: 0, deletions: 0, turnIndex: turn.index } })
+          return
+        }
         const view = diffForView(diff)
         const shown = { ...view.diff, turnIndex: turn.index }
         const userMessageId = run.sessionId
@@ -368,6 +387,7 @@ export function attachAgent(ws: ServerWebSocket<SocketData>, root: string) {
       busy: false,
       turnCounter: priorTurn,
       waiting: new Set(),
+      activeTasks: new Set(),
       initializeWaiters: new Map(),
       historyReady: Promise.resolve(),
       exited: false,
@@ -452,6 +472,7 @@ export function attachAgent(ws: ServerWebSocket<SocketData>, root: string) {
           await finalizeTurnDiff(current)
           current.busy = false
           if (current.turnSucceeded && !current.queuePaused) void startNext(current)
+          reclaimIfIdle(current)
         })()
       }
     }).catch((error) => emit(current, { kind: "log", text: String(error) }))

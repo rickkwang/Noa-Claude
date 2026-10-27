@@ -47,6 +47,8 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
   const socketRef = useRef<WebSocket | null>(null)
   const modeRef = useRef<PermissionMode | undefined>(undefined)
   const pendingRef = useRef(new Map<string, ResponseKind>())
+  const contextTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const contextRefreshAfterRef = useRef(false)
 
   const write = useCallback((message: Outgoing) => {
     const socket = socketRef.current
@@ -57,10 +59,20 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
 
   const control = useCallback(
     (request: ControlRequest, expects?: ResponseKind) => {
+      if (expects === "context_usage" && [...pendingRef.current.values()].includes("context_usage")) return false
       const requestId = crypto.randomUUID()
       if (expects) pendingRef.current.set(requestId, expects)
       const sent = write({ type: "control_request", request_id: requestId, request })
       if (!sent && expects) pendingRef.current.delete(requestId)
+      if (expects === "context_usage") {
+        dispatch(sent ? { type: "context-request" } : { type: "context-error", error: "Agent is disconnected" })
+        if (sent) contextTimerRef.current = setTimeout(() => {
+          pendingRef.current.delete(requestId)
+          contextTimerRef.current = undefined
+          contextRefreshAfterRef.current = false
+          dispatch({ type: "context-error", error: "Context request timed out. Try again." })
+        }, 20000)
+      }
       return sent
     },
     [write],
@@ -70,6 +82,7 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
     ownerRef.current = runtimeId
     dispatch({ type: "reset" })
     pendingRef.current.clear()
+    contextRefreshAfterRef.current = false
     modeRef.current = undefined
 
     const params = new URLSearchParams()
@@ -164,19 +177,28 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
             const kind = pendingRef.current.get(message.response.request_id)
             if (kind) {
               pendingRef.current.delete(message.response.request_id)
+              if (kind === "context_usage") { clearTimeout(contextTimerRef.current); contextTimerRef.current = undefined }
               if (kind === "initialize") clearInitializationTimer()
               if (message.response.subtype === "error") {
                 const error = message.response.error ?? "Agent rejected the request"
-                if (kind === "auth_urls" || kind === "auth_complete") dispatch({ type: "auth-error", error })
+                if (kind === "context_usage") dispatch({ type: "context-error", error })
+                else if (kind === "auth_urls" || kind === "auth_complete") dispatch({ type: "auth-error", error })
                 else dispatch({ type: "error", text: error })
                 if (kind === "initialize") socket.close()
               } else routeResponse(kind, message.response.response)
+              if (kind === "context_usage" && contextRefreshAfterRef.current) {
+                contextRefreshAfterRef.current = false
+                control({ subtype: "get_context_usage" }, "context_usage")
+              }
             }
           }
           if (message.type === "control_request" && !["can_use_tool", "elicitation"].includes(message.request.subtype)) {
             socket.send(JSON.stringify({ type: "control_response", response: { subtype: "error", request_id: message.request_id, error: `Unsupported GUI request: ${message.request.subtype}` } }))
           }
-          if (message.type === "result" && !message.parent_tool_use_id && pendingRef.current.size === 0) control({ subtype: "get_context_usage" }, "context_usage")
+          if (message.type === "result" && !message.parent_tool_use_id) {
+            if ([...pendingRef.current.values()].includes("context_usage")) contextRefreshAfterRef.current = true
+            else control({ subtype: "get_context_usage" }, "context_usage")
+          }
           dispatch({ type: "agent", message })
           break
         }
@@ -192,7 +214,12 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
 
     socket.onclose = () => {
       clearInitializationTimer()
-      if (isCurrent()) { flushDeltas(); dispatch({ type: "connection", status: "closed" }) }
+      if (isCurrent()) {
+        clearTimeout(contextTimerRef.current)
+        contextTimerRef.current = undefined
+        contextRefreshAfterRef.current = false
+        flushDeltas(); dispatch({ type: "connection", status: "closed" })
+      }
     }
 
     function routeResponse(kind: ResponseKind, response: unknown) {
@@ -261,6 +288,8 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
       if (deltaFrame !== undefined) cancelAnimationFrame(deltaFrame)
       pendingDeltas = []
       clearInitializationTimer()
+      clearTimeout(contextTimerRef.current)
+      contextTimerRef.current = undefined
       socketRef.current = null
       socket.close()
     }

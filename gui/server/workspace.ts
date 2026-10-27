@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto"
+import { createReadStream } from "node:fs"
 import { opendir, readdir, realpath, stat, lstat, readFile, writeFile, rename, chmod, unlink } from "node:fs/promises"
 import { dirname, relative, resolve, sep, extname } from "node:path"
 import { createTwoFilesPatch, parsePatch, formatPatch } from "diff"
@@ -129,7 +130,17 @@ async function diff(cwd: string, path: string, scope: string, context: string | 
   const file = listing.files.find((f) => f.path === path)
   if (!file) return { content: "", snapshot: "", additions: 0, deletions: 0 }
   const hasHead = await git(cwd, ["rev-parse", "--verify", "HEAD"]).then(() => true, () => false)
-  const contents = await textFile(cwd, path).catch((error: NodeJS.ErrnoException) => { if (error.code === "ENOENT" || error.code === "EISDIR") return undefined; throw error })
+  const contents = await (async () => {
+    const target = await inside(cwd, path)
+    const info = await stat(target)
+    if (!info.isFile()) return undefined
+    if (scope === "staged" && info.size > MAX_PREVIEW) {
+      const hash = createHash("sha256")
+      for await (const chunk of createReadStream(target)) hash.update(chunk as Buffer)
+      return { info, revision: hash.digest("hex"), binary: false, content: "" }
+    }
+    return textFile(cwd, path)
+  })().catch((error: NodeJS.ErrnoException) => { if (error.code === "ENOENT" || error.code === "EISDIR") return undefined; throw error })
   const args = ["--no-ext-diff", "--no-textconv", "--no-color", context === "all" ? "--unified=100000" : "--unified=3"]
   const paths = file.oldPath ? [file.oldPath, path] : [path]
   const fromEmpty = file.status === "??" || !hasHead && scope === "all"

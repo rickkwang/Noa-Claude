@@ -12,6 +12,10 @@ import { Lightbox } from "../../src/components/Lightbox"
 import CodeView from "../../src/components/CodeView"
 import ThemeInjector from "../../src/theme/ThemeInjector"
 import { defaultSettings } from "../../src/theme/settings"
+import { WorkspaceFiles } from "../../src/components/WorkspaceFiles"
+import { TurnReview } from "../../src/components/TurnReview"
+import { useAgent } from "../../src/agent/useAgent"
+import { RightPanel } from "../../src/components/RightPanel"
 
 declare global { interface Window { [key: string]: any } }
 const visualTheme = new URLSearchParams(location.search).get("theme") === "dark" ? "dark" : "light"
@@ -30,6 +34,16 @@ const update = { kind: "tool", id: "update", name: "TaskUpdate", input: { taskId
 const mcp = { ...update, id: "mcp", name: "mcp__local__query", input: {}, rawResult: { structuredContent: { rows: [1, 2] }, _meta: { cursor: "next" } } }
 const todo = { ...update, id: "todo", name: "TodoWrite", input: { todos: [{ content: "Inspect files", status: "completed" }, { content: "Run checks", status: "in_progress" }] }, rawResult: undefined }
 const panel = (name: string, title: string, body: any) => <section data-case={name}><h2>{title}</h2>{body}</section>
+
+function ContextProbe() {
+  const { state } = useAgent({ cwd: "/fixture", sessionKey: 0, runtimeId: "context-probe" })
+  return <span data-context-loading={state.contextLoading ? "yes" : "no"} />
+}
+
+function WorkspacePanelProbe() {
+  const [tab, setTab] = useState<"files" | "changes" | "context" | "activity">("changes")
+  return <div style={{ width: 500, height: 500 }}><RightPanel state={{ ...initialState, connection: "ready" }} cwd="/fixture" tab={tab} onTab={setTab} onStopTask={() => {}} onRefreshContext={() => {}} onLoadEarlier={() => {}} onReference={() => {}} workspaceRefreshKey={0} /></div>
+}
 
 function Comparison() {
   const [range, setRange] = useState<{ line?: number; end?: number }>({})
@@ -77,6 +91,151 @@ window.runChecks = async () => {
   await show(null)
   await show(<div style={{ position: "relative", height: 500 }}><MessageRail items={prepended} activeIds={["old2"]} sessionId="bookmark-check" onJump={() => {}} /></div>)
   results.bookmarkReload = document.querySelector('[data-bookmarked="true"]')?.closest("button")?.dataset.messageRailItem === "old2"
+  const originalFetch = window.fetch
+  let failChanges = false
+  let resolveStaged: ((response: Response) => void) | undefined
+  window.fetch = async (input: any) => {
+    const url = new URL(String(input), location.href)
+    if (url.pathname === "/api/changes" && url.searchParams.get("scope") === "staged") return await new Promise<Response>(resolve => { resolveStaged = resolve })
+    if (url.pathname === "/api/changes") return new Response(JSON.stringify(failChanges ? { error: "Fixture failure" } : { isGit: true, branch: "main", files: [{ path: "changed.txt", status: " M", additions: 1, deletions: 0, binary: false }], additions: 1, deletions: 0 }), { status: failChanges ? 500 : 200 })
+    if (url.pathname === "/api/files") return new Response(JSON.stringify({ entries: url.searchParams.has("search") ? [{ name: "found.txt", path: "found.txt", directory: false }] : url.searchParams.get("path") === "folder" ? [{ name: "child.ts", path: "folder/child.ts", directory: false }] : [{ name: "folder", path: "folder", directory: true }], truncated: false }))
+    if (url.pathname === "/api/diff") return new Response(JSON.stringify({ content: `--- a/changed.txt\n+++ b/changed.txt\n@@ -0,0 +1,1 @@\n+${"long_identifier_".repeat(80)}\n`, snapshot: "snapshot" }))
+    if (url.pathname === "/api/git-action") return new Response(JSON.stringify({ error: "Fixture action failed" }), { status: 409 })
+    return originalFetch(input)
+  }
+  await show(<div style={{ height: 500 }}><WorkspaceFiles cwd="/fixture" refreshKey={0} onReference={() => {}} /></div>)
+  await wait(() => !!document.querySelector('[title="folder"]'))
+  const folder = document.querySelector<HTMLElement>('[title="folder"]')!
+  folder.focus(); folder.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }))
+  results.treeKeyboardExpand = await wait(() => !!document.querySelector('[title="folder/child.ts"]'))
+  const childIcon = document.querySelector<HTMLElement>('[title="folder/child.ts"] .noa-file-icon')!
+  const folderIcon = folder.querySelector<HTMLElement>(".noa-file-icon")!
+  results.treeFileIndent = Math.abs(childIcon.getBoundingClientRect().left - folderIcon.getBoundingClientRect().left - 12.5) < 0.1
+  const guide = folder.querySelector<HTMLElement>(".noa-file-guides > span:last-child")!
+  const childGuide = document.querySelector<HTMLElement>('[title="folder/child.ts"] .noa-file-guides > span:first-child')!
+  results.treeGuidesContinuous = !!guide && !!childGuide && Math.abs(guide.getBoundingClientRect().height - folder.getBoundingClientRect().height) < 0.1 && Math.abs(guide.getBoundingClientRect().left - childGuide.getBoundingClientRect().left) < 0.1 && Math.abs(guide.getBoundingClientRect().bottom - childGuide.getBoundingClientRect().top) < 0.1 && getComputedStyle(guide.parentElement!).overflow === "visible"
+  results.typescriptIcon = !!childIcon.querySelector("svg.noa-glyph-blue path[opacity]")
+  folder.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }))
+  results.treeKeyboardChild = document.activeElement?.getAttribute("title") === "folder/child.ts"
+  document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true }))
+  results.treeKeyboardParent = document.activeElement === folder
+  ;(Array.from(document.querySelectorAll<HTMLElement>('[role="treeitem"]')).find(e => e.textContent?.includes("All files")))?.click()
+  const search = document.querySelector<HTMLInputElement>('[aria-label="Search files"]')!
+  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(search, "found")
+  search.dispatchEvent(new Event("input", { bubbles: true }))
+  results.searchAfterCollapse = await wait(() => !!document.querySelector('[title="found.txt"]'))
+  localStorage.setItem("noa-diff-wrap", "false")
+  localStorage.removeItem("noa-diff-wrap-v2")
+  localStorage.setItem("noa-diff-layout", "unified")
+  await show(<div style={{ width: 320, height: 400 }}><WorkspaceFiles key="diff" cwd="/fixture" changes refreshKey={0} onReference={() => {}} /></div>)
+  await wait(() => !!document.querySelector('[title="changed.txt"]'))
+  const scopeBar = document.querySelector<HTMLElement>('[aria-label="Changes scope"]')!
+  const scopeTop = scopeBar.getBoundingClientRect().top
+  ;(Array.from(scopeBar.querySelectorAll("button")).find(button => button.textContent === "Staged"))?.click()
+  await wait(() => !!resolveStaged)
+  results.changesScopeStable = document.querySelector('[aria-label="Changes scope"]') === scopeBar && scopeBar.getBoundingClientRect().top === scopeTop && !document.querySelector('[title="changed.txt"]')
+  resolveStaged?.(new Response(JSON.stringify({ isGit: true, branch: "main", files: [], additions: 0, deletions: 0 })))
+  await wait(() => document.body.textContent?.includes("No staged changes") === true)
+  ;(Array.from(scopeBar.querySelectorAll("button")).find(button => button.textContent === "All"))?.click()
+  await wait(() => !!document.querySelector('[title="changed.txt"]'))
+  ;(document.querySelector('[title="changed.txt"]') as HTMLElement)?.click()
+  results.workingDiffWrapsByDefault = await wait(() => !!document.querySelector(".noa-code-view.is-wrapped")) && (() => { const body = document.querySelector<HTMLElement>(".noa-panel-body")!, code = document.querySelector<HTMLElement>(".noa-code-line.is-add code")!; return body.scrollWidth <= body.clientWidth + 1 && code.getBoundingClientRect().height > 40 })()
+  ;(Array.from(document.querySelectorAll<HTMLButtonElement>('[aria-label="Diff layout"] button')).find(button => button.textContent === "Split"))?.click()
+  results.splitDiffWraps = await wait(() => !!document.querySelector(".noa-code-view.is-split")) && (() => { const body = document.querySelector<HTMLElement>(".noa-panel-body")!, code = document.querySelector<HTMLElement>(".noa-code-line.is-add code")!; return body.scrollWidth <= body.clientWidth + 1 && code.getBoundingClientRect().height > 40 })()
+  ;(document.querySelector('[aria-label="Review actions"]') as HTMLElement)?.click()
+  ;(Array.from(document.querySelectorAll<HTMLButtonElement>("button")).find(button => button.textContent === "Stage file"))?.click()
+  const actionFailed = await wait(() => !!document.querySelector('[role="alert"]')?.textContent?.includes("Fixture action failed"))
+  await new Promise(resolve => setTimeout(resolve, 3200))
+  results.actionErrorSurvivesPolling = actionFailed && !!document.querySelector('[role="alert"]')?.textContent?.includes("Fixture action failed")
+  failChanges = true
+  await show(<div style={{ height: 500 }}><WorkspaceFiles key="error" cwd="/fixture" changes refreshKey={0} onReference={() => {}} /></div>)
+  results.changesError = await wait(() => !!document.querySelector('[role="alert"]')?.textContent?.includes("Fixture failure")) && !document.body.textContent?.includes("Loading changes…")
+  window.fetch = originalFetch
+  const reviewDiff = { files: [{ path: "a.txt", additions: 1, deletions: 0 }, { path: "b.txt", additions: 1, deletions: 0 }], additions: 2, deletions: 0, patch: "--- a/a.txt\n+++ b/a.txt\n@@ -0,0 +1,1 @@\n+a\n--- a/b.txt\n+++ b/b.txt\n@@ -0,0 +1,1 @@\n+b\n" } as any
+  await show(<TurnReview diff={reviewDiff} focusPath="a.txt" focusKey={1} />)
+  ;(document.querySelector('[role="option"][title="b.txt"]') as HTMLElement)?.click()
+  await show(<TurnReview diff={{ ...reviewDiff }} focusPath="a.txt" focusKey={1} />)
+  results.turnReviewKeepsSelection = document.querySelector('[role="option"][title="b.txt"]')?.getAttribute("aria-selected") === "true"
+  await show(<TurnReview diff={{ ...reviewDiff }} focusPath="a.txt" focusKey={2} />)
+  results.turnReviewFocusRequest = document.querySelector('[role="option"][title="a.txt"]')?.getAttribute("aria-selected") === "true"
+  const longDiff = { ...reviewDiff, files: [reviewDiff.files[0]], patch: `--- a/a.txt\n+++ b/a.txt\n@@ -0,0 +1,1 @@\n+${"long_identifier_".repeat(80)}\n` }
+  localStorage.setItem("noa-turn-diff-wrap", "false")
+  localStorage.removeItem("noa-turn-diff-wrap-v2")
+  await show(<div style={{ width: 320, height: 400 }}><TurnReview diff={longDiff} /></div>)
+  const reviewBody = document.querySelector<HTMLElement>(".noa-panel-body")!
+  results.turnDiffWrapsByDefault = !!document.querySelector(".noa-code-view.is-wrapped") && reviewBody.scrollWidth <= reviewBody.clientWidth + 1
+  const markedPatch = "--- a/a.ts\n+++ b/a.ts\n@@ -10,1 +10,1 @@\n-oldValue\n+newValue\n"
+  await show(<div style={{ width: 320, height: 400 }}><CodeView path="a.ts" content={markedPatch} diff wrap /></div>)
+  const addedRow = document.querySelector<HTMLElement>(".noa-code-line.is-add")!, removedRow = document.querySelector<HTMLElement>(".noa-code-line.is-remove")!
+  results.diffSingleGutter = addedRow.querySelectorAll(".noa-code-number").length === 1 && removedRow.querySelectorAll(".noa-code-number").length === 1 && addedRow.querySelector(".noa-code-number")?.textContent === "10" && removedRow.querySelector(".noa-code-number")?.textContent === "10"
+  results.diffMarkers = getComputedStyle(addedRow.querySelector(".noa-code-number")!, "::before").width === "3px" && getComputedStyle(removedRow.querySelector(".noa-code-number")!, "::before").width === "3px"
+  const originalSocket = window.WebSocket
+  const requests: any[] = []
+  let contextSocket: any
+  class ContextSocket {
+    static OPEN = 1
+    readyState = 1
+    onopen?: () => void
+    onmessage?: (event: any) => void
+    constructor() { contextSocket = this; queueMicrotask(() => this.onopen?.()) }
+    send(raw: string) { requests.push(JSON.parse(raw)) }
+    close() { this.readyState = 3 }
+  }
+  window.WebSocket = ContextSocket as any
+  await show(<ContextProbe />)
+  await wait(() => requests.some(r => r.request?.subtype === "initialize"))
+  const reply = (id: string, response: any) => contextSocket.onmessage?.({ data: JSON.stringify({ kind: "agent", message: { type: "control_response", response: { subtype: "success", request_id: id, response } } }) })
+  reply(requests.find(r => r.request?.subtype === "initialize").request_id, { models: [], commands: [] })
+  await wait(() => requests.some(r => r.request?.subtype === "get_context_usage"))
+  const firstContext = requests.find(r => r.request?.subtype === "get_context_usage")
+  contextSocket.onmessage?.({ data: JSON.stringify({ kind: "agent", message: { type: "result", subtype: "success", parent_tool_use_id: null, is_error: false, duration_ms: 1 } }) })
+  reply(firstContext.request_id, { totalTokens: 10, maxTokens: 100, percentage: 10 })
+  results.contextRefreshAfterPending = await wait(() => requests.filter(r => r.request?.subtype === "get_context_usage").length === 2)
+  await show(null)
+  window.WebSocket = originalSocket
+  const panelFetch = window.fetch
+  let panelFile = "deleted.txt"
+  const diffRequests: URL[] = []
+  window.fetch = async (input: any) => {
+    const url = new URL(String(input), location.href)
+    const file = { path: panelFile, status: panelFile === "deleted.txt" ? " D" : " M", additions: 0, deletions: 1, binary: false }
+    if (url.pathname === "/api/changes") return Response.json({ isGit: true, branch: "main", files: url.searchParams.get("scope") === "staged" ? [] : [file], additions: 0, deletions: 1 })
+    if (url.pathname === "/api/files") return Response.json({ entries: panelFile === "deleted.txt" ? [] : [{ name: panelFile, path: panelFile, directory: false }], truncated: false })
+    if (url.pathname === "/api/diff") { diffRequests.push(url); return Response.json({ content: "--- a/file\n+++ b/file\n@@ -1,1 +1,1 @@\n-old\n+new\n", snapshot: "snapshot" }) }
+    if (url.pathname === "/api/file") return Response.json({ kind: "text", content: "file", revision: "revision" })
+    return panelFetch(input)
+  }
+  localStorage.setItem("noa-diff-layout", "unified")
+  await show(<WorkspacePanelProbe />)
+  await wait(() => !!document.querySelector('[aria-label="Changes scope"]'))
+  ;(Array.from(document.querySelectorAll<HTMLButtonElement>('[aria-label="Changes scope"] button')).find(button => button.textContent === "Staged"))?.click()
+  await wait(() => document.body.textContent?.includes("No staged changes") === true)
+  ;(document.querySelector('[data-tab="files"]') as HTMLElement)?.click()
+  await wait(() => !!document.querySelector('#panel-files [title="deleted.txt"]'))
+  ;(document.querySelector('#panel-files [title="deleted.txt"]') as HTMLElement)?.click()
+  results.deletedOpensAllChanges = await wait(() => diffRequests.some(url => url.searchParams.get("path") === "deleted.txt" && url.searchParams.get("scope") === "all"))
+  await show(null)
+  panelFile = "tracked.ts"
+  localStorage.setItem("noa-diff-layout", "unified")
+  await show(<WorkspacePanelProbe />)
+  await wait(() => !!document.querySelector('#panel-changes [title="tracked.ts"]'))
+  ;(document.querySelector('#panel-changes [title="tracked.ts"]') as HTMLElement)?.click()
+  await wait(() => !!document.querySelector('#panel-changes [aria-label="Diff layout"]'))
+  ;(Array.from(document.querySelectorAll<HTMLButtonElement>('#panel-changes [aria-label="Diff layout"] button')).find(button => button.textContent === "Split"))?.click()
+  await wait(() => localStorage.getItem("noa-diff-layout") === "split")
+  ;(document.querySelector('[data-tab="files"]') as HTMLElement)?.click()
+  await wait(() => !!document.querySelector('#panel-files [title="tracked.ts"]'))
+  ;(document.querySelector('#panel-files [title="tracked.ts"]') as HTMLElement)?.click()
+  await wait(() => !!Array.from(document.querySelectorAll('#panel-files button')).find(button => button.textContent === "Wrap"))
+  ;(Array.from(document.querySelectorAll<HTMLButtonElement>('#panel-files button')).find(button => button.textContent === "Wrap"))?.click()
+  await new Promise(requestAnimationFrame)
+  await new Promise(requestAnimationFrame)
+  results.fileWrapKeepsDiffLayout = localStorage.getItem("noa-diff-layout") === "split"
+  await show(null)
+  window.fetch = panelFetch
+  const largePatch = `--- a/large.txt\n+++ b/large.txt\n@@ -0,0 +1,3001 @@\n${"+line\n".repeat(3001)}`
+  await show(<CodeView path="large.txt" content={largePatch} diff hunkScope="unstaged" onHunkAction={() => {}} />)
+  results.truncatedHunkHasNoActions = !!document.querySelector(".noa-diff-hunk") && !document.querySelector('[aria-label="Stage hunk 1"]')
   await show(<div><ToolCard block={mcp} defaultOpen /><ToolCard block={todo} defaultOpen /><ToolCard block={{ ...update, name: "Hook", input: { hook_name: "Validation" }, status: "error", output: "Hook failure details" }} defaultOpen /></div>)
   results.mcpVisible = document.getElementById("root")!.textContent!.includes("rows") && document.getElementById("root")!.textContent!.includes("Raw result")
   results.todoVisible = document.getElementById("root")!.textContent!.includes("Inspect files") && !!document.querySelector('[aria-label="in progress"]')
@@ -95,6 +254,17 @@ window.mountLightbox = async () => {
   context.fillStyle = "#355d3d"; context.font = "18px system-ui"; context.fillText("Local image preview", 26, 64)
   await show(<Lightbox items={[{ src: canvas.toDataURL(), name: "preview.png" }]} index={0} onIndex={() => {}} onClose={() => root.render(null)} />)
   await wait(() => document.activeElement?.getAttribute("aria-label") === "Close")
+}
+window.mountWorkspaceVisual = async () => {
+  const originalFetch = window.fetch
+  window.fetch = async (input: any) => {
+    const url = new URL(String(input), location.href)
+    if (url.pathname === "/api/changes") return new Response(JSON.stringify({ error: "Repository unavailable" }), { status: 500 })
+    return originalFetch(input)
+  }
+  await show(<><ThemeInjector settings={{ ...defaultSettings, appearance: { ...defaultSettings.appearance, theme: visualTheme } }} /><div style={{ height: 420, width: 420, border: "1px solid var(--divider-subtle)", background: "var(--surface-page)" }}><WorkspaceFiles cwd="/fixture" changes refreshKey={0} onReference={() => {}} /></div></>)
+  await wait(() => !!document.querySelector('[role="alert"]'))
+  window.fetch = originalFetch
 }
 window.mountNavigation = async () => {
   const turns = Array.from({ length: 8 }, (_, i) => [{ role: "user", id: `p${i}`, text: `Prompt ${i}` }, { role: "assistant", id: `a${i}`, streaming: false, blocks: [{ kind: "text", done: true, text: (`Reply ${i}\n\n`).repeat(10) }] }]).flat() as any

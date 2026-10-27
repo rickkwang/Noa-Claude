@@ -21,17 +21,20 @@ interface RightPanelProps {
   cwd: string
   sessionId?: string
   onRefreshContext: () => void
+  onLoadEarlier: () => void
   tab: PanelTab
   onTab: (tab: PanelTab) => void
   onReference: (path: string) => void
   onWorkspaceChange?: () => void
+  workspaceRefreshKey: number
   focusChange?: { path: string; at: number }
   focusFile?: { path: string; at: number; line?: number; endLine?: number }
   turnDiff?: { diff: TurnDiff; path?: string; key: number }
 }
 
 // Right column: one pane under a tab strip, as in Codex's side panel.
-export function RightPanel({ state, onStopTask, cwd, sessionId, onRefreshContext, tab, onTab, onReference, onWorkspaceChange, focusChange, focusFile, turnDiff }: RightPanelProps) {
+export function RightPanel({ state, onStopTask, cwd, sessionId, onRefreshContext, onLoadEarlier, tab, onTab, onReference, onWorkspaceChange, workspaceRefreshKey, focusChange, focusFile, turnDiff }: RightPanelProps) {
+  const [fileChange, setFileChange] = useState<{ cwd: string; path: string; at: number; scope: "all" }>()
   const [changeMode, setChangeMode] = useState<"turn" | "working">("working")
   useEffect(() => {
     setChangeMode(turnDiff ? "turn" : "working")
@@ -84,7 +87,7 @@ export function RightPanel({ state, onStopTask, cwd, sessionId, onRefreshContext
         </div>
       </div>
       <div id="panel-files" role="tabpanel" aria-labelledby="panel-tab-files" className="min-h-0 flex-1 flex-col overflow-hidden" style={{ display: tab === "files" ? "flex" : "none" }}>
-        <WorkspaceFiles key={`files-${cwd}`} cwd={cwd} active={tab === "files"} focus={focusFile} refreshKey={state.busy ? 0 : state.turns.length} onReference={onReference} onUpdated={onWorkspaceChange} onOpenChanges={() => onTab("changes")} />
+        <WorkspaceFiles key={`files-${cwd}`} cwd={cwd} active={tab === "files"} focus={focusFile} refreshKey={workspaceRefreshKey} onReference={onReference} onUpdated={onWorkspaceChange} onOpenChanges={(path) => { if (path) setFileChange({ cwd, path, at: Date.now(), scope: "all" }); setChangeMode("working"); onTab("changes") }} />
       </div>
       <div id="panel-changes" role="tabpanel" aria-labelledby="panel-tab-changes" className="min-h-0 flex-1 flex-col overflow-hidden" style={{ display: tab === "changes" ? "flex" : "none" }}>
         {turnDiff && (
@@ -101,11 +104,11 @@ export function RightPanel({ state, onStopTask, cwd, sessionId, onRefreshContext
           </div>
         )}
         <div className="min-h-0 flex-1 flex-col" style={{ display: tab === "changes" && changeMode === "working" ? "flex" : "none" }}>
-          <WorkspaceFiles key={`changes-${cwd}`} cwd={cwd} changes focus={focusChange} active={tab === "changes" && changeMode === "working"} refreshKey={state.busy ? 0 : state.turns.length} onReference={onReference} onUpdated={onWorkspaceChange} />
+          <WorkspaceFiles key={`changes-${cwd}`} cwd={cwd} changes focus={fileChange?.cwd === cwd && (!focusChange || fileChange.at > focusChange.at) ? fileChange : focusChange} active={tab === "changes" && changeMode === "working"} refreshKey={workspaceRefreshKey} onReference={onReference} onUpdated={onWorkspaceChange} />
         </div>
         {turnDiff && (
           <div className="min-h-0 flex-1 flex-col" style={{ display: tab === "changes" && changeMode === "turn" ? "flex" : "none" }}>
-            <TurnReview diff={turnDiff.diff} focusPath={turnDiff.path} />
+            <TurnReview diff={turnDiff.diff} focusPath={turnDiff.path} focusKey={turnDiff.key} />
           </div>
         )}
       </div>
@@ -113,7 +116,7 @@ export function RightPanel({ state, onStopTask, cwd, sessionId, onRefreshContext
         <ContextTab state={state} cwd={cwd} sessionId={sessionId} active={tab === "context"} onRefreshContext={onRefreshContext} onReference={onReference} />
       </div>
       <div id="panel-activity" role="tabpanel" aria-labelledby="panel-tab-activity" className="min-h-0 flex-1 flex-col overflow-hidden" style={{ display: tab === "activity" ? "flex" : "none" }}>
-        <ActivityTab state={state} onStopTask={onStopTask} />
+        <ActivityTab state={state} onStopTask={onStopTask} onLoadEarlier={onLoadEarlier} />
       </div>
     </div>
   )
@@ -145,7 +148,8 @@ function ContextTab({ state, cwd, sessionId, active, onRefreshContext, onReferen
   const home = cwd.match(/^\/(?:Users|home)\/[^/]+/)?.[0]
   return <div className="noa-panel-details">
     <section className="noa-context-card">
-      <div className="noa-panel-section-title"><span className="noa-panel-eyebrow">Context window</span><button type="button" className="noa-panel-button" onClick={onRefreshContext} aria-label="Refresh context" title="Refresh"><RefreshCcw size={14} /></button></div>
+      <div className="noa-panel-section-title"><span className="noa-panel-eyebrow">Context window</span><button type="button" className="noa-panel-button" onClick={onRefreshContext} disabled={state.contextLoading || state.connection !== "ready"} aria-label="Refresh context" title="Refresh"><RefreshCcw size={14} /></button></div>
+      <p className="noa-panel-muted" role={state.contextError ? "alert" : "status"}>{state.contextLoading ? "Refreshing…" : state.contextError ? `Refresh failed: ${state.contextError}` : state.connection === "closed" ? usage ? "Disconnected · showing last measurement" : "Disconnected" : state.contextUpdatedAt ? `Measured ${new Date(state.contextUpdatedAt).toLocaleTimeString()}` : "Waiting for measurement"}</p>
       <div className={`noa-context-total ${tone}`}><b>{usage ? <>{Math.round(percent)}<small>%</small></> : "—"}</b><span>{usage ? `${compact(usage.totalTokens)} of ${compact(usage.maxTokens)} tokens` : "Not measured yet"}</span></div>
       <div className="noa-context-bar" role="meter" aria-label="Context usage" aria-valuenow={percent} aria-valuemin={0} aria-valuemax={100}>
         {categories.length ? categories.map((c, i) => <span key={c.name} style={{ width: `${Math.min(100, c.tokens / (usage!.maxTokens || 1) * 100)}%`, background: colors[i % colors.length] }} title={`${c.name}: ${c.tokens.toLocaleString()} tokens`} />) : <span style={{ width: `${percent}%`, background: "var(--accent-color)" }} />}
@@ -173,18 +177,18 @@ function ContextTab({ state, cwd, sessionId, active, onRefreshContext, onReferen
 
 const FILTERS = [{ id: "all", label: "All" }, { id: "running", label: "Running" }, { id: "error", label: "Failed" }] as const
 
-function ActivityTab({ state, onStopTask }: { state: AgentState; onStopTask: (id: string) => void }) {
+function ActivityTab({ state, onStopTask, onLoadEarlier }: { state: AgentState; onStopTask: (id: string) => void; onLoadEarlier: () => void }) {
   const [filter, setFilter] = useState<(typeof FILTERS)[number]["id"]>("all")
   // Newest first: the latest call is what the user is usually looking for.
   const tools = state.turns.flatMap((turn) => turn.role === "assistant" ? turn.blocks.filter((block): block is ToolBlock => block.kind === "tool") : []).reverse()
   const counts = { all: tools.length, running: tools.filter((t) => t.status === "running").length, error: tools.filter((t) => t.status === "error").length }
   const visible = tools.filter((tool) => filter === "all" || tool.status === filter)
-  const statusKind = state.connection === "closed" ? "closed" : state.permissions.length || state.elicitations.length ? "waiting" : state.busy ? "running" : "ready"
+  const statusKind = state.connection === "closed" ? "closed" : state.connection === "connecting" ? "connecting" : state.permissions.length || state.elicitations.length ? "waiting" : state.busy ? "running" : "ready"
   return <div className="noa-panel-details">
     <section className="noa-activity-status" data-kind={statusKind}>
       <span className="noa-activity-dot" />
       <div className="min-w-0 flex-1">
-        <div>{statusKind === "closed" ? "Agent disconnected" : statusKind === "waiting" ? "Waiting for approval" : statusKind === "running" ? "Agent is working" : "Ready"}</div>
+        <div>{statusKind === "closed" ? "Agent disconnected" : statusKind === "connecting" ? "Connecting…" : statusKind === "waiting" ? state.permissions.length && state.elicitations.length ? "Waiting for approval and input" : state.elicitations.length ? "Waiting for input" : "Waiting for approval" : statusKind === "running" ? "Agent is working" : "Ready"}</div>
         {state.result && <p className="noa-panel-muted tabular-nums">{state.result.interrupted ? "Stopped" : state.result.isError ? "Finished with an error" : "Last run completed"} · {(state.result.durationMs / 1000).toFixed(1)}s{state.result.costUsd !== undefined && ` · $${state.result.costUsd.toFixed(4)}`}</p>}
       </div>
     </section>
@@ -236,7 +240,8 @@ function ActivityTab({ state, onStopTask }: { state: AgentState; onStopTask: (id
     <div className="noa-segmented" role="radiogroup" aria-label="Filter activity">
       {FILTERS.map((f) => <button key={f.id} type="button" role="radio" aria-checked={filter === f.id} onClick={() => setFilter(f.id)}>{f.label}<span>{counts[f.id]}</span></button>)}
     </div>
-    <div className="noa-activity-list">{visible.length ? visible.map((tool) => <ToolCard key={tool.id} block={tool} tasks={state.tasks} task={state.tasks.find(task => task.id === tool.id || task.toolUseId === tool.id)} />) : <p className="noa-panel-empty">{tools.length ? "No matching activity" : "Tool calls will appear here"}</p>}</div>
+    <div className="noa-activity-list">{visible.length ? visible.map((tool) => <ToolCard key={tool.id} block={tool} tasks={state.tasks} task={state.tasks.find(task => task.id === tool.id || task.toolUseId === tool.id)} />) : <p className="noa-panel-empty">{tools.length ? "No matching activity" : state.historyBefore ? "No loaded tool activity" : "Tool calls will appear here"}</p>}</div>
+    {!!state.historyBefore && <div className="noa-activity-history"><span>Showing loaded activity</span><button type="button" className="noa-panel-button" disabled={state.historyLoading} onClick={onLoadEarlier}>{state.historyLoading ? "Loading…" : "Load earlier"}</button></div>}
     <div className="noa-panel-sections"><Section title="Diagnostics" count={state.logs.length}><pre className="noa-activity-log">{state.logs.join("\n") || "No agent diagnostics"}</pre></Section></div>
   </div>
 }

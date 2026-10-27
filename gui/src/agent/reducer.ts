@@ -102,6 +102,9 @@ export interface AgentState {
     error?: string
   }
   contextUsage?: ContextUsage
+  contextLoading?: boolean
+  contextError?: string
+  contextUpdatedAt?: number
   turns: Turn[]
   historyBefore?: number
   historyLoading?: boolean
@@ -124,6 +127,8 @@ export interface AgentState {
 }
 
 export type Action =
+  | { type: "context-request" }
+  | { type: "context-error"; error: string }
   | { type: "history"; items: HistoryItem[]; before?: number; prepend?: boolean }
   | { type: "history-loading" }
   | { type: "reset" }
@@ -172,6 +177,8 @@ const MAX_LOGS = 50
 
 export function reducer(state: AgentState, action: Action): AgentState {
   switch (action.type) {
+    case "context-request": return { ...state, contextLoading: true, contextError: undefined }
+    case "context-error": return { ...state, contextLoading: false, contextError: action.error }
     case "history-loading": return { ...state, historyLoading: true }
     case "history": {
       let restored = initialState
@@ -220,7 +227,7 @@ export function reducer(state: AgentState, action: Action): AgentState {
     case "exit": {
       const unfinished = state.busy || state.turns.some(t => t.role === "assistant" && (t.streaming || t.blocks.some(b => b.kind === "tool" && (b.status === "running" || b.status === "unknown"))))
       const error = unfinished && !state.stopping ? `Agent exited before completing this turn (code ${action.code ?? "unknown"}).` : undefined
-      return { ...state, connection: "closed", busy: false, stopping: false, permissions: [], elicitations: [], liveDiff: undefined,
+      return { ...state, connection: "closed", contextLoading: false, busy: false, stopping: false, permissions: [], elicitations: [], liveDiff: undefined,
         turns: unfinished ? stampTurn(settlePending(state.turns, "stopped"), undefined, state.stopping, error) : state.turns,
         tasks: state.tasks.map(task => task.status === "running" || task.status === "unknown" ? { ...task, status: "stopped", turns: settlePending(task.turns, "stopped") } : task), error: error ?? state.error }
     }
@@ -231,6 +238,7 @@ export function reducer(state: AgentState, action: Action): AgentState {
       return {
         ...state,
         connection: action.status,
+        contextLoading: action.status === "closed" ? false : state.contextLoading,
         turns,
         tasks: action.status === "closed" ? state.tasks.map(task => task.status === "running" ? { ...task, status: "unknown", turns: settlePending(task.turns, "unknown") } : task) : state.tasks,
         busy: action.status === "closed" ? false : state.busy,
@@ -327,7 +335,7 @@ export function reducer(state: AgentState, action: Action): AgentState {
           account: action.payload.account ?? state.account,
         }
       }
-      return { ...state, contextUsage: action.payload.usage }
+      return { ...state, contextUsage: action.payload.usage, contextLoading: false, contextError: undefined, contextUpdatedAt: Date.now() }
     case "agent":
       return applyAgentMessage(state, action.message)
   }

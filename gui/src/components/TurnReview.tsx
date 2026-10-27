@@ -1,25 +1,35 @@
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { parsePatch } from "diff"
 import type { TurnDiff, TurnDiffFile } from "../agent/protocol"
 import { MiddlePath } from "./TurnDiffCard"
 import CodeView from "./CodeView"
 
-export function TurnReview({ diff, focusPath }: {
+export function TurnReview({ diff, focusPath, focusKey }: {
   diff: TurnDiff
   focusPath?: string
+  focusKey?: number
 }) {
   const [selected, setSelected] = useState(focusPath && diff.files.some((file) => file.path === focusPath) ? focusPath : diff.files[0]?.path ?? "")
-  const [wrap, setWrap] = useState(false)
+  const [wrap, setWrap] = useState(() => localStorage.getItem("noa-turn-diff-wrap-v2") !== "false")
   const [findRequest, setFindRequest] = useState(0)
+  const appliedFocus = useRef<string | undefined>(undefined)
+
+  useEffect(() => { localStorage.setItem("noa-turn-diff-wrap-v2", String(wrap)) }, [wrap])
 
   useEffect(() => {
     setSelected((current) => {
-      if (focusPath && diff.files.some((file) => file.path === focusPath)) return focusPath
       // Live diffs refresh while running; keep the file the user picked.
       if (current && diff.files.some((file) => file.path === current)) return current
       return diff.files[0]?.path ?? ""
     })
-  }, [diff, focusPath])
+  }, [diff])
+  useEffect(() => {
+    const request = `${focusKey ?? ""}:${focusPath ?? ""}`
+    if (focusPath && appliedFocus.current !== request && diff.files.some((file) => file.path === focusPath)) {
+      appliedFocus.current = request
+      setSelected(focusPath)
+    }
+  }, [diff, focusPath, focusKey])
 
   const patches = useMemo(() => {
     if (!diff.patch) return []

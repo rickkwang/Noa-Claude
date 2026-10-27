@@ -251,6 +251,7 @@ function Workspace({ cwd }: { cwd: string }) {
     const diff = state.liveDiff ?? currentTurnDiff
     if (!diff) return
     setTurnDiff((current) => {
+      if (!diff.files.length) return current?.diff.turnIndex === diff.turnIndex ? undefined : current
       // Keep a turn the user explicitly opened; follow this turn's updates.
       if (current && current.diff.turnIndex !== undefined && current.diff.turnIndex !== diff.turnIndex) return current
       // Live updates keep the same key so they don't re-force the Turn scope.
@@ -564,10 +565,12 @@ function Workspace({ cwd }: { cwd: string }) {
             cwd={session.cwd}
             sessionId={activeId}
             onRefreshContext={refreshContext}
+            onLoadEarlier={loadEarlier}
             tab={rightTab}
             onTab={setRightTab}
             onReference={(path) => setReference({ path, key: Date.now() })}
             onWorkspaceChange={() => setRefreshTick((n) => n + 1)}
+            workspaceRefreshKey={refreshTick}
             focusChange={focusChange}
             focusFile={focusFile}
             turnDiff={turnDiff}

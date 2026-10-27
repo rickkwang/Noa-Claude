@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from "react"
+import { lazy, Suspense, useEffect, useState, type KeyboardEvent } from "react"
 import { query } from "../api"
 import { useConfirm } from "./ConfirmDialog"
 import { ArrowLeft, CheckCircle2, GitBranch, BrandCss3, BrandHtml5, BrandJavascript, BrandPython, BrandReact, BrandTypescript, ChevronDown, Copy, FileText, Folder, Json, ListDetails, Markdown, MoreHorizontal, Photo, Plus, RefreshCcw, RotateCcw, Search } from "../lib/icons"
@@ -18,6 +18,12 @@ const GLYPHS: Record<string, [typeof FileText, string]> = {
   png: [Photo, "#8C7AE6"], jpg: [Photo, "#8C7AE6"], jpeg: [Photo, "#8C7AE6"], gif: [Photo, "#8C7AE6"], webp: [Photo, "#8C7AE6"], svg: [Photo, "#8C7AE6"],
 }
 function FileGlyph({ name }: { name: string }) {
+  const extension = name.split(".").pop()?.toLowerCase() ?? ""
+  if (["ts", "mts", "cts"].includes(extension)) return <svg aria-hidden="true" width={16} height={16} viewBox="0 0 16 16" className="noa-glyph-blue"><path fill="currentColor" d="M8 1C2.24 1 1 2.24 1 8s1.24 7 7 7 7-1.24 7-7-1.24-7-7-7" opacity={0.2}/>
+  <path fill="currentColor" d="M8.1 9.64h.95c.04.62.28.76 1.28.76s1.2-.14 1.2-.85c0-.66-.2-.85-1.2-1.07-1.79-.38-2.18-.7-2.18-1.86C8.15 5.3 8.54 5 10.31 5c1.67 0 2.04.26 2.07 1.42h-.95c-.02-.43-.23-.53-1.1-.53-1 0-1.22.14-1.22.74 0 .52.22.7 1.24.92 1.76.38 2.15.73 2.15 2 0 1.44-.4 1.75-2.24 1.75-1.8 0-2.18-.3-2.15-1.66m-3 1.57V5.99H3.5v-.9h4.21v.9H6.1v5.22z"/></svg>
+  if (["tsx", "jsx"].includes(extension)) return <svg aria-hidden="true" width={16} height={16} viewBox="0 0 16 16" className="noa-glyph-cyan"><path fill="currentColor" d="M8 6.65c.73 0 1.31.6 1.31 1.35S8.73 9.35 8 9.35 6.69 8.75 6.69 8 7.27 6.65 8 6.65"/>
+  <path fill="currentColor" fillRule="evenodd" d="M8 2.55c1.3-.99 2.59-1.34 3.5-.8.92.55 1.27 1.87 1.08 3.53C14.06 5.94 15 6.9 15 8s-.94 2.06-2.42 2.72c.19 1.65-.16 2.98-1.08 3.52-.91.55-2.2.2-3.5-.8-1.3 1-2.58 1.35-3.5.8-.91-.54-1.27-1.87-1.08-3.52C1.94 10.06 1 9.1 1 8s.94-2.06 2.42-2.72c-.19-1.66.17-2.98 1.08-3.52s2.2-.2 3.5.8M4.26 11.2c-.08 1.34.28 2.03.68 2.26s1.15.22 2.25-.52l.11-.09a12 12 0 0 1-1.24-1.39 11 11 0 0 1-1.8-.41zm7.47-.15q-.83.27-1.79.41-.6.8-1.24 1.4l.11.08c1.1.74 1.86.76 2.25.52.4-.23.76-.92.68-2.26zm-3.04.54a14 14 0 0 1-1.38 0q.34.38.69.7.35-.32.7-.7M8 5.29q-.76 0-1.47.1A13 13 0 0 0 5.07 8a14 14 0 0 0 1.46 2.62 13 13 0 0 0 2.94 0A13 13 0 0 0 10.93 8a14 14 0 0 0-1.46-2.62A13 13 0 0 0 8 5.3M4.64 9.18q-.15.5-.25.96.44.16.94.27a15 15 0 0 1-.7-1.23m6.73 0a15 15 0 0 1-.7 1.23q.5-.11.95-.27a10 10 0 0 0-.25-.96M3.44 6.26C2.27 6.86 1.87 7.53 1.87 8s.4 1.14 1.57 1.74l.13.07q.18-.88.55-1.81a12 12 0 0 1-.55-1.8q-.07.02-.13.06m8.99-.07A12 12 0 0 1 11.88 8q.36.94.55 1.8l.13-.06c1.17-.6 1.56-1.27 1.56-1.74s-.39-1.14-1.56-1.74zm-7.1-.6q-.5.11-.94.27.1.46.25.96a15 15 0 0 1 .69-1.23m5.34 0a15 15 0 0 1 .7 1.23q.14-.5.24-.96-.44-.15-.94-.27M7.18 3.06c-1.09-.74-1.85-.76-2.24-.52s-.76.92-.69 2.26l.01.15a11 11 0 0 1 1.8-.41q.6-.8 1.24-1.4zm3.88-.52c-.4-.24-1.15-.22-2.25.52l-.12.08q.65.6 1.25 1.4.96.15 1.8.41v-.14c.08-1.35-.28-2.04-.68-2.27M8 3.7a10 10 0 0 0-.7.7 14 14 0 0 1 1.4 0 10 10 0 0 0-.7-.7" clipRule="evenodd"/></svg>
+  if (extension === "md") return <svg aria-hidden="true" width={16} height={16} viewBox="0 0 16 16" className="noa-glyph-green"><path fill="currentColor" d="M1 12V4h2l2 2.5L7 4h2v8H7V7.5l-2 2-2-2V12zm9-3 3 3.5L16 9h-2V4h-2v5z"/></svg>
   const glyph = GLYPHS[name.split(".").pop()?.toLowerCase() ?? ""]
   if (!glyph) return <FileText size={15} />
   const Glyph = glyph[0]
@@ -64,7 +70,7 @@ async function load<T>(route: string, cwd: string, params: Record<string, string
 }
 
 export function WorkspaceFiles({ cwd, changes = false, focus, active = true, refreshKey, onReference, onUpdated, onOpenChanges }: {
-  cwd: string; changes?: boolean; focus?: { path: string; at: number; line?: number; endLine?: number }; active?: boolean; refreshKey: number; onReference: (path: string) => void; onUpdated?: () => void; onOpenChanges?: () => void
+  cwd: string; changes?: boolean; focus?: { path: string; at: number; line?: number; endLine?: number; scope?: "all" }; active?: boolean; refreshKey: number; onReference: (path: string) => void; onUpdated?: () => void; onOpenChanges?: (path?: string) => void
 }) {
   const [selected, setSelected] = useState<string>()
   const [view, setView] = useState(changes ? "diff" : "file")
@@ -72,16 +78,18 @@ export function WorkspaceFiles({ cwd, changes = false, focus, active = true, ref
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [tree, setTree] = useState<Record<string, Entry[]>>({})
   const [matches, setMatches] = useState<Entry[]>([])
-  const [status, setStatus] = useState<Changes>()
+  const [status, setStatus] = useState<(Changes & { scope: string })>()
   const [preview, setPreview] = useState<Preview>()
   const [error, setError] = useState<string>()
+  const [actionError, setActionError] = useState<string>()
+  const [statusError, setStatusError] = useState<string>()
   const [loading, setLoading] = useState(false)
   const [truncated, setTruncated] = useState(false)
   const [tick, setTick] = useState(0)
   const [filter, setFilter] = useState("")
   const [search, setSearch] = useState("")
   const [split, setSplit] = useState(() => localStorage.getItem("noa-diff-layout") === "split")
-  const [wrap, setWrap] = useState(() => localStorage.getItem("noa-code-wrap") === "true")
+  const [wrap, setWrap] = useState(() => changes ? localStorage.getItem("noa-diff-wrap-v2") !== "false" : localStorage.getItem("noa-code-wrap") === "true")
   const [context, setContext] = useState("")
   const [findRequest, setFindRequest] = useState(0)
   const [editing, setEditing] = useState(false)
@@ -112,13 +120,13 @@ export function WorkspaceFiles({ cwd, changes = false, focus, active = true, ref
     return () => clearInterval(timer)
   }, [active, editing])
   useEffect(() => {
-    localStorage.setItem("noa-diff-layout", split ? "split" : "unified")
-    localStorage.setItem("noa-code-wrap", String(wrap))
-  }, [split, wrap])
+    if (changes) localStorage.setItem("noa-diff-layout", split ? "split" : "unified")
+    localStorage.setItem(changes ? "noa-diff-wrap-v2" : "noa-code-wrap", String(wrap))
+  }, [split, wrap, changes])
   useEffect(() => {
     if (!active) return
     const controller = new AbortController()
-    load<Changes>("changes", cwd, { scope }, controller.signal).then(setStatus).catch((e) => { if (!controller.signal.aborted && changes) setError(e.message) })
+    load<Changes>("changes", cwd, { scope }, controller.signal).then((value) => { if (!controller.signal.aborted) { setStatus({ ...value, scope }); setStatusError(undefined) } }).catch((e) => { if (!controller.signal.aborted) setStatusError(e.message) })
     return () => controller.abort()
   }, [cwd, scope, tick, refreshKey, active, changes])
   useEffect(() => {
@@ -144,7 +152,7 @@ export function WorkspaceFiles({ cwd, changes = false, focus, active = true, ref
     return () => controller.abort()
   }, [cwd, selected, view, scope, expanded, search, changes, tick, refreshKey, active, editing, context])
 
-  const select = async (path?: string, nextView = changes ? "diff" : "file") => {
+  const select = async (path?: string, nextView = changes ? "diff" : "file", nextScope?: "all") => {
     if (dirty && !(await confirm({
       title: "Discard unsaved edits?",
       description: `Changes to ${selected} have not been saved.`,
@@ -152,9 +160,13 @@ export function WorkspaceFiles({ cwd, changes = false, focus, active = true, ref
       danger: true,
     }))) return
     if (draftKey) sessionStorage.removeItem(draftKey)
-    setEditing(false); setSelected(path); setView(nextView); setContext(""); setFindRequest(0); setError(undefined)
+    if (nextScope) { setStatusError(undefined); setScope(nextScope) }
+    setEditing(false); setSelected(path); setView(nextView); setContext(""); setFindRequest(0); setError(undefined); setActionError(undefined)
   }  // Opening a file from the turn's change summary jumps straight to its diff.
-  useEffect(() => { if (focus) void select(focus.path, changes ? "diff" : "file") }, [focus]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!focus) return
+    void select(focus.path, changes ? "diff" : "file", changes ? focus.scope : undefined)
+  }, [focus]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const gitAction = async (kind: string, hunk?: number) => {
     if (kind.startsWith("revert")) {
@@ -165,12 +177,12 @@ export function WorkspaceFiles({ cwd, changes = false, focus, active = true, ref
           : { title: "Discard these changes?", description: `Discard changes to ${selected}? This cannot be undone. Untracked files will be deleted.`, confirmLabel: "Discard", danger: true })
       if (!ok) return
     }
-    setAction(kind); setError(undefined)
+    setAction(kind); setActionError(undefined)
     try {
       await load("git-action", cwd, { scope, context }, undefined, { action: kind, path: selected, snapshot: current?.snapshot, hunk })
       if (hunk === undefined) await select()
       setTick((n) => n + 1); onUpdated?.()
-    } catch (e) { setError((e as Error).message) } finally { setAction("") }
+    } catch (e) { setActionError((e as Error).message) } finally { setAction("") }
   }
   const save = async () => {
     setAction("save"); setError(undefined)
@@ -184,11 +196,30 @@ export function WorkspaceFiles({ cwd, changes = false, focus, active = true, ref
   const count = (file: Change) => <span className="noa-change-count">{file.binary ? "Binary" : <><span className="is-added">+{file.additions}</span><span className="is-removed">−{file.deletions}</span></>}</span>
   const toggleClosed = (key: string) => setClosed((previous) => { const next = new Set(previous); if (!next.delete(key)) next.add(key); return next })
   const dirty_ = (prefix: string) => status?.files.some((f) => f.path.startsWith(prefix + "/"))
+  const onTreeKey = (event: KeyboardEvent<HTMLDivElement>) => {
+    const item = (event.target as HTMLElement).closest<HTMLButtonElement>('[role="treeitem"]')
+    if (!item || !["ArrowDown", "ArrowUp", "ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return
+    const items = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="treeitem"]'))
+    const index = items.indexOf(item)
+    const expanded = item.getAttribute("aria-expanded")
+    let target: HTMLElement | null | undefined
+    if (event.key === "ArrowDown") target = items[index + 1]
+    else if (event.key === "ArrowUp") target = items[index - 1]
+    else if (event.key === "Home") target = items[0]
+    else if (event.key === "End") target = items.at(-1)
+    else if (event.key === "ArrowRight" && expanded === "false") item.click()
+    else if (event.key === "ArrowRight" && expanded === "true") target = item.nextElementSibling?.querySelector<HTMLElement>('[role="treeitem"]')
+    else if (event.key === "ArrowLeft" && expanded === "true") item.click()
+    else if (event.key === "ArrowLeft") target = item.parentElement?.closest('[role="group"]')?.previousElementSibling as HTMLElement | null
+    event.preventDefault()
+    target?.focus()
+  }
   const row = (key: string, name: string, depth: number, opts: { directory?: boolean; opened?: boolean; marked?: boolean; change?: Change; stats?: boolean; onClick: () => void; title?: string }) => {
     const tone = opts.change ? toneOf(opts.change.status) : undefined
     // Open folders stick under their ancestors (one 28px row per level), as Codex's tree does.
     const sticky = opts.directory && opts.opened && depth >= rootDepth ? { position: "sticky" as const, top: (depth - rootDepth) * 28, zIndex: 20 - depth } : undefined
-    return <button key={key} type="button" className={`noa-file-row${tone ? ` is-${tone}` : ""}${sticky ? " is-sticky" : ""}`} role="treeitem" aria-expanded={opts.directory ? !!opts.opened : undefined} style={{ paddingLeft: 8 + depth * 9, "--depth": depth, ...sticky } as React.CSSProperties} title={opts.title ?? key} onClick={opts.onClick}>
+    return <button key={key} type="button" className={`noa-file-row${tone ? ` is-${tone}` : ""}${sticky ? " is-sticky" : ""}`} role="treeitem" aria-expanded={opts.directory ? !!opts.opened : undefined} style={sticky} title={opts.title ?? key} onClick={opts.onClick}>
+      {depth > 0 && <span className={`noa-file-guides${opts.directory ? " is-folder" : ""}`} aria-hidden="true">{Array.from({ length: depth }, (_, i) => <span key={i} />)}</span>}
       <span className="noa-file-icon">{opts.directory ? <ChevronDown size={14} className={opts.opened ? undefined : "-rotate-90"} /> : <FileGlyph name={name} />}</span>
       <span className="noa-file-name">{name}</span>
       {opts.stats && opts.change && !opts.change.binary && <span className="noa-row-stats">{opts.change.additions > 0 && <span className="is-added">+{opts.change.additions}</span>}{opts.change.deletions > 0 && <span className="is-removed">-{opts.change.deletions}</span>}</span>}
@@ -213,10 +244,11 @@ export function WorkspaceFiles({ cwd, changes = false, focus, active = true, ref
       const path = base ? `${base}/${label}` : label, opened = !closed.has(`c:${path}`)
       return <div key={path} role="none">{row(`c:${path}`, label, depth, { directory: true, opened, marked: true, title: path, onClick: () => toggleClosed(`c:${path}`) })}{opened && <div role="group">{changedRows(leaf, path, depth + 1)}</div>}</div>
     })}
-    {node.files.sort((a, b) => a.path.localeCompare(b.path)).map((file) => row(file.path, file.path.split("/").pop()!, depth, { change: file, stats: changes, title: file.oldPath ? `${file.oldPath} → ${file.path}` : file.path, onClick: () => select(file.path, changes ? "diff" : "file") }))}
+    {node.files.sort((a, b) => a.path.localeCompare(b.path)).map((file) => row(file.path, file.path.split("/").pop()!, depth, { change: file, stats: changes, title: file.oldPath ? `${file.oldPath} → ${file.path}` : file.path, onClick: () => !changes && file.status.includes("D") ? onOpenChanges?.(file.path) : select(file.path, changes ? "diff" : "file") }))}
   </>
-  const selectedChange = status?.files.find((f) => f.path === selected)
-  const changeFiles = status?.files.filter((f) => f.path.toLowerCase().includes(filter.toLowerCase())) ?? []
+  const currentStatus = status?.scope === scope ? status : undefined
+  const selectedChange = currentStatus?.files.find((f) => f.path === selected)
+  const changeFiles = currentStatus?.files.filter((f) => f.path.toLowerCase().includes(filter.toLowerCase())) ?? []
   const button = "noa-panel-button"
 
   return <div className={`noa-workspace-panel${changes ? " is-review" : ""}`}>
@@ -225,7 +257,7 @@ export function WorkspaceFiles({ cwd, changes = false, focus, active = true, ref
       {selected && <button type="button" className={button} aria-label="Back to files" onClick={() => select()}><ArrowLeft size={14} /></button>}
       <span className="noa-panel-title" title={selected ?? cwd}>{selected ? <MiddlePath path={selected} /> : (changes ? <span className="noa-branch">{status?.isGit && <GitBranch size={14} />}{status?.branch || "Changes"}</span> : "Project files")}</span>
       {selected && changes && selectedChange && count(selectedChange)}
-      {!selected && changes && status?.isGit && (status.additions > 0 || status.deletions > 0) && <span className="noa-row-stats"><span className="is-added">+{status.additions}</span><span className="is-removed">-{status.deletions}</span></span>}
+      {!selected && changes && currentStatus?.isGit && (currentStatus.additions > 0 || currentStatus.deletions > 0) && <span className="noa-row-stats"><span className="is-added">+{currentStatus.additions}</span><span className="is-removed">-{currentStatus.deletions}</span></span>}
       {selected && <><button type="button" className={button} aria-label="Copy file path" title="Copy path" onClick={copyPath}><Copy size={14} /></button><button type="button" className={button} title="Add to chat" aria-label="Add file to chat" onClick={() => onReference(selected)}><Plus size={14} /></button></>}
       {!selected && !changes && expanded.size > 0 && <button type="button" className={button} onClick={() => setExpanded(new Set())}>Collapse all</button>}
       <button type="button" className={button} aria-label={editing ? "Reload file" : changes ? "Refresh changes" : "Refresh files"} disabled={!!action} onClick={() => { if (editing) void select(selected, view); else setTick((n) => n + 1) }}><RefreshCcw size={14} /></button>
@@ -233,7 +265,7 @@ export function WorkspaceFiles({ cwd, changes = false, focus, active = true, ref
     {selected ? <>
       {selectedChange?.oldPath && <div className="noa-file-breadcrumb">{selectedChange.oldPath} → {selected}</div>}
       <div className="noa-panel-toolbar noa-panel-actions">
-        {changes && <><button type="button" className={button} aria-pressed={view === "diff"} onClick={() => select(selected, view === "diff" ? "file" : "diff")}>{view === "diff" ? "Open file" : "Show diff"}</button>{view === "diff" && <><select aria-label="Changes scope" value={scope} onChange={(e) => setScope(e.target.value)}><option value="all">All</option><option value="unstaged">Unstaged</option><option value="staged">Staged</option></select><div className="noa-segmented" role="radiogroup" aria-label="Diff layout"><button type="button" role="radio" aria-checked={!split} onClick={() => setSplit(false)}>Unified</button><button type="button" role="radio" aria-checked={split} onClick={() => setSplit(true)}>Split</button></div></>}</>}
+        {changes && <><button type="button" className={button} aria-pressed={view === "diff"} onClick={() => select(selected, view === "diff" ? "file" : "diff")}>{view === "diff" ? "Open file" : "Show diff"}</button>{view === "diff" && <><select aria-label="Changes scope" value={scope} onChange={(e) => { setStatusError(undefined); setScope(e.target.value) }}><option value="all">All</option><option value="unstaged">Unstaged</option><option value="staged">Staged</option></select><div className="noa-segmented" role="radiogroup" aria-label="Diff layout"><button type="button" role="radio" aria-checked={!split} onClick={() => setSplit(false)}>Unified</button><button type="button" role="radio" aria-checked={split} onClick={() => setSplit(true)}>Split</button></div></>}</>}
         <button type="button" className={button} aria-pressed={wrap} onClick={() => setWrap(!wrap)}>Wrap</button>
         {!editing && <button type="button" className={button} aria-label="Find in file" onClick={() => setFindRequest((n) => n + 1)}>Find</button>}
         {changes && view === "diff" && current?.snapshot && <details className="noa-review-menu" onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) event.currentTarget.open = false }} onKeyDown={(event) => { if (event.key === "Escape") event.currentTarget.open = false }}>
@@ -249,7 +281,7 @@ export function WorkspaceFiles({ cwd, changes = false, focus, active = true, ref
         {view === "file" && current?.kind === "text" && (editing ? <><button type="button" className={button} disabled={!!action} onClick={async () => { if (!dirty || (await confirm({ title: "Discard unsaved edits?", description: `Changes to ${selected} have not been saved.`, confirmLabel: "Discard", danger: true }))) { sessionStorage.removeItem(draftKey); setEditing(false) } }}>Cancel</button><button type="button" className={button} disabled={!dirty || !!action} onClick={save}>{action === "save" ? "Saving…" : "Save"}</button></> : <button type="button" className={button} onClick={() => { setDraft(current.content ?? ""); setEditing(true) }}>Edit</button>)}
       </div>
     </> : <>
-      {changes && status?.isGit && <div className="noa-panel-toolbar"><div className="noa-segmented" role="radiogroup" aria-label="Changes scope">{[["all", "All"], ["unstaged", "Unstaged"], ["staged", "Staged"]].map(([id, label]) => <button key={id} type="button" role="radio" aria-checked={scope === id} onClick={() => { setScope(id!); setPreview(undefined) }}>{label}</button>)}</div></div>}
+      {changes && status?.isGit && <div className="noa-panel-toolbar"><div className="noa-segmented" role="radiogroup" aria-label="Changes scope">{[["all", "All"], ["unstaged", "Unstaged"], ["staged", "Staged"]].map(([id, label]) => <button key={id} type="button" role="radio" aria-checked={scope === id} onClick={() => { setStatusError(undefined); setScope(id!); setPreview(undefined) }}>{label}</button>)}</div></div>}
       {!changes && <div className="noa-panel-toolbar noa-file-root">
         <span className="noa-file-root-chip" title={cwd}><Folder size={14} />{cwd.split("/").filter(Boolean).pop() ?? "/"}</span>
         <details className="noa-review-menu" onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) event.currentTarget.open = false }} onKeyDown={(event) => { if (event.key === "Escape") event.currentTarget.open = false }} onClick={(event) => { if ((event.target as HTMLElement).closest("button")) event.currentTarget.open = false }}>
@@ -266,14 +298,16 @@ export function WorkspaceFiles({ cwd, changes = false, focus, active = true, ref
       </div>
     </>}
     {error && <p className="noa-panel-error" role="alert">{error}</p>}
+    {actionError && <p className="noa-panel-error" role="alert">{actionError}</p>}
+    {statusError && <p className="noa-panel-error" role="alert">Could not load changes: {statusError}{currentStatus && " · Showing last result"} <button type="button" className={button} onClick={() => setTick((n) => n + 1)}>Retry</button></p>}
     {loading && !current && selected && <p className="noa-panel-empty" role="status">Loading…</p>}
     <div className="noa-panel-body">
       {selected ? current && (editing ? <textarea aria-label="Edit file content" className="noa-file-editor" value={draft} onChange={(e) => setDraft(e.target.value)} spellCheck={false} /> : current.kind === "image" ? <div className="noa-image-preview"><img src={current.dataUrl} alt={selected} /></div> : current.kind === "binary" ? <p className="noa-panel-empty">Binary file cannot be previewed</p> : current.truncated ? <p className="noa-panel-empty">Diff too large to display. Open the file in your editor to review it.</p> : <Suspense fallback={<p className="noa-panel-empty">Loading code viewer…</p>}><CodeView focusRequest={focus?.path === selected ? focus.at : undefined} focusLine={focus?.path === selected ? focus.line : undefined} focusEndLine={focus?.path === selected ? focus.endLine : undefined} path={selected} content={current.content ?? ""} diff={view === "diff"} split={split} wrap={wrap} hunkScope={scope !== "all" && !selectedChange?.oldPath && !action ? scope : undefined} onHunkAction={gitAction} findRequest={findRequest} onCloseFind={() => setFindRequest(0)} /></Suspense>)
-        : changes ? !status ? <p className="noa-panel-empty" role="status">Loading changes…</p> : status.isGit === false ? <div className="noa-panel-empty"><p>This folder is not a Git repository</p><button type="button" className={button} disabled={!!action} onClick={() => gitAction("init")}>Create Git repository</button></div> : <div role="tree" aria-label="Changed files" className="noa-file-tree">{changeFiles.length ? changedRows(changeTree(changeFiles), "", 0) : <div className="noa-panel-empty">{!filter && <CheckCircle2 size={20} />}<p>{filter ? "No matching files" : scope === "staged" ? "No staged changes" : scope === "unstaged" ? "No unstaged changes" : "Working tree clean"}</p></div>}</div>
-        : <div role={search ? undefined : "tree"} aria-label="Project files" className="noa-file-tree">{!search && onOpenChanges && status?.isGit && <button type="button" className="noa-file-row" onClick={onOpenChanges}><span className="noa-file-icon"><ListDetails size={15} /></span><span className="noa-file-name">All changes</span></button>}
+        : changes ? !currentStatus ? !statusError && <p className="noa-panel-empty" role="status">Loading changes…</p> : currentStatus.isGit === false ? <div className="noa-panel-empty"><p>This folder is not a Git repository</p><button type="button" className={button} disabled={!!action} onClick={() => gitAction("init")}>Create Git repository</button></div> : <div role="tree" aria-label="Changed files" className="noa-file-tree" onKeyDown={onTreeKey}>{changeFiles.length ? changedRows(changeTree(changeFiles), "", 0) : <div className="noa-panel-empty">{!filter && <CheckCircle2 size={20} />}<p>{filter ? "No matching files" : scope === "staged" ? "No staged changes" : scope === "unstaged" ? "No unstaged changes" : "Working tree clean"}</p></div>}</div>
+        : <div role="tree" aria-label="Project files" className="noa-file-tree" onKeyDown={onTreeKey}>{!search && onOpenChanges && status?.isGit && <button type="button" role="treeitem" className="noa-file-row" onClick={() => onOpenChanges()}><span className="noa-file-icon"><ListDetails size={15} /></span><span className="noa-file-name">All changes</span></button>}
           {sectioned && <>{section("@changed", "Changed files")}{!closed.has("@changed") && <div role="group">{changedRows(changeTree(status!.files))}</div>}
           <div className="noa-file-divider" role="none" />{section("@all", "All files")}</>}
-          {!closed.has("@all") && treeRows("")}{!loading && (search ? !matches.length : !tree[""]?.length) && <p className="noa-panel-empty">{search ? "No matching files" : "No files in this folder"}</p>}</div>}
+          {(search || !closed.has("@all")) && (sectioned ? <div role="group">{treeRows("")}</div> : treeRows(""))}{loading && !tree[""] && <p className="noa-panel-empty" role="status">{search ? "Searching files…" : "Loading directory entries…"}</p>}{!loading && !error && (search ? !matches.length : !tree[""]?.length) && <p className="noa-panel-empty">{search ? "No matching files" : "No files in this folder"}</p>}</div>}
     </div>
     {(current?.truncated || !selected && truncated) && <p className="noa-panel-notice">Preview limit reached; some content is omitted.</p>}
   </div>

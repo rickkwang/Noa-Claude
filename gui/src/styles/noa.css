@@ -1907,7 +1907,7 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
 .noa-panel-button:focus-visible, .noa-file-row:focus-visible  { outline: 2px solid var(--accent-color); outline-offset: -2px; }
 .noa-panel-actions { flex-wrap: wrap; padding-block: 4px; border-bottom: 1px solid color-mix(in srgb, var(--text-primary) 5%, transparent); }
 .noa-panel-actions select { min-width: 0; max-width: 100%; padding: 3px 5px; border-radius: 6px; background: var(--bg-card); font: inherit; color: var(--sidebar-text); }
-.noa-panel-body { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+.noa-panel-body { flex: 1; min-width: 0; min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
 .noa-file-root { padding: 8px 10px 0 16px; }
 .noa-file-root-chip { display: inline-flex; min-width: 0; max-width: 70%; align-items: center; gap: 6px; height: 26px; padding: 0; border-radius: 8px; color: var(--text-primary); }
 .noa-file-root-chip > svg { color: var(--sidebar-text-muted); }
@@ -1919,7 +1919,7 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
 .noa-file-search-field input::placeholder { color: var(--sidebar-text-muted); }
 .noa-file-search-field svg { flex-shrink: 0; }
 .noa-file-tree { padding: 4px 8px 8px; font-size: 13px; }
-.noa-file-row { display: flex; align-items: center; gap: 5px; height: 28px; width: 100%; padding: 0 8px; border-radius: 6px; text-align: left; color: var(--sidebar-text); }
+.noa-file-row { position: relative; display: flex; align-items: center; gap: 5px; height: 28px; width: 100%; padding: 0 8px; border-radius: 6px; text-align: left; color: var(--sidebar-text); }
 .noa-file-icon { display: flex; flex-shrink: 0; align-items: center; justify-content: center; width: 16px; color: var(--sidebar-text-muted); }
 .noa-file-icon > svg { transition: transform 120ms ease; }
 .noa-git-lane { display: flex; flex-shrink: 0; align-items: center; justify-content: center; width: 20px; }
@@ -1950,11 +1950,11 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
 .noa-image-preview img { max-width: 100%; max-height: 70vh; object-fit: contain; }
 .noa-file-editor { display: block; width: 100%; height: 100%; min-height: 200px; padding: 8px 12px; resize: none; outline: none; border: 0; background: transparent; font-family: var(--font-mono); font-size: var(--code-font-size, 12px); line-height: 1.8; tab-size: 4; white-space: pre; }
 .noa-code-view { --code-addition: color-mix(in srgb, #2DA44E 11%, transparent); --code-deletion: color-mix(in srgb, #CF222E 9%, transparent); min-height: 100%; width: max-content; min-width: 100%; color: var(--text-primary); font-family: var(--font-mono); font-size: var(--code-font-size, 12px); line-height: 1.8; tab-size: 4; }
-.noa-code-view.is-wrapped { width: 100%; }
+.noa-code-view.is-wrapped { width: 100%; max-width: 100%; }
 .noa-code-view code { font: inherit; white-space: pre; min-width: 0; padding-right: 12px; }
 .noa-code-view.is-wrapped code { white-space: pre-wrap; overflow-wrap: anywhere; }
 .noa-source-line { display: grid; grid-template-columns: 48px minmax(0, 1fr); min-height: 1.8em; }
-.noa-code-line { display: grid; grid-template-columns: 36px 36px 18px minmax(0, 1fr); min-height: 1.8em; }
+.noa-code-line { display: grid; grid-template-columns: 36px 18px minmax(0, 1fr); min-height: 1.8em; }
 .noa-code-number { padding: 0 8px; text-align: right; color: var(--sidebar-text-muted); user-select: none; font-size: inherit; font-variant-numeric: tabular-nums; opacity: .7; }
 .noa-code-sign { text-align: center; color: var(--sidebar-text-muted); user-select: none; }
 .noa-code-line.is-add { background: var(--code-addition); }
@@ -2034,22 +2034,35 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
 .noa-activity-status[data-kind="waiting"] .noa-activity-dot { background: #D9A43B; }
 .noa-activity-status[data-kind="closed"] .noa-activity-dot { background: #C24444; }
 .noa-activity-list { display: flex; flex-direction: column; margin: -6px -16px 0; }
+.noa-activity-history { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--sidebar-text-muted); font-size: var(--text-caption); }
 .noa-activity-log { max-height: 280px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--font-mono); font-size: var(--code-font-size, 12px); line-height: 1.6; margin: 0; color: var(--sidebar-text); }
 @media (prefers-reduced-motion: reduce) { .noa-activity-status .noa-activity-dot { animation: none; } }
-/* Indent guides as in Codex's tree: 1px per ancestor under its icon center (8px inset + half the 16px slot, 9px per level); shown only while the tree is hovered. */
-.noa-file-tree .noa-file-row { --guide: transparent; background-image: repeating-linear-gradient(90deg, var(--guide) 0 1px, transparent 1px 9px); background-position: 15.5px 0; background-size: calc(var(--depth, 0) * 9px) 100%; background-repeat: no-repeat; }
-.noa-file-tree:hover .noa-file-row { --guide: color-mix(in srgb, var(--sidebar-text-muted) 19%, transparent); }
+.noa-file-guides { display: flex; flex-shrink: 0; align-items: center; height: 100%; padding-left: 7.5px; pointer-events: none; }
+.noa-file-guides.is-folder { margin-right: -3.75px; }
+.noa-file-guides > span { height: 100%; border-left: 1px solid color-mix(in srgb, var(--sidebar-text-muted) 25%, transparent); margin-right: -1px; transform: translateX(-.25px); opacity: 0; transition: opacity 150ms; }
+.noa-file-guides > span + span { margin-left: 8.75px; }
+.noa-file-tree:hover .noa-file-guides > span { opacity: .75; }
+.noa-glyph-blue { color: #1a85d4; } .noa-glyph-cyan { color: #1ca1c7; } .noa-glyph-green { color: #199f43; }
+[data-theme="dark"] .noa-glyph-blue { color: #69b1ff; } [data-theme="dark"] .noa-glyph-cyan { color: #68cdf2; } [data-theme="dark"] .noa-glyph-green { color: #5ecc71; }
 /* Codex review tree stats: 12px "+N -N" in git colours, 4px apart, before the git lane. */
 .noa-row-stats { display: inline-flex; flex-shrink: 0; gap: 4px; font-size: 12px; font-variant-numeric: tabular-nums; }
 .noa-row-stats .is-added { color: #168447; } .noa-row-stats .is-removed { color: #C24444; }
 [data-theme="dark"] .noa-row-stats .is-added { color: #69C98B; } [data-theme="dark"] .noa-row-stats .is-removed { color: #EE8A8A; }
 /* Diff colours follow Codex's @pierre/diffs tokens: line = 12% of the base over the page, gutter = 9%, inline emphasis = 15% alpha, hunk rows tinted with the info colour, 20px lines. */
-.noa-code-view { --diff-add-base: #0DBE4E; --diff-del-base: #FF2E3F; --code-addition: color-mix(in lab, var(--surface-page, #F9F9F7) 88%, var(--diff-add-base)); --code-deletion: color-mix(in lab, var(--surface-page, #F9F9F7) 88%, var(--diff-del-base)); --code-addition-gutter: color-mix(in lab, var(--surface-page, #F9F9F7) 91%, var(--diff-add-base)); --code-deletion-gutter: color-mix(in lab, var(--surface-page, #F9F9F7) 91%, var(--diff-del-base)); line-height: 20px; }
+.noa-code-view { --diff-add-base: #0DBE4E; --diff-del-base: #FF2E3F; --code-addition: color-mix(in lab, var(--surface-page, #F9F9F7) 88%, var(--diff-add-base)); --code-deletion: color-mix(in lab, var(--surface-page, #F9F9F7) 88%, var(--diff-del-base)); --code-addition-gutter: color-mix(in lab, var(--surface-page, #F9F9F7) 91%, var(--diff-add-base)); --code-deletion-gutter: color-mix(in lab, var(--surface-page, #F9F9F7) 91%, var(--diff-del-base)); line-height: 1.8; }
 [data-theme="dark"] .noa-code-view { --diff-add-base: #5ECC71; --diff-del-base: #FF6762; --code-addition: color-mix(in lab, var(--surface-page) 80%, var(--diff-add-base)); --code-deletion: color-mix(in lab, var(--surface-page) 80%, var(--diff-del-base)); --code-addition-gutter: color-mix(in lab, var(--surface-page) 85%, var(--diff-add-base)); --code-deletion-gutter: color-mix(in lab, var(--surface-page) 85%, var(--diff-del-base)); }
-.noa-code-line, .noa-source-line { min-height: 20px; }
+.noa-code-line, .noa-source-line { min-height: 1.8em; }
 .noa-code-number { opacity: 1; color: color-mix(in srgb, var(--text-primary) 40%, transparent); }
 .noa-code-line.is-add .noa-code-number { background: var(--code-addition-gutter); }
 .noa-code-line.is-remove .noa-code-number { background: var(--code-deletion-gutter); }
+.noa-code-view.is-diff .noa-code-line { grid-template-columns: var(--noa-diff-gutter, 7ch) minmax(0, 1fr); }
+.noa-code-view.is-diff .noa-code-number { position: relative; border-right: 2px solid var(--surface-page); padding-inline: 1.5ch; text-align: center; }
+.noa-code-view.is-diff .noa-code-sign { display: none; }
+.noa-code-view.is-diff .noa-code-line.is-add .noa-code-number { color: var(--diff-add-base); }
+.noa-code-view.is-diff .noa-code-line.is-remove .noa-code-number { color: var(--diff-del-base); }
+.noa-code-view.is-diff .noa-code-line:is(.is-add, .is-remove) .noa-code-number::before { content: ""; position: absolute; inset: -1px auto 0 0; width: 3px; background: var(--diff-add-base); }
+.noa-code-view.is-diff .noa-code-line.is-remove .noa-code-number::before { background: var(--diff-del-base); }
+.noa-code-view.is-diff .noa-code-line code { padding-left: 1ch; }
 .noa-code-line.is-add .noa-code-sign { color: var(--diff-add-base); }
 .noa-code-line.is-remove .noa-code-sign { color: var(--diff-del-base); }
 .noa-code-line mark { background: color-mix(in srgb, var(--diff-add-base) 15%, transparent); }
@@ -2214,7 +2227,6 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
 .noa-file-row.is-added { --git-tone: var(--git-added); } .noa-file-row.is-modified { --git-tone: var(--git-modified); } .noa-file-row.is-deleted { --git-tone: var(--git-deleted); }
 .noa-file-row.is-added .noa-file-name, .noa-file-row.is-modified .noa-file-name, .noa-file-row.is-deleted .noa-file-name { color: var(--git-tone, inherit); }
 .noa-file-row.is-deleted .noa-file-name { text-decoration: line-through; }
-.noa-file-row.is-added .noa-file-icon svg, .noa-file-row.is-modified .noa-file-icon svg, .noa-file-row.is-deleted .noa-file-icon svg { color: var(--git-tone) !important; }
 .noa-git-mark { color: var(--git-tone); }
 
 .noa-slash-option.is-selected {
@@ -2288,7 +2300,9 @@ body.noa-session-dragging * { cursor: grabbing !important; }
 
 .noa-approval-card { background: color-mix(in srgb, var(--text-primary) 3%, var(--bg-card)); }
 [data-approval-diff-preview] :is(.noa-code-number, .noa-diff-hunk-header, .noa-code-line.is-meta) { display: none; }
-[data-approval-diff-preview] .noa-code-line { grid-template-columns: 16px minmax(0, 1fr); }
+[data-approval-diff-preview] .noa-code-view.is-diff .noa-code-line { grid-template-columns: 16px minmax(0, 1fr); }
+[data-approval-diff-preview] .noa-code-sign { display: block !important; }
+[data-approval-diff-preview] .noa-code-view.is-diff .noa-code-line code { padding-left: 0; }
 .noa-approval-button { height: 28px; padding: 0 8px; border-radius: 999px; font-size: var(--text-chat-sm); line-height: 18px; white-space: nowrap; }
 .noa-code-block { background: color-mix(in srgb, var(--text-primary) 3%, var(--surface-page)); }
 @supports (corner-shape: superellipse(1.1)) {

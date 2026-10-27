@@ -96,11 +96,12 @@ export default function CodeView({ path, content, diff = false, split = false, w
             pairs.push([removed[j], added[j]])
           }
         }
-        return { label: `@@ -${hunk.oldStart},${hunk.oldLines} +${hunk.newStart},${hunk.newLines} @@`, lines, pairs }
+        return { label: `@@ -${hunk.oldStart},${hunk.oldLines} +${hunk.newStart},${hunk.newLines} @@`, lines, pairs, complete: displayed.length === hunk.lines.length }
       }))
     } catch { return [] }
   }, [content, path, diff])
   const source = useMemo(() => diff ? [] : highlightedLines(content.split("\n").slice(0, 3000).join("\n"), path), [content, path, diff])
+  const gutter = Math.max(4, ...hunks.flatMap((hunk) => hunk.lines.map((line) => String(Math.max(line.old ?? 0, line.next ?? 0)).length))) + 3
   const root = useRef<HTMLDivElement>(null)
   useEffect(() => {
     if (!focusLine || diff) return
@@ -135,18 +136,17 @@ export default function CodeView({ path, content, diff = false, split = false, w
   }, [query, match, finding, source, hunks, split, wrap])
   const cell = (line: Line | undefined, side?: "old" | "next") => (
     <div className={`noa-code-line ${line ? `is-${line.kind}` : "is-empty"}`}>
-      {!side && <span className="noa-code-number">{line?.old}</span>}
-      <span className="noa-code-number">{side === "old" ? line?.old : line?.next}</span>
+      <span className="noa-code-number">{side === "old" || !side && line?.kind === "remove" ? line?.old : line?.next}</span>
       <span className="noa-code-sign" aria-hidden="true">{line?.kind === "add" ? "+" : line?.kind === "remove" ? "−" : ""}</span>
       <code dangerouslySetInnerHTML={{ __html: line?.html || " " }} />
     </div>
   )
   return (
-    <div ref={root} className={`noa-code-view ${wrap ? "is-wrapped" : ""} ${split && diff ? "is-split" : ""}`} tabIndex={0} aria-label={diff ? "File diff" : "File content"}>
+    <div ref={root} className={`noa-code-view ${diff ? "is-diff" : ""} ${wrap ? "is-wrapped" : ""} ${split && diff ? "is-split" : ""}`} style={{ "--noa-diff-gutter": `${gutter}ch` } as React.CSSProperties} tabIndex={0} aria-label={diff ? "File diff" : "File content"}>
       {finding && <div className="noa-code-search"><input ref={input} aria-label="Find in file" value={query} onChange={(event) => { setQuery(event.target.value); setMatch(0) }} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); setMatch((n) => n + (event.shiftKey ? -1 : 1)) } else if (event.key === "Escape") { closeFind() } }} /><span>{matches ? (match % matches + matches) % matches + 1 : 0}/{matches}</span><button type="button" className="noa-panel-button" aria-label="Previous match" onClick={() => setMatch((n) => n - 1)}>↑</button><button type="button" className="noa-panel-button" aria-label="Next match" onClick={() => setMatch((n) => n + 1)}>↓</button><button type="button" className="noa-panel-button" aria-label="Close find" onClick={closeFind}>×</button></div>}
       {content.split("\n").length > 3000 && <p className="noa-panel-notice">Large file: showing up to 3,000 lines. Open the file in your editor to read the remaining lines.</p>}
       {!diff ? source.map((html, i) => <div className="noa-source-line" data-reference-line={focusLine && i + 1 >= focusLine && i + 1 <= (focusEndLine ?? focusLine) ? "true" : undefined} key={i}><span className="noa-code-number">{i + 1}</span><code dangerouslySetInnerHTML={{ __html: html || " " }} /></div>)
-        : hunks.length ? hunks.map((hunk, i) => <section key={i} className="noa-diff-hunk"><div className="noa-diff-hunk-header"><span>{hunk.label}</span>{hunkScope && <span className="noa-hunk-actions"><button type="button" className="noa-panel-button" aria-label={`${hunkScope === "staged" ? "Unstage" : "Stage"} hunk ${i + 1}`} onClick={() => onHunkAction?.(hunkScope === "staged" ? "unstage-hunk" : "stage-hunk", i)}>{hunkScope === "staged" ? "Unstage hunk" : "Stage hunk"}</button><button type="button" className="noa-panel-button" aria-label={`Revert hunk ${i + 1}`} onClick={() => onHunkAction?.("revert-hunk", i)}>Revert hunk</button></span>}</div>{split ? hunk.pairs.map(([old, next], j) => <div className="noa-diff-pair" key={j}>{cell(old, "old")}{cell(next, "next")}</div>) : hunk.lines.map((line, j) => <div key={j}>{cell(line)}</div>)}</section>)
+        : hunks.length ? hunks.map((hunk, i) => <section key={i} className="noa-diff-hunk"><div className="noa-diff-hunk-header"><span>{hunk.label}</span>{hunkScope && hunk.complete && <span className="noa-hunk-actions"><button type="button" className="noa-panel-button" aria-label={`${hunkScope === "staged" ? "Unstage" : "Stage"} hunk ${i + 1}`} onClick={() => onHunkAction?.(hunkScope === "staged" ? "unstage-hunk" : "stage-hunk", i)}>{hunkScope === "staged" ? "Unstage hunk" : "Stage hunk"}</button><button type="button" className="noa-panel-button" aria-label={`Revert hunk ${i + 1}`} onClick={() => onHunkAction?.("revert-hunk", i)}>Revert hunk</button></span>}</div>{split ? hunk.pairs.map(([old, next], j) => <div className="noa-diff-pair" key={j}>{cell(old, "old")}{cell(next, "next")}</div>) : hunk.lines.map((line, j) => <div key={j}>{cell(line)}</div>)}</section>)
         : <p className="noa-panel-empty">{content.includes("Binary") ? "Binary file changed" : content ? "File mode, rename or other metadata change. No text hunks." : "No changes in this view"}</p>}
     </div>
   )
