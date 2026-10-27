@@ -341,6 +341,9 @@ window.runVisualChecks = async () => {
   await show(null)
   await show(<><ThemeInjector settings={{ ...defaultSettings, appearance: { ...defaultSettings.appearance, theme: visualTheme } }} /><div className="grid" data-visual-matrix>
     {panel("visual-diff", "Completed edit card", <TurnDiffCard diff={diff} onOpen={() => {}} onAction={() => {}} />)}
+    {panel("diff-without-undo", "Narrow multi-file card", <div style={{ width: 280 }}><TurnDiffCard diff={diff} onOpen={() => {}} /></div>)}
+    {panel("diff-wide", "Wide multi-file card", <div style={{ width: 520, maxWidth: "100%" }}><TurnDiffCard diff={diff} onOpen={() => {}} onAction={() => {}} /></div>)}
+    {panel("diff-pending", "Pending reapply card", <div style={{ width: 321 }}><TurnDiffCard diff={{ ...diff, reverted: true }} onOpen={() => {}} onAction={() => {}} pending /></div>)}
     {panel("visual-tools", "Tool details and terminal state", <><ToolCard block={edit} defaultOpen /><ToolCard block={{ ...edit, id: "visual-error", name: "Bash", input: { command: "bun test" }, status: "error", output: "Validation failed: fixture error" }} defaultOpen /></>)}
     {panel("visual-code", "Highlighted code", <Markdown text={code} />)}
     {panel("visual-prose", "Text, table, formula and references", <Markdown text={"### Conversation rendering\n\nReadable **strong text**, `inline code`, [a reference](https://example.com), and \\(x^2 + y^2\\).\n\n> A quoted observation.\n\n| State | Result |\n| --- | --- |\n| Completed | No animation |\n| Background | Still running |\n\n- First item\n- Second item"} />)}
@@ -356,6 +359,9 @@ window.runVisualChecks = async () => {
   const diagram = document.querySelector('[data-case="visual-diagram"] svg .node rect')
   window.visualMetrics = { theme: visualTheme, colors, cardSize, diagramFill: diagram ? getComputedStyle(diagram).fill : null }
   return {
+    narrowDiffWithoutUndo: (() => { const card = document.querySelector('[data-case="diff-without-undo"] .noa-turn-diff-card')!; const title = card.querySelector<HTMLElement>(".noa-turn-diff-heading > span")!; const view = card.querySelector<HTMLElement>(".noa-turn-diff-view")!; return title.clientWidth >= 100 && view.getBoundingClientRect().top >= title.getBoundingClientRect().bottom && view.getBoundingClientRect().right <= card.getBoundingClientRect().right })(),
+    wideDiffSingleRow: (() => { const card = document.querySelector('[data-case="diff-wide"] .noa-turn-diff-card')!; const header = card.querySelector<HTMLElement>(".noa-turn-diff-header")!; const view = card.querySelector<HTMLElement>(".noa-turn-diff-view")!; return view.getBoundingClientRect().top < header.getBoundingClientRect().bottom && view.getBoundingClientRect().right <= card.getBoundingClientRect().right })(),
+    pendingDiffTitleReadable: (() => { const card = document.querySelector<HTMLElement>('[data-case="diff-pending"] .noa-turn-diff-card')!; const title = card.querySelector<HTMLElement>(".noa-turn-diff-heading > span")!; const passed = [321, 360, 400, 440, 441, 460].every(width => { card.parentElement!.style.width = `${width}px`; return title.clientWidth >= 100 }); card.parentElement!.style.width = "321px"; return passed })(),
     codeBorder: style('[data-case="visual-code"] .noa-code-block').borderTopWidth === "1px" && style('[data-case="visual-code"] .noa-code-block').borderTopColor === (visualTheme === "dark" ? "rgba(255, 255, 255, 0.06)" : "rgba(13, 13, 13, 0.05)"),
     diffHairline: style('[data-case="visual-diff"] .noa-turn-diff-card').boxShadow.includes("0.5px") && style('[data-case="visual-diff"] .noa-turn-diff-card').borderTopWidth === "0px",
     themeSurface: colors.page === (visualTheme === "dark" ? "rgb(45, 45, 43)" : "rgb(249, 249, 247)"),
