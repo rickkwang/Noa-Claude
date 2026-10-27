@@ -136,6 +136,7 @@ describe('native-1M model-setting normalization', () => {
     // an ambient value (e.g. from an active provider profile) would replace
     // the claude-* IDs these tests assert.
     delete process.env.ANTHROPIC_DEFAULT_OPUS_MODEL
+    delete process.env.ANTHROPIC_DEFAULT_FABLE_MODEL
     delete process.env.ANTHROPIC_DEFAULT_SONNET_MODEL
     delete process.env.ANTHROPIC_DEFAULT_HAIKU_MODEL
   })

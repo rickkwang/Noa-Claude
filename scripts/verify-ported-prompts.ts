@@ -65,6 +65,7 @@ for (const [tier, model] of [
   const brand = (text: string) =>
     text
       .replace(/Noa Claude/g, 'Claude Code')
+      .replace(/\.noa\/agents/g, '.claude/agents')
       .replace('https://github.com/rickkwang/Noa-Claude', 'https://claude.com/claude-code')
   const args = {
     agents: [],
@@ -202,6 +203,9 @@ const INTERPOLATED = [
   '\\d+ hours',
   // Tool names the Agent prompt interpolates; SendMessage is one of them.
   'SendMessage',
+  // Mode reminders interpolate their heading and question tool.
+  'Auto Mode Active',
+  'AskUserQuestion',
   // The config directory is per product: `.claude/agents` upstream, `.noa/agents` here.
   '\\.(?:claude|noa)/agents/\\*\\.md',
   // The product link is a constant upstream (`${rot}`).
@@ -352,7 +356,31 @@ const render = (s: string) =>
  */
 type Adaptation = { text: string; mode: 'exact' | 'contains'; reason: string }
 const ADAPTATIONS: Record<string, Adaptation[]> = {
+  'Bash lean': [
+    {
+      text: '`run_in_background` runs the command detached: it keeps running across turns and re-invokes you when it exits',
+      mode: 'contains',
+      reason: 'upstream assembles the detached-command clause from the non-remote runtime branch',
+    },
+    {
+      text: '); at that limit it is stopped and you are re-invoked',
+      mode: 'contains',
+      reason: 'upstream appends the re-invocation suffix only for locally retained background shells',
+    },
+  ],
+  'Bash verbose': [
+    {
+      text: '); at that limit it is stopped and you are notified',
+      mode: 'contains',
+      reason: 'upstream appends the notification suffix only for locally retained background shells',
+    },
+  ],
   'Agent lean': [
+    {
+      text: '` frontmatter, or the SDK `agents` option); the `model` parameter here overrides the definition for this one call',
+      mode: 'contains',
+      reason: 'upstream stores the optional model-override clause in a conditional interpolation',
+    },
     {
       text: 'call starts fresh.',
       mode: 'exact',

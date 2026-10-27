@@ -643,6 +643,10 @@ export function transitionPermissionMode(
     }
   }
 
+  if (fromMode === 'bypassPermissions' && toMode !== 'bypassPermissions') {
+    setNeedsAutoModeExitAttachment(true)
+  }
+
   // Only spread if there's something to clear (preserves ref equality)
   if (fromMode === 'plan' && toMode !== 'plan' && context.prePlanMode) {
     return { ...context, prePlanMode: undefined }

@@ -33,6 +33,8 @@ import type { UnknownCommandFallbackAttachment } from './processUserInput/unknow
 import { TASK_CREATE_TOOL_NAME } from '../tools/TaskCreateTool/constants.js'
 import { TASK_UPDATE_TOOL_NAME } from '../tools/TaskUpdateTool/constants.js'
 import { BASH_TOOL_NAME } from '../tools/BashTool/toolName.js'
+import { FILE_EDIT_TOOL_NAME } from '../tools/FileEditTool/constants.js'
+import { FILE_WRITE_TOOL_NAME } from '../tools/FileWriteTool/prompt.js'
 import { SKILL_TOOL_NAME } from '../tools/SkillTool/constants.js'
 import type { TodoList } from './todo/types.js'
 import {
@@ -258,11 +260,6 @@ export const TODO_REMINDER_CONFIG = {
 } as const
 
 export const PLAN_MODE_ATTACHMENT_CONFIG = {
-  TURNS_BETWEEN_ATTACHMENTS: 5,
-  FULL_REMINDER_EVERY_N_ATTACHMENTS: 5,
-} as const
-
-export const AUTO_MODE_ATTACHMENT_CONFIG = {
   TURNS_BETWEEN_ATTACHMENTS: 5,
   FULL_REMINDER_EVERY_N_ATTACHMENTS: 5,
 } as const
@@ -592,10 +589,16 @@ export type Attachment =
     }
   | {
       type: 'auto_mode'
-      reminderType: 'full' | 'sparse'
+      reminderType?: 'full' | 'sparse'
+      bashFirst?: boolean
+      bashFirstSteer?: 'strict' | 'relaxed'
+      steerOnly?: boolean
+      bypass?: boolean
     }
   | {
       type: 'auto_mode_exit'
+      bashFirst?: boolean
+      steerOnly?: boolean
     }
   | {
       type: 'critical_system_reminder'
@@ -1315,7 +1318,7 @@ export async function getAttachments(
             getAutoModeAttachments(messages, toolUseContext),
           ),
           maybe('auto_mode_exit', () =>
-            getAutoModeExitAttachment(toolUseContext),
+            getAutoModeExitAttachment(messages, toolUseContext),
           ),
         ],
     maybe('todo_reminders', () =>
@@ -1701,105 +1704,77 @@ async function getPlanModeExitAttachment(
   return [{ type: 'plan_mode_exit', planFilePath, planExists }]
 }
 
-function getAutoModeAttachmentTurnCount(messages: Message[]): {
-  turnCount: number
-  foundAutoModeAttachment: boolean
-} {
-  let turnsSinceLastAttachment = 0
-  let foundAutoModeAttachment = false
-
-  // Iterate backwards to find most recent auto_mode attachment.
-  // Count HUMAN turns (non-meta, non-tool-result user messages), not assistant
-  // messages — the tool loop in query.ts calls getAttachmentMessages on every
-  // tool round, so a single human turn with 100 tool calls would fire ~20
-  // reminders if we counted assistant messages. Auto mode's target use case is
-  // long agentic sessions, where this accumulated 60-105× per session.
+function getLatestAutoModeAttachment(messages: Message[]) {
   for (let i = messages.length - 1; i >= 0; i--) {
     const message = messages[i]
-
-    if (
-      message?.type === 'user' &&
-      !message.isMeta &&
-      !hasToolResultContent(message.message.content)
-    ) {
-      turnsSinceLastAttachment++
-    } else if (
-      message?.type === 'attachment' &&
-      message.attachment.type === 'auto_mode'
-    ) {
-      foundAutoModeAttachment = true
-      break
-    } else if (
-      message?.type === 'attachment' &&
-      message.attachment.type === 'auto_mode_exit'
-    ) {
-      // Exit resets the throttle — treat as if no prior attachment exists
-      break
-    }
+    if (message?.type !== 'attachment') continue
+    if (message.attachment.type === 'auto_mode') return message.attachment
+    if (message.attachment.type === 'auto_mode_exit') return null
   }
-
-  return { turnCount: turnsSinceLastAttachment, foundAutoModeAttachment }
+  return null
 }
 
-/**
- * Count auto_mode attachments since the last auto_mode_exit (or from start if no exit).
- * This ensures the full/sparse cycle resets when re-entering auto mode.
- */
-function countAutoModeAttachmentsSinceLastExit(messages: Message[]): number {
-  let count = 0
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const message = messages[i]
-    if (message?.type === 'attachment') {
-      if (message.attachment.type === 'auto_mode_exit') {
-        break
-      }
-      if (message.attachment.type === 'auto_mode') {
-        count++
-      }
-    }
-  }
-  return count
+function isBashFirstEnabled(): boolean {
+  const override =
+    process.env.NOA_CLAUDE_BASH_FIRST ?? process.env.CLAUDE_CODE_THRIFTY_SONIC
+  return override === undefined ? true : isEnvTruthy(override)
+}
+
+function getBashFirstSteer(model: string | undefined): 'strict' | 'relaxed' {
+  const override =
+    process.env.NOA_CLAUDE_BASH_FIRST_VARIANT ??
+    process.env.CLAUDE_CODE_COZY_TEAPOT
+  if (override === 'strict' || override === 'relaxed') return override
+  return shouldUseCompactSystemPrompt(model) ? 'relaxed' : 'strict'
 }
 
 async function getAutoModeAttachments(
   messages: Message[] | undefined,
   toolUseContext: ToolUseContext,
 ): Promise<Attachment[]> {
-  const appState = toolUseContext.getAppState()
-  const permissionContext = appState.toolPermissionContext
-  const inAuto = permissionContext.mode === 'auto'
-  const inPlanWithAuto =
-    permissionContext.mode === 'plan' &&
-    (autoModeStateModule?.isAutoModeActive() ?? false)
-  if (!inAuto && !inPlanWithAuto) {
+  const permissionContext = toolUseContext.getAppState().toolPermissionContext
+  const bypass = permissionContext.mode === 'bypassPermissions'
+  if (permissionContext.mode !== 'auto' && !bypass) return []
+
+  const model = toolUseContext.options.mainLoopModel
+  const steerOnly = bypass || shouldUseCompactSystemPrompt(model)
+  const tools = toolUseContext.options.tools
+  const bashFirst =
+    isBashFirstEnabled() &&
+    tools.some(tool => toolMatchesName(tool, BASH_TOOL_NAME)) &&
+    tools.some(
+      tool =>
+        toolMatchesName(tool, FILE_EDIT_TOOL_NAME) ||
+        toolMatchesName(tool, FILE_WRITE_TOOL_NAME),
+    )
+  if (steerOnly && !bashFirst) return []
+
+  const previous = getLatestAutoModeAttachment(messages ?? [])
+  const bashFirstUpgrade =
+    previous?.steerOnly === true &&
+    previous.bashFirst === false &&
+    steerOnly &&
+    bashFirst &&
+    !bypass
+  if (
+    previous &&
+    !(previous.steerOnly && !steerOnly) &&
+    !bashFirstUpgrade
+  ) {
     return []
   }
 
-  // Check if we should attach based on turn count (except for first turn)
-  if (messages && messages.length > 0) {
-    const { turnCount, foundAutoModeAttachment } =
-      getAutoModeAttachmentTurnCount(messages)
-    // Only throttle if we've already sent an auto_mode attachment before
-    // On first turn in auto mode, always attach
-    if (
-      foundAutoModeAttachment &&
-      turnCount < AUTO_MODE_ATTACHMENT_CONFIG.TURNS_BETWEEN_ATTACHMENTS
-    ) {
-      return []
-    }
-  }
-
-  // Determine if this should be a full or sparse reminder
-  const attachmentCount =
-    countAutoModeAttachmentsSinceLastExit(messages ?? []) + 1
-  const reminderType: 'full' | 'sparse' =
-    attachmentCount %
-      AUTO_MODE_ATTACHMENT_CONFIG.FULL_REMINDER_EVERY_N_ATTACHMENTS ===
-    1
-      ? 'full'
-      : 'sparse'
-
-  return [{ type: 'auto_mode', reminderType }]
+  return [{
+    type: 'auto_mode',
+    bashFirst,
+    ...(bashFirst && {
+      bashFirstSteer: previous?.bashFirst
+        ? previous.bashFirstSteer
+        : getBashFirstSteer(model),
+    }),
+    steerOnly,
+    bypass,
+  }]
 }
 
 /**
@@ -1807,25 +1782,31 @@ async function getAutoModeAttachments(
  * This is a one-time notification to tell the model it's no longer in auto mode.
  */
 async function getAutoModeExitAttachment(
+  messages: Message[] | undefined,
   toolUseContext: ToolUseContext,
 ): Promise<Attachment[]> {
-  if (!needsAutoModeExitAttachment()) {
+  if (toolUseContext.agentId || !needsAutoModeExitAttachment()) {
     return []
   }
 
-  const appState = toolUseContext.getAppState()
-  // Suppress when auto is still active — covers both mode==='auto' and
-  // plan-with-auto-active (where mode==='plan' but classifier runs).
+  const permissionContext = toolUseContext.getAppState().toolPermissionContext
   if (
-    appState.toolPermissionContext.mode === 'auto' ||
+    permissionContext.mode === 'auto' ||
+    permissionContext.mode === 'bypassPermissions' ||
     (autoModeStateModule?.isAutoModeActive() ?? false)
   ) {
     setNeedsAutoModeExitAttachment(false)
     return []
   }
 
+  const previous = getLatestAutoModeAttachment(messages ?? [])
   setNeedsAutoModeExitAttachment(false)
-  return [{ type: 'auto_mode_exit' }]
+  if (!previous) return []
+  return [{
+    type: 'auto_mode_exit',
+    bashFirst: previous.bashFirst,
+    steerOnly: previous.steerOnly,
+  }]
 }
 
 /**

@@ -15,6 +15,7 @@ mkdirSync(artifacts, { recursive: true });
 const definitions = [
   { name: 'verify-key-latch', verifyKey: true },
   { name: 'latch-usage', latchUsage: true, trust: true },
+  { name: 'bypass-mode-prompt', tmuxMode: true, trust: true },
   { name: 'project-untrusted', trust: false, run: false },
   { name: 'project-untrusted-bidi', trust: false, run: false, projectName: 'project\u202eevil' },
   { name: 'project-trusted', trust: true, run: true },
@@ -79,8 +80,8 @@ try {
     try {
       const url = `http://127.0.0.1:${server.address().port}`;
       const projects = { [realpathSync(project)]: { hasTrustDialogAccepted: c.trust ?? false }, [realpathSync(parent)]: { hasTrustDialogAccepted: c.parentTrust ?? false } };
-      const globalConfig = { hasCompletedOnboarding: true, projects, customApiKeyResponses: { approved: ['local-dummy'], rejected: [] } };
-      const settings = { enableAllProjectMcpServers: true };
+      const globalConfig = { hasCompletedOnboarding: true, projects, customApiKeyResponses: { approved: ['local-dummy'], rejected: [] }, ...(c.tmuxMode ? { bypassPermissionsModeAccepted: true } : {}) };
+      const settings = { enableAllProjectMcpServers: true, ...(c.tmuxMode ? { skipDangerousModePermissionPrompt: true } : {}) };
       if (c.worktreeExit) settings.worktree = { baseRef: 'head' };
       if (c.memory !== undefined) {
         const memory = join(dir, 'memory'); mkdirSync(memory); writeFileSync(join(memory, 'MEMORY.md'), c.memory);
@@ -97,7 +98,8 @@ try {
       writeFileSync(join(config, '.config.json'), JSON.stringify(globalConfig));
       writeFileSync(join(config, 'settings.json'), JSON.stringify(settings));
       const env = { ...secrets, PATH: process.env.PATH, HOME: home, CLAUDE_CONFIG_DIR: config, ANTHROPIC_API_KEY: 'local-dummy', ANTHROPIC_BASE_URL: url, DISABLE_TELEMETRY: '1', DISABLE_AUTOUPDATER: '1', CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1', CLAUDE_CODE_MAX_RETRIES: '0' };
-      if (c.latchUsage) env.CLAUDE_CODE_MAX_RETRIES = '2';
+      if (c.latchUsage) env.CLAUDE_CODE_MAX_RETRIES = '2'
+      if (c.tmuxMode) env.NOA_CLAUDE_BASH_FIRST_VARIANT = 'relaxed';
       if (c.verifyKey) {
         const probe = join(dir, 'verify-key.ts');
         writeFileSync(probe, `globalThis.MACRO={VERSION:'test',DISPLAY_VERSION:'test'};
@@ -120,7 +122,7 @@ try {
         execFileSync('git', ['config', 'user.name', 'Fixture'], { cwd: project });
         execFileSync('git', ['commit', '--allow-empty', '-qm', 'base'], { cwd: project });
       }
-      if (c.cd || c.latchUsage || c.worktreeExit) {
+      if (c.cd || c.latchUsage || c.worktreeExit || c.tmuxMode) {
         const target = join(dir, 'target'); mkdirSync(target); execFileSync('git', ['init', '-q'], { cwd: target });
         const socket = 'noa-startup-' + process.pid, tmux = (...a) => execFileSync('tmux', ['-L', socket, ...a], { encoding: 'utf8' });
         const sh = v => "'" + v.replaceAll("'", "'\\''") + "'";
@@ -130,10 +132,21 @@ try {
         const readConfig = () => JSON.parse(readFileSync(join(config, '.config.json'), 'utf8'));
         // env -i: the tmux server inherits the caller's environment, and a caller
         // running inside Noa (CLAUDE_CODE_PRODUCT_DIR) would point the TUI at the real config.
-        tmux('new-session', '-d', '-s', 'cd', '-x', '120', '-y', '40', ['cd', sh(project), '&&', 'env', '-i', 'TERM=xterm-256color', ...Object.entries(env).map(([k, v]) => sh(k + '=' + v)), sh(entry), '--model', 'claude-opus-5-5', ...(c.worktreeExit ? ['--worktree', 'fixture'] : [])].join(' ') + (c.worktreeExit ? '; printf "\\nCLI_EXIT=%s\\n" "$?"; read -r fixture_end' : ''));
+        tmux('new-session', '-d', '-s', 'cd', '-x', '120', '-y', '40', ['cd', sh(project), '&&', 'env', '-i', 'TERM=xterm-256color', ...Object.entries(env).map(([k, v]) => sh(k + '=' + v)), sh(entry), '--model', 'claude-opus-5-5', ...(c.tmuxMode ? ['--dangerously-skip-permissions'] : []), ...(c.worktreeExit ? ['--worktree', 'fixture'] : [])].join(' ') + (c.worktreeExit ? '; printf "\\nCLI_EXIT=%s\\n" "$?"; read -r fixture_end' : ''));
         try {
           await until('prompt', () => /shift\+tab to cycle/.test(screen()));
-          if (c.worktreeExit) {
+          if (c.tmuxMode) {
+            tmux('send-keys', '-t', 'cd', '-l', 'Run the compatibility fixture.');
+            await until('fixture input', () => screen().includes('Run the compatibility fixture.'));
+            tmux('send-keys', '-t', 'cd', 'Enter');
+            await until('mode prompt fixture answer', () => screen().includes('BOUNDARY_OK'));
+            tmux('send-keys', '-t', 'cd', 'BTab');
+            await until('manual mode', () => screen().includes('manual mode on'));
+            tmux('send-keys', '-t', 'cd', '-l', 'Run the post-exit fixture.');
+            await until('post-exit input', () => screen().includes('Run the post-exit fixture.'));
+            tmux('send-keys', '-t', 'cd', 'Enter');
+            await until('post-exit request', () => requests.some(r => JSON.stringify(r.body?.messages ?? []).includes('Run the post-exit fixture.')));
+          } else if (c.worktreeExit) {
             const listing = execFileSync('git', ['worktree', 'list', '--porcelain'], { cwd: project, encoding: 'utf8' });
             const wt = [...listing.matchAll(/^worktree (.+)$/gm)].map(m => m[1]).find(p => p !== realpathSync(project));
             assert.ok(wt, listing);
@@ -168,6 +181,16 @@ try {
             await until('persisted trust', () => readConfig().projects?.[realpathSync(target)]?.hasTrustDialogAccepted === true);
           }
           observation ??= { name: c.name, screen: screen(), projects: readConfig().projects, requests };
+          if (c.tmuxMode) {
+            const payload = JSON.stringify(observation.requests.map(r => r.body));
+            assert.ok(payload.includes('While bypass permissions mode is active:'), 'Bypass reminder missing');
+            assert.ok(payload.includes('You can do much of your work through the Bash tool'), 'relaxed Bash-first reminder missing');
+            assert.ok(!payload.includes('Do your work through the Bash tool wherever'), 'strict reminder won despite relaxed override');
+            const postExitRequest = observation.requests.find(r => JSON.stringify(r.body?.messages ?? []).includes('Run the post-exit fixture.'));
+            const postExit = JSON.stringify(postExitRequest?.body);
+            assert.ok(postExit.includes('## Exited Auto Mode'), 'mode exit reminder missing');
+            assert.ok(postExit.includes('Resume using the dedicated tools for file reads, searches, and edits.'), 'bash-first exit did not restore dedicated tools');
+          }
           writeFileSync(join(dir, 'observed.json'), JSON.stringify(observation, null, 2));
         } finally { try { observation ??= { name: c.name, screen: screen() }; if (c.worktreeExit) observation.scrollback = scrollback(); writeFileSync(join(dir, 'observed.json'), JSON.stringify(observation, null, 2)); } catch {} try { tmux('kill-server'); } catch {} }
         assert.equal(observation.projects[realpathSync(project)].hasTrustDialogAccepted, true);

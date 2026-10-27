@@ -18,9 +18,9 @@ const artifacts = resolve(option('--artifacts') || mkdtempSync(join(tmpdir(), 'n
 mkdirSync(artifacts, { recursive: true });
 const model = 'claude-sonnet-4-6';
 // A 200k-window model, so a gateway naming a 1M model in its responses offers a "larger window".
-const modelFor = scenario => scenario === 'gateway-model-name' ? 'claude-haiku-4-5' : scenario === 'preserved-thinking' ? 'claude-opus-5-5' : scenario === 'mandatory-thinking' ? 'kimi/k3.1-pro' : scenario.startsWith('openai-responses') ? 'gpt-6.1-sol' : model;
+const modelFor = scenario => option('--model') || (scenario === 'gateway-model-name' ? 'claude-haiku-4-5' : scenario === 'preserved-thinking' ? 'claude-opus-5-5' : scenario === 'mandatory-thinking' ? 'kimi/k3.1-pro' : scenario.startsWith('openai-responses') ? 'gpt-6.1-sol' : model);
 const sentinel = 'KEEP_IDENTIFIER=loop-sentinel-42';
-const cases = ['agent-nested', 'agent-budget', 'agent-budget-resume', 'agent-stop-pending', 'agent-owned-results', 'agent-owned-auto', 'agent-cascade-stop', 'agent-schema', 'agent-schema-bg', 'hook-output', 'hook-output-null', 'blocking-limit', 'image-error', 'small-window-overflow', 'read', 'large-output', 'max-turns', 'malformed', 'empty', 'alternating', 'fallback', 'provider-quota', 'refusal', 'refusal-repeat', 'truncated', 'tool-input-streaming', 'tool-input-nonstream', 'stale-signature', 'budget-streaming', 'budget-nonstream', 'permission-deny', 'deny-rule', 'hook-block', 'compact-resume', 'task-crud', 'task-metadata-race', 'task-dependency-race', 'goal-child-usage', 'agent-custom-fork', 'hook-composition', 'tombstone-resume', 'concurrency-streaming', 'concurrency-nonstream', 'background-deadline', 'openai-overflow', 'openai-usage', 'openai-usage-nonstream', 'openai-tools', 'openai-max-tokens-cap', 'openai-max-tokens-vllm', 'openai-responses', 'openai-responses-effort', 'bedrock-overflow', 'field-reject', 'gateway-model-name', 'preserved-thinking', 'mandatory-thinking'].filter(name => !option('--case') || name === option('--case'));
+const cases = ['agent-nested', 'agent-budget', 'agent-budget-resume', 'agent-stop-pending', 'agent-owned-results', 'agent-owned-auto', 'auto-plan-race', 'agent-cascade-stop', 'agent-schema', 'agent-schema-bg', 'hook-output', 'hook-output-null', 'blocking-limit', 'image-error', 'small-window-overflow', 'read', 'large-output', 'max-turns', 'malformed', 'empty', 'alternating', 'fallback', 'provider-quota', 'refusal', 'refusal-repeat', 'truncated', 'tool-input-streaming', 'tool-input-nonstream', 'stale-signature', 'budget-streaming', 'budget-nonstream', 'permission-deny', 'deny-rule', 'mode-auto', 'mode-bypass', 'mode-bypass-off', 'hook-block', 'compact-resume', 'task-crud', 'task-metadata-race', 'task-dependency-race', 'goal-child-usage', 'agent-custom-fork', 'hook-composition', 'tombstone-resume', 'concurrency-streaming', 'concurrency-nonstream', 'background-deadline', 'openai-overflow', 'openai-usage', 'openai-usage-nonstream', 'openai-tools', 'openai-max-tokens-cap', 'openai-max-tokens-vllm', 'openai-responses', 'openai-responses-effort', 'bedrock-overflow', 'field-reject', 'gateway-model-name', 'preserved-thinking', 'mandatory-thinking'].filter(name => !option('--case') || name === option('--case'));
 assert.ok(cases.length > 0, 'unknown --case');
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const textOf = content => typeof content === 'string' ? content : (content || []).filter(b => b.type === 'text').map(b => b.text).join('\n');
@@ -78,10 +78,14 @@ const server = createServer(async (req, res) => {
       error(400, 'invalid_request_error', 'K3.1 Pro does not support disabled thinking mode. Please enable thinking and try again');
       return;
     }
-    if (active.case === 'agent-owned-auto' && JSON.stringify(body.system || '').includes('<block>')) {
+    if ((active.case === 'agent-owned-auto' || active.case === 'auto-plan-race') && JSON.stringify(body.system || '').includes('<block>')) {
       // Auto-mode classifier. The grandchild's hand-back review is slow, which
       // holds its notification back after its task is already completed.
       if (JSON.stringify(body.messages).includes('GRANDCHILD_RESULT_42')) await delay(1500);
+      if (active.case === 'auto-plan-race') {
+        active.onClassifier?.();
+        await delay(500);
+      }
       const msg = { id: 'msg_cls', type: 'message', role: 'assistant', model: body.model, content: [{ type: 'text', text: '<block>no</block>' }], stop_reason: 'end_turn', stop_sequence: null, usage: { input_tokens: 1, output_tokens: 1 } };
       if (!body.stream) { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(msg)); return; }
       res.writeHead(200, { 'content-type': 'text/event-stream' });
@@ -330,7 +334,9 @@ const server = createServer(async (req, res) => {
         : { command: 'sleep 4', description: 'Wait past the deadline' } }]; stop = 'tool_use';
     } else if (active.case.startsWith('concurrency-') && n === 1) {
       content = [1, 2].map(i => ({ type: 'tool_use', id: 'write_' + i, name: 'Bash', input: { command: 'pwd' } })); stop = 'tool_use';
-    } else if (active.case === 'max-turns' || ((active.case === 'read' || active.case.startsWith('openai-usage') || active.case === 'openai-tools' || active.case.startsWith('openai-max-tokens') || active.case.startsWith('openai-responses') || active.case.endsWith('-overflow') || active.case.startsWith('hook-')) && n === 1) || (active.case === 'compact-resume' && n <= 3) || (active.case === 'field-reject' && n === 2)) {
+    } else if (active.case === 'auto-plan-race' && !body.messages.some(m => Array.isArray(m.content) && m.content.some(b => b.type === 'tool_result' && b.tool_use_id === 'race_write'))) {
+      content = [{ type: 'tool_use', id: 'race_write', name: 'Write', input: { file_path: join(active.dir, '..', 'auto-plan-race-target.txt'), content: 'MUST_NOT_WRITE' } }]; stop = 'tool_use';
+    } else if (active.case === 'max-turns' || ((active.case === 'read' || active.case.startsWith('mode-') || active.case.startsWith('openai-usage') || active.case === 'openai-tools' || active.case.startsWith('openai-max-tokens') || active.case.startsWith('openai-responses') || active.case.endsWith('-overflow') || active.case.startsWith('hook-')) && n === 1) || (active.case === 'compact-resume' && n <= 3) || (active.case === 'field-reject' && n === 2)) {
       content = [
         ...(active.case === 'compact-resume' ? [{ type: 'text', text: 'prior-context '.repeat(5000) }] : []),
         // GPT and Kimi fill optional arguments with "" (pages: "" must not fail Read).
@@ -428,6 +434,8 @@ async function run(executable, scenario, extra = [], input = 'Run the local loop
   const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => ['PATH', 'HOME', 'TMPDIR', 'USER', 'LOGNAME', 'SHELL', 'LANG', 'LC_ALL'].includes(k)));
   Object.assign(env, {
     ...(scenario==='blocking-limit' && {DISABLE_AUTO_COMPACT:'1'}),
+    ...(scenario === 'mode-bypass-off' && { NOA_CLAUDE_BASH_FIRST: '0' }),
+    ...(scenario === 'mode-bypass' && { NOA_CLAUDE_BASH_FIRST_VARIANT: 'relaxed' }),
     // Size-based microcompact fires on the second large tool result here.
     ...(scenario==='preserved-thinking' && {CLAUDE_CODE_SIZE_MICROCOMPACT_PCT:'1', CLAUDE_CODE_SIZE_MICROCOMPACT_KEEP:'1'}),
     ...(scenario==='mandatory-thinking' && {NOA_CLAUDE_PROVIDER_THINKING_MODELS:'kimi/k3.1-pro', NOA_CLAUDE_PROVIDER_REJECTS_DISABLED_THINKING_MODELS:'kimi/k3.1-pro', CLAUDE_CODE_DISABLE_THINKING:'1'}),
@@ -443,12 +451,12 @@ async function run(executable, scenario, extra = [], input = 'Run the local loop
     writeFileSync(join(env.CLAUDE_CONFIG_DIR, 'tasks', 'harness-probe', '1.json'), JSON.stringify({ id: '1', subject: 'Clear optional fields', description: 'before', owner: 'fixture-owner', status: 'pending', blocks: [], blockedBy: [] }));
     writeFileSync(join(env.CLAUDE_CONFIG_DIR, 'chatgpt-auth.json'), JSON.stringify({ hostId: 'urn:uuid:00000000-0000-4000-8000-000000000000', clientId: 'e2e-client', accessToken: 'e2e-chatgpt-access', refreshToken: 'e2e-chatgpt-refresh', expiresAt: Date.now() + 3_600_000 }));
   }
-  const streamingInput = scenario.startsWith('budget-');
+  const streamingInput = scenario.startsWith('budget-') || scenario === 'auto-plan-race';
   const harness = scenario.startsWith('task-') || scenario === 'goal-child-usage' || scenario==='agent-custom-fork' || scenario==='agent-nested' || scenario.startsWith('agent-owned-') || scenario==='agent-cascade-stop' || scenario==='agent-stop-pending' || scenario.startsWith('agent-budget') || scenario.startsWith('agent-schema');
   // Hooks are off under --bare, so the hook scenario runs the full startup path.
   // --bare drops run_in_background, so the deadline scenario needs the full startup path too.
   // --bare also keeps only the simple tools, so openai-tools runs it to keep WebFetch and ToolSearch.
-  const command = [...(scenario.startsWith('hook-') || scenario.startsWith('concurrency-') || scenario.startsWith('tool-input-') || scenario === 'background-deadline' || scenario === 'openai-tools' || scenario.startsWith('openai-responses') || harness ? [] : ['--bare']), '--print', '--verbose', '--output-format', 'stream-json', '--model', modelFor(scenario), '--strict-mcp-config', '--setting-sources', '', '--permission-mode', 'dontAsk', '--tools', harness ? (scenario==='agent-custom-fork'?'Read,Bash,Task,SendMessage':scenario==='goal-child-usage'?'Read,Task,goal':scenario==='agent-nested'||scenario.startsWith('agent-owned-')||scenario.startsWith('agent-schema')?'Task':scenario==='agent-cascade-stop'||scenario==='agent-stop-pending'?'Task,Bash,TaskStop':scenario==='agent-budget'?'Task,Bash':scenario==='agent-budget-resume'?'Task,Bash,SendMessage':'TaskCreate,TaskUpdate,TaskGet,TaskList') : scenario.startsWith('tool-input-') ? 'Read,Bash,Write' : scenario === 'openai-tools' ? 'Read,Bash,WebFetch,ToolSearch' : scenario.startsWith('openai-responses') ? 'Read,Bash,TaskUpdate' : 'Read,Bash', '--max-turns', harness ? '8' : scenario === 'compact-resume' ? '6' : scenario === 'stale-signature' ? '3' : scenario === 'preserved-thinking' ? '5' : scenario === 'background-deadline' || scenario === 'small-window-overflow' ? '4' : '2'];
+  const command = [...(scenario.startsWith('hook-') || scenario.startsWith('mode-') || scenario === 'auto-plan-race' || scenario.startsWith('concurrency-') || scenario.startsWith('tool-input-') || scenario === 'background-deadline' || scenario === 'openai-tools' || scenario.startsWith('openai-responses') || harness ? [] : ['--bare']), '--print', '--verbose', '--output-format', 'stream-json', '--model', modelFor(scenario), '--strict-mcp-config', '--setting-sources', '', '--permission-mode', 'dontAsk', '--tools', harness ? (scenario==='agent-custom-fork'?'Read,Bash,Task,SendMessage':scenario==='goal-child-usage'?'Read,Task,goal':scenario==='agent-nested'||scenario.startsWith('agent-owned-')||scenario.startsWith('agent-schema')?'Task':scenario==='agent-cascade-stop'||scenario==='agent-stop-pending'?'Task,Bash,TaskStop':scenario==='agent-budget'?'Task,Bash':scenario==='agent-budget-resume'?'Task,Bash,SendMessage':'TaskCreate,TaskUpdate,TaskGet,TaskList') : scenario.startsWith('tool-input-') ? 'Read,Bash,Write' : scenario === 'openai-tools' ? 'Read,Bash,WebFetch,ToolSearch' : scenario.startsWith('openai-responses') ? 'Read,Bash,TaskUpdate' : scenario.startsWith('mode-') ? 'Read,Bash,Edit,Write,Glob,Grep' : scenario === 'auto-plan-race' ? 'Read,Bash,Write' : 'Read,Bash', '--max-turns', harness ? '8' : scenario === 'compact-resume' ? '6' : scenario === 'stale-signature' ? '3' : scenario === 'preserved-thinking' ? '5' : scenario === 'background-deadline' || scenario === 'small-window-overflow' ? '4' : '2'];
   if (!scenario.startsWith('tool-input-') && scenario !== 'compact-resume' && scenario !== 'tombstone-resume' && scenario !== 'stale-signature' && scenario!=='agent-custom-fork' && scenario!=='agent-budget-resume') command.push('--no-session-persistence');
   if (scenario.startsWith('tool-input-')) command.push('--allowedTools', 'Write');
   if (scenario === 'fallback') command.push('--fallback-model', 'claude-haiku-4-5');
@@ -459,7 +467,10 @@ async function run(executable, scenario, extra = [], input = 'Run the local loop
   // A slow worktree hook holds the parent inside its Agent call while it is stopped.
   if (scenario === 'agent-stop-pending') command.push('--allowedTools', 'Bash,TaskStop', '--settings', JSON.stringify({ hooks: { WorktreeCreate: [{ hooks: [{ type: 'command', command: `touch '${join(active.dir, 'wt-started')}'; sleep 2; mkdir -p '${join(active.dir, 'wt')}'; echo '${join(active.dir, 'wt')}'` }] }] } }));
   if (scenario.startsWith('agent-budget')) command.push('--allowedTools', 'Bash', '--max-budget-usd', '0.01');
-  if (scenario === 'agent-owned-auto') command[command.indexOf('dontAsk')] = 'auto';
+  if (scenario === 'agent-owned-auto' || scenario === 'auto-plan-race') command[command.indexOf('dontAsk')] = 'auto';
+  if (scenario === 'auto-plan-race') command.push('--settings', JSON.stringify({ skipAutoPermissionPrompt: true }));
+  if (scenario === 'mode-auto' || scenario.startsWith('mode-bypass')) command[command.indexOf('dontAsk')] = scenario === 'mode-auto' ? 'auto' : 'bypassPermissions';
+  if (scenario.startsWith('mode-bypass')) command.push('--dangerously-skip-permissions');
   if (scenario==='hook-output' || scenario==='hook-output-null') command.push('--settings',JSON.stringify({hooks:{PostToolUse:[{matcher:'Read',hooks:[{type:'command',command:`echo '${JSON.stringify({hookSpecificOutput:{hookEventName:'PostToolUse',updatedToolOutput:scenario==='hook-output-null'?null:'HOOK_REDACTED',updatedMCPToolOutput:'LEGACY_MUST_NOT_WIN'}})}'`}]}]}}));
   if (scenario === 'hook-block') command.push('--settings', JSON.stringify({ hooks: { PreToolUse: [{ matcher: 'Read', hooks: [{ type: 'command', command: 'printf ran > hook-ran.txt; echo HOOK_BLOCKED_42 >&2; exit 2' }] }] } }));
   if (scenario === 'hook-composition') command.push('--settings', JSON.stringify({ hooks: { PreToolUse: [{ matcher: 'Read', hooks: [
@@ -470,7 +481,8 @@ async function run(executable, scenario, extra = [], input = 'Run the local loop
     writeFileSync(join(active.dir, 'rewrite-hook.cjs'), `let raw='';process.stdin.on('data',b=>raw+=b);process.stdin.on('end',()=>{const id=JSON.parse(raw).tool_use_id;const command='if mkdir write-lock 2>/dev/null; then echo start-'+id+' >> writes.txt; sleep 0.1; echo end-'+id+' >> writes.txt; rmdir write-lock; else echo OVERLAP >> writes.txt; fi';console.log(JSON.stringify({hookSpecificOutput:{hookEventName:'PreToolUse',permissionDecision:'allow',updatedInput:{command}}}));});`);
     command.push('--settings', JSON.stringify({ hooks: { PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: 'bun rewrite-hook.cjs' }] }] } }));
   }
-  if (streamingInput) command.push('--input-format', 'stream-json', '--allowedTools', 'Bash', '--max-budget-usd', '0.0001');
+  if (streamingInput) command.push('--input-format', 'stream-json');
+  if (scenario.startsWith('budget-')) command.push('--allowedTools', 'Bash', '--max-budget-usd', '0.0001');
   command.push(...extra);
   const started = performance.now();
   // A bundle (dist/main-dev.js) has no shebang; run it through bun.
@@ -478,6 +490,9 @@ async function run(executable, scenario, extra = [], input = 'Run the local loop
   if(scenario==='agent-custom-fork')binArgs.push('--agents',JSON.stringify({fork:{description:'Custom agent named fork',prompt:'FORK_CUSTOM_RULE_42',tools:['Read']}}));
   const child = spawn(bin, binArgs, { cwd: active.dir, env, stdio: ['pipe', 'pipe', 'pipe'], detached: true });
   children.add(child);
+  if (scenario === 'auto-plan-race') {
+    active.onClassifier = () => child.stdin.write(JSON.stringify({ type: 'control_request', request_id: 'race_mode', request: { subtype: 'set_permission_mode', mode: 'plan' } }) + '\n');
+  }
   let stdout = '', stderr = '', pending = '', result;
   let budgetObservation;
   const timeout = setTimeout(() => process.kill(-child.pid, 'SIGKILL'), 20000);
@@ -486,9 +501,16 @@ async function run(executable, scenario, extra = [], input = 'Run the local loop
     const lines = pending.split('\n'); pending = lines.pop();
     for (const line of lines) {
       let event; try { event = JSON.parse(line); } catch { continue; }
+      if (event.type === 'control_response' && event.response?.request_id === 'race_mode') {
+        (active.controlResponses ??= []).push(event.response);
+      }
+      if (scenario === 'auto-plan-race' && event.type === 'control_request' && event.request?.subtype === 'can_use_tool') {
+        child.stdin.write(JSON.stringify({ type: 'control_response', response: { subtype: 'success', request_id: event.request_id, response: { behavior: 'deny', message: 'Fixture denied the re-prompted write.', toolUseID: event.request.tool_use_id } } }) + '\n');
+      }
       if (event.type === 'result') {
         result = event;
-        if (streamingInput && !budgetObservation) {
+        if (scenario === 'auto-plan-race') child.stdin.end();
+        if (scenario.startsWith('budget-') && !budgetObservation) {
           active.startedAtResult = existsSync(join(active.dir, 'started.txt'));
           active.finishedAtResult = existsSync(join(active.dir, 'finished.txt'));
           budgetObservation = delay(2500).then(() => {
@@ -593,6 +615,11 @@ try {
             assert.equal(runResult.code,0);assert.equal(runResult.result.result,'AUDIT_OK');
             assert.equal(active.grandchildRequests,1,'grandchild kept running after its parent was stopped');
             assert.ok(!main.some(r=>JSON.stringify(r.body.messages).includes('GRANDCHILD_DONE')),'stopped grandchild still delivered a result');
+          } else if (scenario === 'auto-plan-race') {
+            assert.equal(runResult.code, 0); assert.equal(runResult.result.result, 'AUDIT_OK');
+            assert.ok(active.controlResponses?.some(r => r.subtype === 'success' && r.response?.mode === 'plan'), 'mode switch did not complete before the classifier answered');
+            assert.ok(!existsSync(join(dir, '..', 'auto-plan-race-target.txt')), 'stale auto verdict authorized a write after switching to plan');
+            assert.ok(runResult.result.permission_denials?.some(d => d.tool_use_id === 'race_write'), 'write was not denied after switching to plan');
           } else if(scenario==='agent-owned-results' || scenario==='agent-owned-auto'){
             assert.equal(runResult.code,0);assert.equal(runResult.result.result,'AUDIT_OK','parent did not report its child result');
             const mainThread=main.filter(r=>!/OWNED_(PARENT|GRANDCHILD)/.test(textOf(r.body.messages[0]?.content)));
@@ -715,6 +742,23 @@ try {
             if (scenario === 'budget-streaming') assert.equal(active.started, true, 'Bash did not start; cancellation path untested');
             assert.equal(active.finishedAtResult, false, 'Bash already finished before the budget result');
             assert.equal(active.finished, false, 'Bash wrote after the terminal budget result');
+          } else if (scenario.startsWith('mode-')) {
+            assert.equal(runResult.code, 0); assert.equal(runResult.result.result, 'AUDIT_OK'); assert.equal(count, 2);
+            const firstTurn = JSON.stringify(main[0].body.messages);
+            const followUp = JSON.stringify(main[1].body.messages.at(-1).content);
+            if (scenario === 'mode-auto') {
+              assert.ok(firstTurn.includes('## Auto Mode Active'));
+              assert.ok(firstTurn.includes('Bias toward working without stopping'));
+              assert.ok(firstTurn.includes('Do your work through the Bash tool'));
+              assert.ok(!firstTurn.includes('The user chose continuous, autonomous execution'));
+            } else if (scenario === 'mode-bypass') {
+              assert.ok(firstTurn.includes('While bypass permissions mode is active:'));
+              assert.ok(firstTurn.includes('You can do much of your work through the Bash tool'));
+            } else {
+              assert.ok(!firstTurn.includes('While bypass permissions mode is active:'));
+            }
+            assert.ok(!followUp.includes('While auto mode is active:'));
+            assert.ok(!followUp.includes('While bypass permissions mode is active:'));
           } else if (scenario === 'permission-deny' || scenario === 'deny-rule') {
             assert.equal(runResult.code, 0); assert.equal(runResult.result.result, 'AUDIT_OK');
             assert.equal(existsSync(join(dir, 'denied.txt')), false, 'denied Bash command still ran');

@@ -1469,24 +1469,24 @@ export function handleAutoModeTransition(
 ): void {
   // Auto↔plan transitions are handled by prepareContextForPlanMode (auto may
   // stay active through plan if opted in) and ExitPlanMode (restores mode).
-  // Skip both directions so this function only handles direct auto transitions.
+  // Skip both directions so this function only handles direct mode-attachment transitions.
   if (
     (fromMode === 'auto' && toMode === 'plan') ||
     (fromMode === 'plan' && toMode === 'auto')
   ) {
     return
   }
-  const fromIsAuto = fromMode === 'auto'
-  const toIsAuto = toMode === 'auto'
+  const fromUsesModeAttachment =
+    fromMode === 'auto' || fromMode === 'bypassPermissions'
+  const toUsesModeAttachment = toMode === 'auto' || toMode === 'bypassPermissions'
 
-  // If switching TO auto mode, clear any pending exit attachment
-  // This prevents sending both auto_mode and auto_mode_exit when user toggles quickly
-  if (toIsAuto && !fromIsAuto) {
+  // Clear a pending exit when returning to either mode before the next request.
+  if (toUsesModeAttachment && !fromUsesModeAttachment) {
     STATE.needsAutoModeExitAttachment = false
   }
 
-  // If switching out of auto mode, trigger the auto_mode_exit attachment
-  if (fromIsAuto && !toIsAuto) {
+  // Leaving either mode revokes its tool-use reminder on the next request.
+  if (fromUsesModeAttachment && !toUsesModeAttachment) {
     STATE.needsAutoModeExitAttachment = true
   }
 }

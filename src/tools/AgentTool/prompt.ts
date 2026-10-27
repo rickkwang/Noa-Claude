@@ -218,7 +218,7 @@ When you do spawn one, brief it like the peer it is: state the goal and what you
 
 - The agent's final report is not shown to the user — relay what matters.
 - Use ${SEND_MESSAGE_TOOL_NAME} with the agent's ID or name to continue a previously spawned agent with its context intact; a new ${AGENT_TOOL_NAME} call starts fresh.
-- Each agent type's model, reasoning effort, and tools come from its definition (\`.noa/agents/*.md\` frontmatter or SDK \`agents\`)${modelOverrideNote}.
+- Each agent type's model, reasoning effort, and tool access are set in its definition (\`.noa/agents/*.md\` frontmatter, or the SDK \`agents\` option)${modelOverrideNote}.
 - \`isolation: "worktree"\` gives the agent its own git worktree (auto-cleaned if unchanged).${backgroundNote}${teammateNote}`
   }
 

@@ -818,15 +818,19 @@ export const hasPermissionsToUseTool: CanUseToolFn = async (
       const modeUnchanged =
         currentMode === eligibilitySnapshot.mode &&
         currentAutoActive === eligibilitySnapshot.autoActive
-      // Known intentional simplification of upstream's still-eligible
-      // check (xUp): upstream additionally requires a plan-mode tool to be
-      // read-only (or allow-rule matched) before trusting the verdict, and
-      // honors a web domain-consent flag for other modes. This check only
-      // looks at the mode (tools' isReadOnly is not consulted here). Gap
-      // scenario: a mid-call switch auto→plan with the auto latch still active
-      // trusts the classifier verdict for a write tool where upstream re-prompts.
-      const stillClassifierEligible = () =>
-        currentMode === 'auto' || (currentMode === 'plan' && currentAutoActive)
+      // A verdict obtained in auto is valid in plan only for tools plan itself
+      // could allow without re-prompting.
+      const stillClassifierEligible = () => {
+        if (currentMode === 'auto') return true
+        if (currentMode !== 'plan' || !currentAutoActive) return false
+        return (
+          tool.isReadOnly(input) ||
+          !!toolAlwaysAllowedRule(
+            currentAppState.toolPermissionContext,
+            tool,
+          )
+        )
+      }
       if (!modeUnchanged && !stillClassifierEligible()) {
         logEvent('tengu_auto_mode_fallback_to_ask', {
           reason:

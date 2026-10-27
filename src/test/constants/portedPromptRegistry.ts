@@ -46,6 +46,14 @@ import {
   TURN_UPDATES_SECTION,
 } from '../../constants/systemPromptCompact.js'
 import { OUTPUT_STYLE_CONFIG } from '../../constants/outputStyles.js'
+import {
+  AUTO_MODE_EXIT_INSTRUCTIONS,
+  AUTO_MODE_EXIT_STEER_ONLY_INSTRUCTIONS,
+  AUTO_MODE_INSTRUCTIONS,
+  BASH_FIRST_RELAXED_INSTRUCTIONS,
+  BASH_FIRST_STRICT_INSTRUCTIONS,
+  RESUME_DEDICATED_TOOLS_INSTRUCTIONS,
+} from '../../constants/messages.js'
 import { getDescription as getGlobDescription } from '../../tools/GlobTool/prompt.js'
 import { getDescription as getGrepDescription } from '../../tools/GrepTool/prompt.js'
 import { getEditToolDescription } from '../../tools/FileEditTool/prompt.js'
@@ -149,6 +157,12 @@ export function buildPortedSubjects(): Record<string, string> {
     OPUS5_REDUCED_DELEGATION_SECTION,
     WRITING_FOR_USER_SECTION,
     SUBAGENT_AUTHORITY_NOTICE,
+    'Auto mode instructions': AUTO_MODE_INSTRUCTIONS,
+    'Bash-first strict instructions': BASH_FIRST_STRICT_INSTRUCTIONS,
+    'Bash-first relaxed instructions': BASH_FIRST_RELAXED_INSTRUCTIONS,
+    'Auto mode exit': AUTO_MODE_EXIT_INSTRUCTIONS,
+    'Auto mode steer-only exit': AUTO_MODE_EXIT_STEER_ONLY_INSTRUCTIONS,
+    'Resume dedicated tools': RESUME_DEDICATED_TOOLS_INSTRUCTIONS,
     'verbose # System': getSimpleSystemSection(),
     'verbose # Doing tasks': renderVerboseDoingTasks(),
     'verbose # Executing actions with care': getActionsSection(),
@@ -233,6 +247,12 @@ export const PORTED_DIGESTS: Record<string, string> = {
   OPUS5_REDUCED_DELEGATION_SECTION: '2b4ae7f4b3dfdf67',
   WRITING_FOR_USER_SECTION: '5ba735a24922bdc1',
   SUBAGENT_AUTHORITY_NOTICE: '79ef93928642628c',
+  'Auto mode instructions': '0477839f29535733',
+  'Bash-first strict instructions': '2fdc5878752faccd',
+  'Bash-first relaxed instructions': 'ed0d5ad07e55e539',
+  'Auto mode exit': 'd5d5c9b8eaaa15f2',
+  'Auto mode steer-only exit': '61f24a3744a9aa44',
+  'Resume dedicated tools': 'f8d22ad846ddd40c',
   // Upstream ships one tier for PowerShell — there is no lean branch to pin, so
   // the single description is the port. Refreshed against the upstream binary; the earlier
   // transcription predated it and had drifted (a wrong 5.1 encoding default, a

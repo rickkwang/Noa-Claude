@@ -23,7 +23,15 @@ import {
 } from 'src/services/analytics/index.js'
 import { sanitizeToolNameForAnalytics } from 'src/services/analytics/metadata.js'
 import type { AgentId } from 'src/types/ids.js'
-import { NO_CONTENT_MESSAGE } from '../constants/messages.js'
+import {
+  AUTO_MODE_EXIT_INSTRUCTIONS,
+  AUTO_MODE_EXIT_STEER_ONLY_INSTRUCTIONS,
+  AUTO_MODE_INSTRUCTIONS,
+  BASH_FIRST_RELAXED_INSTRUCTIONS,
+  BASH_FIRST_STRICT_INSTRUCTIONS,
+  NO_CONTENT_MESSAGE,
+  RESUME_DEDICATED_TOOLS_INSTRUCTIONS,
+} from '../constants/messages.js'
 import { MAX_OUTPUT_STYLE_NAME_LENGTH } from '../constants/outputStyles.js'
 import { escapeXml } from './xml.js'
 import { isAutoMemoryEnabled } from '../memdir/paths.js'
@@ -3663,33 +3671,19 @@ Answer the user's query comprehensively, using the ${ASK_USER_QUESTION_TOOL_NAME
 }
 
 function getAutoModeInstructions(attachment: {
-  reminderType: 'full' | 'sparse'
+  bashFirst?: boolean
+  bashFirstSteer?: 'strict' | 'relaxed'
+  steerOnly?: boolean
+  bypass?: boolean
 }): UserMessage[] {
-  if (attachment.reminderType === 'sparse') {
-    return getAutoModeSparseInstructions()
-  }
-  return getAutoModeFullInstructions()
-}
-
-function getAutoModeFullInstructions(): UserMessage[] {
-  const content = `## Auto Mode Active
-
-Auto mode is active. The user chose continuous, autonomous execution. You should:
-
-1. **Execute immediately** — Start implementing right away. Make reasonable assumptions and proceed on low-risk work.
-2. **Minimize interruptions** — Prefer making reasonable assumptions over asking questions for routine decisions.
-3. **Prefer action over planning** — Do not enter plan mode unless the user explicitly asks. When in doubt, start coding.
-4. **Expect course corrections** — The user may provide suggestions or course corrections at any point; treat those as normal input.
-5. **Do not take overly destructive actions** — Auto mode is not a license to destroy. Anything that deletes data or modifies shared or production systems still needs explicit user confirmation. If you reach such a decision point, ask and wait, or course correct to a safer method instead.
-6. **Avoid data exfiltration** — Post even routine messages to chat platforms or work tickets only if the user has directed you to. You must not share secrets (e.g. credentials, internal documentation) unless the user has explicitly authorized both that specific secret and its destination.`
-
-  return wrapMessagesInSystemReminder([
-    createUserMessage({ content, isMeta: true }),
-  ])
-}
-
-function getAutoModeSparseInstructions(): UserMessage[] {
-  const content = `Auto mode still active (see full instructions earlier in conversation). Execute autonomously, minimize interruptions, prefer action over planning.`
+  const bashFirst = attachment.bashFirst
+    ? `\n\n${attachment.bashFirstSteer === 'relaxed' ? BASH_FIRST_RELAXED_INSTRUCTIONS : BASH_FIRST_STRICT_INSTRUCTIONS}`
+    : ''
+  const content = attachment.bypass
+    ? `While bypass permissions mode is active:${bashFirst}`
+    : attachment.steerOnly
+      ? `While auto mode is active:${bashFirst}`
+      : AUTO_MODE_INSTRUCTIONS + bashFirst
 
   return wrapMessagesInSystemReminder([
     createUserMessage({ content, isMeta: true }),
@@ -4147,9 +4141,11 @@ You have exited plan mode. You can now make edits, run tools, and take actions.$
       return getAutoModeInstructions(attachment)
     }
     case 'auto_mode_exit': {
-      const content = `## Exited Auto Mode
-
-You have exited auto mode. The user may now want to interact more directly. You should ask clarifying questions when the approach is ambiguous rather than making assumptions.`
+      const content =
+        (attachment.steerOnly
+          ? AUTO_MODE_EXIT_STEER_ONLY_INSTRUCTIONS
+          : AUTO_MODE_EXIT_INSTRUCTIONS) +
+        (attachment.bashFirst ? RESUME_DEDICATED_TOOLS_INSTRUCTIONS : '')
 
       return wrapMessagesInSystemReminder([
         createUserMessage({ content, isMeta: true }),
