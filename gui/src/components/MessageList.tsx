@@ -869,11 +869,12 @@ function UserBubble({ text }: { text: string }) {
             : `relative max-h-[20lh] overflow-hidden ${folded ? "[mask-image:linear-gradient(to_bottom,black_calc(100%_-_3rem),transparent)] after:pointer-events-none after:absolute after:bottom-1 after:right-3 after:content-['…'] after:text-[var(--sidebar-text-muted,#898781)]" : ""}`
         }`}
       >
-        {text}
+        <Markdown text={text} preserveUserText />
       </div>
       {long && (
         <button
           type="button"
+          aria-expanded={expanded}
           onClick={() => setExpanded((value) => !value)}
           className="flex items-center gap-1 self-start text-caption text-[var(--sidebar-text-muted,#898781)] hover:text-[var(--text-primary,#2D2D2B)]"
         >

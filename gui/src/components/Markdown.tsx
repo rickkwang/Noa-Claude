@@ -202,7 +202,7 @@ function streamInline(nodes: ReactNode[], key: string, counter: { node: number }
   })
 }
 
-export function Markdown({ text, tone = "default", streaming = false, streamKey, className }: { text: string; tone?: "default" | "muted"; streaming?: boolean; streamKey?: string; className?: string }) {
+export function Markdown({ text, tone = "default", streaming = false, streamKey, className, preserveUserText = false }: { text: string; tone?: "default" | "muted"; streaming?: boolean; streamKey?: string; className?: string; preserveUserText?: boolean }) {
   const plainLine = text.split("\n").some(line => line.length > MAX_PARSER_LINE)
   const prefix = useRef<MarkdownPrefix>({ text: "", tokens: [] })
   const blocks = useMemo(() => plainLine ? [] : streaming ? parseStreaming(text, prefix.current) : parseBlocks(text), [text, plainLine, streaming])
@@ -210,14 +210,14 @@ export function Markdown({ text, tone = "default", streaming = false, streamKey,
   return (
     <div className={`noa-output-markdown noa-selectable prose prose-neutral max-w-none ${color}${className ? ` ${className}` : ""}`}>
       {plainLine ? text : blocks.map((block, i) => (
-        <BlockView key={i} block={block} streaming={streaming} streamKey={streamKey ? `${streamKey}:b${i}` : undefined} />
+        <BlockView key={i} block={block} streaming={streaming} streamKey={streamKey ? `${streamKey}:b${i}` : undefined} preserveUserText={preserveUserText} />
       ))}
     </div>
   )
 }
 
-function BlockView({ block, streaming, streamKey }: { block: Token; streaming?: boolean; streamKey?: string }) {
-  const children = (tokens: Token[] = []) => tokens.map((child, i) => <BlockView key={i} block={child} streaming={streaming} streamKey={streamKey ? `${streamKey}:${i}` : undefined} />)
+function BlockView({ block, streaming, streamKey, preserveUserText }: { block: Token; streaming?: boolean; streamKey?: string; preserveUserText?: boolean }) {
+  const children = (tokens: Token[] = []) => tokens.map((child, i) => <BlockView key={i} block={child} streaming={streaming} streamKey={streamKey ? `${streamKey}:${i}` : undefined} preserveUserText={preserveUserText} />)
   const inline = (tokens: Token[] = []) => {
     const nodes = inlineTokens(tokens)
     return streaming ? streamInline(nodes, streamKey ?? "inline", { node: 0 }) : nodes
@@ -225,9 +225,12 @@ function BlockView({ block, streaming, streamKey }: { block: Token; streaming?: 
   const props = streaming && streamKey ? streamBlock(streamKey) : {}
   switch (block.type) {
     case "mathBlock": return <MathText text={block.text} display pending={streaming && !block.closed} />
-    case "detailsBlock": return <details className="my-3 rounded-xl border border-[var(--divider-subtle)] px-4 py-3" open={block.open}><summary className="cursor-pointer font-medium">{renderInline(block.summary)}</summary><Markdown text={block.text} streaming={streaming} streamKey={streamKey} /></details>
+    case "detailsBlock": return <details className="my-3 rounded-xl border border-[var(--divider-subtle)] px-4 py-3" open={block.open}><summary className="cursor-pointer font-medium">{renderInline(block.summary)}</summary><Markdown text={block.text} streaming={streaming} streamKey={streamKey} preserveUserText={preserveUserText} /></details>
     case "reviewComment": return <ReviewComment attributes={block.attributes} />
-    case "space": return null
+    case "space": {
+      const extraLines = (block.raw.match(/\n/g)?.length ?? 0) - 2
+      return preserveUserText && extraLines > 0 ? <span className="block whitespace-pre-wrap">{"\n".repeat(extraLines)}</span> : null
+    }
     case "code": {
       const fence = block.raw.match(/^ {0,3}(`{3,}|~{3,})/)?.[1]
       const complete = !streaming || !fence || new RegExp(`\\n {0,3}${fence[0]}{${fence.length},}[ \t]*(?:\\n)?$`).test(block.raw)
@@ -265,7 +268,11 @@ function BlockView({ block, streaming, streamKey }: { block: Token; streaming?: 
         </table>
       </MarkdownTable>
     )
-    case "def": return null
+    case "def": {
+      if (!preserveUserText) return null
+      const extraLines = (block.raw.match(/\n/g)?.length ?? 0) - 2
+      return <><p>{block.raw.trimEnd()}</p>{extraLines > 0 && <span className="block whitespace-pre-wrap">{"\n".repeat(extraLines)}</span>}</>
+    }
     default: return <span>{block.raw}</span>
   }
 }
@@ -298,7 +305,7 @@ export function CodeBlock({ lang, code, complete = true }: { lang: string; code:
   }
 
   return (
-    <div className="noa-code-block not-prose my-3 min-w-0 overflow-hidden rounded-[20px] border border-[var(--divider-subtle)]">
+    <div className="noa-code-block not-prose my-3 min-w-0 overflow-hidden rounded-[20px] border">
       <div data-copy-exclude className="flex min-h-12 items-center gap-2 py-1.5 ps-5 pe-1.5 font-ui text-[length:var(--text-chat-sm)] font-medium text-[var(--text-primary)]">
         <Terminal size={16} className="shrink-0" aria-hidden="true" />
         <span className="min-w-0 flex-1 truncate">{lang || "text"}</span>

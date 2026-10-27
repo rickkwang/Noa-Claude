@@ -356,6 +356,8 @@ window.runVisualChecks = async () => {
   const diagram = document.querySelector('[data-case="visual-diagram"] svg .node rect')
   window.visualMetrics = { theme: visualTheme, colors, cardSize, diagramFill: diagram ? getComputedStyle(diagram).fill : null }
   return {
+    codeBorder: style('[data-case="visual-code"] .noa-code-block').borderTopWidth === "1px" && style('[data-case="visual-code"] .noa-code-block').borderTopColor === (visualTheme === "dark" ? "rgba(255, 255, 255, 0.06)" : "rgba(13, 13, 13, 0.05)"),
+    diffHairline: style('[data-case="visual-diff"] .noa-turn-diff-card').boxShadow.includes("0.5px") && style('[data-case="visual-diff"] .noa-turn-diff-card').borderTopWidth === "0px",
     themeSurface: colors.page === (visualTheme === "dark" ? "rgb(45, 45, 43)" : "rgb(249, 249, 247)"),
     themeText: colors.text === (visualTheme === "dark" ? "rgb(249, 249, 247)" : "rgb(45, 45, 43)"),
     diffTotalTypography: parseFloat(cardSize.total) === parseFloat(cardSize.title) - 1,

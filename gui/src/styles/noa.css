@@ -102,7 +102,7 @@ body[data-pane-dragging="true"] * { cursor: col-resize !important; user-select: 
    with Codex's relaxed leading (1.625). Every chat surface reads these, so one setting drives them all. */
 :root {
   --font-text-md-size: var(--text-body);
-  --font-text-md-line-height: calc(var(--font-text-md-size) * 1.5);
+  --font-text-md-line-height: calc(var(--font-text-md-size) * 1.625);
 }
 
 /* Motion: feedback (hover, menus, reveals) eases out; layout moves keep their own 500ms ease-in-out clocks.
@@ -2092,7 +2092,8 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
 .noa-scroll-bottom:hover { color: var(--text-primary); }
 .noa-scroll-bottom[data-show="false"] { opacity: 0; pointer-events: none; }
 /* Per-turn diff card, as Codex's TurnDiffContent: header + up to three file rows. */
-.noa-turn-diff-card { margin-top: 2px; overflow: hidden; border: 1px solid var(--divider-subtle); border-radius: 12px; background: color-mix(in srgb, var(--bg-card) 70%, transparent); }
+.noa-turn-diff-card { margin-top: 2px; overflow: hidden; border-radius: 10px; background: color-mix(in srgb, var(--bg-card) 70%, transparent); box-shadow: 0 0 0 .5px rgba(13, 13, 13, .15); }
+[data-theme="dark"] .noa-turn-diff-card { box-shadow: 0 0 0 .5px rgba(255, 255, 255, .20); }
 .noa-live-diff { display: inline-flex; max-width: 100%; align-items: center; gap: 6px; align-self: center; padding: 2px 6px; border-radius: 6px; color: var(--sidebar-text-muted); font-size: var(--text-caption); }
 .noa-live-diff:hover { color: var(--text-primary); background: color-mix(in srgb, var(--text-primary) 5%, transparent); }
 .noa-turn-diff-headrow { display: flex; align-items: center; gap: 8px; padding-right: 12px; }
@@ -2304,7 +2305,8 @@ body.noa-session-dragging * { cursor: grabbing !important; }
 [data-approval-diff-preview] .noa-code-sign { display: block !important; }
 [data-approval-diff-preview] .noa-code-view.is-diff .noa-code-line code { padding-left: 0; }
 .noa-approval-button { height: 28px; padding: 0 8px; border-radius: 999px; font-size: var(--text-chat-sm); line-height: 18px; white-space: nowrap; }
-.noa-code-block { background: color-mix(in srgb, var(--text-primary) 3%, var(--surface-page)); }
+.noa-code-block { border-color: rgba(13, 13, 13, .05); background: color-mix(in srgb, var(--text-primary) 3%, var(--surface-page)); }
+[data-theme="dark"] .noa-code-block { border-color: rgba(255, 255, 255, .06); }
 @supports (corner-shape: superellipse(1.1)) {
   .noa-code-block { corner-shape: superellipse(1.1); }
 }

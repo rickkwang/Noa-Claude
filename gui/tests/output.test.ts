@@ -15,6 +15,24 @@ const start = () => reducer(initialState, { type: "user-sent", id: "u", text: "t
 const bash = { kind: "tool" as const, id: "b", name: "Bash", input: { command: "sleep 10" }, partialJson: "", status: "running" as const }
 const messages = (turns: any[], extra = {}) => render(createElement(MessageList, { turns, busy: false, readingWidth: 800, ...extra }))
 
+test("user messages render formatted text while retaining the original for editing", () => {
+  const text = "Inspect **this** and `that`"
+  const html = messages([{ role: "user", id: "u", text }], { onEdit() {} })
+  expect(html).toContain("<strong>this</strong>")
+  expect(html).toContain("<code>that</code>")
+  expect(html).toContain('aria-label="Edit message"')
+})
+
+test("user messages retain reference definitions and extra blank lines", () => {
+  const html = messages([{ role: "user", id: "u", text: "[x]: foo\n\nhello\n\n\n\nworld" }])
+  expect(html).toContain("[x]: foo")
+  expect(html).toContain("\n\n</span>")
+  expect(html).toContain("hello")
+  expect(html).toContain("world")
+  const nested = messages([{ role: "user", id: "nested", text: "> [x]: foo\n>\n> hello" }])
+  expect(nested).toContain("[x]: foo")
+})
+
 test("activity identifies partial history and distinguishes input from approval", () => {
   const oldStorage = globalThis.localStorage
   Object.defineProperty(globalThis, "localStorage", { configurable: true, value: { getItem: () => null } })
