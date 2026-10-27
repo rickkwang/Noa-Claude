@@ -2128,7 +2128,15 @@ async function run(): Promise<CommanderCommand> {
     // --bare / SIMPLE: skip — these are cache-warms for the REPL's
     // first-turn responsiveness (quota, passes, fastMode, bootstrap data). Fast
     // mode doesn't apply to the Agent SDK anyway (see getFastModeUnavailableReason).
-    const bgRefreshThrottleMs = getFeatureValue_CACHED_MAY_BE_STALE('tengu_cicada_nap_ms', 0);
+    // GrowthBook is disabled in this build, so the gate always returns its
+    // default — restarts within the window would otherwise repeat the
+    // prefetch API calls. NOA_CLAUDE_STARTUP_PREFETCH_NAP_MS overrides
+    // (0 disables the throttle entirely).
+    const napEnv = process.env.NOA_CLAUDE_STARTUP_PREFETCH_NAP_MS;
+    const napOverride = napEnv ? Number(napEnv) : NaN;
+    const bgRefreshThrottleMs = Number.isFinite(napOverride) && napOverride >= 0
+      ? napOverride
+      : getFeatureValue_CACHED_MAY_BE_STALE('tengu_cicada_nap_ms', 3600000);
     const lastPrefetched = getGlobalConfig().startupPrefetchedAt ?? 0;
     const skipStartupPrefetches = isBareMode() || bgRefreshThrottleMs > 0 && Date.now() - lastPrefetched < bgRefreshThrottleMs;
     if (!skipStartupPrefetches) {
@@ -2157,6 +2165,12 @@ async function run(): Promise<CommanderCommand> {
       }
     } else {
       logForDebugging(`Skipping startup prefetches, last ran ${Math.round((Date.now() - lastPrefetched) / 1000)}s ago`);
+      // The nap window only suppresses *refreshes*: if bootstrap client_data
+      // was never cached (first run, cache cleared), still fetch it —
+      // fetchBootstrapAPI itself guards on provider, credentials and base URL.
+      if (getGlobalConfig().clientDataCache === undefined) {
+        void fetchBootstrapData();
+      }
       // Resolve fast mode org status from cache (no network)
       resolveFastModeStatusFromCache();
     }
