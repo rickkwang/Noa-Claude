@@ -211,11 +211,6 @@ describe('sections that ship alongside the compact head', () => {
     expect(verbose).not.toContain('corrections:L')
   })
 
-  test('function-result-clearing guidance carries the model in its cache key', () => {
-    expect(sectionNames(LEAN_MODEL)).toContain(`frc:${LEAN_MODEL}`)
-    expect(sectionNames(VERBOSE_MODEL)).toContain(`frc:${VERBOSE_MODEL}`)
-  })
-
   test('mode-independent sections keep a stable name across a model switch', () => {
     for (const name of [
       'pronouns',

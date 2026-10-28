@@ -116,10 +116,12 @@ import {
 import { groupMessagesByApiRound } from './grouping.js'
 import { adjustIndexToPreserveAPIInvariants } from './preservedTail.js'
 import {
+  FOR_REPLY_ONLY_INSTRUCTION,
   formatCompactSummary,
   getCompactPrompt,
   getCompactUserSummaryMessage,
   getPartialCompactPrompt,
+  hasSummaryBlock,
 } from './prompt.js'
 
 export const POST_COMPACT_MAX_FILES_TO_RESTORE = 5
@@ -873,8 +875,13 @@ export async function compactConversation(
     const userDisplayMessage = hookResult.userDisplayMessage
 
     let messagesToSummarize = messages
-    const compactPrompt = getCompactPrompt(customInstructions)
-    const summaryRequest = createUserMessage({
+    // Same gate as upstream's keepEarlierAsks: only when a transcript exists
+    // to read the earlier summary's record back from.
+    const transcriptPath = getTranscriptPath()
+    const compactPrompt = getCompactPrompt(customInstructions, {
+      keepEarlierAsks: transcriptPath !== undefined,
+    })
+    let summaryRequest = createUserMessage({
       content: compactPrompt,
     })
     let retryCacheSafeParams = cacheSafeParams
@@ -883,6 +890,8 @@ export async function compactConversation(
     let ptlAttempts = 0
     let triedPartialPTLFallback = false
     let triedOpeningRoundSummary = false
+    let triedSummaryFormatRetry = false
+    let headTruncated = false
     for (;;) {
       summaryResponse = await streamCompactSummary({
         messages: messagesToSummarize,
@@ -893,7 +902,33 @@ export async function compactConversation(
         cacheSafeParams: retryCacheSafeParams,
       })
       summary = getAssistantMessageText(summaryResponse)
-      if (!summary?.startsWith(PROMPT_TOO_LONG_ERROR_MESSAGE)) break
+      if (!summary?.startsWith(PROMPT_TOO_LONG_ERROR_MESSAGE)) {
+        // A reply without the requested <summary> envelope is asked for again
+        // once, with instructions scoped to this reply only; plain text is not
+        // a usable summary. Mirrors upstream's summary-block check.
+        if (
+          summary &&
+          !startsWithApiErrorPrefix(summary) &&
+          !hasSummaryBlock(summary)
+        ) {
+          if (triedSummaryFormatRetry) {
+            logEvent('tengu_compact_failed', {
+              reason:
+                'no_summary_block' as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
+              preCompactTokenCount,
+            })
+            throw new Error(
+              'Failed to generate conversation summary - no <summary> block in the second reply either',
+            )
+          }
+          triedSummaryFormatRetry = true
+          summaryRequest = createUserMessage({
+            content: compactPrompt + FOR_REPLY_ONLY_INSTRUCTION,
+          })
+          continue
+        }
+        break
+      }
 
       // The compact request itself hit prompt-too-long.
       //
@@ -981,6 +1016,7 @@ export async function compactConversation(
         droppedMessages: messagesToSummarize.length - truncated.length,
         remainingMessages: truncated.length,
       })
+      headTruncated = true
       messagesToSummarize = truncated
       // The forked-agent path reads from cacheSafeParams.forkContextMessages,
       // not the messages param — thread the truncated set through both paths.
@@ -1058,13 +1094,14 @@ export async function compactConversation(
       ].sort()
     }
 
-    const transcriptPath = getTranscriptPath()
     const summaryMessages: UserMessage[] = [
       createUserMessage({
         content: getCompactUserSummaryMessage(
           summary,
           suppressFollowUpQuestions,
           transcriptPath,
+          false,
+          headTruncated,
         ),
         isCompactSummary: true,
         isVisibleInTranscriptOnly: true,
@@ -1313,15 +1350,22 @@ export async function partialCompactConversation(
       context.onCompactProgress?.({ type: 'compact_start' })
     }
 
-    const buildSummaryRequest = (): UserMessage =>
+    const transcriptPath = getTranscriptPath()
+    const buildSummaryRequest = (
+      withRetryHint = false,
+    ): UserMessage =>
       createUserMessage({
-        content: getPartialCompactPrompt(
-          customInstructions,
-          direction,
-          messagesToSummarize.length,
-        ),
+        content:
+          getPartialCompactPrompt(
+            customInstructions,
+            direction,
+            messagesToSummarize.length,
+            { keepEarlierAsks: transcriptPath !== undefined },
+          ) + (withRetryHint ? FOR_REPLY_ONLY_INSTRUCTION : ''),
       })
     let summaryRequest = buildSummaryRequest()
+    let triedSummaryFormatRetry = false
+    let headTruncated = false
 
     const failureMetadata = () => ({
       preCompactTokenCount,
@@ -1366,7 +1410,28 @@ export async function partialCompactConversation(
           cacheSafeParams: retryCacheSafeParams,
         })
         summary = getAssistantMessageText(summaryResponse)
-        if (!summary?.startsWith(PROMPT_TOO_LONG_ERROR_MESSAGE)) break
+        if (!summary?.startsWith(PROMPT_TOO_LONG_ERROR_MESSAGE)) {
+          if (
+            summary &&
+            !startsWithApiErrorPrefix(summary) &&
+            !hasSummaryBlock(summary)
+          ) {
+            if (triedSummaryFormatRetry) {
+              logEvent('tengu_partial_compact_failed', {
+                reason:
+                  'no_summary_block' as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
+                ...failureMetadata(),
+              })
+              throw new Error(
+                'Failed to generate conversation summary - no <summary> block in the second reply either',
+              )
+            }
+            triedSummaryFormatRetry = true
+            summaryRequest = buildSummaryRequest(true)
+            continue
+          }
+          break
+        }
 
         ptlAttempts++
         const failPTL: () => never = () => {
@@ -1408,7 +1473,7 @@ export async function partialCompactConversation(
             direction,
           )
           // Rebuilt because the prompt embeds the summarized-message count.
-          summaryRequest = buildSummaryRequest()
+          summaryRequest = buildSummaryRequest(triedSummaryFormatRetry)
           apiMessages = messagesToSummarize
           retryCacheSafeParams = {
             ...retryCacheSafeParams,
@@ -1448,6 +1513,7 @@ export async function partialCompactConversation(
           remainingMessages: truncated.length,
           path: 'partial' as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
         })
+        headTruncated = true
         apiMessages = truncated
         retryCacheSafeParams = {
           ...retryCacheSafeParams,
@@ -1526,7 +1592,6 @@ export async function partialCompactConversation(
       ].sort()
     }
 
-    const transcriptPath = getTranscriptPath()
     const summaryMessages: UserMessage[] = [
       createUserMessage({
         content: getCompactUserSummaryMessage(
@@ -1534,6 +1599,7 @@ export async function partialCompactConversation(
           suppressFollowUpQuestions,
           transcriptPath,
           direction === 'up_to' && messagesToKeep.length > 0,
+          headTruncated,
         ),
         isCompactSummary: true,
         summarizeMetadata: {

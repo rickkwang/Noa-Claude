@@ -63,7 +63,6 @@ import {
 } from './systemPromptEnvHelpers.js'
 import {
   getBriefSection,
-  getFunctionResultClearingSection,
   getProactiveSection,
   SUMMARIZE_TOOL_RESULTS_SECTION,
 } from './systemPromptFeatureSections.js'
@@ -237,9 +236,6 @@ export function buildDynamicSystemPromptSections(params: {
     systemPromptSection(
       'context_management',
       () => CONTEXT_MANAGEMENT_SECTION,
-    ),
-    systemPromptSection(`frc:${model}`, () =>
-      getFunctionResultClearingSection(model),
     ),
     systemPromptSection(
       lean ? 'summarize_tool_results:L' : 'summarize_tool_results',

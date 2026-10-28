@@ -52,7 +52,6 @@ import {
   createAssistantAPIErrorMessage,
   getMessagesAfterCompactBoundary,
   createToolUseSummaryMessage,
-  createMicrocompactBoundaryMessage,
   stripSignatureBlocks,
 } from './utils/messages.js'
 import { generateToolUseSummary } from './services/toolUseSummary/toolUseSummaryGenerator.js'
@@ -569,9 +568,10 @@ async function* queryLoop(
     let tracking = autoCompactTracking
 
     // Enforce per-message budget on aggregate tool result size. Runs BEFORE
-    // microcompact — cached MC operates purely by tool_use_id (never inspects
-    // content), so content replacement is invisible to it and the two compose
-    // cleanly. No-ops when contentReplacementState is undefined (feature off).
+    // microcompact — microcompact operates purely by tool_use_id (never
+    // inspects content), so content replacement is invisible to it and the two
+    // compose cleanly. No-ops when contentReplacementState is undefined
+    // (feature off).
     // Persist only for querySources that read records back on resume: agentId
     // routes to sidechain file (AgentTool resume) or session file (/resume).
     // Ephemeral runForkedAgent callers (agent_summary etc.) don't persist.
@@ -618,12 +618,6 @@ async function* queryLoop(
     }
     const contextTokensFreed = Math.max(0, microcompactTokensFreed)
     messagesForQuery = microcompactResult.messages
-    // For cached microcompact (cache editing), defer boundary message until after
-    // the API response so we can use actual cache_deleted_input_tokens.
-    // Gated behind feature() so the string is eliminated from external builds.
-    const pendingCacheEdits = feature('CACHED_MICROCOMPACT')
-      ? microcompactResult.compactionInfo?.pendingCacheEdits
-      : undefined
     queryCheckpoint('query_microcompact_end')
 
     const fullSystemPrompt = asSystemPrompt(
@@ -1184,34 +1178,6 @@ async function* queryLoop(
             }
           }
           queryCheckpoint('query_api_streaming_end')
-
-          // Yield deferred microcompact boundary message using actual API-reported
-          // token deletion count instead of client-side estimates.
-          // Entire block gated behind feature() so the excluded string
-          // is eliminated from external builds.
-          if (feature('CACHED_MICROCOMPACT') && pendingCacheEdits) {
-            const lastAssistant = assistantMessages.at(-1)
-            // The API field is cumulative/sticky across requests, so we
-            // subtract the baseline captured before this request to get the delta.
-            const usage = lastAssistant?.message.usage
-            const cumulativeDeleted = usage
-              ? ((usage as unknown as Record<string, number>)
-                  .cache_deleted_input_tokens ?? 0)
-              : 0
-            const deletedTokens = Math.max(
-              0,
-              cumulativeDeleted - pendingCacheEdits.baselineCacheDeletedTokens,
-            )
-            if (deletedTokens > 0) {
-              yield createMicrocompactBoundaryMessage(
-                pendingCacheEdits.trigger,
-                0,
-                deletedTokens,
-                pendingCacheEdits.deletedToolIds,
-                [],
-              )
-            }
-          }
         } catch (innerError) {
           if (innerError instanceof FallbackTriggeredError && remainingFallbackModel) {
             // Fallback was triggered - switch model and retry

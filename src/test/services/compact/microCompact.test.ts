@@ -367,7 +367,7 @@ describe('cleared tool results are persisted', () => {
     for (let i = 0; i < 4; i++) {
       const t = `persist-${i}`
       messages.push(toolUse('Read', t))
-      messages.push(toolResult(t, `payload ${i} `.repeat(400)))
+      messages.push(toolResult(t, `payload ${i} `.repeat(3000)))
     }
     return messages
   }
@@ -420,7 +420,7 @@ describe('cleared tool results are persisted', () => {
       messages.push(
         toolUse('Write', t, {
           file_path: `/tmp/gen-${i}.ts`,
-          content: `export const v${i} = ${i}\n`.repeat(400),
+          content: `export const v${i} = ${i}\n`.repeat(2000),
         }),
       )
       messages.push(toolResult(t, 'File written successfully'))
@@ -456,8 +456,8 @@ describe('cleared tool results are persisted', () => {
     const messages: Message[] = [
       toolUse('Edit', 'epersist-1', {
         file_path: '/tmp/e.ts',
-        old_string: 'const before = 1\n'.repeat(400),
-        new_string: 'const after = 2\n'.repeat(400),
+        old_string: 'const before = 1\n'.repeat(3000),
+        new_string: 'const after = 2\n'.repeat(3000),
       }),
       toolResult('epersist-1', 'edited'),
       toolUse('Read', 'epersist-keep'),
@@ -489,7 +489,7 @@ describe('microcompactMessages — size-based wiring', () => {
     for (let i = 0; i < 6; i++) {
       const t = `big-${i}`
       messages.push(toolUse('Read', t))
-      messages.push(toolResult(t, 'payload '.repeat(400)))
+      messages.push(toolResult(t, 'payload '.repeat(3000)))
     }
     return messages
   }

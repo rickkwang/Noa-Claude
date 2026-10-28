@@ -321,6 +321,21 @@ export function Config({
         enabled: autoCompactEnabled
       });
     }
+  }, {
+    id: 'idleCompaction',
+    label: 'Idle compaction',
+    value: globalConfig.idleCompaction === true,
+    type: 'boolean' as const,
+    onChange(idleCompaction: boolean) {
+      saveGlobalConfig(current_0 => ({
+        ...current_0,
+        idleCompaction
+      }));
+      setGlobalConfig({
+        ...getGlobalConfig(),
+        idleCompaction
+      });
+    }
   }, ...(isAgentViewDisabled() || getIsRemoteMode() ? [] : [{
     id: 'leftArrowOpensAgents',
     label: '← opens agents',

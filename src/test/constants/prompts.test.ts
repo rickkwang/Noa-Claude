@@ -16,6 +16,7 @@ import {
   getCompactPrompt,
   getCompactUserSummaryMessage,
   getPartialCompactPrompt,
+  hasSummaryBlock,
 } from '../../services/compact/prompt.js'
 import { VERIFICATION_AGENT } from '../../tools/AgentTool/built-in/verificationAgent.js'
 import { getEnterPlanModeToolPrompt } from '../../tools/EnterPlanModeTool/prompt.js'
@@ -239,6 +240,36 @@ describe('prompt behavior contracts', () => {
     expect(getCompactUserSummaryMessage(`<summary>${body}</summary>`)).toContain(
       body,
     )
+  })
+
+  test('summary block detection accepts only the requested envelope', () => {
+    expect(hasSummaryBlock('<summary>- done</summary>')).toBe(true)
+    expect(hasSummaryBlock('<analysis>draft</analysis>\n<summary>ok</summary>')).toBe(true)
+    expect(hasSummaryBlock('<summary>\n- open envelope')).toBe(true)
+    expect(hasSummaryBlock('just plain prose')).toBe(false)
+  })
+
+  test('head-truncated summaries say the earliest part is not covered', () => {
+    const withTranscript = getCompactUserSummaryMessage(
+      '<summary>s</summary>',
+      false,
+      '/tmp/transcript.jsonl',
+      false,
+      true,
+    )
+    expect(withTranscript).toContain(
+      'the earliest part of the conversation was too large to include and is NOT covered by this summary',
+    )
+    expect(withTranscript).toContain('the full transcript mentioned above still has it')
+
+    const withoutTranscript = getCompactUserSummaryMessage(
+      '<summary>s</summary>',
+      false,
+      undefined,
+      false,
+      true,
+    )
+    expect(withoutTranscript).not.toContain('full transcript mentioned above')
   })
 
   test('compact summary formatting ignores <summary> mentioned inside analysis', () => {

@@ -1233,7 +1233,6 @@
     "src/utils/completionCache.ts",
     "src/utils/config.ts",
     "src/utils/configConstants.ts",
-    "src/utils/contentArray.ts",
     "src/utils/context.ts",
     "src/utils/contextSuggestions.ts",
     "src/utils/controlMessageCompat.ts",

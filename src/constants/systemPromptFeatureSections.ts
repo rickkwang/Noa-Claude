@@ -5,12 +5,6 @@ import { SLEEP_TOOL_NAME } from '../tools/SleepTool/prompt.js'
 
 // Dead code elimination: conditional imports for feature-gated modules
 /* eslint-disable @typescript-eslint/no-require-imports */
-const getCachedMCConfigForFRC = feature('CACHED_MICROCOMPACT')
-  ? (
-      require('../services/compact/cachedMCConfig.js') as typeof import('../services/compact/cachedMCConfig.js')
-    ).getCachedMCConfig
-  : null
-
 const proactiveModule =
   feature('PROACTIVE') || feature('KAIROS')
     ? require('../proactive/index.js')
@@ -32,28 +26,6 @@ const briefToolModule =
 export function isProactivePromptActive(): boolean {
   if (!(feature('PROACTIVE') || feature('KAIROS'))) return false
   return proactiveModule?.isProactiveActive() ?? false
-}
-
-export function getFunctionResultClearingSection(
-  model: string,
-): string | null {
-  if (!feature('CACHED_MICROCOMPACT') || !getCachedMCConfigForFRC) {
-    return null
-  }
-  const config = getCachedMCConfigForFRC()
-  const isModelSupported = config.supportedModels?.some(pattern =>
-    model.includes(pattern),
-  )
-  if (
-    !config.enabled ||
-    !config.systemPromptSuggestSummaries ||
-    !isModelSupported
-  ) {
-    return null
-  }
-  return `# Function Result Clearing
-
-Old tool results will be automatically cleared from context to free up space. The ${config.keepRecent} most recent results are always kept.`
 }
 
 export const SUMMARIZE_TOOL_RESULTS_SECTION = `When working with tool results, write down any important information you might need later in your response, as the original tool result may be cleared later.`

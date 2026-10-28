@@ -52,6 +52,22 @@ function summaryMessage(text: string): AssistantMessage {
       id: 'sum',
       role: 'assistant',
       model: 'test-model',
+      content: [{ type: 'text', text: `<summary>${text}</summary>` }],
+      usage: { input_tokens: 10, output_tokens: 10 },
+    },
+  } as unknown as AssistantMessage
+}
+
+// Deliberately without <summary> tags, to exercise the envelope retry.
+function plainMessage(text: string): AssistantMessage {
+  return {
+    type: 'assistant',
+    id: 'plain',
+    uuid: 'plain',
+    message: {
+      id: 'plain',
+      role: 'assistant',
+      model: 'test-model',
       content: [{ type: 'text', text }],
       usage: { input_tokens: 10, output_tokens: 10 },
     },
@@ -76,7 +92,9 @@ mock.module('../../../utils/forkedAgent.js', () => ({
           ? ptlMessage()
           : reply === 'api-ptl'
             ? ptlMessage(true)
-            : summaryMessage(reply),
+            : reply === 'plain'
+              ? plainMessage('plain summary text')
+              : summaryMessage(reply),
       ],
       totalUsage: {
         input_tokens: 10,
@@ -93,7 +111,11 @@ mock.module('../../../services/api/claude.js', () => ({
   ...claudeApi,
   queryModelWithStreaming: async function* () {
     const reply = streamingReplies.shift() ?? 'a streaming summary'
-    yield reply === 'ptl' ? ptlMessage(true) : summaryMessage(reply)
+    yield reply === 'ptl'
+      ? ptlMessage(true)
+      : reply === 'plain'
+        ? plainMessage('plain streaming summary')
+        : summaryMessage(reply)
   },
 }))
 
@@ -283,6 +305,33 @@ describe('partial compaction slides the boundary on prompt-too-long', () => {
 
     expect(forkCalls.length).toBe(2)
     expect(JSON.stringify(forkCalls[1])).toContain(PTL_RETRY_MARKER)
+  })
+})
+
+describe('summary envelope retry', () => {
+  test('asks once more when the reply has no <summary> block', async () => {
+    forkReplies = ['plain', 'summary text']
+
+    const result = await compactConversation(
+      makeTurns(4),
+      makeContext(),
+      {} as never,
+      false,
+    )
+
+    expect(forkCalls.length).toBe(2)
+    const retryPrompt = JSON.stringify(forkCalls[1]!.promptMessages)
+    expect(retryPrompt).toContain('For this reply only')
+    expect(retryPrompt).not.toContain('plain summary text')
+    expect(JSON.stringify(result.summaryMessages)).toContain('summary text')
+  })
+
+  test('fails when the retry also has no <summary> block', async () => {
+    forkReplies = ['plain', 'plain']
+
+    await expect(
+      compactConversation(makeTurns(4), makeContext(), {} as never, false),
+    ).rejects.toThrow('no <summary> block in the second reply either')
   })
 })
 

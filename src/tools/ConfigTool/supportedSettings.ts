@@ -57,6 +57,12 @@ export const SUPPORTED_SETTINGS: Record<string, SettingConfig> = {
     type: 'boolean',
     description: 'Auto-compact when context is full',
   },
+  idleCompaction: {
+    source: 'global',
+    type: 'boolean',
+    description:
+      'Clear old tool results after a long idle gap (off by default; true enables it)',
+  },
   autoMemoryEnabled: {
     source: 'settings',
     type: 'boolean',

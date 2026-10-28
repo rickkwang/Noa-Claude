@@ -8,7 +8,6 @@ import { clearClassifierApprovals } from '../../utils/classifierApprovals.js'
 import { resetGetMemoryFilesCache } from '../../utils/claudemd.js'
 import { clearSessionMessagesCache } from '../../utils/sessionStorage.js'
 import { clearBetaTracingState } from '../../utils/telemetry/betaSessionTracing.js'
-import { resetMicrocompactState } from './microCompact.js'
 import { resetPrecomputeCycle } from './precomputedCompact.js'
 
 /**
@@ -38,8 +37,6 @@ export function runPostCompactCleanup(querySource?: QuerySource): void {
     querySource === undefined ||
     querySource.startsWith('repl_main_thread') ||
     querySource === 'sdk'
-
-  resetMicrocompactState()
 
   if (isMainThreadCompact) {
     // The precompute slot describes the main thread's PRE-compact history —

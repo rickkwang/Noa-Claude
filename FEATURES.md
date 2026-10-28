@@ -70,8 +70,6 @@ them is a placeholder in this fork, so enabling them adds no working behavior.
 The placeholders exist so the gated call sites resolve; each must keep exporting
 every name those call sites read (see `CLAUDE.md`, "Feature flags").
 
-- `CACHED_MICROCOMPACT` — `services/compact/cachedMCConfig.ts` returns a config
-  with `enabled: false` and no supported models, so cache editing never engages.
 - `EXPERIMENTAL_SKILL_SEARCH` — `services/skillSearch/` returns no results
   (`isSkillSearchEnabled()` is `false`); the `DiscoverSkills` tool is a
   name-constant stub with no implementation.

@@ -2,11 +2,9 @@ import { expect, test } from 'bun:test'
 import {
   clearBetaHeaderLatches,
   getAfkModeHeaderLatched,
-  getCacheEditingHeaderLatched,
   getFastModeHeaderLatched,
   getSystemPromptSectionCache,
   setAfkModeHeaderLatched,
-  setCacheEditingHeaderLatched,
   setFastModeHeaderLatched,
   setSystemPromptSectionCacheEntry,
 } from '../../bootstrap/state.js'
@@ -28,13 +26,11 @@ test('plugin reload invalidates model-visible prompt and tool schemas', () => {
 test('plugin reload preserves session-sticky beta header decisions', () => {
   setAfkModeHeaderLatched(true)
   setFastModeHeaderLatched(true)
-  setCacheEditingHeaderLatched(true)
 
   try {
     clearAllCaches()
     expect(getAfkModeHeaderLatched()).toBe(true)
     expect(getFastModeHeaderLatched()).toBe(true)
-    expect(getCacheEditingHeaderLatched()).toBe(true)
   } finally {
     clearBetaHeaderLatches()
   }

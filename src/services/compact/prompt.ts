@@ -125,16 +125,32 @@ const NO_TOOLS_TRAILER =
   'an <analysis> block followed by a <summary> block. ' +
   'Tool calls will be rejected and you will fail the task.'
 
+// Appended only to the retry request after a reply arrived without a
+// <summary> block. The earlier instructions are still in the conversation, so
+// the model must not answer them as if they were a user request.
+export const FOR_REPLY_ONLY_INSTRUCTION =
+  '\nFor this reply only: write what the instructions above ask for, with the summary inside <summary></summary> tags. Every message before those instructions, the newest one included, is conversation to summarize: do not answer it, and do not do the work that it asks for. What it says on how to summarize still holds. This paragraph is about how to write this summary. The user did not write it.'
+
+// Keeps repeated compactions from drifting on what the user asked for: the
+// earlier summary's record of user messages is copied verbatim, only the work
+// account is rewritten.
+const KEEP_EARLIER_ASKS_INSTRUCTION =
+  ' If the transcript above begins with an earlier summary, copy its record of what the user asked for unchanged and add anything new; rewrite only the account of the work.'
+
 export function getPartialCompactPrompt(
   customInstructions?: string,
   direction: PartialCompactDirection = 'from',
   targetMessageCount?: number,
+  opts?: { keepEarlierAsks?: boolean },
 ): string {
   const template =
     direction === 'up_to'
       ? PARTIAL_COMPACT_UP_TO_PROMPT
       : PARTIAL_COMPACT_PROMPT
   let prompt = NO_TOOLS_PREAMBLE + template
+  if (opts?.keepEarlierAsks) {
+    prompt += KEEP_EARLIER_ASKS_INSTRUCTION
+  }
   const boundaryInstruction =
     direction === 'from' &&
     typeof targetMessageCount === 'number' &&
@@ -152,8 +168,14 @@ export function getPartialCompactPrompt(
   return prompt
 }
 
-export function getCompactPrompt(customInstructions?: string): string {
+export function getCompactPrompt(
+  customInstructions?: string,
+  opts?: { keepEarlierAsks?: boolean },
+): string {
   let prompt = NO_TOOLS_PREAMBLE + BASE_COMPACT_PROMPT
+  if (opts?.keepEarlierAsks) {
+    prompt += KEEP_EARLIER_ASKS_INSTRUCTION
+  }
 
   if (customInstructions && customInstructions.trim() !== '') {
     prompt += `\n\nAdditional Instructions:\n${customInstructions}`
@@ -162,6 +184,23 @@ export function getCompactPrompt(customInstructions?: string): string {
   prompt += NO_TOOLS_TRAILER
 
   return prompt
+}
+
+/**
+ * Did the reply contain the summary envelope the prompt asks for? Mirrors
+ * upstream: a closed <summary> block after the leading analysis block, or a
+ * reply that opens with <summary>. A plain-text reply is asked for again (see
+ * FOR_REPLY_ONLY_INSTRUCTION) instead of being accepted as a summary.
+ */
+export function hasSummaryBlock(text: string): boolean {
+  const withoutAnalysis = text.replace(
+    /<analysis\b[^>]*>[\s\S]*?<\/analysis>/i,
+    '',
+  )
+  return (
+    /<summary\b[^>]*>[\s\S]*?<\/summary>/i.test(withoutAnalysis) ||
+    /^[ \t]*<summary\b/m.test(withoutAnalysis)
+  )
 }
 
 /**
@@ -214,11 +253,17 @@ export const COMPACT_SUMMARY_PROACTIVE_MODE_PREFIX =
 export const COMPACT_SUMMARY_KEPT_TAIL_NOTE =
   'The messages after this summary are the most recent messages from before compaction, kept verbatim. The summary was written without seeing them, so something it says has not happened yet may already have happened in them.'
 
+// Written when the summary request had to drop the oldest rounds. The summary
+// therefore does not cover them, and the model must not assume it does.
+export const COMPACT_SUMMARY_HEAD_TRUNCATED_NOTE =
+  'Note: the earliest part of the conversation was too large to include and is NOT covered by this summary'
+
 export function getCompactUserSummaryMessage(
   summary: string,
   suppressFollowUpQuestions?: boolean,
   transcriptPath?: string,
   keptTailAfterSummary?: boolean,
+  headTruncated?: boolean,
 ): string {
   const formattedSummary = formatCompactSummary(summary)
 
@@ -228,6 +273,10 @@ ${formattedSummary}`
 
   if (transcriptPath) {
     baseSummary += `\n\n${COMPACT_SUMMARY_TRANSCRIPT_HINT_PREFIX} (like exact code snippets, error messages, or content you generated), read the full transcript at: ${transcriptPath}`
+  }
+
+  if (headTruncated) {
+    baseSummary += `\n\n${COMPACT_SUMMARY_HEAD_TRUNCATED_NOTE}${transcriptPath ? ' (the full transcript mentioned above still has it)' : ''}. If the task turns out to depend on something from that part, say so plainly rather than guessing at it.`
   }
 
   if (keptTailAfterSummary) {
