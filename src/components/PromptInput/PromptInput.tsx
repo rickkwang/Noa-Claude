@@ -1721,7 +1721,9 @@ function PromptInput({
     'chat:thinkingToggle': handleThinkingToggle,
     'chat:cycleMode': handleCycleMode,
     'chat:imagePaste': handleImagePaste,
-    'chat:sendNow': handleSendNow
+    'chat:sendNow': handleSendNow,
+    // Clicking the "to send now" hint runs this instead of a keystroke.
+    'chat:sendNowHintPress': handleSendNow
   }), [handleUndo, handleNewline, handleExternalEditor, handleStash, handleModelPicker, handleThinkingToggle, handleCycleMode, handleImagePaste, handleSendNow]);
   useKeybindings(chatHandlers, {
     context: 'Chat',

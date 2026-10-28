@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { feature } from 'bun:bundle';
 import * as React from 'react';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Box, Text } from 'src/ink.js';
 import { supportsExtendedKeys } from 'src/ink/terminal.js';
 import { useAppState } from 'src/state/AppState.js';
@@ -13,8 +13,9 @@ import { isQueuedCommandVisible } from '../../utils/messageQueueManager.js';
 import { createUserMessage, EMPTY_LOOKUPS, normalizeMessages } from '../../utils/messages.js';
 import { jsonParse } from '../../utils/slowOperations.js';
 import { useOptionalKeybindingContext } from '../../keybindings/KeybindingContext.js';
-import { getSendNowShortcut } from '../../keybindings/sendNowShortcut.js';
+import { getSendNowShortcut, isSendNowUnbound } from '../../keybindings/sendNowShortcut.js';
 import { isSendNowTarget } from '../../utils/sendNow.js';
+import { isFullscreenEnvEnabled, isMouseClicksDisabled, isMouseTrackingEnabled } from '../../utils/fullscreen.js';
 import { KeyboardShortcutHint } from '../design-system/KeyboardShortcutHint.js';
 import { Message } from '../Message.js';
 const EMPTY_SET = new Set<string>();
@@ -73,14 +74,25 @@ function processQueuedCommands(queuedCommands: QueuedCommand[]): QueuedCommand[]
   };
   return [...otherCommands, ...visibleNotifications, overflowCommand];
 }
-/** "ctrl+enter to send now" under queued input while a turn runs. */
+/** "ctrl+enter to send now" under queued input while a turn runs. In
+ *  fullscreen the hint is clickable and runs the same handler as the key. */
 function SendNowHint(): React.ReactNode {
   const keybindingContext = useOptionalKeybindingContext();
+  const [hovered, setHovered] = useState(false);
   const shortcut = useMemo(() => getSendNowShortcut(keybindingContext?.bindings ?? [], supportsExtendedKeys() && !process.env.TMUX && !process.env.STY), [keybindingContext?.bindings]);
-  if (shortcut === '') return null;
-  return <Box paddingLeft={2}>
-      <Text dimColor>
-        <KeyboardShortcutHint shortcut={shortcut} action="send now" />
+  // Explicitly unbinding sendNow hides the hint; no click fallback either.
+  if (keybindingContext !== null && isSendNowUnbound(keybindingContext.bindings)) return null;
+  const canClick = keybindingContext !== null && keybindingContext.hasHandler('chat:sendNowHintPress') && isFullscreenEnvEnabled() && isMouseTrackingEnabled() && !isMouseClicksDisabled();
+  // A terminal with no usable chord still gets a clickable hint in fullscreen.
+  if (shortcut === '' && !canClick) return null;
+  const hint = shortcut === '' ? 'click to send now' : <KeyboardShortcutHint shortcut={shortcut} action="send now" />;
+  return <Box paddingLeft={2} alignSelf="flex-start" noSelect onClick={canClick ? event => {
+    event.stopImmediatePropagation();
+    keybindingContext.runAction('chat:sendNowHintPress');
+    setHovered(false);
+  } : undefined} onMouseEnter={canClick ? () => setHovered(true) : undefined} onMouseLeave={() => setHovered(false)}>
+      <Text dimColor={!hovered} inverse={hovered}>
+        {hint}
       </Text>
     </Box>;
 }

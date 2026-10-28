@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { DEFAULT_BINDINGS } from '../../keybindings/defaultBindings.js'
 import { parseBindings } from '../../keybindings/parser.js'
 import { resolveKeyWithChordState } from '../../keybindings/resolver.js'
-import { getSendNowShortcut } from '../../keybindings/sendNowShortcut.js'
+import { getSendNowShortcut, isSendNowUnbound } from '../../keybindings/sendNowShortcut.js'
 import { hasForegroundTasksForToolUses } from '../../tasks/LocalShellTask/LocalShellTask.js'
 import type { QueuedCommand } from '../../types/textInputTypes.js'
 import {
@@ -278,6 +278,27 @@ describe('chat:sendNow keybindings', () => {
     expect(getSendNowShortcut(bindings, true)).toBe('ctrl+enter')
     expect(getSendNowShortcut(bindings, false)).toBe('ctrl+x ctrl+s')
     expect(getSendNowShortcut([], true)).toBe('')
+  })
+
+  test('unbinding every chord hides the hint', () => {
+    const unbound = parseBindings([
+      ...DEFAULT_BINDINGS,
+      {
+        context: 'Chat',
+        bindings: { 'ctrl+x ctrl+s': null, 'ctrl+enter': null },
+      },
+    ] as never)
+    expect(getSendNowShortcut(unbound, true)).toBe('')
+    expect(isSendNowUnbound(unbound)).toBe(true)
+  })
+
+  test('unbinding one chord advertises the other', () => {
+    const partial = parseBindings([
+      ...DEFAULT_BINDINGS,
+      { context: 'Chat', bindings: { 'ctrl+enter': null } },
+    ] as never)
+    expect(getSendNowShortcut(partial, true)).toBe('ctrl+x ctrl+s')
+    expect(isSendNowUnbound(partial)).toBe(false)
   })
 })
 

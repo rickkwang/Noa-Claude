@@ -41,6 +41,13 @@ type KeybindingContextValue = {
 
   /** Invoke all handlers for an action (used by ChordInterceptor) */
   invokeAction: (action: string) => boolean;
+
+  /** Run every handler for an action, ignoring active contexts. Lets a
+   *  clickable hint mirror its keybinding without a keystroke. */
+  runAction: (action: string) => boolean;
+
+  /** Whether an action has any registered handler. */
+  hasHandler: (action: string) => boolean;
 };
 const KeybindingContext = createContext<KeybindingContextValue | null>(null);
 type ProviderProps = {
@@ -132,6 +139,26 @@ export function KeybindingProvider(t0) {
     t3 = $[6];
   }
   const invokeAction = t3;
+  // Reads the registry at call time, so it stays valid across renders even
+  // though it is not itself memoized.
+  const runAction = action_1 => {
+    const registry_1 = handlerRegistryRef.current;
+    if (!registry_1) {
+      return false;
+    }
+    const handlers_1 = registry_1.get(action_1);
+    if (!handlers_1 || handlers_1.size === 0) {
+      return false;
+    }
+    for (const registration_1 of handlers_1) {
+      registration_1.handler();
+    }
+    return true;
+  };
+  const hasHandler = action_2 => {
+    const handlers_2 = handlerRegistryRef.current?.get(action_2);
+    return handlers_2 !== undefined && handlers_2.size > 0;
+  };
   let t4;
   if ($[7] !== bindings || $[8] !== pendingChordRef) {
     t4 = (input, key, contexts) => resolveKeyWithChordState(input, key, contexts, bindings, pendingChordRef.current);
@@ -153,7 +180,9 @@ export function KeybindingProvider(t0) {
       registerActiveContext,
       unregisterActiveContext,
       registerHandler,
-      invokeAction
+      invokeAction,
+      runAction,
+      hasHandler
     };
     $[10] = activeContexts;
     $[11] = bindings;
