@@ -451,7 +451,7 @@ export function getCacheControl({
  * The allowlist is cached in STATE for session stability — prevents mixed
  * TTLs when GrowthBook's disk cache updates mid-request.
  */
-function should1hCacheTTL(querySource?: QuerySource): boolean {
+export function should1hCacheTTL(querySource?: QuerySource): boolean {
   // Local opt-in first: it is the more direct statement, so an explicit `off`
   // can turn the Bedrock env var back off. The GrowthBook allowlist consulted
   // below is unreachable in this fork (GrowthBook hard-disabled, both override

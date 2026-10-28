@@ -15,7 +15,8 @@ import { isBilledAsExtraUsage } from '../../utils/extraUsage.js';
 import { clearFastModeCooldown, isFastModeAvailable, isFastModeEnabled, isFastModeSupportedByModel } from '../../utils/fastMode.js';
 import { MODEL_ALIASES } from '../../utils/model/aliases.js';
 import { checkOpus1mAccess, checkSonnet1mAccess } from '../../utils/model/check1mAccess.js';
-import { getDefaultMainLoopModelSetting, isOpus1mMergeEnabled, renderDefaultModelSetting } from '../../utils/model/model.js';
+import { type ModelName, getDefaultMainLoopModel, getDefaultMainLoopModelSetting, isOpus1mMergeEnabled, parseUserSpecifiedModel, renderDefaultModelSetting } from '../../utils/model/model.js';
+import { withCacheSwitchNotice } from '../../utils/cacheSwitchNotice.js';
 import { isModelAllowed } from '../../utils/model/modelAllowlist.js';
 import { validateModel } from '../../utils/model/validateModel.js';
 import { logError } from '../../utils/log.js';
@@ -84,7 +85,7 @@ function ModelPickerWrapper(t0) {
       if (wasFastModeToggledOn === false) {
         message = message + " \xB7 Fast mode OFF";
       }
-      onDone(message);
+      onDone(resolveModelSetting(model) !== resolveModelSetting(mainLoopModel) ? withCacheSwitchNotice(message) : message);
     };
     $[3] = isFastMode;
     $[4] = mainLoopModel;
@@ -113,7 +114,7 @@ function ModelPickerWrapper(t0) {
       if (effort !== undefined) {
         message = message + ` with \`${effort}\` effort`;
       }
-      onDone(message);
+      onDone(resolveModelSetting(model) !== resolveModelSetting(mainLoopModel) ? withCacheSwitchNotice(message) : message);
     };
     $[17] = mainLoopModel;
     $[18] = onDone;
@@ -173,6 +174,7 @@ function SetModelAndClose({
 }): React.ReactNode {
   const isFastMode = useAppState(s => s.fastMode);
   const setAppState = useSetAppState();
+  const currentModel = useMainLoopModel();
   const model = args === 'default' ? null : args;
   React.useEffect(() => {
     async function handleModelChange(): Promise<void> {
@@ -262,7 +264,7 @@ function SetModelAndClose({
         // Fast mode was toggled off, show suffix after extra usage billing
         message += ` · Fast mode OFF`;
       }
-      onDone(message);
+      onDone(resolveModelSetting(modelValue) !== currentModel ? withCacheSwitchNotice(message) : message);
     }
     void handleModelChange();
   }, [model, onDone, setAppState]);
@@ -330,6 +332,10 @@ export const call: LocalJSXCommandCall = async (onDone, _, args) => {
   }
   return <ModelPickerWrapper onDone={onDone} />;
 };
+// Null is the Default row. Picker values can be aliases, so compare resolved names.
+function resolveModelSetting(model: string | null): ModelName {
+  return model ? parseUserSpecifiedModel(model) : getDefaultMainLoopModel();
+}
 function renderModelLabel(model: string | null): string {
   const rendered = renderDefaultModelSetting(model ?? getDefaultMainLoopModelSetting());
   return model === null ? `Default (currently ${rendered})` : rendered;

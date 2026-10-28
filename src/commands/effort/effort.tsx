@@ -9,6 +9,7 @@ import { useAppState, useSetAppState } from '../../state/AppState.js';
 import type { LocalJSXCommandOnDone } from '../../types/command.js';
 import { type EffortValue, convertEffortValueToLevel, getDisplayedEffortLevel, getEffortEnvOverride, getEffortSettingsUpdate, getInitialEffortSetting, getEffortValueDescription, isEffortLevel, modelSupportsEffort, resolveAppliedEffort, toPersistableEffort } from '../../utils/effort.js';
 import { getMainLoopModel } from '../../utils/model/model.js';
+import { withCacheSwitchNotice } from '../../utils/cacheSwitchNotice.js';
 import { getActiveProviderEffortLevels } from '../../utils/model/providerModels.js';
 import { isOpenAIChatCompletionsRoute } from '../../utils/model/providers.js';
 import { isEnvTruthy } from '../../utils/envUtils.js';
@@ -301,7 +302,7 @@ function EffortSlider({ onDone, model }: { onDone: LocalJSXCommandOnDone; model:
       if (result.effortUpdate) {
         setAppState((prev: any) => ({ ...prev, effortValue: result.effortUpdate!.value }));
       }
-      onDone(result.message);
+      onDone(result.effortUpdate && level !== currentEffort ? withCacheSwitchNotice(result.message) : result.message);
     } else if (key.escape) {
       cancel();
     }
@@ -348,7 +349,7 @@ function EffortSlider({ onDone, model }: { onDone: LocalJSXCommandOnDone; model:
   );
 }
 
-export async function call(onDone: LocalJSXCommandOnDone, _context: any, args?: string): Promise<React.ReactNode> {
+export async function call(onDone: LocalJSXCommandOnDone, context: any, args?: string): Promise<React.ReactNode> {
   args = args?.trim() || '';
   if (COMMON_HELP_ARGS.includes(args)) {
     onDone('Usage: /effort [low|medium|high|xhigh|max|auto]\n\nEffort levels:\n- low: Quick, straightforward implementation\n- medium: Balanced approach with standard testing\n- high: Comprehensive implementation with extensive testing\n- xhigh: Extended capability for long-horizon agentic work (Opus 4.7+)\n- max: Maximum capability with deepest reasoning (Opus 4.6+)\n- auto: Use the default effort level for your model');
@@ -366,5 +367,9 @@ export async function call(onDone: LocalJSXCommandOnDone, _context: any, args?: 
     return <ShowCurrentEffort onDone={onDone} />;
   }
   const result = executeEffort(args, getMainLoopModel());
+  const previousEffort = context.getAppState().effortValue ?? null;
+  if (result.effortUpdate && (result.effortUpdate.value ?? null) !== previousEffort) {
+    result.message = withCacheSwitchNotice(result.message);
+  }
   return <ApplyEffortAndClose result={result} onDone={onDone} />;
 }

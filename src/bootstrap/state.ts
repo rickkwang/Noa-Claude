@@ -295,6 +295,13 @@ type State = {
   // Used to compute timeSinceLastApiCallMs in tengu_api_success for
   // correlating cache misses with idle time (cache TTL is ~5min).
   lastApiCompletionTimestamp: number | null
+  // Cache facts from the last successful main-thread request. Side queries
+  // (haiku title, sideQuery) use other cache prefixes, so they are excluded.
+  lastMainThreadCacheState: {
+    completedAt: number
+    querySource: string
+    promptTokens: number
+  } | null
   // Set to true after compaction (auto or manual /compact). Consumed by
   // logAPISuccess to tag the first post-compaction API call so we can
   // distinguish compaction-induced cache misses from TTL expiry.
@@ -462,6 +469,7 @@ function getInitialState(): State {
     promptId: null,
     lastMainRequestId: undefined,
     lastApiCompletionTimestamp: null,
+    lastMainThreadCacheState: null,
     pendingPostCompaction: false,
   }
 
@@ -870,6 +878,20 @@ export function getLastApiCompletionTimestamp(): number | null {
 
 export function setLastApiCompletionTimestamp(timestamp: number): void {
   STATE.lastApiCompletionTimestamp = timestamp
+}
+
+export function getLastMainThreadCacheState(): {
+  completedAt: number
+  querySource: string
+  promptTokens: number
+} | null {
+  return STATE.lastMainThreadCacheState
+}
+
+export function setLastMainThreadCacheState(
+  cacheState: NonNullable<ReturnType<typeof getLastMainThreadCacheState>>,
+): void {
+  STATE.lastMainThreadCacheState = cacheState
 }
 
 /** Mark that a compaction just occurred. The next API success event will

@@ -13,6 +13,7 @@ import {
   getTeleportedSessionInfo,
   markFirstTeleportMessageLogged,
   setLastApiCompletionTimestamp,
+  setLastMainThreadCacheState,
 } from 'src/bootstrap/state.js'
 import type { QueryChainTracking } from 'src/Tool.js'
 import { isConnectorTextBlock } from 'src/types/connectorText.js'
@@ -562,6 +563,16 @@ function logAPISuccess({
   })
 
   setLastApiCompletionTimestamp(now)
+  if (querySource?.startsWith('repl_main_thread')) {
+    setLastMainThreadCacheState({
+      completedAt: now,
+      querySource,
+      promptTokens:
+        usage.input_tokens +
+        (usage.cache_read_input_tokens ?? 0) +
+        (usage.cache_creation_input_tokens ?? 0),
+    })
+  }
 }
 
 export function logAPISuccessAndDuration({
