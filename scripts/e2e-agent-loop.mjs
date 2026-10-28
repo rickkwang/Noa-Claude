@@ -20,7 +20,7 @@ const model = 'claude-sonnet-4-6';
 // A 200k-window model, so a gateway naming a 1M model in its responses offers a "larger window".
 const modelFor = scenario => option('--model') || (scenario === 'gateway-model-name' ? 'claude-haiku-4-5' : scenario === 'preserved-thinking' ? 'claude-opus-5-5' : scenario === 'mandatory-thinking' ? 'kimi/k3.1-pro' : scenario.startsWith('openai-responses') ? 'gpt-6.1-sol' : model);
 const sentinel = 'KEEP_IDENTIFIER=loop-sentinel-42';
-const cases = ['agent-nested', 'agent-budget', 'agent-budget-resume', 'agent-stop-pending', 'agent-owned-results', 'agent-owned-auto', 'auto-plan-race', 'agent-cascade-stop', 'agent-schema', 'agent-schema-bg', 'hook-output', 'hook-output-null', 'blocking-limit', 'image-error', 'small-window-overflow', 'read', 'large-output', 'max-turns', 'malformed', 'empty', 'alternating', 'fallback', 'provider-quota', 'refusal', 'refusal-repeat', 'truncated', 'tool-input-streaming', 'tool-input-nonstream', 'stale-signature', 'budget-streaming', 'budget-nonstream', 'permission-deny', 'deny-rule', 'mode-auto', 'mode-bypass', 'mode-bypass-off', 'hook-block', 'compact-resume', 'task-crud', 'task-metadata-race', 'task-dependency-race', 'goal-child-usage', 'agent-custom-fork', 'hook-composition', 'tombstone-resume', 'concurrency-streaming', 'concurrency-nonstream', 'background-deadline', 'openai-overflow', 'openai-usage', 'openai-usage-nonstream', 'openai-tools', 'openai-max-tokens-cap', 'openai-max-tokens-vllm', 'openai-responses', 'openai-responses-effort', 'bedrock-overflow', 'field-reject', 'gateway-model-name', 'preserved-thinking', 'mandatory-thinking'].filter(name => !option('--case') || name === option('--case'));
+const cases = ['agent-nested', 'agent-budget', 'agent-budget-resume', 'agent-stop-pending', 'agent-owned-results', 'agent-owned-auto', 'auto-plan-race', 'auto-stage2-error', 'agent-cascade-stop', 'agent-schema', 'agent-schema-bg', 'hook-output', 'hook-output-null', 'blocking-limit', 'image-error', 'small-window-overflow', 'read', 'large-output', 'max-turns', 'malformed', 'empty', 'alternating', 'fallback', 'provider-quota', 'refusal', 'refusal-repeat', 'truncated', 'tool-input-streaming', 'tool-input-nonstream', 'stale-signature', 'budget-streaming', 'budget-nonstream', 'permission-deny', 'deny-rule', 'mode-auto', 'mode-bypass', 'mode-bypass-off', 'hook-block', 'compact-resume', 'task-crud', 'task-metadata-race', 'task-dependency-race', 'goal-child-usage', 'agent-custom-fork', 'hook-composition', 'tombstone-resume', 'concurrency-streaming', 'concurrency-nonstream', 'background-deadline', 'openai-overflow', 'openai-usage', 'openai-usage-nonstream', 'openai-tools', 'openai-max-tokens-cap', 'openai-max-tokens-vllm', 'openai-responses', 'openai-responses-effort', 'bedrock-overflow', 'field-reject', 'gateway-model-name', 'preserved-thinking', 'mandatory-thinking'].filter(name => !option('--case') || name === option('--case'));
 assert.ok(cases.length > 0, 'unknown --case');
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const textOf = content => typeof content === 'string' ? content : (content || []).filter(b => b.type === 'text').map(b => b.text).join('\n');
@@ -76,6 +76,13 @@ const server = createServer(async (req, res) => {
     };
     if (active.case === 'mandatory-thinking' && (!body.thinking || body.thinking.type === 'disabled')) {
       error(400, 'invalid_request_error', 'K3.1 Pro does not support disabled thinking mode. Please enable thinking and try again');
+      return;
+    }
+    if (active.case === 'auto-stage2-error' && JSON.stringify(body.system || '').includes('<block>')) {
+      // Stage 1 blocks every command, so stage 2 runs and fails with a transient 500.
+      if (JSON.stringify(body).includes('Review the classification process')) return error(500, 'api_error', 'Overloaded (scripted)');
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ id: 'msg_cls', type: 'message', role: 'assistant', model: body.model, content: [{ type: 'text', text: '<block>yes</block>' }], stop_reason: 'end_turn', stop_sequence: null, usage: { input_tokens: 1, output_tokens: 1 } }));
       return;
     }
     if ((active.case === 'agent-owned-auto' || active.case === 'auto-plan-race') && JSON.stringify(body.system || '').includes('<block>')) {
@@ -137,6 +144,8 @@ const server = createServer(async (req, res) => {
       return;
     }
     if(active.case==='provider-quota'){error(403,'permission_error',"You've reached your weekly (7-day) usage limit. Your quota will reset when the current 7-day window ends.");return;}
+    // n also counts classifier calls; this counts only main-agent turns.
+    const mainTurn = active.requests.filter(r => r.body.tools?.length).length;
     let content, stop = 'end_turn';
     if (harness && !body.tools?.length) {
       content = [{type:'text',text:active.case==='goal-child-usage'?JSON.stringify({achieved:true,reason:'Fixture child Read completed.'}):'metadata'}];
@@ -323,6 +332,8 @@ const server = createServer(async (req, res) => {
       content = [{ type: 'text', text: 'Partial answer.' }]; stop = 'refusal';
     } else if (active.case.startsWith('budget-')) {
       content = [{ type: 'tool_use', id: `toolu_${n}`, name: 'Bash', input: { command: 'printf started > started.txt; sleep 2; printf finished > finished.txt', timeout: 10000 } }]; stop = 'tool_use';
+    } else if (active.case === 'auto-stage2-error' && mainTurn <= 4) {
+      content = [{ type: 'tool_use', id: `toolu_${mainTurn}`, name: 'Bash', input: { command: `printf denied > denied-${mainTurn}.txt` } }]; stop = 'tool_use';
     } else if ((active.case === 'permission-deny' || active.case === 'deny-rule') && n === 1) {
       content = [{ type: 'tool_use', id: `toolu_${n}`, name: 'Bash', input: { command: 'printf denied > denied.txt' } }]; stop = 'tool_use';
     } else if (active.case === 'background-deadline' && n <= 2) {
@@ -456,7 +467,7 @@ async function run(executable, scenario, extra = [], input = 'Run the local loop
   // Hooks are off under --bare, so the hook scenario runs the full startup path.
   // --bare drops run_in_background, so the deadline scenario needs the full startup path too.
   // --bare also keeps only the simple tools, so openai-tools runs it to keep WebFetch and ToolSearch.
-  const command = [...(scenario.startsWith('hook-') || scenario.startsWith('mode-') || scenario === 'auto-plan-race' || scenario.startsWith('concurrency-') || scenario.startsWith('tool-input-') || scenario === 'background-deadline' || scenario === 'openai-tools' || scenario.startsWith('openai-responses') || harness ? [] : ['--bare']), '--print', '--verbose', '--output-format', 'stream-json', '--model', modelFor(scenario), '--strict-mcp-config', '--setting-sources', '', '--permission-mode', 'dontAsk', '--tools', harness ? (scenario==='agent-custom-fork'?'Read,Bash,Task,SendMessage':scenario==='goal-child-usage'?'Read,Task,goal':scenario==='agent-nested'||scenario.startsWith('agent-owned-')||scenario.startsWith('agent-schema')?'Task':scenario==='agent-cascade-stop'||scenario==='agent-stop-pending'?'Task,Bash,TaskStop':scenario==='agent-budget'?'Task,Bash':scenario==='agent-budget-resume'?'Task,Bash,SendMessage':'TaskCreate,TaskUpdate,TaskGet,TaskList') : scenario.startsWith('tool-input-') ? 'Read,Bash,Write' : scenario === 'openai-tools' ? 'Read,Bash,WebFetch,ToolSearch' : scenario.startsWith('openai-responses') ? 'Read,Bash,TaskUpdate' : scenario.startsWith('mode-') ? 'Read,Bash,Edit,Write,Glob,Grep' : scenario === 'auto-plan-race' ? 'Read,Bash,Write' : 'Read,Bash', '--max-turns', harness ? '8' : scenario === 'compact-resume' ? '6' : scenario === 'stale-signature' ? '3' : scenario === 'preserved-thinking' ? '5' : scenario === 'background-deadline' || scenario === 'small-window-overflow' ? '4' : '2'];
+  const command = [...(scenario.startsWith('hook-') || scenario.startsWith('mode-') || scenario === 'auto-plan-race' || scenario === 'auto-stage2-error' || scenario.startsWith('concurrency-') ||scenario.startsWith('tool-input-') || scenario === 'background-deadline' || scenario === 'openai-tools' || scenario.startsWith('openai-responses') || harness ? [] : ['--bare']), '--print', '--verbose', '--output-format', 'stream-json', '--model', modelFor(scenario), '--strict-mcp-config', '--setting-sources', '', '--permission-mode', 'dontAsk', '--tools', harness ? (scenario==='agent-custom-fork'?'Read,Bash,Task,SendMessage':scenario==='goal-child-usage'?'Read,Task,goal':scenario==='agent-nested'||scenario.startsWith('agent-owned-')||scenario.startsWith('agent-schema')?'Task':scenario==='agent-cascade-stop'||scenario==='agent-stop-pending'?'Task,Bash,TaskStop':scenario==='agent-budget'?'Task,Bash':scenario==='agent-budget-resume'?'Task,Bash,SendMessage':'TaskCreate,TaskUpdate,TaskGet,TaskList') : scenario.startsWith('tool-input-') ? 'Read,Bash,Write' : scenario === 'openai-tools' ? 'Read,Bash,WebFetch,ToolSearch' : scenario.startsWith('openai-responses') ? 'Read,Bash,TaskUpdate' : scenario.startsWith('mode-') ? 'Read,Bash,Edit,Write,Glob,Grep' : scenario === 'auto-plan-race' ? 'Read,Bash,Write' : 'Read,Bash', '--max-turns', harness ? '8' : scenario === 'compact-resume' ? '6' : scenario === 'stale-signature' ? '3' : scenario === 'preserved-thinking' ? '5' : scenario === 'background-deadline' || scenario === 'small-window-overflow' ? '4' : scenario === 'auto-stage2-error' ? '6' : '2'];
   if (!scenario.startsWith('tool-input-') && scenario !== 'compact-resume' && scenario !== 'tombstone-resume' && scenario !== 'stale-signature' && scenario!=='agent-custom-fork' && scenario!=='agent-budget-resume') command.push('--no-session-persistence');
   if (scenario.startsWith('tool-input-')) command.push('--allowedTools', 'Write');
   if (scenario === 'fallback') command.push('--fallback-model', 'claude-haiku-4-5');
@@ -467,8 +478,8 @@ async function run(executable, scenario, extra = [], input = 'Run the local loop
   // A slow worktree hook holds the parent inside its Agent call while it is stopped.
   if (scenario === 'agent-stop-pending') command.push('--allowedTools', 'Bash,TaskStop', '--settings', JSON.stringify({ hooks: { WorktreeCreate: [{ hooks: [{ type: 'command', command: `touch '${join(active.dir, 'wt-started')}'; sleep 2; mkdir -p '${join(active.dir, 'wt')}'; echo '${join(active.dir, 'wt')}'` }] }] } }));
   if (scenario.startsWith('agent-budget')) command.push('--allowedTools', 'Bash', '--max-budget-usd', '0.01');
-  if (scenario === 'agent-owned-auto' || scenario === 'auto-plan-race') command[command.indexOf('dontAsk')] = 'auto';
-  if (scenario === 'auto-plan-race') command.push('--settings', JSON.stringify({ skipAutoPermissionPrompt: true }));
+  if (scenario === 'agent-owned-auto' || scenario === 'auto-plan-race' || scenario === 'auto-stage2-error') command[command.indexOf('dontAsk')] = 'auto';
+  if (scenario === 'auto-plan-race' || scenario === 'auto-stage2-error') command.push('--settings', JSON.stringify({ skipAutoPermissionPrompt: true }));
   if (scenario === 'mode-auto' || scenario.startsWith('mode-bypass')) command[command.indexOf('dontAsk')] = scenario === 'mode-auto' ? 'auto' : 'bypassPermissions';
   if (scenario.startsWith('mode-bypass')) command.push('--dangerously-skip-permissions');
   if (scenario==='hook-output' || scenario==='hook-output-null') command.push('--settings',JSON.stringify({hooks:{PostToolUse:[{matcher:'Read',hooks:[{type:'command',command:`echo '${JSON.stringify({hookSpecificOutput:{hookEventName:'PostToolUse',updatedToolOutput:scenario==='hook-output-null'?null:'HOOK_REDACTED',updatedMCPToolOutput:'LEGACY_MUST_NOT_WIN'}})}'`}]}]}}));
@@ -765,6 +776,17 @@ try {
             const toolResult = main[1]?.body.messages.at(-1).content.find(b => b.type === 'tool_result');
             assert.equal(toolResult?.is_error, true, 'denial was not reported to the model as an error');
             assert.deepEqual(runResult.result.permission_denials.map(d => d.tool_name), ['Bash']);
+          } else if (scenario === 'auto-stage2-error') {
+            assert.equal(runResult.code, 0); assert.equal(runResult.result.result, 'AUDIT_OK');
+            for (let i = 1; i <= 4; i++) assert.equal(existsSync(join(dir, `denied-${i}.txt`)), false, `denied command ${i} still ran`);
+            // Transient stage-2 errors fail closed with retry guidance and do not count toward the
+            // denial limit, so no command reaches the consecutive-denials "requires approval" path.
+            const results = main.at(-1).body.messages.flatMap(m => Array.isArray(m.content) ? m.content : []).filter(b => b.type === 'tool_result');
+            assert.equal(results.length, 4, `expected 4 tool results, got ${results.length}`);
+            for (const result of results) {
+              assert.equal(result.is_error, true);
+              assert.ok(JSON.stringify(result.content).includes('is temporarily unavailable'), `not retry guidance: ${JSON.stringify(result.content)}`);
+            }
           } else if (scenario.startsWith('concurrency-')) {
             assert.equal(runResult.code, 0); assert.equal(runResult.result.result, 'AUDIT_OK');
             const writes = readFileSync(join(dir, 'writes.txt'), 'utf8').trim().split('\n');

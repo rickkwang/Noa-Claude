@@ -1788,7 +1788,9 @@ async function classifyYoloActionXml(
           ? 'Stage 2 classifier error — blocking based on stage 1 assessment. Retry, or run with --debug for details.'
           : 'Classifier unavailable — blocking for safety. Retry, or run with --debug for details.',
       model,
-      unavailable: stage1Usage === undefined,
+      // A stage-2 API error is unavailability, not a verdict: the stage-1 block
+      // is only the fallback reason, and the denial counter must not count it.
+      unavailable: stage1Usage === undefined || !tooLong,
       parseFailure: stage1ParseFailure || undefined,
       stage2Failed: stage1Usage !== undefined,
       errorKind: classifyErrorKind(error),
