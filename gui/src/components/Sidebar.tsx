@@ -85,6 +85,8 @@ interface SidebarProps {
 }
 
 // Noa's sidebar: search, a Projects toolbar, then one collapsible group per project folder.
+const isMac = navigator.platform.includes("Mac")
+
 export function Sidebar({
   projects,
   sessions,
@@ -273,10 +275,10 @@ export function Sidebar({
       {/* Titlebar band: the traffic lights and sidebar toggle sit over it, so it stays draggable. */}
       <div className="h-11 shrink-0" style={dragRegion} />
 
-      <div className="noa-sidebar-search mx-2 mb-[9px] flex h-[26px] shrink-0 cursor-text items-center gap-0.5 rounded-[6px]">
+      <div className="noa-sidebar-search mx-2 mb-2 flex h-8 shrink-0 cursor-text items-center gap-2 rounded-lg px-2">
         <span
           aria-hidden="true"
-          className="ml-[5px] mr-[7px] flex size-4 shrink-0 items-center justify-center text-[var(--sidebar-text-muted,#898781)]"
+          className="flex shrink-0 items-center justify-center text-[var(--sidebar-text-muted,#898781)]"
         >
           <Search size={16} />
         </span>
@@ -300,9 +302,9 @@ export function Sidebar({
       <button
         type="button"
         onClick={() => onNewSession()}
-        className="noa-sidebar-tree-item noa-sidebar-tree-row noa-sidebar-hover-surface-subtle mx-2 mb-0.5 flex min-h-[26px] shrink-0 items-center gap-2 rounded-lg px-[7px]"
+        className="noa-sidebar-tree-item noa-sidebar-tree-row noa-sidebar-hover-surface-subtle mx-2 mb-1 flex min-h-8 shrink-0 items-center gap-2 rounded-lg px-2"
       >
-        <SquarePen size={14} className="shrink-0" />
+        <SquarePen size={16} className="shrink-0" />
         New task
       </button>
 
@@ -343,7 +345,7 @@ export function Sidebar({
               const isOpen = q !== "" || expanded.has(project.path)
               const isActiveProject = active.cwd === project.path
               return (
-                <div key={project.path} className="font-ui mb-px">
+                <div key={project.path} className="font-ui mb-1">
                   <ProjectRow
                     project={project}
                     open={isOpen}
@@ -384,8 +386,8 @@ export function Sidebar({
                         <button
                           type="button"
                           onClick={() => toggleUnfolded(project.path)}
-                          className="mb-px block w-full cursor-pointer py-0 text-left text-caption text-[var(--sidebar-text-muted,#898781)] hover:text-[var(--text-primary,#2D2D2B)]"
-                          style={{ paddingLeft: "31px" }}
+                          className="mb-px block min-h-8 w-full cursor-pointer py-1 text-left text-body text-[var(--sidebar-text-muted,#898781)] hover:text-[var(--text-primary,#2D2D2B)]"
+                          style={{ paddingLeft: "32px" }}
                         >
                           {unfolded.has(project.path) ? "Show less" : "Show more"}
                         </button>
@@ -407,11 +409,18 @@ export function Sidebar({
       </div>
       <div className="shrink-0 border-t border-[var(--divider-subtle)] px-2 py-1" style={noDragRegion}>
         <button
+          type="button"
           onClick={onSettings}
-          className="flex h-7 w-full items-center gap-2.5 rounded-lg px-[7px] text-body text-[var(--text-primary)] hover:bg-[color-mix(in_srgb,var(--text-primary)_6%,transparent)] active:bg-[color-mix(in_srgb,var(--text-primary)_10%,transparent)]"
+          className="noa-sidebar-tree-item noa-sidebar-hover-surface-subtle group flex h-8 w-full items-center gap-2 rounded-lg px-2 text-body"
         >
-          <Settings size={16} />
-          Settings
+          <Settings size={16} className="shrink-0 text-[var(--sidebar-text-muted)]" />
+          <span className="min-w-0 flex-1 truncate text-left">Settings</span>
+          <span
+            aria-hidden="true"
+            className="shrink-0 text-caption text-[var(--sidebar-text-muted)] opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100"
+          >
+            {isMac ? "⌘," : "Ctrl+,"}
+          </span>
         </button>
       </div>
     </div>
@@ -496,7 +505,7 @@ function ProjectRow({
             onToggle()
           }
         }}
-        className={`noa-sidebar-tree-row noa-agent-sidebar-row group flex min-h-[26px] items-center gap-2 px-[7px] mx-2 rounded-lg cursor-pointer select-none ${menuOpen ? "is-active" : ""}`}
+        className={`noa-sidebar-tree-row noa-agent-sidebar-row group flex min-h-8 items-center gap-2 px-2 mx-2 rounded-lg cursor-pointer select-none ${menuOpen ? "is-active" : ""}`}
       >
         <span className="shrink-0 text-[var(--sidebar-text-muted,#898781)]">
           {open ? <FolderOpen size={16} /> : <Folder size={16} />}
@@ -522,7 +531,7 @@ function ProjectRow({
                 event.stopPropagation()
                 setMenuOpen((open) => !open)
               }}
-              className="flex size-5 items-center justify-center rounded-md text-[var(--sidebar-text-muted)] hover:text-[var(--sidebar-text)]"
+              className="flex size-6 items-center justify-center rounded-md text-[var(--sidebar-text-muted)] hover:text-[var(--sidebar-text)]"
             >
               <MoreHorizontal size={14} />
             </button>
@@ -582,7 +591,7 @@ function ProjectRow({
                 event.stopPropagation()
                 onNewSession()
               }}
-              className="flex size-5 items-center justify-center rounded-md text-[var(--sidebar-text-muted,#898781)] hover:text-[var(--text-primary,#2D2D2B)] transition-colors noa-press"
+              className="flex size-6 items-center justify-center rounded-md text-[var(--sidebar-text-muted,#898781)] hover:text-[var(--text-primary,#2D2D2B)] transition-colors noa-press"
             >
               <SquarePen size={14} />
             </button>
@@ -657,15 +666,15 @@ function SessionRow({
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerCancel}
-        className={`noa-sidebar-tree-row relative flex min-h-[26px] items-center justify-between py-0 px-[7px] mx-2 rounded-lg cursor-pointer select-none group ${
+        className={`noa-sidebar-tree-row relative flex min-h-8 items-center justify-between py-0 px-2 mx-2 rounded-lg cursor-pointer select-none group ${
           active ? "noa-agent-sidebar-row is-active" : "noa-agent-sidebar-row"
         } ${dragging ? "noa-session-row-dragging" : ""} ${
           dropEdge === "before" ? "noa-session-drop-before" : dropEdge === "after" ? "noa-session-drop-after" : ""
         }`}
-        style={{ paddingLeft: indent ? "31px" : "7px" }}
+        style={{ paddingLeft: indent ? "32px" : "8px" }}
       >
-        <span className={`noa-fade-truncate transition-[margin-right] duration-150 ease-out ${pinned || status ? "" : "-mr-[7px] group-hover:mr-6 group-focus-within:mr-6"}`}>{title}</span>
-        <span className={`${pinned || status ? "ml-2 flex shrink-0" : "absolute inset-y-0 right-[7px] flex"} items-center gap-1`}>
+        <span className={`noa-fade-truncate transition-[margin-right] duration-150 ease-out ${pinned || status ? "" : "-mr-2 group-hover:mr-6 group-focus-within:mr-6"}`}>{title}</span>
+        <span className={`${pinned || status ? "ml-2 flex shrink-0" : "absolute inset-y-0 right-2 flex"} items-center gap-1`}>
           {status && <span role="status" aria-label={status === "waiting" ? "Approval required" : status === "running" ? "Running" : "Queued"} title={status} className={`size-1.5 shrink-0 rounded-full ${status === "waiting" ? "bg-amber-500" : "animate-pulse bg-[var(--accent-color)]"}`} />}
           <button
             type="button"
@@ -677,7 +686,7 @@ function SessionRow({
               event.stopPropagation()
               onTogglePin?.()
             }}
-            className={`flex size-5 items-center justify-center rounded-md text-[var(--sidebar-text-muted,#898781)] transition-opacity duration-150 ease-out hover:text-[var(--text-primary,#2D2D2B)] noa-press ${
+            className={`flex size-6 items-center justify-center rounded-md text-[var(--sidebar-text-muted,#898781)] transition-opacity duration-150 ease-out hover:text-[var(--text-primary,#2D2D2B)] noa-press ${
               pinned ? "" : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
             }`}
           >
