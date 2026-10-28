@@ -21,6 +21,7 @@ import { DiffActionDialog } from "./components/TurnDiffCard"
 import { PermissionCard, type QuestionDraft } from "./components/PermissionCard"
 import { QueuedMessages } from "./components/QueuedMessages"
 import { RightPanel, type PanelTab } from "./components/RightPanel"
+import { OverviewPanel } from "./components/OverviewPanel"
 import { ResizeHandle } from "./components/ResizeHandle"
 import { usePanelWidth } from "./hooks/usePanelWidth"
 import { Sidebar } from "./components/Sidebar"
@@ -30,11 +31,10 @@ import { defaultSettings } from "./theme/settings"
 import { SettingsDialog } from "./components/SettingsDialog"
 import { SessionTitle } from "./components/SessionTitle"
 import { RateLimitNotice } from "./components/RateLimitNotice"
-import { PanelRight } from "./lib/icons"
+import { ListDetails, PanelRight } from "./lib/icons"
 
 // Noa's default layout widths.
-const SIDEBAR_DEFAULT_WIDTH = 325
-const RIGHT_PANEL_DEFAULT_WIDTH = 360
+const SIDEBAR_DEFAULT_WIDTH = 340
 
 export function App() {
   // Optional workspace: /?cwd=/absolute/path. The bridge resolves the default when absent.
@@ -103,6 +103,14 @@ function Workspace({ cwd }: { cwd: string }) {
   const [refreshTick, setRefreshTick] = useState(0)
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [rightOpen, setRightOpen] = useState(true)
+  // Claude's session-rail model. `shown` is the remembered preference. The docked column is visible when it
+  // is shown and fits; when it does not fit, the toggle opens a transient popover instead. The popover
+  // closes by itself once the column becomes visible, and a hidden column never morphs into a popover.
+  // Claude's session-rail model: `shown` is the remembered preference. The docked column is visible when it
+  // is shown and fits; when it does not fit, the toggle opens a transient popover instead.
+  const [overviewShown, setOverviewShown] = useState(() => { try { return localStorage.getItem("noa-overview-shown") !== "false" } catch { return true } })
+  useEffect(() => { try { localStorage.setItem("noa-overview-shown", String(overviewShown)) } catch { /* Ignore unavailable storage. */ } }, [overviewShown])
+  const [overviewPopover, setOverviewPopover] = useState(false)
   const [addingProject, setAddingProject] = useState(false)
   const [editingProject, setEditingProject] = useState<ProjectInfo>()
   const [quote, setQuote] = useState<{ text: string; key: number }>()
@@ -115,7 +123,7 @@ function Workspace({ cwd }: { cwd: string }) {
   const [rightTab, setRightTab] = useState<PanelTab>("files")
   useEffect(() => { setTurnDiff(undefined) }, [session.key])
 
-  const { state, sendMessage, reloadCommands, loadEarlier, interrupt, answerPermission, answerElicitation, removeQueued, moveQueued, updateQueued, steerQueued, setQueuePaused, runQueued, stopTask, setModel, setPermissionMode, setEffort, refreshContext, turnDiffAction, clearDiffAction, startAuthentication, waitForAuthentication, submitAuthenticationCode, closeAuthentication } =
+  const { state, sendMessage, reloadCommands, loadEarlier, interrupt, answerPermission, answerElicitation, removeQueued, moveQueued, updateQueued, steerQueued, setQueuePaused, runQueued, stopTask, setModel, setPermissionMode, setEffort, refreshContext, refreshMcp, turnDiffAction, clearDiffAction, startAuthentication, waitForAuthentication, submitAuthenticationCode, closeAuthentication } =
     useAgent({
       cwd: session.cwd,
       resume: session.resume,
@@ -430,23 +438,78 @@ function Workspace({ cwd }: { cwd: string }) {
     return true
   }
   const hasTurns = state.turns.length > 0
-  const sidebar = usePanelWidth("noa-agent.sidebarWidth", SIDEBAR_DEFAULT_WIDTH, 220)
-  const right = usePanelWidth("noa-agent.rightPanelWidth", RIGHT_PANEL_DEFAULT_WIDTH)
+  const sidebar = usePanelWidth("noa-agent.sidebarWidth", SIDEBAR_DEFAULT_WIDTH, 240, 520)
+  const [rightRatio, setRightRatio] = useState<number | null>(() => {
+    try {
+      const saved = localStorage.getItem("noa-agent.rightPanelWidthRatio")
+      if (saved === null) return null
+      const ratio = Number(saved)
+      return Number.isFinite(ratio) && ratio >= 0 && ratio <= 1 ? ratio : null
+    } catch { return null }
+  })
+  useEffect(() => {
+    try {
+      if (rightRatio !== null) localStorage.setItem("noa-agent.rightPanelWidthRatio", String(rightRatio))
+    } catch { /* Storage unavailable. */ }
+  }, [rightRatio])
   // Dragging follows the pointer, so the column's width transition is off while a handle is held.
   const [resizing, setResizing] = useState(false)
-  const animate = resizing ? "" : "transition-[width,--noa-edge-fade] duration-500 ease-in-out"
-  const [windowWidth, setWindowWidth] = useState(window.innerWidth)
+  const [windowSize, setWindowSize] = useState({ width: window.innerWidth, height: window.innerHeight })
+  const [windowResizing, setWindowResizing] = useState(false)
   useEffect(() => {
-    const resize = () => setWindowWidth(window.innerWidth)
+    let timer: ReturnType<typeof setTimeout>
+    const resize = () => {
+      setWindowResizing(true)
+      setWindowSize({ width: window.innerWidth, height: window.innerHeight })
+      clearTimeout(timer)
+      timer = setTimeout(() => setWindowResizing(false), 150)
+    }
     window.addEventListener("resize", resize)
-    return () => window.removeEventListener("resize", resize)
+    return () => { window.removeEventListener("resize", resize); clearTimeout(timer) }
   }, [])
-  // Each pane keeps its open width while it slides in or out: the outer edge animates and covers the content,
-  // which never reflows. The main column does not move; the panes overlay it.
-  const sidebarTarget = Math.round(Math.min(sidebar.width, Math.max(220, windowWidth - 480 - (rightOpen ? 250 : 0))))
-  const rightTarget = Math.round(Math.min(right.width, Math.max(250, windowWidth - sidebarTarget - 480)))
+  const moving = resizing || windowResizing
+  const animate = moving ? "" : "transition-[width,--noa-edge-fade] duration-500 ease-in-out"
+  // Closed panes keep their content width while the outer edge slides away.
+  const sidebarTarget = Math.round(Math.max(240, Math.min(sidebar.width, windowSize.width - (rightOpen ? 320 + 352 : 352))))
   const sidebarWidth = sidebarOpen ? sidebarTarget : 0
+  const workspaceWidth = windowSize.width - sidebarWidth
+  const rightMax = Math.max(320, workspaceWidth - 352)
+  const rightDefault = Math.max(320, Math.min(windowSize.height * 1.6, workspaceWidth - 500), Math.min(640, workspaceWidth - 352))
+  const defaultRatio = rightMax === 320 ? 0 : Math.max(0, Math.min(1, (rightDefault - 320) / (rightMax - 320)))
+  useEffect(() => {
+    if (rightRatio === null && rightMax > 320) setRightRatio(defaultRatio)
+  }, [rightRatio, rightMax, defaultRatio])
+  const rightTarget = Math.round(320 + (rightRatio ?? defaultRatio) * (rightMax - 320))
   const rightWidth = rightOpen ? rightTarget : 0
+  // Claude's rule: the overview docks as a column when the chat area is wide enough (more with a pane open),
+  // otherwise it floats over the chat as a popover.
+  // Measure the chat column itself: window-size state lags a live resize and the sidebar animates, so a
+  // computed width can dock the overview while the real column is too narrow to hold it.
+  const chatColumnRef = useRef<HTMLDivElement>(null)
+  const [measuredChatWidth, setMeasuredChatWidth] = useState<number>()
+  useEffect(() => {
+    const el = chatColumnRef.current
+    if (!el) return
+    const observer = new ResizeObserver(() => setMeasuredChatWidth(el.offsetWidth))
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
+  const chatWidth = measuredChatWidth ?? workspaceWidth - rightWidth
+  const overviewDocked = chatWidth >= (rightOpen ? 771 : 611)
+  const overviewDockedVisible = overviewShown && overviewDocked
+  const overviewPopoverOpen = overviewPopover && !overviewDockedVisible
+  const overviewVisible = overviewDockedVisible || overviewPopoverOpen
+  useEffect(() => { if (overviewPopover && !overviewPopoverOpen) setOverviewPopover(false) }, [overviewPopover, overviewPopoverOpen])
+  const toggleOverview = () => {
+    if (overviewVisible) {
+      setOverviewPopover(false)
+      if (overviewDockedVisible) setOverviewShown(false)
+      return
+    }
+    setOverviewShown(true)
+    if (!overviewDocked) setOverviewPopover(true)
+  }
+  const overviewDockInset = overviewDockedVisible ? 280 + 8 + 12 : 0
 
   const footerRef = useRef<HTMLDivElement>(null)
   const [footerHeight, setFooterHeight] = useState(0)
@@ -479,7 +542,7 @@ function Workspace({ cwd }: { cwd: string }) {
       >
         <div
           className="h-full transition-opacity duration-300 ease-out"
-          style={{ width: sidebarTarget, opacity: sidebarOpen ? 1 : 0 }}
+          style={{ width: sidebarOpen ? "100%" : sidebarTarget, opacity: sidebarOpen ? 1 : 0 }}
         >
           <Sidebar
             projects={projects}
@@ -504,14 +567,14 @@ function Workspace({ cwd }: { cwd: string }) {
       <div
         aria-hidden="true"
         data-sidebar-divider
-        className={`pointer-events-none absolute inset-y-0 z-30 w-[0.5px] bg-[var(--divider-subtle,#E6E2DA)] ${resizing ? "" : "transition-[left,opacity] duration-500 ease-in-out"}`}
+        className={`pointer-events-none absolute inset-y-0 z-30 w-[0.5px] bg-[var(--divider-subtle,#E6E2DA)] ${moving ? "" : "transition-[left,opacity] duration-500 ease-in-out"}`}
         style={{ left: sidebarWidth, opacity: sidebarOpen ? 1 : 0 }}
       />
       {/* One titlebar rule across both columns; above the right panel so it is not hidden behind it. */}
       <div
         aria-hidden="true"
         data-titlebar-divider
-        className={`pointer-events-none absolute z-40 h-[0.5px] bg-[var(--divider-subtle,#E6E2DA)] ${resizing ? "" : "transition-[left] duration-500 ease-in-out"}`}
+        className={`pointer-events-none absolute z-40 h-[0.5px] bg-[var(--divider-subtle,#E6E2DA)] ${moving ? "" : "transition-[left] duration-500 ease-in-out"}`}
         style={{ top: 43.5, left: sidebarWidth, right: 0 }}
       />
       {rightOpen && (
@@ -519,8 +582,8 @@ function Workspace({ cwd }: { cwd: string }) {
           label="Resize right panel"
           grow={-1}
           width={rightWidth}
-          defaultWidth={RIGHT_PANEL_DEFAULT_WIDTH}
-          onResize={right.set}
+          defaultWidth={rightDefault}
+          onResize={(width) => setRightRatio(rightMax === 320 ? 0 : Math.max(0, Math.min(1, (width - 320) / (rightMax - 320))))}
           onDraggingChange={setResizing}
           style={{ right: rightWidth - 4, zIndex: 40 }}
         />
@@ -528,7 +591,7 @@ function Workspace({ cwd }: { cwd: string }) {
       <div
         aria-hidden="true"
         data-right-divider
-        className={`pointer-events-none absolute inset-y-0 z-30 w-[0.5px] bg-[var(--divider-subtle,#E6E2DA)] ${resizing ? "" : "transition-[right,opacity] duration-500 ease-in-out"}`}
+        className={`pointer-events-none absolute inset-y-0 z-30 w-[0.5px] bg-[var(--divider-subtle,#E6E2DA)] ${moving ? "" : "transition-[right,opacity] duration-500 ease-in-out"}`}
         style={{ right: rightWidth, opacity: rightOpen ? 1 : 0 }}
       />
       {sidebarOpen && (
@@ -558,15 +621,12 @@ function Workspace({ cwd }: { cwd: string }) {
       >
         <div
           className="absolute inset-y-0 right-0 h-full transition-opacity duration-300 ease-out"
-          style={{ width: rightTarget, opacity: rightOpen ? 1 : 0 }}
+          style={{ width: rightOpen ? "100%" : rightTarget, opacity: rightOpen ? 1 : 0 }}
         >
           <RightPanel
             state={state}
             onStopTask={stopTask}
             cwd={session.cwd}
-            sessionId={activeId}
-            onRefreshContext={refreshContext}
-            onLoadEarlier={loadEarlier}
             tab={rightTab}
             onTab={setRightTab}
             onReference={(path) => setReference({ path, key: Date.now() })}
@@ -581,7 +641,7 @@ function Workspace({ cwd }: { cwd: string }) {
 
       <TopBar
         settings={settings}
-        resizing={resizing}
+        resizing={moving}
         sidebarOpen={sidebarOpen}
         sidebarWidth={sidebarWidth}
         rightWidth={rightWidth}
@@ -611,13 +671,27 @@ function Workspace({ cwd }: { cwd: string }) {
         className="absolute right-[15px] top-[10px] z-40"
         style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
       >
-        {panelToggle}
+        <div className="flex items-center gap-0.5">
+          <button
+            type="button"
+            onClick={toggleOverview}
+            className="flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-[var(--icon-ink,#52514E)] transition-colors hover:bg-[color-mix(in_srgb,var(--text-primary,#2D2D2B)_7.5%,transparent)] hover:text-[var(--text-primary,#2D2D2B)] aria-pressed:bg-[color-mix(in_srgb,var(--text-primary,#2D2D2B)_7.5%,transparent)]"
+            title="Overview"
+            aria-label="Overview"
+            data-overview-toggle=""
+            aria-pressed={overviewVisible}
+          >
+            <ListDetails size={16} />
+          </button>
+          {panelToggle}
+        </div>
       </div>
 
       <div className="flex-1 flex min-h-0 overflow-visible relative">
         <div
-          className={`relative flex min-w-0 flex-1 flex-col ${resizing ? "" : "transition-[margin-left,margin-right] duration-500 ease-in-out"}`}
-          style={{ marginLeft: sidebarWidth, marginRight: rightWidth, "--composer-overlay": `${footerHeight}px` } as React.CSSProperties}
+          ref={chatColumnRef}
+          className={`relative flex min-w-0 flex-1 flex-col ${moving ? "" : "transition-[margin-left,margin-right] duration-500 ease-in-out"}`}
+          style={{ marginLeft: sidebarWidth, marginRight: rightWidth, paddingRight: overviewDockInset, "--noa-overview-dock": `${overviewDockInset}px`, "--composer-overlay": `${footerHeight}px` } as React.CSSProperties}
         >
           {hasTurns ? (
             <MessageList
@@ -762,7 +836,7 @@ function Workspace({ cwd }: { cwd: string }) {
                     setSidebarOpen(true)
                     requestAnimationFrame(() => document.querySelector<HTMLInputElement>('[aria-label="Search tasks"]')?.focus())
                   } else if (action === "settings") setSettingsOpen(true)
-                  else if (action === "context") { setRightOpen(true); setRightTab("context"); refreshContext() }
+                  else if (action === "context") { if (!overviewVisible) toggleOverview(); refreshContext() }
                   else if (action === "activity") { setRightOpen(true); setRightTab("activity") }
                   else if (action === "plan") setPermissionMode("plan")
                   else if (action === "stop") interrupt()
@@ -774,6 +848,21 @@ function Workspace({ cwd }: { cwd: string }) {
               />
             </div>
           </div>
+          <OverviewPanel
+            state={state}
+            cwd={session.cwd}
+            open={overviewVisible}
+            workspaceRefreshKey={refreshTick}
+            endInset={8}
+            // The popover stops above the composer card (the footer's 32px top padding is only a fade).
+            bottomInset={Math.max(0, footerHeight - 32)}
+            docked={overviewDocked}
+            onClose={() => setOverviewPopover(false)}
+            onRefreshContext={refreshContext}
+            onRefreshMcp={refreshMcp}
+            onReference={(path) => setReference({ path, key: Date.now() })}
+            onOpenChanges={() => { setRightOpen(true); setRightTab("changes") }}
+          />
         </div>
       </div>
 

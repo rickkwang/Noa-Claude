@@ -3,6 +3,7 @@ import type {
   AccountInfo,
   ContextUsage,
   ControlRequest,
+  McpServerStatus,
   Envelope,
   AgentMessage,
   UserContent,
@@ -30,6 +31,7 @@ type ResponseKind =
   | "auth_urls"
   | "auth_complete"
   | "context_usage"
+  | "mcp_status"
   | "settings"
   | "startup_settings"
   | "effort"
@@ -254,6 +256,11 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
         control({ subtype: "get_settings" }, "settings")
         return
       }
+      if (kind === "mcp_status") {
+        const servers = (response as { mcpServers?: McpServerStatus[] } | undefined)?.mcpServers
+        if (Array.isArray(servers)) dispatch({ type: "control", payload: { kind: "mcp_status", servers } })
+        return
+      }
       const body = (response ?? {}) as Record<string, unknown>
       if (kind === "initialize") {
         dispatch({ type: "connection", status: "ready" })
@@ -324,6 +331,7 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
     if (write({ type: "history_before", before: state.historyBefore })) dispatch({ type: "history-loading" })
   }, [write, state.historyBefore, state.historyLoading])
 
+  const refreshMcp = useCallback(() => control({ subtype: "mcp_status" }, "mcp_status"), [control])
   const refreshContext = useCallback(() => control({ subtype: "get_context_usage" }, "context_usage"), [control])
 
   const answerPermission = useCallback(
@@ -392,7 +400,7 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
   }, [control])
   const closeAuthentication = useCallback(() => dispatch({ type: "auth-close" }), [])
 
-  return { state: ownerRef.current === runtimeId ? state : initialState, sendMessage, reloadCommands, loadEarlier, answerElicitation, removeQueued, moveQueued, updateQueued, steerQueued, setQueuePaused, runQueued, stopTask, interrupt, answerPermission, setModel, setPermissionMode, setEffort, refreshContext, turnDiffAction, clearDiffAction, startAuthentication, waitForAuthentication, submitAuthenticationCode, closeAuthentication }
+  return { state: ownerRef.current === runtimeId ? state : initialState, sendMessage, reloadCommands, loadEarlier, answerElicitation, removeQueued, moveQueued, updateQueued, steerQueued, setQueuePaused, runQueued, stopTask, interrupt, answerPermission, setModel, setPermissionMode, setEffort, refreshContext, refreshMcp, turnDiffAction, clearDiffAction, startAuthentication, waitForAuthentication, submitAuthenticationCode, closeAuthentication }
 }
 
 export function parseAuthorizationCode(raw: string): { authorizationCode: string; state: string } | undefined {

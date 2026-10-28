@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react"
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import type { AgentState, AgentTask, Block, ToolBlock, Turn } from "../agent/reducer"
 import type { ImageBlock, TurnDiff } from "../agent/protocol"
 import { Lightbox, type LightboxItem } from "./Lightbox"
@@ -12,13 +12,16 @@ import {
   type ActivityRun,
   type ThinkingBlock as ThinkingBlockData,
 } from "../agent/toolActivity"
-import { ArrowDown, AlertTriangle, BookOpen, Check, ChevronDown, ChevronRight, Copy, Edit2, Photo, Search, Terminal, Tool } from "../lib/icons"
+import { ArrowDown, AlertTriangle, BookOpen, Check, ChevronDown, ChevronRight, Copy, Edit2, FileText, Photo, Search, Terminal, Tool } from "../lib/icons"
 import { Collapsible } from "./Collapsible"
 import { ErrorBoundary } from "./ErrorBoundary"
 import { copyContent } from "./RichContent"
 import { Markdown, OutputContext } from "./Markdown"
 import { MessageRail, type MessageRailItem } from "./MessageRail"
 import { ToolCard } from "./ToolCard"
+import { splitReferences } from "../lib/references"
+import { contextCardFor } from "./ContextCard"
+import { stripAnsi } from "../lib/contextOutput"
 import { LiveDiffSummary, TurnDiffCard } from "./TurnDiffCard"
 
 interface MessageListProps {
@@ -64,6 +67,11 @@ export function MessageList({ turns, cwd, onOpenFile, busy, result, readingWidth
   const firstTurnRef = useRef(turns[0]?.id)
   const previousLayoutOffset = useRef(0)
   const scrollFrame = useRef<number | undefined>(undefined)
+  const measureFrame = useRef<number | undefined>(undefined)
+  const measureObserver = useRef<ResizeObserver | null>(null)
+  const pendingHeights = useRef(new Map<string, number>())
+  const pendingAnchor = useRef<{ id: string; top: number; scrollTop: number } | undefined>(undefined)
+  const prependAnchor = useRef(false)
   const heightsRef = useRef(new Map(savedScroll?.heights))
   const offsetsRef = useRef(new Map<string, number>())
   const focusedTurn = useRef<string | undefined>(undefined)
@@ -74,7 +82,7 @@ export function MessageList({ turns, cwd, onOpenFile, busy, result, readingWidth
   const [selection, setSelection] = useState<{ text: string; left: number; top: number }>()
   const [preview, setPreview] = useState<{ items: LightboxItem[]; index: number }>()
   const [viewport, setViewport] = useState({ top: savedScroll?.top ?? 0, height: 0 })
-  const [, setMeasured] = useState(0)
+  const [measured, setMeasured] = useState(0)
 
   useLayoutEffect(() => {
     const scroll = scrollRef.current
@@ -97,8 +105,10 @@ export function MessageList({ turns, cwd, onOpenFile, busy, result, readingWidth
     if (!el) return
     const previousFirst = firstTurnRef.current
     const offset = layoutRef.current?.offsetTop ?? 0
-    if (previousFirst && previousFirst !== turns[0]?.id && offsetsRef.current.has(previousFirst) && !pinnedRef.current)
+    if (previousFirst && previousFirst !== turns[0]?.id && offsetsRef.current.has(previousFirst) && !pinnedRef.current) {
       el.scrollTop += offsetsRef.current.get(previousFirst)! + offset - previousLayoutOffset.current
+      prependAnchor.current = true
+    }
     firstTurnRef.current = turns[0]?.id
     previousLayoutOffset.current = offset
     if (!restoredRef.current && savedScroll && !savedScroll.pinned) el.scrollTop = savedScroll.top
@@ -117,8 +127,24 @@ export function MessageList({ turns, cwd, onOpenFile, busy, result, readingWidth
     return () => {
       observer.disconnect()
       if (scrollFrame.current !== undefined) cancelAnimationFrame(scrollFrame.current)
+      if (measureFrame.current !== undefined) cancelAnimationFrame(measureFrame.current)
+      measureObserver.current?.disconnect()
+      measureObserver.current = null
     }
   }, [])
+
+  useLayoutEffect(() => {
+    const el = scrollRef.current
+    const anchor = pendingAnchor.current
+    pendingAnchor.current = undefined
+    if (!el) return
+    if (pinnedRef.current) el.scrollTop = el.scrollHeight
+    else if (anchor) {
+      const row = el.querySelector<HTMLElement>(`[data-virtual-turn-id="${cssEscape(anchor.id)}"]`)
+      if (row) el.scrollTop += row.getBoundingClientRect().top - anchor.top + el.scrollTop - anchor.scrollTop
+    }
+    setViewport({ top: el.scrollTop, height: el.clientHeight })
+  }, [measured])
 
   useLayoutEffect(() => {
     const element = scrollRef.current
@@ -166,37 +192,64 @@ export function MessageList({ turns, cwd, onOpenFile, busy, result, readingWidth
     setShowJump(false)
   }
 
-  const segments = groupTurns(turns)
-  const layout = layoutTurns(segments, heightsRef.current)
+  const segments = useMemo(() => groupTurns(turns), [turns])
+  const layout = useMemo(() => layoutTurns(segments, heightsRef.current), [segments, measured])
   const layoutHeight = layout.length ? layout[layout.length - 1]!.top + layout[layout.length - 1]!.height : 0
+  const layoutOffset = layoutRef.current?.offsetTop ?? 32
   const visible = visibleTurnRange(
     layout,
-    pinnedRef.current ? Math.max(0, layoutHeight - (viewport.height || 800)) : viewport.top,
+    pinnedRef.current ? Math.max(0, layoutHeight - (viewport.height || 800)) : Math.max(0, viewport.top - layoutOffset),
     viewport.height || 800,
     TURN_OVERSCAN,
   )
   offsetsRef.current = new Map(layout.map((row) => [row.segment.id, row.top]))
-  const measureTurn = useCallback((id: string, height: number) => {
-    const previousHeight = heightsRef.current.get(id)
-    if (previousHeight === height) return
-    heightsRef.current.set(id, height)
-    const el = scrollRef.current
-    if (el && !pinnedRef.current) {
-      const top = offsetsRef.current.get(id)
-      if (top !== undefined && top < el.scrollTop) el.scrollTop += height - (previousHeight ?? ESTIMATED_TURN_HEIGHT)
+  const observeTurn = useCallback((element: HTMLElement) => {
+    const queue = (row: HTMLElement) => {
+      const id = row.dataset.virtualTurnId
+      if (!id) return
+      pendingHeights.current.set(id, row.offsetHeight)
+      if (measureFrame.current !== undefined) return
+      measureFrame.current = requestAnimationFrame(() => {
+        measureFrame.current = undefined
+        const changes = [...pendingHeights.current].filter(([key, height]) => heightsRef.current.get(key) !== height)
+        pendingHeights.current.clear()
+        if (!changes.length) return
+        const el = scrollRef.current
+        if (el && !pinnedRef.current) {
+          const bounds = el.getBoundingClientRect()
+          const rows = [...el.querySelectorAll<HTMLElement>("[data-virtual-turn-id]")]
+            .filter((item) => {
+              const rect = item.getBoundingClientRect()
+              return rect.bottom > bounds.top && rect.top < bounds.bottom
+            })
+            .sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top)
+          const row = (prependAnchor.current && rows.find((item) => item.getBoundingClientRect().top >= bounds.top)) || rows[0]
+          prependAnchor.current = false
+          if (row?.dataset.virtualTurnId) pendingAnchor.current = { id: row.dataset.virtualTurnId, top: row.getBoundingClientRect().top, scrollTop: el.scrollTop }
+        }
+        for (const [key, height] of changes) heightsRef.current.set(key, height)
+        setMeasured((value) => value + 1)
+      })
     }
-    setMeasured((value) => value + 1)
-    if (pinnedRef.current) requestAnimationFrame(() => {
-      const scroller = scrollRef.current
-      if (!scroller) return
-      scroller.scrollTop = scroller.scrollHeight
-      setViewport({ top: scroller.scrollTop, height: scroller.clientHeight })
+    measureObserver.current ??= new ResizeObserver((entries) => {
+      for (const entry of entries) queue(entry.target as HTMLElement)
     })
+    measureObserver.current.observe(element)
+    queue(element)
+    return () => {
+      measureObserver.current?.unobserve(element)
+      if (element.dataset.virtualTurnId) pendingHeights.current.delete(element.dataset.virtualTurnId)
+    }
   }, [])
   const visibleRows = layout.slice(visible.start, visible.end)
   const focusedRow = layout.find((row) => row.segment.id === focusedTurn.current)
   if (focusedRow && !visibleRows.some((row) => row.segment.id === focusedRow.segment.id)) {
     visibleRows.push(focusedRow)
+    visibleRows.sort((a, b) => a.index - b.index)
+  }
+  const anchorRow = pendingAnchor.current && layout.find((row) => row.segment.id === pendingAnchor.current?.id)
+  if (anchorRow && !visibleRows.some((row) => row.segment.id === anchorRow.segment.id)) {
+    visibleRows.push(anchorRow)
     visibleRows.sort((a, b) => a.index - b.index)
   }
 
@@ -228,7 +281,6 @@ export function MessageList({ turns, cwd, onOpenFile, busy, result, readingWidth
   }
   // Every user message crossing the viewport is active, as Codex marks the whole
   // visible range; when none is visible, the prompt the reader has passed stays lit.
-  const layoutOffset = layoutRef.current?.offsetTop ?? 32
   const railTop = viewport.top
   const railBottom = viewport.top + (viewport.height || 800)
   const activeRailIds: string[] = []
@@ -329,12 +381,14 @@ export function MessageList({ turns, cwd, onOpenFile, busy, result, readingWidth
 
   function renderSegment(segment: Segment, index: number) {
     if (segment.role === "user") {
+      const { text: prose, paths } = splitReferences(segment.text)
       return (
         <div className="group/message flex flex-col items-end gap-1">
           {segment.images?.length ? <MessageImages images={segment.images} onOpen={(items, imageIndex) => setPreview({ items, index: imageIndex })} /> : null}
-          {segment.text && <UserBubble text={segment.text} />}
+          {paths.length > 0 && <MessageReferences paths={paths} onOpen={onOpenFile} />}
+          {prose && <UserBubble text={prose} />}
           <MessageActions
-            text={segment.text}
+            text={prose}
             kind="user"
             onEdit={onEdit && index === lastUserIndex ? () => onEdit(segment.text, segment.images) : undefined}
           />
@@ -379,7 +433,7 @@ export function MessageList({ turns, cwd, onOpenFile, busy, result, readingWidth
         {!!historyBefore && <button type="button" disabled={historyLoading} onClick={onLoadEarlier} className="self-center rounded-lg px-3 py-2 text-caption text-[var(--text-secondary)]">{historyLoading ? "Loading earlier messages…" : "Load earlier messages"}</button>}
         <div ref={layoutRef} className="relative w-full" style={{ height: layoutHeight }}>
           {visibleRows.map((row) => (
-            <VirtualTurnRow key={row.segment.id} id={row.segment.id} top={row.top} onHeight={measureTurn}>
+            <VirtualTurnRow key={row.segment.id} id={row.segment.id} top={row.top} observe={observeTurn}>
               <ErrorBoundary resetKey={row.segment.id}>
                 <div className="noa-turn-item noa-virtual-turn">{renderSegment(row.segment, row.index)}</div>
               </ErrorBoundary>
@@ -421,6 +475,26 @@ export function MessageList({ turns, cwd, onOpenFile, busy, result, readingWidth
       {selection && <button type="button" className="fixed z-50 rounded-lg border border-[var(--divider-subtle)] bg-[var(--bg-card)] px-3 py-2 text-caption shadow-lg" style={{ left: selection.left, top: selection.top }} onMouseDown={event => event.preventDefault()} onClick={() => { onQuote?.(selection.text); window.getSelection()?.removeAllRanges(); setSelection(undefined) }}>Quote selection</button>}
       {preview && <Lightbox items={preview.items} index={preview.index} onIndex={(index) => setPreview({ ...preview, index })} onClose={() => setPreview(undefined)} />}
     </div></OutputContext>
+  )
+}
+
+function MessageReferences({ paths, onOpen }: { paths: string[]; onOpen?: (path: string) => void }) {
+  return (
+    <div className="flex max-w-[70%] flex-wrap justify-end gap-1.5" aria-label="Referenced files">
+      {paths.map((path) => (
+        <button
+          key={path}
+          type="button"
+          title={path}
+          disabled={!onOpen}
+          onClick={() => onOpen?.(path)}
+          className="noa-press flex max-w-full items-center gap-1 rounded-md bg-[color-mix(in_srgb,var(--text-primary)_6%,transparent)] px-2 py-1 text-caption text-[var(--text-secondary)] enabled:hover:text-[var(--text-primary)]"
+        >
+          <FileText size={12} className="shrink-0" aria-hidden="true" />
+          <span className="truncate">{path}</span>
+        </button>
+      ))}
+    </div>
   )
 }
 
@@ -470,22 +544,18 @@ type TurnLayoutRow = {
   height: number
 }
 
-function VirtualTurnRow({ id, top, onHeight, children }: {
+function VirtualTurnRow({ id, top, observe, children }: {
   id: string
   top: number
-  onHeight: (id: string, height: number) => void
+  observe: (element: HTMLElement) => () => void
   children: ReactNode
 }) {
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
     const element = ref.current
     if (!element) return
-    const report = () => onHeight(id, element.offsetHeight)
-    report()
-    const observer = new ResizeObserver(report)
-    observer.observe(element)
-    return () => observer.disconnect()
-  }, [id, onHeight])
+    return observe(element)
+  }, [id, observe])
   return (
     <div ref={ref} data-virtual-turn-id={id} className="absolute inset-x-0" style={{ top }}>
       {children}
@@ -512,10 +582,20 @@ function visibleTurnRange(
   if (!layout.length) return { start: 0, end: 0 }
   const top = Math.max(0, scrollTop)
   const bottom = top + Math.max(0, viewportHeight)
-  let start = 0
-  while (start < layout.length && layout[start]!.top + layout[start]!.height < top) start++
-  let end = start
-  while (end < layout.length && layout[end]!.top < bottom) end++
+  let low = 0, high = layout.length
+  while (low < high) {
+    const mid = (low + high) >>> 1
+    if (layout[mid]!.top + layout[mid]!.height < top) low = mid + 1
+    else high = mid
+  }
+  const start = low
+  high = layout.length
+  while (low < high) {
+    const mid = (low + high) >>> 1
+    if (layout[mid]!.top < bottom) low = mid + 1
+    else high = mid
+  }
+  const end = low
   return {
     start: Math.max(0, start - overscan),
     end: Math.min(layout.length, Math.max(start + 1, end) + overscan),
@@ -975,7 +1055,7 @@ function BlockView({ block, streaming, streamKey }: { block: Block; streaming?: 
     case "retry":
       return <StatusBlock block={block} />
     case "text":
-      return <Markdown text={block.text} streaming={streaming} streamKey={streamKey} />
+      return contextCardFor(block.text) ?? <Markdown text={stripAnsi(block.text)} streaming={streaming} streamKey={streamKey} />
     case "thinking":
       return null
     case "tool":

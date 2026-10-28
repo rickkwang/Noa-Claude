@@ -9,6 +9,7 @@ import type {
   ContentBlock,
   ContextUsage,
   ControlPayload,
+  McpServerStatus,
   ModelInfo,
   RateLimitInfo,
   PermissionMode,
@@ -103,6 +104,7 @@ export interface AgentState {
     error?: string
   }
   contextUsage?: ContextUsage
+  mcpServers?: McpServerStatus[]
   contextLoading?: boolean
   contextError?: string
   contextUpdatedAt?: number
@@ -330,6 +332,7 @@ export function reducer(state: AgentState, action: Action): AgentState {
     case "permission-mode-set":
       return { ...state, permissionMode: action.mode }
     case "control":
+      if (action.payload.kind === "mcp_status") return { ...state, mcpServers: action.payload.servers }
       if (action.payload.kind === "commands") return { ...state, commands: action.payload.commands }
       if (action.payload.kind === "initialize") {
         return {

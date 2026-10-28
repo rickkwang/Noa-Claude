@@ -11,6 +11,9 @@ import { initialState, reducer, type AgentState } from "../src/agent/reducer"
 import type { HistoryItem } from "../src/agent/protocol"
 import { historyPage } from "../server/sessions"
 import { mediaResponse } from "../server/workspace"
+import { splitReferences } from "../src/lib/references"
+import { parseContextOutput } from "../src/lib/contextOutput"
+import { ContextCard } from "../src/components/ContextCard"
 
 const agent = (state: AgentState, message: object) => reducer(state, { type: "agent", message } as any)
 const directory = mkdtempSync(join(tmpdir(), "noa-conversation-"))
@@ -318,4 +321,77 @@ test("a steering message sent mid-stream does not duplicate the in-flight reply"
   state = agent(state, { type: "assistant", parent_tool_use_id: null, message: { id: "m", content: [{ type: "text", text: "Hello world" }] } })
   state = agent(state, stream({ type: "message_stop" }))
   expect(state.turns.map(turn => turn.role === "user" ? turn.text : turn.blocks.map(block => "text" in block ? block.text : "").join())).toEqual(["first", "Hello world", "steer"])
+})
+
+test("composer file references render as attachments, not message text", () => {
+  expect(splitReferences('Fix it\n\nReferenced project files:\n- "src/a.ts"\n- "dir/b \\"c\\".ts"')).toEqual({ text: "Fix it", paths: ["src/a.ts", 'dir/b "c".ts'] })
+  expect(splitReferences('\n\nReferenced project files:\n- "a.ts"')).toEqual({ text: "", paths: ["a.ts"] })
+  const plain = "Mention Referenced project files: in prose"
+  expect(splitReferences(plain)).toEqual({ text: plain, paths: [] })
+})
+
+test("/context output from the CLI renders as a card with its category colors", () => {
+  const esc = "\x1b"
+  const gray = `${esc}[38;2;153;153;153m`, blue = `${esc}[38;2;136;136;136m`
+  const raw = [
+    `${esc}[1mContext Usage${esc}[22m`,
+    `${blue}⛁ ⛁ ${esc}[39m`,
+    `${gray}deepseek-flash ${esc}[39m`,
+    `${gray}445.5k/1m tokens (42%) ${esc}[39m`,
+    `${gray}${esc}[3mEstimated usage by category${esc}[23m`,
+    `${gray}⛶ ⛶ ${esc}[39m  ${blue}⛁ ${esc}[39m System prompt: ${gray}4.1k tokens (0.4%)${esc}[39m`,
+    `${gray}⛶ ${esc}[39m ${gray}⛶ ${esc}[39m Free space: ${gray}680.7k (64.9%)${esc}[39m`,
+    `${gray}⛝ Autocompact buffer: 33k tokens (3.1%)${esc}[39m`,
+    `${esc}[1mAuto-compact window:${esc}[22m 1m tokens`,
+    `${esc}[1mMCP tools${esc}[22m ${gray} · /mcp${esc}[39m`,
+    `${gray} └ 19 tools · 6.7k tokens${esc}[39m`,
+  ].join("\n")
+  expect(parseContextOutput(raw)).toEqual({
+    model: "deepseek-flash", usedLabel: "445.5k", maxLabel: "1m", percent: 42, suggestions: [],
+    categories: [
+      { name: "System prompt", tokens: "4.1k", percent: 0.4, color: "rgb(136,136,136)", kind: "used" },
+      { name: "Free space", tokens: "680.7k", percent: 64.9, color: "rgb(153,153,153)", kind: "free" },
+      { name: "Autocompact buffer", tokens: "33k", percent: 3.1, color: "rgb(153,153,153)", kind: "buffer" },
+    ],
+    sections: [{ name: "MCP tools", detail: "19 tools · 6.7k tokens" }],
+  })
+  expect(parseContextOutput("Just some text")).toBeUndefined()
+  const html = render(createElement(ContextCard, { data: parseContextOutput(raw)! }))
+  expect(html).toContain("Context window")
+  expect(html).toContain("445.5k / 1m (42%)")
+})
+
+test("/context output with grid glyphs on the same line as its text still renders as a card", () => {
+  const plain = [
+    "Context Usage",
+    "⛁ ⛁ ⛀ ⛁ ⛁ deepseek-flash",
+    "⛁ ⛁ ⛁ ⛁ ⛁ 445.5k/1m tokens (42%)",
+    "⛁ ⛁ ⛁ ⛁ ⛁",
+    "⛁ ⛁ ⛶ ⛶ ⛶ Estimated usage by category",
+    "⛶ ⛶ ⛶ ⛁ System prompt: 4.1k tokens (0.4%)",
+    "⛶ ⛶ ⛶ ⛁ MCP server instructions: 537 tokens (0.1%)",
+    "⛁ Messages: 306.7k tokens (29.2%)",
+    "⛶ Free space: 680.7k (64.9%)",
+    "⛝ Autocompact buffer: 33k tokens (3.1%)",
+    "",
+    "Auto-compact window: 1m tokens",
+    "",
+    "MCP tools · /mcp",
+    " └ 19 tools · 6.7k tokens",
+    "",
+    "Skills · /skills",
+    " └ 7 skills · 606 tokens",
+    "",
+    "/context all to expand",
+    "",
+    "Suggestions",
+    "⚠ Bash results using 257.3k tokens (25%) → save ~128.6k",
+    "Pipe output through head, tail, or grep to reduce result size.",
+  ].join("\n")
+  const parsed = parseContextOutput(plain)!
+  expect(parsed.model).toBe("deepseek-flash")
+  expect(parsed.percent).toBe(42)
+  expect(parsed.categories.map(category => category.name)).toEqual(["System prompt", "MCP server instructions", "Messages", "Free space", "Autocompact buffer"])
+  expect(parsed.sections).toEqual([{ name: "MCP tools", detail: "19 tools · 6.7k tokens" }, { name: "Skills", detail: "7 skills · 606 tokens" }])
+  expect(parsed.suggestions).toEqual([{ title: "Bash results using 257.3k tokens (25%) → save ~128.6k", detail: "Pipe output through head, tail, or grep to reduce result size." }])
 })

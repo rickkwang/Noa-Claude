@@ -121,11 +121,28 @@ order, so the menu would hold a single option.
 
 ## Right panel (rebuilt)
 
-The right column is one pane under a tab strip (Files, Changes, Context, Activity) with a
+The right column is one pane under a tab strip (Overview, Files, Changes, Activity) with a
 close control, replacing the stacked cards, per-card minimise/expand, move handles and the
 titlebar checklist. Tabs follow the WAI-ARIA tablist pattern (`role="tab"`, `aria-selected`,
 arrow-key navigation), as Codex's `TabsList` / `TabsTrigger` do. The titlebar toggle shows or
 hides the column. Not ported from Codex: tab drag-to-move, detached windows, tab thumbnails.
+
+Overview is not a right-column tab. It is opened from the titlebar button beside the column toggle and
+has the two states of Claude's session rail (its bundled frontend was read for the rules and values).
+The logic is Claude's: a remembered "shown" preference (default on) plus a width test. The docked column is
+visible when it is shown and the chat area is wide enough (611px, or 771px with the right column open):
+a 280px column of ring cards, 12px radius, 10px apart, no animation, and the chat and composer make room.
+When it does not fit, the column is hidden and the toggle opens a transient flat popover instead (200ms
+fade-in, closes on an outside press or Escape). Toggling while docked hides it and clears the preference;
+opening the popover sets the preference, so widening later docks it; the popover closes by itself when the
+column becomes visible, and a hidden column never turns into a popover. Cards
+(Changes totals, Connectors from `mcp_status`, Context, Environment) are collapsible, drag to reorder
+from the 80px grip zone at the header's end (6px to start, 200ms shift; the grip's arrow keys also
+move them), and a right-click on a header opens Show / Reset to defaults. The context card lists used
+categories largest first (top series coloured, the rest one neutral series), buffer and free space,
+deferred rows apart, and MCP tools / Memory files / Custom agents lists that the Memory files and
+Custom agents rows reveal. Not ported: Create PR, Remote Control, and manage actions for connectors
+and skills (Noa has no such screens).
 
 ## Agent wiring, first usability batch
 

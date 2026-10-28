@@ -44,7 +44,7 @@ function ContextProbe() {
 }
 
 function WorkspacePanelProbe() {
-  const [tab, setTab] = useState<"files" | "changes" | "context" | "activity">("changes")
+  const [tab, setTab] = useState<"files" | "changes" | "activity">("changes")
   return <div style={{ width: 500, height: 500 }}><RightPanel state={{ ...initialState, connection: "ready" }} cwd="/fixture" tab={tab} onTab={setTab} onStopTask={() => {}} onRefreshContext={() => {}} onLoadEarlier={() => {}} onReference={() => {}} workspaceRefreshKey={0} /></div>
 }
 
@@ -443,6 +443,7 @@ window.mountBoundaryApp = async () => {
     { kind: "agent", message: { type: "assistant", parent_tool_use_id: null, message: { content: [{ type: "text", text: "### Rendering verified\n\n" + "LongContent".repeat(60) + "\n\n```sh\n" + "very-long-command ".repeat(35) + "\n```\n\n| State | Result |\n| --- | --- |\n| Completed | No overlap |\n\nFinal answer remains reachable above the composer." }] } } },
     { kind: "turn-duration", durationMs: 12000 }, { kind: "turn-diff", diff }]
   localStorage.clear()
+  localStorage.setItem("noa-agent.sidebarWidth", "520")
   localStorage.setItem("noa-agent.appearance", JSON.stringify({ ...defaultSettings.appearance, theme: visualTheme }))
   localStorage.setItem("noa-agent.current", JSON.stringify({ cwd: "/fixture", resume: session, runtimeId: "40000000-0000-4000-8000-000000000004" }))
   window.fetch = async (input: any) => {
@@ -497,7 +498,7 @@ window.inspectAppBoundary = async () => {
   const reachable = activity.getAttribute("aria-selected") === "true" && activity.getBoundingClientRect().right <= tabs.right + 1
   tablist.dispatchEvent(new KeyboardEvent("keydown", { key: "Home", bubbles: true }))
   await new Promise(requestAnimationFrame)
-  const checks = { panelTabScrollbarHidden: getComputedStyle(tablist).scrollbarWidth === "none", panelTabKeyboardReachable: reachable, panelTabsClearOfToggle: tabs.right <= toggle.left - 7, horizontalContentContained: scroller.scrollWidth <= scroller.clientWidth + 1, diffAboveComposer: card.bottom <= footer.top + 33, answerAboveComposer: response.bottom <= footer.top + 33, composerInsideWindow: input.bottom <= innerHeight && input.left >= 0 && input.right <= innerWidth, controlsInsideCard: Array.from(header.querySelectorAll("button")).every(button => button.getBoundingClientRect().right <= card.right + 1), shellInsideWindow: shell.width <= innerWidth && shell.height <= innerHeight }
+  const checks = { conversationMinimumWidth: scroller.clientWidth >= 352, diffTitleReadable: header.querySelector<HTMLElement>(".noa-turn-diff-heading > span")!.clientWidth >= 100, panelTabScrollbarHidden: getComputedStyle(tablist).scrollbarWidth === "none", panelTabKeyboardReachable: reachable, panelTabsClearOfToggle: tabs.right <= toggle.left - 7, horizontalContentContained: scroller.scrollWidth <= scroller.clientWidth + 1, diffAboveComposer: card.bottom <= footer.top + 33, answerAboveComposer: response.bottom <= footer.top + 33, composerInsideWindow: input.bottom <= innerHeight && input.left >= 0 && input.right <= innerWidth, controlsInsideCard: Array.from(header.querySelectorAll("button")).every(button => button.getBoundingClientRect().right <= card.right + 1), shellInsideWindow: shell.width <= innerWidth && shell.height <= innerHeight }
   return { width: innerWidth, theme: visualTheme, checks, pass: Object.values(checks).every(Boolean), sizes: { contentWidth: scroller.clientWidth, contentScrollWidth: scroller.scrollWidth, footerTop: footer.top, cardBottom: card.bottom, responseBottom: response.bottom } }
 }
 

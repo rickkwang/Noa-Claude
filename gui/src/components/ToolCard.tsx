@@ -3,6 +3,7 @@ import { createPortal } from "react-dom"
 import type { AgentTask, Block, ToolBlock, Turn } from "../agent/reducer"
 import { formatElapsed, toolActivityLabel, toolDiffStats, toolElapsedMs } from "../agent/toolActivity"
 import { BookOpen, Check, ChevronRight, ChevronUp, Copy, Edit2, List, Photo, Search, Stop, Terminal, Tool, Users, X } from "../lib/icons"
+import { diffLines } from "diff"
 import { Collapsible } from "./Collapsible"
 import { Lightbox, type LightboxItem } from "./Lightbox"
 import { CodeBlock, Markdown, OutputContext } from "./Markdown"
@@ -91,7 +92,7 @@ export function ToolCard({ block, defaultOpen = false, active = block.status ===
         </div>
       </Collapsible>
       {rawOpen && rawCode && (
-        <RawOutputDialog title={label.action} language={block.name.startsWith("mcp__") ? "json" : "output"} code={rawCode} onClose={() => setRawOpen(false)} />
+        <RawOutputDialog title={block.name.startsWith("mcp__") ? rawMcpTitle(block.name) : label.action} language={block.name.startsWith("mcp__") ? "json" : "output"} code={rawCode} onClose={() => setRawOpen(false)} />
       )}
     </div>
   )
@@ -151,6 +152,12 @@ function TaskBlock({ block, tasks, active }: { block: Block; tasks?: AgentTask[]
   return null
 }
 
+// Codex heading: "Raw {server}.{tool} tool call output".
+function rawMcpTitle(name: string): string {
+  const [, server, ...tool] = name.split("__")
+  return `Raw ${server}.${tool.join("__")} tool call output`
+}
+
 function toolIcon(block: ToolBlock) {
   const file = str(block.input.file_path)
   if (block.status === "stopped" && block.name === "Bash") return Stop
@@ -183,8 +190,8 @@ function ToolBody({ block, active, onRaw, onCollapse }: { block: ToolBlock; acti
     return <>
       {output}
       {result?.structuredContent !== undefined && <CodeBlock lang="json" code={JSON.stringify(result.structuredContent, null, 2)} />}
-      {block.rawResult !== undefined && <button type="button" onClick={onRaw} className="self-start rounded-md px-2 py-1 text-caption text-[var(--accent-color)]">Raw result</button>}
-      {!output && block.rawResult === undefined && <EmptyToolBody label={block.status === "running" ? "Waiting for result…" : "No output"} />}
+      {block.rawResult !== undefined && <button type="button" onClick={onRaw} title="Show raw tool call output" className="self-start rounded-md px-2 py-1 text-caption text-[var(--accent-color)]">Raw result</button>}
+      {!output && block.rawResult === undefined && <EmptyToolBody label={block.status === "running" ? "Waiting for result…" : "Tool returned no content"} />}
     </>
   }
   switch (block.name) {
@@ -481,16 +488,14 @@ function ShellOutput({ block, onCollapse }: { block: ToolBlock; onCollapse: () =
             {copied === "output" ? <Check size={12} /> : <Copy size={12} />}
           </button>
         </div>
-      ) : block.status === "running" ? (
-        <div className="px-3 pb-2 text-caption text-[var(--sidebar-text-muted,#898781)]">Waiting for output…</div>
-      ) : (
+      ) : block.status === "running" ? null : (
         <div className="px-3 pb-2 text-caption text-[var(--sidebar-text-muted,#898781)]">No output</div>
       )}
       {copyError && <span role="status" className="px-3 text-caption text-[#C24444]">Could not copy. Try again.</span>}
       {block.status !== "running" && (
         <div className={`flex items-center justify-end gap-1 border-t border-[var(--divider-subtle)] px-3 py-1 text-caption ${block.status === "error" ? "text-[#C24444]" : "text-[var(--sidebar-text-muted,#898781)]"}`}>
           {block.status === "error" ? (
-            block.exitCode !== undefined ? `Exit code ${block.exitCode}` : "Error"
+            `Exit code ${block.exitCode ?? "unknown"}`
           ) : block.status === "unknown" ? (
             "Connection lost"
           ) : block.status === "stopped" || block.interrupted ? (
@@ -507,17 +512,18 @@ function ShellOutput({ block, onCollapse }: { block: ToolBlock; onCollapse: () =
   )
 }
 
+// Line-level diff: unchanged lines stay in place as context, as in Codex's unified diff.
 function DiffView({ oldText, newText }: { oldText: string; newText: string }) {
+  const lines = diffLines(oldText, newText).flatMap((part) => {
+    const text = part.value.endsWith("\n") ? part.value.slice(0, -1) : part.value
+    const kind = part.added ? "+" : part.removed ? "-" : " "
+    return text.split("\n").map((line) => ({ kind, line }))
+  })
   return (
     <pre className="noa-selectable m-0 overflow-auto rounded-panel bg-[var(--bg-secondary,#F9F9F7)] py-1 font-mono text-[length:var(--code-font-size)] leading-[1.55] max-h-80">
-      {oldText.split("\n").map((line, i) => (
-        <div key={`-${i}`} className="whitespace-pre-wrap bg-[rgba(212,85,85,0.12)] px-3">
-          -{line}
-        </div>
-      ))}
-      {newText.split("\n").map((line, i) => (
-        <div key={`+${i}`} className="whitespace-pre-wrap bg-[rgba(16,185,129,0.12)] px-3">
-          +{line}
+      {lines.map(({ kind, line }, i) => (
+        <div key={i} className={`whitespace-pre-wrap px-3 ${kind === "-" ? "bg-[rgba(212,85,85,0.12)]" : kind === "+" ? "bg-[rgba(16,185,129,0.12)]" : "text-[var(--sidebar-text-muted)]"}`}>
+          {kind}{line}
         </div>
       ))}
     </pre>

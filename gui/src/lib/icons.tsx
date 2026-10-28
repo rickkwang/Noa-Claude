@@ -61,7 +61,9 @@ import {
   IconPin,
   IconPinned,
   IconPlayerStop,
+  IconPlug,
   IconPlus,
+  IconPlusMinus,
   IconRefresh,
   IconSearch,
   IconSelector,
@@ -182,7 +184,9 @@ export const Pin = icon(IconPin);
 export const PinFilled = icon(IconPinned);
 export const PanelLeft = icon(IconLayoutSidebar);
 export const PanelRight = icon(IconLayoutSidebarRight);
+export const Plug = icon(IconPlug);
 export const Plus = icon(IconPlus);
+export const PlusMinus = icon(IconPlusMinus);
 export const RefreshCcw = icon(IconRefresh);
 export const RotateCcw = icon(IconArrowBackUp);
 export const Search = icon(IconSearch);

@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState, type KeyboardEvent } from "react"
+import { lazy, Suspense, useEffect, useRef, useState, type KeyboardEvent } from "react"
 import { query } from "../api"
 import { useConfirm } from "./ConfirmDialog"
 import { ArrowLeft, CheckCircle2, GitBranch, BrandCss3, BrandHtml5, BrandJavascript, BrandPython, BrandReact, BrandTypescript, ChevronDown, Copy, FileText, Folder, Json, ListDetails, Markdown, MoreHorizontal, Photo, Plus, RefreshCcw, RotateCcw, Search } from "../lib/icons"
@@ -69,12 +69,14 @@ async function load<T>(route: string, cwd: string, params: Record<string, string
   return value as T
 }
 
-export function WorkspaceFiles({ cwd, changes = false, focus, active = true, refreshKey, onReference, onUpdated, onOpenChanges }: {
-  cwd: string; changes?: boolean; focus?: { path: string; at: number; line?: number; endLine?: number; scope?: "all" }; active?: boolean; refreshKey: number; onReference: (path: string) => void; onUpdated?: () => void; onOpenChanges?: (path?: string) => void
+export function WorkspaceFiles({ cwd, changes = false, scope: scopeProp, focus, active = true, refreshKey, onReference, onUpdated, onOpenChanges }: {
+  cwd: string; changes?: boolean; scope?: string; focus?: { path: string; at: number; line?: number; endLine?: number; scope?: "all" }; active?: boolean; refreshKey: number; onReference: (path: string) => void; onUpdated?: () => void; onOpenChanges?: (path?: string) => void
 }) {
   const [selected, setSelected] = useState<string>()
   const [view, setView] = useState(changes ? "diff" : "file")
-  const [scope, setScope] = useState("all")
+  const [ownScope, setScope] = useState("all")
+  // The Changes tab owns the review source (its toolbar selector); Files keeps its own.
+  const scope = scopeProp ?? ownScope
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [tree, setTree] = useState<Record<string, Entry[]>>({})
   const [matches, setMatches] = useState<Entry[]>([])
@@ -167,6 +169,17 @@ export function WorkspaceFiles({ cwd, changes = false, focus, active = true, ref
     if (!focus) return
     void select(focus.path, changes ? "diff" : "file", changes ? focus.scope : undefined)
   }, [focus]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // A different review source may not contain the open file; return to the list.
+  const prevScope = useRef(scopeProp)
+  const prevFocus = useRef(focus)
+  useEffect(() => {
+    const scopeChanged = prevScope.current !== scopeProp
+    const focusChanged = prevFocus.current !== focus
+    prevScope.current = scopeProp
+    prevFocus.current = focus
+    if (changes && scopeChanged && !focusChanged) void select()
+  }, [scopeProp, focus]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const gitAction = async (kind: string, hunk?: number) => {
     if (kind.startsWith("revert")) {
@@ -265,7 +278,7 @@ export function WorkspaceFiles({ cwd, changes = false, focus, active = true, ref
     {selected ? <>
       {selectedChange?.oldPath && <div className="noa-file-breadcrumb">{selectedChange.oldPath} → {selected}</div>}
       <div className="noa-panel-toolbar noa-panel-actions">
-        {changes && <><button type="button" className={button} aria-pressed={view === "diff"} onClick={() => select(selected, view === "diff" ? "file" : "diff")}>{view === "diff" ? "Open file" : "Show diff"}</button>{view === "diff" && <><select aria-label="Changes scope" value={scope} onChange={(e) => { setStatusError(undefined); setScope(e.target.value) }}><option value="all">All</option><option value="unstaged">Unstaged</option><option value="staged">Staged</option></select><div className="noa-segmented" role="radiogroup" aria-label="Diff layout"><button type="button" role="radio" aria-checked={!split} onClick={() => setSplit(false)}>Unified</button><button type="button" role="radio" aria-checked={split} onClick={() => setSplit(true)}>Split</button></div></>}</>}
+        {changes && <><button type="button" className={button} aria-pressed={view === "diff"} onClick={() => select(selected, view === "diff" ? "file" : "diff")}>{view === "diff" ? "Open file" : "Show diff"}</button>{view === "diff" && <><div className="noa-segmented" role="radiogroup" aria-label="Diff layout"><button type="button" role="radio" aria-checked={!split} onClick={() => setSplit(false)}>Unified</button><button type="button" role="radio" aria-checked={split} onClick={() => setSplit(true)}>Split</button></div></>}</>}
         <button type="button" className={button} aria-pressed={wrap} onClick={() => setWrap(!wrap)}>Wrap</button>
         {!editing && <button type="button" className={button} aria-label="Find in file" onClick={() => setFindRequest((n) => n + 1)}>Find</button>}
         {changes && view === "diff" && current?.snapshot && <details className="noa-review-menu" onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) event.currentTarget.open = false }} onKeyDown={(event) => { if (event.key === "Escape") event.currentTarget.open = false }}>
@@ -281,7 +294,6 @@ export function WorkspaceFiles({ cwd, changes = false, focus, active = true, ref
         {view === "file" && current?.kind === "text" && (editing ? <><button type="button" className={button} disabled={!!action} onClick={async () => { if (!dirty || (await confirm({ title: "Discard unsaved edits?", description: `Changes to ${selected} have not been saved.`, confirmLabel: "Discard", danger: true }))) { sessionStorage.removeItem(draftKey); setEditing(false) } }}>Cancel</button><button type="button" className={button} disabled={!dirty || !!action} onClick={save}>{action === "save" ? "Saving…" : "Save"}</button></> : <button type="button" className={button} onClick={() => { setDraft(current.content ?? ""); setEditing(true) }}>Edit</button>)}
       </div>
     </> : <>
-      {changes && status?.isGit && <div className="noa-panel-toolbar"><div className="noa-segmented" role="radiogroup" aria-label="Changes scope">{[["all", "All"], ["unstaged", "Unstaged"], ["staged", "Staged"]].map(([id, label]) => <button key={id} type="button" role="radio" aria-checked={scope === id} onClick={() => { setStatusError(undefined); setScope(id!); setPreview(undefined) }}>{label}</button>)}</div></div>}
       {!changes && <div className="noa-panel-toolbar noa-file-root">
         <span className="noa-file-root-chip" title={cwd}><Folder size={14} />{cwd.split("/").filter(Boolean).pop() ?? "/"}</span>
         <details className="noa-review-menu" onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) event.currentTarget.open = false }} onKeyDown={(event) => { if (event.key === "Escape") event.currentTarget.open = false }} onClick={(event) => { if ((event.target as HTMLElement).closest("button")) event.currentTarget.open = false }}>

@@ -33,15 +33,14 @@ test("user messages retain reference definitions and extra blank lines", () => {
   expect(nested).toContain("[x]: foo")
 })
 
-test("activity identifies partial history and distinguishes input from approval", () => {
+test("activity distinguishes input from approval", () => {
   const oldStorage = globalThis.localStorage
   Object.defineProperty(globalThis, "localStorage", { configurable: true, value: { getItem: () => null } })
   try {
     const state = { ...initialState, connection: "ready" as const, historyBefore: 10, elicitations: [{ requestId: "input" }] as any }
-    const html = render(createElement(RightPanel, { state, cwd: "/project", tab: "activity", onTab: () => {}, onStopTask: () => {}, onRefreshContext: () => {}, onLoadEarlier: () => {}, onReference: () => {}, workspaceRefreshKey: 0 }))
+    const html = render(createElement(RightPanel, { state, cwd: "/project", tab: "activity", onTab: () => {}, onStopTask: () => {}, onReference: () => {}, workspaceRefreshKey: 0 }))
     expect(html).toContain("Waiting for input")
-    expect(html).toContain("Showing loaded activity")
-    expect(html).toContain("Load earlier")
+    expect(html).not.toContain("Load earlier")
     expect(html).not.toContain("Waiting for approval")
   } finally { Object.defineProperty(globalThis, "localStorage", { configurable: true, value: oldStorage }) }
 })
@@ -298,4 +297,15 @@ test("edit approval defaults to the Codex file summary instead of expanded repla
   expect(html).toContain("-1")
   expect(html).not.toContain("OLD_ONLY_TOKEN")
   expect(html).not.toContain("NEW_ONLY_TOKEN")
+})
+
+test("edit diffs keep unchanged lines as context and shell output has no running placeholder", () => {
+  const edit = { ...bash, id: "e", name: "Edit", status: "done" as const, input: { file_path: "a.ts", old_string: "one\ntwo\nthree", new_string: "one\nTWO\nthree" } }
+  const html = render(createElement(ToolCard, { block: edit, defaultOpen: true }))
+  expect(html.match(/>one</g)?.length ?? 0).toBe(0)
+  expect((html.match(/ one</g) ?? []).length).toBe(1)
+  expect(html).toContain("-two")
+  expect(html).toContain("+TWO")
+  expect(render(createElement(ToolCard, { block: bash, defaultOpen: true }))).not.toContain("Waiting for output")
+  expect(render(createElement(ToolCard, { block: { ...bash, status: "error" as const }, defaultOpen: true }))).toContain("Exit code unknown")
 })

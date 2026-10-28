@@ -1,14 +1,11 @@
 import { useCallback, useEffect, useState } from "react"
 
-// Noa's limits: a panel never shrinks below its default width and stops at 480px.
-export const PANEL_MAX_WIDTH = 480
-
 // The width is remembered per viewer; a missing or out-of-range value falls back to the default.
-export function usePanelWidth(storageKey: string, defaultWidth: number, minimumWidth = defaultWidth) {
+export function usePanelWidth(storageKey: string, defaultWidth: number, minimumWidth: number, maximumWidth: number) {
   const [width, setWidth] = useState(() => {
     try {
       const saved = Number(localStorage.getItem(storageKey))
-      return saved >= minimumWidth && saved <= PANEL_MAX_WIDTH ? saved : defaultWidth
+      return saved >= minimumWidth && saved <= maximumWidth ? saved : defaultWidth
     } catch {
       return defaultWidth
     }
@@ -23,8 +20,8 @@ export function usePanelWidth(storageKey: string, defaultWidth: number, minimumW
   }, [storageKey, width])
 
   const set = useCallback(
-    (next: number) => setWidth(Math.round(Math.max(minimumWidth, Math.min(PANEL_MAX_WIDTH, next)))),
-    [minimumWidth],
+    (next: number) => setWidth(Math.round(Math.max(minimumWidth, Math.min(maximumWidth, next)))),
+    [minimumWidth, maximumWidth],
   )
 
   return { width, set }

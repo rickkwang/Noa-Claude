@@ -108,10 +108,16 @@ export interface ContextUsage {
   apiUsage?: { input_tokens: number; output_tokens: number; cache_creation_input_tokens: number; cache_read_input_tokens: number } | null
 }
 
+export interface McpServerStatus {
+  name: string
+  status: "connected" | "failed" | "needs-auth" | "pending" | "disabled"
+}
+
 // Responses to requests the GUI sent, keyed by request_id on the client.
 export type ControlPayload =
   | { kind: "initialize"; models: ModelInfo[]; commands: SlashCommand[]; account?: AccountInfo }
   | { kind: "context_usage"; usage: ContextUsage }
+  | { kind: "mcp_status"; servers: McpServerStatus[] }
   | { kind: "commands"; commands: SlashCommand[] }
 
 export interface RateLimitInfo {
@@ -246,6 +252,7 @@ export type ControlRequest =
   | { subtype: "set_model"; model: string }
   | { subtype: "set_permission_mode"; mode: PermissionMode }
   | { subtype: "get_context_usage" }
+  | { subtype: "mcp_status" }
   | { subtype: "get_settings" }
   | { subtype: "reload_plugins" }
   | { subtype: "apply_flag_settings"; settings: { effortLevel: string | null } }
