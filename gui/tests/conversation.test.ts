@@ -299,3 +299,23 @@ test("an unloaded turn diff update cannot replace the latest reply and survives 
   expect(old[0]).toMatchObject({ blocks: [{ text: "Reply 0" }], diff: { reverted: true } })
   expect((run.journal[0].items as any[]).find(item => item.kind === "turn-diff" && item.diff.turnIndex === 0).diff.reverted).toBe(true)
 })
+
+test("rate limit events surface until the limit reports allowed again", () => {
+  let state = agent(initialState, { type: "rate_limit_event", rate_limit_info: { status: "rejected", rateLimitType: "five_hour" } })
+  expect(state.rateLimit?.status).toBe("rejected")
+  state = agent(state, { type: "rate_limit_event", rate_limit_info: { status: "allowed" } })
+  expect(state.rateLimit).toBeUndefined()
+})
+
+test("a steering message sent mid-stream does not duplicate the in-flight reply", () => {
+  const stream = (event: object) => ({ type: "stream_event", parent_tool_use_id: null, event })
+  let state = reducer(initialState, { type: "user-sent", id: "u1", text: "first" })
+  state = agent(state, stream({ type: "message_start", message: { id: "m" } }))
+  state = agent(state, stream({ type: "content_block_start", index: 0, content_block: { type: "text" } }))
+  state = agent(state, stream({ type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "Hello" } }))
+  state = reducer(state, { type: "user-sent", id: "u2", text: "steer" })
+  state = agent(state, stream({ type: "content_block_delta", index: 0, delta: { type: "text_delta", text: " world" } }))
+  state = agent(state, { type: "assistant", parent_tool_use_id: null, message: { id: "m", content: [{ type: "text", text: "Hello world" }] } })
+  state = agent(state, stream({ type: "message_stop" }))
+  expect(state.turns.map(turn => turn.role === "user" ? turn.text : turn.blocks.map(block => "text" in block ? block.text : "").join())).toEqual(["first", "Hello world", "steer"])
+})

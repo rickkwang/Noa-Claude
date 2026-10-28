@@ -2389,7 +2389,8 @@ body.noa-session-dragging * { cursor: grabbing !important; }
 .noa-output-markdown blockquote::after { content: ""; position: absolute; inset-inline-start: 0; top: calc(var(--output-space) * 2); bottom: calc(var(--output-space) * 2); width: var(--output-space); border-radius: calc(var(--output-space) / 2); background: var(--border-strong); }
 .noa-output-markdown blockquote > p { margin: 0; }
 .noa-output-markdown hr { margin: calc(var(--output-space) * 7) 0; border-color: var(--border-strong); }
-.noa-output-markdown :not(pre) > code { font-size: .92em; line-height: inherit; font-weight: normal; font-family: var(--font-mono); border-radius: 6px; padding: 1px 6px; background: color-mix(in srgb, var(--text-primary) 6%, transparent); box-shadow: none; box-decoration-break: clone; }
+/* line-height 1 keeps the pill from growing its line box, so rows with inline code keep the same pitch as plain rows. */
+.noa-output-markdown :not(pre) > code { font-size: .92em; line-height: 1; font-weight: normal; font-family: var(--font-mono); border-radius: 6px; padding: 1px 6px; background: color-mix(in srgb, var(--text-primary) 6%, transparent); box-shadow: none; box-decoration-break: clone; }
 .noa-output-markdown .noa-code-block { margin-block: calc(var(--output-space) * 5); }
 .noa-output-markdown > div:has(> table) { margin-top: calc(var(--output-space) * 4); }
 .noa-output-markdown table { margin: 0; font-size: max(var(--code-font-size), calc(var(--font-text-md-size) * .875)); line-height: var(--font-text-md-line-height); border-collapse: separate; border-spacing: 0; }

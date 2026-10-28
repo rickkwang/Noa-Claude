@@ -29,6 +29,7 @@ import ThemeInjector from "./theme/ThemeInjector"
 import { defaultSettings } from "./theme/settings"
 import { SettingsDialog } from "./components/SettingsDialog"
 import { SessionTitle } from "./components/SessionTitle"
+import { RateLimitNotice } from "./components/RateLimitNotice"
 import { PanelRight } from "./lib/icons"
 
 // Noa's default layout widths.
@@ -720,6 +721,7 @@ function Workspace({ cwd }: { cwd: string }) {
                   onPaused={setQueuePaused}
                 />
               )}
+              {state.rateLimit && <RateLimitNotice info={state.rateLimit} />}
               {state.notice && <p role="status" className="m-0 px-1 text-caption text-[var(--sidebar-text-muted)]">{state.notice}</p>}
               {state.error && !state.turns.some(turn => turn.role === "assistant" && turn.error === state.error) && (
                 <p role="alert" className="m-0 break-words px-1 text-caption text-[#C24444]">

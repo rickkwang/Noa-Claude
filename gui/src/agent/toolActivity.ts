@@ -7,7 +7,7 @@ export interface ToolActivityLabel {
 
 export interface ToolActivitySummary {
   label: string
-  kind: "commands" | "edits" | "images" | "reads" | "tools"
+  kind: "commands" | "edits" | "images" | "reads" | "web" | "tools"
 }
 
 export interface ToolDiffStats {
@@ -125,6 +125,13 @@ export function toolActivityLabel(block: Pick<ToolBlock, "name" | "input" | "sta
       return { action: failed ? "Web search failed:" : stopped ? "Stopped searching:" : running ? "Searching the web:" : "Searched the web:", detail: oneLine(block.input.query) }
     case "WebFetch":
       return { action: failed ? "Couldn’t fetch" : stopped ? "Stopped fetching" : running ? "Fetching" : "Fetched", detail: oneLine(block.input.url) }
+    case "ExitPlanMode":
+      return { action: running ? "Writing plan" : "Plan", detail: "" }
+    case "AskUserQuestion": {
+      const count = Array.isArray(block.input.questions) ? block.input.questions.length : 0
+      const noun = count === 1 ? "question" : "questions"
+      return { action: failed || stopped ? "Question dismissed" : running ? "Asking" : "Asked", detail: count ? `${count} ${noun}` : "a question" }
+    }
     case "Hook":
       return { action: failed ? "Hook failed:" : stopped ? "Hook stopped:" : running ? "Running hook:" : "Ran hook:", detail: oneLine(block.input.hook_name) }
     case "Agent":
@@ -165,6 +172,7 @@ export function toolActivitySummary(blocks: Pick<ToolBlock, "name" | "input" | "
   let images = 0
   let reads = 0
   let tools = 0
+  let searches = 0
   const editedFiles = new Set<string>()
 
   blocks.forEach((block, index) => {
@@ -177,20 +185,24 @@ export function toolActivitySummary(blocks: Pick<ToolBlock, "name" | "input" | "
       reads++
     } else if (block.name === "Write" || block.name === "Edit" || block.name === "MultiEdit") {
       editedFiles.add(file || `${block.name}:${index}`)
+    } else if (block.name === "WebSearch") {
+      searches++
     } else {
       tools++
     }
   })
   const edits = editedFiles.size
 
+  // Same order as Codex: tool calls, file changes, exploration, commands, web search.
   const parts: string[] = []
   const stopped = blocks.some(block => block.name === "Bash" && block.status === "stopped")
+  if (tools) parts.push(tools === 1 ? "Called a tool" : "Called tools")
   if (stopped) parts.push("Stopped command")
   if (edits) parts.push(edits === 1 ? "Edited a file" : "Edited files")
   if (reads) parts.push("Read files")
   if (!stopped && commands) parts.push(commands === 1 ? "Ran a command" : "Ran commands")
   if (images) parts.push(images === 1 ? "Viewed an image" : `Viewed ${images} images`)
-  if (tools) parts.push(tools === 1 ? "Used a tool" : "Used tools")
+  if (searches) parts.push("Searched the web")
   if (parts.length === 0) return undefined
 
   const kind =
@@ -198,7 +210,8 @@ export function toolActivitySummary(blocks: Pick<ToolBlock, "name" | "input" | "
       : images ? "images"
         : commands ? "commands"
           : reads ? "reads"
-            : "tools"
+            : searches && !tools ? "web"
+              : "tools"
   const label = parts.map((part, index) => index === 0 ? part : part[0]!.toLowerCase() + part.slice(1)).join(", ")
   return { label, kind }
 }
@@ -267,7 +280,7 @@ export function isImageActivity(block: Pick<ToolBlock, "name" | "input" | "image
 }
 
 export function isStandaloneActivity(block: Pick<ToolBlock, "name" | "input" | "images">): boolean {
-  return block.name === "Agent" || block.name === "Task" || block.name === "Hook" || ["TodoWrite", "TaskCreate", "TaskUpdate", "TaskList", "TaskGet"].includes(block.name) || isImageActivity(block)
+  return block.name === "Agent" || block.name === "Task" || block.name === "Hook" || block.name === "ExitPlanMode" || block.name === "AskUserQuestion" || ["TodoWrite", "TaskCreate", "TaskUpdate", "TaskList", "TaskGet"].includes(block.name) || isImageActivity(block)
 }
 
 export function groupActivityBlocks(blocks: Block[]): ActivityUnit[] {
@@ -290,8 +303,8 @@ export function groupActivityBlocks(blocks: Block[]): ActivityUnit[] {
       continue
     }
     if (block.kind === "thinking") {
-      // Completed reasoning stays as a collapsed row; only empty placeholders are dropped.
-      if (!block.done || block.text.trim()) {
+      // Codex shows reasoning only as a live "Thinking" status; finished reasoning has no row.
+      if (!block.done) {
         flush()
         units.push({ kind: "thinking", block })
       }

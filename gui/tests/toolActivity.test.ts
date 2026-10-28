@@ -55,6 +55,12 @@ test("completed activity summaries combine semantic tool actions", () => {
     { name: "Edit", input: { file_path: "/repo/src/App.tsx" } },
     { name: "Edit", input: { file_path: "/repo/src/App.tsx" } },
   ])).toEqual({ label: "Edited a file", kind: "edits" })
+  expect(toolActivitySummary([
+    { name: "WebSearch", input: { query: "a" } },
+    { name: "Bash", input: { command: "ls" } },
+    { name: "mcp__s__t", input: {} },
+  ])).toEqual({ label: "Called a tool, ran a command, searched the web", kind: "commands" })
+  expect(toolActivitySummary([{ name: "WebSearch", input: { query: "a" } }])).toEqual({ label: "Searched the web", kind: "web" })
 })
 
 test("file changes expose per-file line counts", () => {
@@ -80,7 +86,7 @@ test("activity grouping follows Codex boundaries", () => {
   const read = { kind: "tool" as const, id: "read", name: "Read", input: { file_path: "/repo/src/App.tsx" }, partialJson: "", status: "done" as const }
   const run = { kind: "tool" as const, id: "run", name: "Bash", input: { command: "bun test" }, partialJson: "", status: "done" as const }
   const image = { kind: "tool" as const, id: "image", name: "Read", input: { file_path: "/tmp/preview.png" }, partialJson: "", status: "done" as const }
-  const thought = { kind: "thinking" as const, text: "Inspect", done: true }
+  const thought = { kind: "thinking" as const, text: "Inspect", done: false }
   const task = { kind: "tool" as const, id: "task", name: "Task", input: { description: "Inspect rendering" }, partialJson: "", status: "done" as const }
   const text = { kind: "text" as const, text: "Now implementing." }
   const empty = { kind: "text" as const, text: "" }
@@ -97,15 +103,14 @@ test("activity grouping follows Codex boundaries", () => {
   ])
 })
 
-test("active and completed thinking are rendered", () => {
+test("thinking only renders while it streams", () => {
   const thought = { kind: "thinking" as const, text: "Inspecting", done: false }
   expect(groupActivityBlocks([thought])).toMatchObject([{ kind: "thinking" }])
-  expect(groupActivityBlocks([{ ...thought, done: true }])).toMatchObject([{ kind: "thinking" }])
-  expect(groupActivityBlocks([{ ...thought, text: "", done: true }])).toEqual([])
+  expect(groupActivityBlocks([{ ...thought, done: true }])).toEqual([])
 })
 
 test("activity runs group consecutive reasoning and tool calls", () => {
-  const thought = { kind: "thinking" as const, text: "Inspect", done: true }
+  const thought = { kind: "thinking" as const, text: "Inspect", done: false }
   const read = { kind: "tool" as const, id: "read", name: "Read", input: { file_path: "/repo/a.ts" }, partialJson: "", status: "done" as const }
   const run = { kind: "tool" as const, id: "run", name: "Bash", input: { command: "bun test" }, partialJson: "", status: "done" as const }
   const text = { kind: "text" as const, text: "Done." }

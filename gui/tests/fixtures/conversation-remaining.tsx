@@ -6,6 +6,7 @@ import { createRoot } from "react-dom/client"
 import { Markdown, OutputContext } from "../../src/components/Markdown"
 import { PermissionCard } from "../../src/components/PermissionCard"
 import { ToolCard } from "../../src/components/ToolCard"
+import { RateLimitNotice } from "../../src/components/RateLimitNotice"
 import { MessageRail } from "../../src/components/MessageRail"
 import { MessageList } from "../../src/components/MessageList"
 import { Lightbox } from "../../src/components/Lightbox"
@@ -33,6 +34,8 @@ const hooks = data.hooks.turns.flatMap((turn: any) => (turn.blocks ?? []).filter
 const update = { kind: "tool", id: "update", name: "TaskUpdate", input: { taskId: "7", subject: "Updated title" }, partialJson: "", status: "done", rawResult: { success: true, taskId: "7", updatedFields: ["subject"] } } as any
 const mcp = { ...update, id: "mcp", name: "mcp__local__query", input: {}, rawResult: { structuredContent: { rows: [1, 2] }, _meta: { cursor: "next" } } }
 const todo = { ...update, id: "todo", name: "TodoWrite", input: { todos: [{ content: "Inspect files", status: "completed" }, { content: "Run checks", status: "in_progress" }] }, rawResult: undefined }
+const plan = { ...update, id: "plan", name: "ExitPlanMode", input: { plan: "## Plan\n\n1. Add the **plan** card\n2. Keep `todo` latest-only" }, rawResult: undefined, status: "done" } as any
+const asked = { ...update, id: "asked", name: "AskUserQuestion", input: { questions: [{ question: "Which database?" }, { question: "Run migrations?" }] }, rawResult: { answers: { "Which database?": "Postgres" } }, status: "done" } as any
 const panel = (name: string, title: string, body: any) => <section data-case={name}><h2>{title}</h2>{body}</section>
 
 function ContextProbe() {
@@ -58,6 +61,9 @@ function Comparison() {
     </OutputContext>)}
     {panel("details", "Structured disclosure", <Markdown text={"<details>\n<summary>More **context**</summary>\n\nDetails stay readable without executing raw HTML.\n</details>"} />)}
     {panel("hook", "Hook after loading older history", <>{hooks.map((block: any, i: number) => <ToolCard key={i} block={block} defaultOpen />)}<p>{hooks.length} hook entry</p></>)}
+    {panel("plan", "Proposed plan stays in the transcript", <ToolCard block={plan} defaultOpen />)}
+    {panel("asked", "Answered user input", <ToolCard block={asked} defaultOpen />)}
+    {panel("ratelimit", "Rate limit notices", <><RateLimitNotice info={{ status: "allowed_warning", rateLimitType: "five_hour", utilization: 0.92 }} /><RateLimitNotice info={{ status: "rejected", rateLimitType: "seven_day" }} /></>)}
     {panel("media", "Local media over HTTP", <OutputContext value={{ cwd: data.cwd }}><Markdown text="![Recorded output](tone.wav)" /></OutputContext>)}
   </div></>
 }
@@ -69,6 +75,9 @@ window.runChecks = async () => {
   results.agentTerminal = data.task.tasks[0]?.status === "completed" && document.querySelector('[data-case="task"]')!.textContent!.includes("completed")
   results.shellVariables = document.querySelector('[data-case="math"]')!.textContent!.includes("$HOME/$USER")
   results.mathFence = !!document.querySelector("[data-math-fence] .katex")
+  results.planCard = !!document.querySelector('[data-case="plan"] [data-plan-card] ol')
+  results.userInputResponse = document.querySelector('[data-case="asked"]')!.textContent!.includes("Postgres") && document.querySelector('[data-case="asked"]')!.textContent!.includes("No answer provided")
+  results.rateLimitNotice = document.querySelector('[data-case="ratelimit"]')!.textContent!.includes("92% used") && document.querySelector('[data-case="ratelimit"]')!.textContent!.includes("hit your weekly")
   results.partialTaskUpdate = !document.querySelector('[data-case="update"] [aria-label="pending"]')
   results.hookPage = hooks.length === 1 && hooks[0].status === "done"
   ;(document.querySelector('[data-case="citation"] button[title]') as HTMLElement)?.click()

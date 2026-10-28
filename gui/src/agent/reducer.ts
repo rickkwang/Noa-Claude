@@ -10,6 +10,7 @@ import type {
   ContextUsage,
   ControlPayload,
   ModelInfo,
+  RateLimitInfo,
   PermissionMode,
   PermissionRequest,
   SlashCommand,
@@ -119,6 +120,8 @@ export interface AgentState {
   queue: QueuedMessage[]
   queuePaused: boolean
   status?: string
+  // Latest rate-limit state; cleared once the limit reports "allowed" again.
+  rateLimit?: RateLimitInfo
   permissions: Permission[]
   result?: { durationMs: number; costUsd?: number; isError: boolean; interrupted?: boolean }
   logs: string[]
@@ -259,7 +262,8 @@ export function reducer(state: AgentState, action: Action): AgentState {
         error: undefined,
         notice: undefined,
         liveDiff: undefined,
-        turns: [...closeStreaming(state.turns), userTurn(action.id, action.content ?? action.text ?? "")],
+        // A message sent while the agent is busy is a steer: the in-flight message keeps streaming above it.
+        turns: [...(state.busy ? state.turns : closeStreaming(state.turns)), userTurn(action.id, action.content ?? action.text ?? "")],
       }
     case "history-user":
       return { ...state, turns: [...state.turns, { role: "user", id: action.id, text: action.text, images: action.images }] }
@@ -399,6 +403,9 @@ function applyAgentMessage(state: AgentState, m: AgentMessage): AgentState {
         permissionMode: m.permissionMode,
       }
 
+    case "rate_limit_event":
+      return { ...state, rateLimit: m.rate_limit_info.status === "allowed" ? undefined : m.rate_limit_info }
+
     case "tool_progress":
       return { ...state, turns: state.turns.map(turn => turn.role !== "assistant" ? turn : { ...turn, blocks: turn.blocks.map(block => block.kind === "tool" && block.id === m.tool_use_id && block.status === "running" && block.startedAt === undefined ? { ...block, startedAt: Date.now() - m.elapsed_time_seconds * 1000 } : block) }) }
 
@@ -478,11 +485,14 @@ function toPermission(requestId: string, req: PermissionRequest): Permission {
   }
 }
 
-// Index of the assistant turn currently receiving stream deltas, or -1.
+// Index of the assistant turn currently receiving stream deltas, or -1. A steering
+// message lands after the turn that is still streaming, so look past trailing user turns.
 function streamingIndex(turns: Turn[]): number {
-  const last = turns.length - 1
-  const turn = turns[last]
-  return turn?.role === "assistant" && turn.streaming ? last : -1
+  for (let i = turns.length - 1; i >= 0; i--) {
+    const turn = turns[i]!
+    if (turn.role === "assistant") return turn.streaming ? i : -1
+  }
+  return -1
 }
 
 function withAssistant(turns: Turn[], index: number, update: (blocks: Block[]) => Block[]): Turn[] {

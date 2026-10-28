@@ -114,9 +114,17 @@ export type ControlPayload =
   | { kind: "context_usage"; usage: ContextUsage }
   | { kind: "commands"; commands: SlashCommand[] }
 
+export interface RateLimitInfo {
+  status: "allowed" | "allowed_warning" | "rejected"
+  resetsAt?: number
+  rateLimitType?: "five_hour" | "seven_day" | "seven_day_opus" | "seven_day_sonnet" | "overage"
+  utilization?: number
+}
+
 export type AgentMessage =
   | { type: "system"; subtype: "elicitation_complete"; mcp_server_name: string; elicitation_id: string }
   | { type: "system"; subtype: "hook_started" | "hook_progress" | "hook_response"; hook_id: string; hook_name: string; hook_event: string; stdout?: string; stderr?: string; output?: string; exit_code?: number; outcome?: "success" | "error" | "cancelled" }
+  | { type: "rate_limit_event"; rate_limit_info: RateLimitInfo }
   | { type: "tool_progress"; tool_use_id: string; tool_name: string; parent_tool_use_id: string | null; elapsed_time_seconds: number; heartbeat?: boolean }
   | { type: "system"; subtype: "compact_boundary"; compact_metadata: { trigger: "manual" | "auto"; pre_tokens?: number } }
   | { type: "system"; subtype: "api_retry"; attempt: number; max_retries: number; retry_delay_ms: number; error_status?: number | null }

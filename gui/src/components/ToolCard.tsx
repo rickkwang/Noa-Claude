@@ -196,6 +196,23 @@ function ToolBody({ block, active, onRaw, onCollapse }: { block: ToolBlock; acti
       const result = block.rawResult as { url?: string; result?: string; code?: number } | undefined
       return <div className="flex flex-col gap-2">{result?.url && /^https?:\/\//i.test(result.url) && <a href={result.url} target="_blank" rel="noreferrer" className="break-all text-caption text-[var(--accent-color)]">{result.url}{result.code ? ` · HTTP ${result.code}` : ""}</a>}{result?.result ? <Markdown text={result.result} /> : output}</div>
     }
+    case "ExitPlanMode": {
+      const plan = str(i.plan) || str((block.rawResult as { plan?: unknown } | undefined)?.plan)
+      return plan ? <div data-plan-card className="rounded-lg border border-[var(--divider-subtle)] bg-[var(--bg-secondary)] px-4 py-3"><Markdown text={plan} /></div> : output ?? <EmptyToolBody label="No plan content" />
+    }
+    case "AskUserQuestion": {
+      const questions = Array.isArray(i.questions) ? i.questions.filter((q): q is Record<string, unknown> => typeof q === "object" && q !== null) : []
+      const answers = (block.rawResult as { answers?: Record<string, string> } | undefined)?.answers ?? {}
+      return <ul data-user-input-response className="m-0 flex list-none flex-col gap-2 p-0">
+        {questions.map((q, index) => {
+          const question = str(q.question)
+          return <li key={index} className="flex flex-col gap-0.5">
+            <span className="text-[var(--text-secondary)]">{question}</span>
+            <span className={answers[question] ? "text-[var(--text-primary)]" : "text-[var(--sidebar-text-muted)]"}>{answers[question] || "No answer provided"}</span>
+          </li>
+        })}
+      </ul>
+    }
     case "TodoWrite":
     case "TaskCreate":
     case "TaskUpdate":

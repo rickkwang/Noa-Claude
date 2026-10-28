@@ -12,7 +12,7 @@ import {
   type ActivityRun,
   type ThinkingBlock as ThinkingBlockData,
 } from "../agent/toolActivity"
-import { ArrowDown, AlertTriangle, BookOpen, Check, ChevronDown, ChevronRight, Copy, Edit2, Photo, Terminal, Tool } from "../lib/icons"
+import { ArrowDown, AlertTriangle, BookOpen, Check, ChevronDown, ChevronRight, Copy, Edit2, Photo, Search, Terminal, Tool } from "../lib/icons"
 import { Collapsible } from "./Collapsible"
 import { ErrorBoundary } from "./ErrorBoundary"
 import { copyContent } from "./RichContent"
@@ -50,6 +50,7 @@ const JUMP_THRESHOLD = 24
 const TURN_GAP = 16
 const TURN_OVERSCAN = 2
 const ESTIMATED_TURN_HEIGHT = 160
+const TODO_TOOLS = ["TodoWrite", "TaskCreate", "TaskUpdate", "TaskList", "TaskGet"]
 const scrollPositions = new Map<string, { top: number; pinned: boolean; heights: Map<string, number> }>()
 
 export function MessageList({ turns, cwd, onOpenFile, busy, result, readingWidth, liveDiff, onTurnDiff, onTurnDiffAction, diffActionPending, onRetry, onEdit, onQuote, tasks, onStopTask, onOpenTask, sessionId, historyBefore, historyLoading, onLoadEarlier }: MessageListProps) {
@@ -657,8 +658,11 @@ function AssistantSegment({ segment, busy, durationMs, interrupted, liveDiff, ta
     )
   }
 
+  // Codex keeps only the newest todo list expanded; earlier snapshots stay folded.
+  const latestTodo = segment.blocks.findLast((block): block is ToolBlock => block.kind === "tool" && TODO_TOOLS.includes(block.name))
+
   function renderStandalone(block: ToolBlock, index: number) {
-    return <ToolCard key={`standalone-${index}`} block={block} active={busy} defaultOpen={!!block.images?.length || (block.name === "Agent" || block.name === "Task" || block.name === "Hook" || ["TodoWrite", "TaskCreate", "TaskUpdate", "TaskList", "TaskGet"].includes(block.name))} tasks={tasks} task={tasks?.find(task => task.id === block.id || task.toolUseId === block.id)} onStopTask={onStopTask} onOpenTask={onOpenTask} />
+    return <ToolCard key={`standalone-${index}`} block={block} active={busy} defaultOpen={!!block.images?.length || block.name === "Agent" || block.name === "Task" || block.name === "Hook" || block.name === "ExitPlanMode" || block.name === "AskUserQuestion" || block === latestTodo} tasks={tasks} task={tasks?.find(task => task.id === block.id || task.toolUseId === block.id)} onStopTask={onStopTask} onOpenTask={onOpenTask} />
   }
 
   const turnDiff = segment.diff && onTurnDiff
@@ -675,7 +679,7 @@ function AssistantSegment({ segment, busy, durationMs, interrupted, liveDiff, ta
   if (canCollapse && activityCollapsed) {
     return (
       <div className="group flex flex-col gap-3">
-        {runs.map((run, i) => run.kind === "status" ? <StatusBlock key={`status-${i}`} block={run.block} /> : run.kind === "standalone" && tasks?.some(task => task.status === "running" && (task.id === run.block.id || task.toolUseId === run.block.id)) ? renderStandalone(run.block, i) : null)}
+        {runs.map((run, i) => run.kind === "status" ? <StatusBlock key={`status-${i}`} block={run.block} /> : run.kind === "standalone" && (run.block.name === "ExitPlanMode" || tasks?.some(task => task.status === "running" && (task.id === run.block.id || task.toolUseId === run.block.id))) ? renderStandalone(run.block, i) : null)}
         <WorkedFor
           durationMs={durationMs}
           count={durationMs === undefined ? collapsedCount : undefined}
@@ -711,7 +715,6 @@ function AssistantSegment({ segment, busy, durationMs, interrupted, liveDiff, ta
             key={index}
             blocks={run.blocks}
             tasks={tasks}
-            streamKeyFor={streamKeyFor}
             onStopTask={onStopTask}
             onOpenTask={onOpenTask}
           />
@@ -733,10 +736,9 @@ function AssistantSegment({ segment, busy, durationMs, interrupted, liveDiff, ta
 
 // One collapsible summary per run of reasoning and tool calls, as Codex's
 // agent-activity group. The body stays folded unless the user opens it.
-function ActivityGroup({ blocks, tasks, streamKeyFor, onStopTask, onOpenTask }: {
+function ActivityGroup({ blocks, tasks, onStopTask, onOpenTask }: {
   blocks: (ToolBlock | ThinkingBlockData)[]
   tasks?: AgentTask[]
-  streamKeyFor?: (block: Block) => string
   onStopTask?: (id: string) => void
   onOpenTask?: () => void
 }) {
@@ -759,11 +761,10 @@ function ActivityGroup({ blocks, tasks, streamKeyFor, onStopTask, onOpenTask }: 
     return () => clearInterval(timer)
   }, [live])
   const tools = blocks.filter((block): block is ToolBlock => block.kind === "tool")
-  const thoughtCount = blocks.length - tools.length
   const summary = toolActivitySummary(tools)
   const failedCount = tools.filter(tool => tool.status === "error" || tool.status === "stopped").length
   const uncertainCount = tools.filter(tool => tool.status === "unknown").length
-  const completedLabel = [thoughtCount ? "Thought" : null, summary?.label, tools.some(tool => tool.status === "error") ? `${failedCount} failed` : uncertainCount ? "connection lost" : null]
+  const completedLabel = [summary?.label, tools.some(tool => tool.status === "error") ? `${failedCount} failed` : uncertainCount ? "connection lost" : null]
     .filter(Boolean)
     .join(", ") || "Worked"
   const liveLabel = liveBlock?.kind === "thinking"
@@ -776,7 +777,8 @@ function ActivityGroup({ blocks, tasks, streamKeyFor, onStopTask, onOpenTask }: 
       : summary?.kind === "images" ? Photo
         : summary?.kind === "commands" ? Terminal
           : summary?.kind === "reads" ? BookOpen
-            : Tool
+            : summary?.kind === "web" ? Search
+              : Tool
 
   return (
     <div className="not-prose" data-work-activity={live ? "live" : "done"}>
@@ -794,9 +796,7 @@ function ActivityGroup({ blocks, tasks, streamKeyFor, onStopTask, onOpenTask }: 
       </button>
       <Collapsible open={open}>
         <div ref={activityRef} onScroll={(event) => { const e = event.currentTarget; following.current = e.scrollHeight - e.clientHeight - e.scrollTop <= 24 }} className="noa-activity-scroll mt-2 flex max-h-56 flex-col gap-1 overflow-x-hidden overflow-y-auto overscroll-contain focus-visible:outline-auto" role="region" aria-label="Tool activity" tabIndex={open ? 0 : -1}>
-          {blocks.map((block, i) => block.kind === "thinking"
-            ? <ThinkingBlock key={`thought-${i}`} block={block} streamKey={streamKeyFor?.(block)} />
-            : (
+          {tools.map((block, i) => (
               <ToolCard
                 key={`tool-${block.id}-${i}`}
                 block={block}
@@ -977,70 +977,10 @@ function BlockView({ block, streaming, streamKey }: { block: Block; streaming?: 
     case "text":
       return <Markdown text={block.text} streaming={streaming} streamKey={streamKey} />
     case "thinking":
-      return (
-        <ThinkingBlock block={block} />
-      )
+      return null
     case "tool":
       return <ToolCard block={block} />
   }
-}
-
-// Collapsed once the reasoning is done, as in Codex; open while it streams.
-function ThinkingBlock({ block, streamKey }: { block: Extract<Block, { kind: "thinking" }>; streamKey?: string }) {
-  const [open, setOpen] = useState(!block.done)
-  // The block mounts with its first token, so this is close to the reasoning's start.
-  const startedAt = useRef<number | undefined>(block.startedAt ?? (block.done ? undefined : Date.now()))
-  const [elapsed, setElapsed] = useState<number>()
-  const [copied, setCopied] = useState(false)
-  const [copyError, setCopyError] = useState(false)
-  useEffect(() => {
-    if (!block.done) return
-    if (startedAt.current !== undefined) setElapsed((value) => value ?? Date.now() - startedAt.current!)
-    setOpen(false)
-  }, [block.done])
-  const label = elapsed === undefined ? "Thought" : elapsed < 1000 ? "Thought for <1s" : `Thought for ${formatDuration(elapsed)}`
-  async function copyQuote() {
-    try { await navigator.clipboard.writeText(block.text.split("\n").map((line) => `> ${line}`).join("\n")) } catch { setCopyError(true); return }
-    setCopyError(false)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
-  }
-  return (
-    <div className="group/thinking flex flex-col text-[length:var(--text-chat-sm)] leading-5 text-[var(--sidebar-text-muted,#898781)]">
-      <div className="flex min-w-0 items-center gap-1">
-        <button
-          type="button"
-          aria-expanded={open}
-          onClick={() => setOpen((o) => !o)}
-          className="inline-flex cursor-pointer items-center gap-1 rounded-md px-1 py-0.5 text-left select-none hover:text-[var(--text-primary,#2D2D2B)]"
-        >
-          {block.done ? (
-            <span>{label}</span>
-          ) : (
-            <span className="noa-shimmer">Thinking</span>
-          )}
-          <ChevronRight size={14} className={`opacity-0 transition-[transform,opacity] duration-300 group-hover/thinking:opacity-100 group-focus-within/thinking:opacity-100 ${open ? "rotate-90" : ""}`} />
-        </button>
-        {block.done && block.text.trim() !== "" && (
-          <button
-            type="button"
-            onClick={copyQuote}
-            aria-label="Copy thought as quote"
-            className="flex h-6 items-center gap-1 rounded-md px-1.5 text-caption text-[var(--text-secondary,#5D5D5D)] opacity-0 transition-opacity hover:bg-[color-mix(in_srgb,var(--text-primary,#2D2D2B)_7.5%,transparent)] hover:text-[var(--text-primary,#2D2D2B)] focus-visible:opacity-100 group-hover/thinking:opacity-100 noa-press"
-          >
-            {copied ? <Check size={12} /> : <Copy size={12} />}
-            {copied ? "Copied" : "Copy as quote"}
-          </button>
-        )}
-      </div>
-      {copyError && <span role="status">Could not copy. Try again.</span>}
-      <Collapsible open={open}>
-        <div className="mt-1.5 px-1">
-          <Markdown text={block.text} tone="muted" streaming={!block.done} streamKey={streamKey} />
-        </div>
-      </Collapsible>
-    </div>
-  )
 }
 
 function StatusBlock({ block }: { block: Extract<Block, { kind: "compaction" | "retry" }> }) {
