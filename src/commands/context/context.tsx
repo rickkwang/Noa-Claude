@@ -53,7 +53,7 @@ export async function call(onDone: LocalJSXCommandOnDone, context: LocalJSXComma
   const outputData = getIsRemoteMode() ? { ...data, memoryFiles: [] } : data;
 
   // Render to ANSI string to preserve colors and pass to onDone like local commands do
-  const output = await renderToAnsiString(<ContextVisualization data={outputData} collapseDetailSections={collapseDetailSections} />);
+  const output = await renderToAnsiString(<ContextVisualization data={outputData} collapseDetailSections={collapseDetailSections} />, terminalWidth);
   onDone(output, {
     display: 'system',
     metaMessages: [formatContextAsMarkdownTable(outputData)]

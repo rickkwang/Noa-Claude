@@ -6,6 +6,7 @@ import { formatApproxTokens, formatContextOverLimit } from '../utils/analyzeCont
 import { generateContextSuggestions } from '../utils/contextSuggestions.js';
 import { getDisplayPath } from '../utils/file.js';
 import { formatTokens } from '../utils/format.js';
+import { getPublicModelDisplayName, parseUserSpecifiedModel } from '../utils/model/model.js';
 import { getSourceDisplayName, type SettingSource } from '../utils/settings/constants.js';
 import { plural } from '../utils/stringUtils.js';
 import { ContextSuggestions } from './ContextSuggestions.js';
@@ -55,6 +56,9 @@ interface Props {
   data: ContextData;
   collapseDetailSections?: boolean;
 }
+function modelDisplayName(model: string): string | null {
+  return getPublicModelDisplayName(parseUserSpecifiedModel(model));
+}
 function autoCompactWindowLabel(source: string, tokens: string): string {
   if (source === 'experiment' || source === 'clientdata') {
     return `auto (${tokens} tokens)`;
@@ -96,27 +100,34 @@ export function ContextVisualization({
   const autocompactCategory = categories.find(cat => cat.name === RESERVED_CATEGORY_NAME);
   const freeSpaceCategory = categories.find(cat => cat.name === 'Free space');
   const overLimit = formatContextOverLimit(data);
+  const displayName = modelDisplayName(model);
   const hasDetailSections = mcpTools.length > 0 || agents.length > 0 || memoryFiles.length > 0 || (skills?.tokens ?? 0) > 0;
   const mcpLoadedTokens = mcpTools.filter(tool => !hasDeferredMcpTools || tool.isLoaded).reduce((sum, tool) => sum + tool.tokens, 0);
   return <Box flexDirection="column" paddingLeft={1}>
       <Text bold={true}>Context Usage</Text>
       {overLimit && <Text color="error" wrap="wrap">{overLimit}</Text>}
       <Box flexDirection="row" gap={2}>
-        <Box flexDirection="column" flexShrink={0}>
+        {/* Set a floor: Ink otherwise measures a row narrow enough to wrap
+            its trailing whitespace onto a second line, while minWidth lets
+            double-width glyphs widen the column. */}
+        <Box flexDirection="column" flexShrink={0} minWidth={(gridRows[0]?.length ?? 20) * 2 - 1}>
           {gridRows.map((row, rowIndex) => <Box key={rowIndex} flexDirection="row" marginLeft={-1}>
               {row.map((square, colIndex) => {
+            const suffix = colIndex === row.length - 1 ? '' : ' ';
             if (square.categoryName === 'Free space') {
-              return <Text key={colIndex} dimColor={true}>⛶ </Text>;
+              return <Text key={colIndex} dimColor={true}>{`⛶${suffix}`}</Text>;
             }
             if (square.categoryName === RESERVED_CATEGORY_NAME) {
-              return <Text key={colIndex} color={square.color}>⛝ </Text>;
+              return <Text key={colIndex} color={square.color}>{`⛝${suffix}`}</Text>;
             }
-            return <Text key={colIndex} color={square.color}>{square.squareFullness >= 0.7 ? '⛁ ' : '⛀ '}</Text>;
+            return <Text key={colIndex} color={square.color}>{`${square.squareFullness >= 0.7 ? '⛁' : '⛀'}${suffix}`}</Text>;
           })}
             </Box>)}
         </Box>
         <Box flexDirection="column" gap={0} flexShrink={0}>
-          <Text dimColor={true}>{model} · {formatTokens(totalTokens)}/{formatTokens(rawMaxTokens)} tokens ({data.percentage}%)</Text>
+          {displayName && <Text>{displayName}</Text>}
+          <Text dimColor={true}>{model}</Text>
+          <Text dimColor={true}>{formatTokens(totalTokens)}/{formatTokens(rawMaxTokens)} tokens ({data.percentage}%)</Text>
           <Text> </Text>
           <Text dimColor={true} italic={true}>Estimated usage by category</Text>
           {visibleCategories.map((cat, index) => {
