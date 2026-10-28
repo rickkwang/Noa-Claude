@@ -69,10 +69,27 @@ export function MessageList({ turns, cwd, onOpenFile, busy, result, readingWidth
   const pendingPrevious = useRef<string | undefined>(undefined)
   const jumpToken = useRef(0)
   const [showJump, setShowJump] = useState(false)
+  const [showRail, setShowRail] = useState(false)
   const [selection, setSelection] = useState<{ text: string; left: number; top: number }>()
   const [preview, setPreview] = useState<{ items: LightboxItem[]; index: number }>()
   const [viewport, setViewport] = useState({ top: savedScroll?.top ?? 0, height: 0 })
   const [, setMeasured] = useState(0)
+
+  useLayoutEffect(() => {
+    const scroll = scrollRef.current
+    const content = contentRef.current
+    if (!scroll || !content) return
+    const update = () => {
+      const bounds = scroll.getBoundingClientRect()
+      const scale = scroll.offsetWidth > 0 ? bounds.width / scroll.offsetWidth : 1
+      setShowRail((content.getBoundingClientRect().left - bounds.left) / (scale > 0 ? scale : 1) >= 48)
+    }
+    update()
+    const observer = new ResizeObserver(update)
+    observer.observe(scroll)
+    observer.observe(content)
+    return () => observer.disconnect()
+  }, [])
 
   useLayoutEffect(() => {
     const el = scrollRef.current
@@ -385,7 +402,7 @@ export function MessageList({ turns, cwd, onOpenFile, busy, result, readingWidth
       </div>
 
     </div>
-      <MessageRail key={sessionId ?? "new"} items={railItems} activeIds={activeRailIds} sessionId={sessionId} onJump={scrollToSegment} />
+      <MessageRail key={sessionId ?? "new"} items={railItems} activeIds={activeRailIds} sessionId={sessionId} onJump={scrollToSegment} visible={showRail} />
       {/* Codex's scroll-to-bottom: a 32px round button that fades rather than mounts. */}
       <button
         type="button"

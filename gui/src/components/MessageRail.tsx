@@ -13,12 +13,13 @@ interface MessageRailProps {
   activeIds: string[]
   sessionId?: string
   onJump: (id: string, behavior: ScrollBehavior) => void
+  visible?: boolean
 }
 
 // Codex shows the rail from four user messages on, opens the preview after a
 // short hover delay, and keeps it open while the pointer crosses into the card.
 const OPEN_DELAY = 110
-const CLOSE_DELAY = 140
+const CLOSE_DELAY = 200
 const RAIL_MARGIN = 8
 const NEIGHBOR_PROGRESS = [1, 0.7, 0.4, 0.2]
 
@@ -35,11 +36,12 @@ function readBookmarks(storageKey: string | undefined): Set<string> {
   return new Set()
 }
 
-export function MessageRail({ items, activeIds, sessionId, onJump }: MessageRailProps) {
+export function MessageRail({ items, activeIds, sessionId, onJump, visible = true }: MessageRailProps) {
   // User ids are shared by the live bridge and the persisted transcript.
   const storageKey = sessionId ? `noa-agent.bookmarks.v2.${sessionId}` : undefined
   const [bookmarks, setBookmarks] = useState<Set<string>>(() => readBookmarks(storageKey))
   const [previewId, setPreviewId] = useState<string | null>(null)
+  const [closing, setClosing] = useState(false)
   const [hotId, setHotId] = useState<string | null>(null)
   const [anchorY, setAnchorY] = useState(0)
   const [cardTop, setCardTop] = useState<number>()
@@ -50,6 +52,7 @@ export function MessageRail({ items, activeIds, sessionId, onJump }: MessageRail
   const cardRef = useRef<HTMLDivElement>(null)
   const openTimer = useRef<number | undefined>(undefined)
   const closeTimer = useRef<number | undefined>(undefined)
+  const hideTimer = useRef<number | undefined>(undefined)
   const scrubRef = useRef<{ pointerId: number; itemId: string } | undefined>(undefined)
   const scrubbed = useRef(false)
   const ignoreClick = useRef(false)
@@ -64,7 +67,32 @@ export function MessageRail({ items, activeIds, sessionId, onJump }: MessageRail
   useEffect(() => () => {
     window.clearTimeout(openTimer.current)
     window.clearTimeout(closeTimer.current)
+    window.clearTimeout(hideTimer.current)
   }, [])
+
+  useEffect(() => {
+    if (visible) {
+      if (hideTimer.current !== undefined) {
+        window.clearTimeout(hideTimer.current)
+        hideTimer.current = undefined
+        setPreviewId(null)
+        setHotId(null)
+        setClosing(false)
+      }
+      return
+    }
+    clearTimers()
+    const scrub = scrubRef.current
+    scrubRef.current = undefined
+    if (scrub && listRef.current?.hasPointerCapture?.(scrub.pointerId)) listRef.current.releasePointerCapture(scrub.pointerId)
+    setScrubbing(false)
+    hideTimer.current = window.setTimeout(() => {
+      hideTimer.current = undefined
+      setPreviewId(null)
+      setHotId(null)
+      setClosing(false)
+    }, 150)
+  }, [visible])
 
   function clearTimers() {
     window.clearTimeout(openTimer.current)
@@ -84,6 +112,7 @@ export function MessageRail({ items, activeIds, sessionId, onJump }: MessageRail
 
   function openPreview(id: string) {
     clearTimers()
+    setClosing(false)
     setHotId(id)
     setPreviewId(id)
     anchorFor(id)
@@ -91,10 +120,12 @@ export function MessageRail({ items, activeIds, sessionId, onJump }: MessageRail
 
   function scheduleClose() {
     clearTimers()
+    setClosing(true)
     closeTimer.current = window.setTimeout(() => {
       closeTimer.current = undefined
       setPreviewId(null)
       setHotId(null)
+      setClosing(false)
     }, CLOSE_DELAY)
   }
 
@@ -102,10 +133,12 @@ export function MessageRail({ items, activeIds, sessionId, onJump }: MessageRail
     clearTimers()
     setPreviewId(null)
     setHotId(null)
+    setClosing(false)
   }
 
   function hoverItem(id: string) {
     setHotId(id)
+    setClosing(false)
     if (previewId != null) {
       clearTimers()
       setPreviewId(id)
@@ -207,12 +240,23 @@ export function MessageRail({ items, activeIds, sessionId, onJump }: MessageRail
   useLayoutEffect(() => {
     const card = cardRef.current
     const layer = layerRef.current
-    if (!card || !layer) return
-    const height = card.offsetHeight
-    const max = Math.max(RAIL_MARGIN, layer.clientHeight - height - RAIL_MARGIN)
-    const next = Math.min(max, Math.max(RAIL_MARGIN, anchorY - height / 2))
-    setCardTop((current) => current === next ? current : next)
-  })
+    if (!card || !layer || !previewId) return
+    const update = () => {
+      const button = listRef.current?.querySelector<HTMLElement>(`[data-message-rail-item="${escapeId(previewId)}"]`)
+      const layerRect = layer.getBoundingClientRect()
+      const buttonRect = button?.getBoundingClientRect()
+      const anchor = buttonRect ? buttonRect.top + buttonRect.height / 2 - layerRect.top : anchorY
+      const height = card.offsetHeight
+      const max = Math.max(RAIL_MARGIN, layer.clientHeight - height - RAIL_MARGIN)
+      const next = Math.min(max, Math.max(RAIL_MARGIN, anchor - height / 2))
+      setCardTop((current) => current === next ? current : next)
+    }
+    update()
+    const observer = new ResizeObserver(update)
+    observer.observe(layer)
+    observer.observe(card)
+    return () => observer.disconnect()
+  }, [previewId, anchorY])
 
   if (items.length < 4) return null
 
@@ -222,7 +266,7 @@ export function MessageRail({ items, activeIds, sessionId, onJump }: MessageRail
   const previewBookmarked = preview ? bookmarks.has(preview.id) : false
 
   function onLayerBlur(event: FocusEvent<HTMLDivElement>) {
-    if (!event.currentTarget.contains(event.relatedTarget as Node | null)) closeNow()
+    if (!event.currentTarget.contains(event.relatedTarget as Node | null)) scheduleClose()
   }
 
   function onLayerKeyDown(event: KeyboardEvent<HTMLDivElement>) {
@@ -232,7 +276,7 @@ export function MessageRail({ items, activeIds, sessionId, onJump }: MessageRail
   }
 
   return (
-    <div ref={layerRef} className="noa-message-rail-layer" onBlur={onLayerBlur} onKeyDown={onLayerKeyDown}>
+    <div ref={layerRef} className="noa-message-rail-layer" data-visible={visible} aria-hidden={!visible} inert={!visible} onBlur={onLayerBlur} onKeyDown={onLayerKeyDown}>
       <nav aria-label="User messages" className="noa-message-rail">
         <div
           ref={listRef}
@@ -293,8 +337,9 @@ export function MessageRail({ items, activeIds, sessionId, onJump }: MessageRail
         <div
           ref={cardRef}
           className="noa-message-rail-card"
+          data-closing={closing || undefined}
           style={{ top: cardTop ?? anchorY }}
-          onPointerEnter={clearTimers}
+          onPointerEnter={() => { clearTimers(); setClosing(false) }}
           onPointerLeave={scheduleClose}
         >
           <div className="noa-message-rail-card-head">

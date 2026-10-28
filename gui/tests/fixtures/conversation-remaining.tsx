@@ -91,6 +91,46 @@ window.runChecks = async () => {
   await show(null)
   await show(<div style={{ position: "relative", height: 500 }}><MessageRail items={prepended} activeIds={["old2"]} sessionId="bookmark-check" onJump={() => {}} /></div>)
   results.bookmarkReload = document.querySelector('[data-bookmarked="true"]')?.closest("button")?.dataset.messageRailItem === "old2"
+  ;(document.querySelector('[data-message-rail-item="old2"]') as HTMLElement).click()
+  await wait(() => !!document.querySelector(".noa-message-rail-card"))
+  const railList = document.querySelector<HTMLElement>(".noa-message-rail-list")!
+  railList.dispatchEvent(new PointerEvent("pointerout", { bubbles: true, relatedTarget: document.body }))
+  const fadeSamples: number[] = []
+  const fadeStart = performance.now()
+  while (performance.now() - fadeStart < 250) {
+    await new Promise(requestAnimationFrame)
+    const card = document.querySelector<HTMLElement>(".noa-message-rail-card")
+    if (card) fadeSamples.push(Number(getComputedStyle(card).opacity))
+  }
+  results.railPreviewFade = fadeSamples.some(opacity => opacity > 0.05 && opacity < 0.95)
+  ;(document.querySelector('[data-message-rail-item="old2"]') as HTMLElement).click()
+  await wait(() => !!document.querySelector(".noa-message-rail-card"))
+  railList.dispatchEvent(new PointerEvent("pointerout", { bubbles: true, relatedTarget: document.body }))
+  await new Promise(requestAnimationFrame)
+  document.querySelector<HTMLElement>(".noa-message-rail-card")!.dispatchEvent(new PointerEvent("pointerover", { bubbles: true, relatedTarget: document.body }))
+  await new Promise(resolve => setTimeout(resolve, 250))
+  results.railPreviewFadeCancel = !!document.querySelector(".noa-message-rail-card:not([data-closing])")
+  const railItems = initial.map(item => ({ ...item, preview: "A short reply with enough text to wrap as the conversation becomes narrower." }))
+  await show(<div id="rail-resize" style={{ position: "relative", width: 500, height: 240 }}><MessageRail items={railItems} activeIds={["old3"]} onJump={() => {}} /></div>)
+  ;(document.querySelector('[data-message-rail-item="old3"]') as HTMLElement).click()
+  await wait(() => !!document.querySelector(".noa-message-rail-card"))
+  const railHost = document.getElementById("rail-resize")!
+  railHost.style.width = "180px"
+  results.railPreviewNarrow = await wait(() => { const host = railHost.getBoundingClientRect(), card = document.querySelector(".noa-message-rail-card")!.getBoundingClientRect(); return card.top >= host.top && card.bottom <= host.bottom && card.right <= host.right })
+  railHost.style.height = "140px"
+  results.railPreviewResize = await wait(() => { const host = railHost.getBoundingClientRect(), card = document.querySelector(".noa-message-rail-card")!.getBoundingClientRect(); return card.top >= host.top && card.bottom <= host.bottom && card.right <= host.right })
+  const navigationTurns = initial.map(item => ({ role: "user" as const, id: item.id, text: item.label }))
+  await show(<div id="rail-gutter" style={{ display: "flex", width: 800, height: 500 }}><MessageList turns={navigationTurns} busy={false} readingWidth={600} /></div>)
+  const gutter = document.getElementById("rail-gutter")!
+  const visibleAtWide = await wait(() => !!document.querySelector(".noa-message-rail"))
+  ;(document.querySelector('[data-message-rail-item="old2"]') as HTMLElement)?.click()
+  await wait(() => !!document.querySelector(".noa-message-rail-card"))
+  gutter.style.width = "640px"
+  const hiddenWhenNarrow = await wait(() => document.querySelector('.noa-message-rail-layer[data-visible="false"][inert][aria-hidden="true"]') !== null && !document.querySelector(".noa-message-rail-card"))
+  gutter.style.width = "800px"
+  results.railGutterVisibility = visibleAtWide && hiddenWhenNarrow && await wait(() => !!document.querySelector('.noa-message-rail-layer[data-visible="true"]'))
+  const railLayer = document.querySelector<HTMLElement>(".noa-message-rail-layer")!
+  results.railFade = getComputedStyle(railLayer).transitionDuration === "0.15s"
   const originalFetch = window.fetch
   let failChanges = false
   let resolveStaged: ((response: Response) => void) | undefined
