@@ -169,7 +169,7 @@ import {
 import { getMaxThinkingTokensForModel } from 'src/utils/context.js'
 import { logForDebugging } from 'src/utils/debug.js'
 import { logForDiagnosticsNoPII } from 'src/utils/diagLogs.js'
-import { type EffortValue, modelSupportsEffort } from 'src/utils/effort.js'
+import { type EffortLevel, type EffortValue, isEffortLevel, modelSupportsEffort } from 'src/utils/effort.js'
 import {
   isFastModeAvailable,
   isFastModeCooldown,
@@ -1533,6 +1533,7 @@ async function* queryModel(
   // Capture the betas sent in the last API request, including the ones that
   // were dynamically added, so we can log and send it to telemetry.
   let lastRequestBetas: string[] | undefined
+  let sentEffort: EffortLevel | undefined
   const messageThreadRequest = createMessageThreadRequest(options.querySource, options.agentId, options.model)
 
   const paramsFromContext = (retryContext: RetryContext) => {
@@ -1769,6 +1770,8 @@ async function* queryModel(
       ...(speed !== undefined && { speed }),
     }, retryContext.model)
     lastRequestBetas = params.betas ?? []
+    const requestEffort = params.output_config?.effort
+    sentEffort = typeof requestEffort === 'string' && isEffortLevel(requestEffort) ? requestEffort : undefined
     return params
   }
 
@@ -2282,6 +2285,7 @@ async function* queryModel(
               ...(process.env.USER_TYPE === 'ant' &&
                 research !== undefined && { research }),
               requestedModel: options.model,
+              ...(sentEffort !== undefined && { effort: sentEffort }),
               ...(advisorModel && { advisorModel }),
             }
             newMessages.push(m)
@@ -2383,7 +2387,7 @@ async function* queryModel(
         yield {
           type: 'stream_event',
           event: part,
-          ...(part.type === 'message_start' ? { ttftMs } : undefined),
+          ...(part.type === 'message_start' ? { ttftMs, sentEffort } : undefined),
         }
       }
       // Clear the idle timeout watchdog now that the stream loop has exited
@@ -2745,6 +2749,7 @@ async function* queryModel(
             research,
           }),
         requestedModel: options.model,
+        ...(sentEffort !== undefined && { effort: sentEffort }),
         ...(advisorModel && {
           advisorModel,
         }),
@@ -2865,6 +2870,7 @@ async function* queryModel(
           ...(process.env.USER_TYPE === 'ant' &&
             research !== undefined && { research }),
           requestedModel: options.model,
+          ...(sentEffort !== undefined && { effort: sentEffort }),
           ...(advisorModel && { advisorModel }),
         }
         if (
@@ -3089,6 +3095,7 @@ async function* queryModel(
       fastMode: isFastModeRequest,
       previousRequestId,
       betas: lastRequestBetas,
+      effort: sentEffort,
     })
   })
 

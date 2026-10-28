@@ -375,6 +375,7 @@ export function endLLMRequestSpan(
     requestSetupMs?: number
     /** Timestamps (Date.now()) of each attempt start — used to emit retry sub-spans */
     attemptStartTimes?: number[]
+    effort?: string
   },
 ): void {
   let llmSpanContext: SpanContext | undefined
@@ -451,6 +452,8 @@ export function endLLMRequestSpan(
       endAttributes['response.has_tool_call'] = metadata.hasToolCall
     if (metadata.ttftMs !== undefined)
       endAttributes['ttft_ms'] = metadata.ttftMs
+    if (metadata.effort !== undefined)
+      endAttributes['effort'] = metadata.effort
 
     // Add experimental response attributes (model_output, thinking_output)
     addBetaLLMResponseAttributes(endAttributes, metadata)

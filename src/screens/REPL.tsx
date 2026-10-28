@@ -257,7 +257,7 @@ import { diagnosticTracker } from '../services/diagnosticTracking.js';
 import { handleSpeculationAccept, type ActiveSpeculationState } from '../services/PromptSuggestion/speculation.js';
 import { IdeOnboardingDialog } from '../components/IdeOnboardingDialog.js';
 import { EffortCallout, shouldShowEffortCallout } from '../components/EffortCallout.js';
-import type { EffortValue } from '../utils/effort.js';
+import type { EffortLevel, EffortValue } from '../utils/effort.js';
 import { RemoteCallout } from '../components/RemoteCallout.js';
 /* eslint-disable custom-rules/no-process-env-top-level, @typescript-eslint/no-require-imports */
 const AntModelSwitchCallout: ModelSwitchCalloutComponent | null = ("external" as string) === 'ant' ? require('../components/AntModelSwitchCallout.js').AntModelSwitchCallout : null;
@@ -920,6 +920,7 @@ export function REPL({
   }, []);
   useIdeSelection(isRemoteSession ? EMPTY_MCP_CLIENTS : mcp.clients, offerIdeSelection);
   const [streamMode, setStreamMode] = useState<SpinnerMode>('responding');
+  const [sentEffort, setSentEffort] = useState<EffortLevel | undefined>();
   // Ref mirror so onSubmit can read the latest value without adding
   // streamMode to its deps. streamMode flips between
   // requesting/responding/tool-use ~10x per turn during streaming; having it
@@ -1692,6 +1693,7 @@ export function REPL({
     setSpinnerColor(null);
     setSpinnerShimmerColor(null);
     setCompactProgressStartedAt(null);
+    setSentEffort(undefined);
     pickNewSpinnerTip();
     endInteractionSpan();
     // Speculative bash classifier checks are only valid for the current
@@ -2766,6 +2768,11 @@ export function REPL({
     onBackgroundQuery: handleBackgroundQuery
   });
   const onQueryEvent = useCallback((event: Parameters<typeof handleMessageFromStream>[0]) => {
+    if (event.type === 'stream_event' && event.event.type === 'message_start') {
+      setSentEffort(event.sentEffort);
+    } else if (event.type === 'assistant' && event.effort !== undefined) {
+      setSentEffort(event.effort);
+    }
     handleMessageFromStream(event, newMessage => {
       // Heartbeat ticks are keep-alive for headless/remote consumers only; the
       // active-tool spinner already conveys liveness here. Never add them to the
@@ -4959,7 +4966,7 @@ export function REPL({
               {"external" === 'ant' && <TungstenLiveMonitor />}
               {WebBrowserPanel ? <WebBrowserPanel /> : null}
               <Box flexGrow={1} />
-              {showSpinner && <SpinnerWithVerb mode={streamMode} spinnerTip={spinnerTip} responseLengthRef={responseLengthRef} apiMetricsRef={apiMetricsRef} overrideMessage={spinnerMessage} spinnerSuffix={stopHookSpinnerSuffix} verbose={verbose} loadingStartTimeRef={loadingStartTimeRef} totalPausedMsRef={totalPausedMsRef} pauseStartTimeRef={pauseStartTimeRef} overrideColor={effectiveSpinnerColor} overrideShimmerColor={effectiveSpinnerShimmerColor} hasActiveTools={inProgressToolUseIDs.size > 0} leaderIsIdle={!isLoading} compact={compactProgressStartedAt !== null ? { startedAt: compactProgressStartedAt } : undefined} />}
+              {showSpinner && <SpinnerWithVerb mode={streamMode} spinnerTip={spinnerTip} responseLengthRef={responseLengthRef} apiMetricsRef={apiMetricsRef} overrideMessage={spinnerMessage} spinnerSuffix={stopHookSpinnerSuffix} verbose={verbose} loadingStartTimeRef={loadingStartTimeRef} totalPausedMsRef={totalPausedMsRef} pauseStartTimeRef={pauseStartTimeRef} overrideColor={effectiveSpinnerColor} overrideShimmerColor={effectiveSpinnerShimmerColor} hasActiveTools={inProgressToolUseIDs.size > 0} leaderIsIdle={!isLoading} sentEffort={sentEffort} compact={compactProgressStartedAt !== null ? { startedAt: compactProgressStartedAt } : undefined} />}
               {!showSpinner && !isLoading && !userInputOnProcessing && !hasRunningTeammates && isBriefOnly && !viewedAgentTask && <BriefIdleStatus />}
               {isFullscreenEnvEnabled() && <PromptInputQueuedCommands isLoading={isLoading} />}
             </>} bottom={<Box flexDirection="column" width="100%">

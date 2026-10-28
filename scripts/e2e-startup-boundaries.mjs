@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { spawn, execFileSync } from 'node:child_process';
 import { createServer } from 'node:http';
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync, existsSync, realpathSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync, existsSync, realpathSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -16,6 +16,7 @@ const definitions = [
   { name: 'verify-key-latch', verifyKey: true },
   { name: 'latch-usage', latchUsage: true, trust: true },
   { name: 'bypass-mode-prompt', tmuxMode: true, trust: true },
+  { name: 'effort-sent-state', effortState: true, trust: true },
   { name: 'project-untrusted', trust: false, run: false },
   { name: 'project-untrusted-bidi', trust: false, run: false, projectName: 'project\u202eevil' },
   { name: 'project-trusted', trust: true, run: true },
@@ -47,6 +48,9 @@ try {
     const helper = join(dir, 'helper.sh');
     writeFileSync(helper, `#!/bin/sh\nprintf '%s\\n' "$(pwd -P)" "\${ANTHROPIC_API_KEY:-unset}" "\${GITHUB_TOKEN:-unset}" "\${NPM_TOKEN:-unset}" "\${DATABASE_URL:-unset}" "\${PIP_INDEX_URL:-unset}" "\${npm_config_proxy:-unset}" "\${NOA_FIXTURE_PLAIN:-unset}" "\${CLAUDE_CODE_MCP_SERVER_URL:-unset}" "\${JAVA_TOOL_OPTIONS:-unset}" "\${NOTIFY_URL:-unset}" "\${DEPLOY_PEM:-unset}" > '${markerFile}'\nprintf '{"x-probe":"executed"}'\n`, { mode: 0o700 });
     const requests = [];
+    let releaseEffortResponse;
+    let notifyEffortResponseStarted;
+    const effortResponseStarted = c.effortState ? new Promise(r => { notifyEffortResponseStarted = r; }) : null;
     const server = createServer(async (req, res) => {
       let raw = ''; for await (const chunk of req) raw += chunk;
       const body = JSON.parse(raw || '{}');
@@ -65,13 +69,27 @@ try {
         if (!body.stream) { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(message)); return; }
         const events = [
           { type: 'message_start', message: { ...message, content: [], stop_reason: null, usage: { input_tokens: 10, output_tokens: 0 } } },
-          { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } },
-          { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'BOUNDARY_OK' } },
-          { type: 'content_block_stop', index: 0 },
+          ...(c.effortState ? [
+            { type: 'content_block_start', index: 0, content_block: { type: 'thinking', thinking: '', signature: '' } },
+            { type: 'content_block_delta', index: 0, delta: { type: 'thinking_delta', thinking: 'Effort fixture reasoning.' } },
+            { type: 'content_block_stop', index: 0 },
+          ] : []),
+          { type: 'content_block_start', index: c.effortState ? 1 : 0, content_block: { type: 'text', text: '' } },
+          { type: 'content_block_delta', index: c.effortState ? 1 : 0, delta: { type: 'text_delta', text: 'BOUNDARY_OK' } },
+          { type: 'content_block_stop', index: c.effortState ? 1 : 0 },
           { type: 'message_delta', delta: { stop_reason: 'end_turn' }, usage: { output_tokens: 5 } },
           { type: 'message_stop' },
         ];
-        res.writeHead(200, { 'content-type': 'text/event-stream' }); res.end(events.map(e => `event: ${e.type}\ndata: ${JSON.stringify(e)}\n\n`).join('')); return;
+        res.writeHead(200, { 'content-type': 'text/event-stream' });
+        if (c.effortState && body.model === 'claude-opus-5') {
+          const first = events.slice(0, 4), rest = events.slice(4);
+          res.write(first.map(e => `event: ${e.type}\ndata: ${JSON.stringify(e)}\n\n`).join(''));
+          notifyEffortResponseStarted();
+          await new Promise(r => { releaseEffortResponse = r; });
+          res.end(rest.map(e => `event: ${e.type}\ndata: ${JSON.stringify(e)}\n\n`).join(''));
+          return;
+        }
+        res.end(events.map(e => `event: ${e.type}\ndata: ${JSON.stringify(e)}\n\n`).join('')); return;
       }
       res.writeHead(200, { 'content-type': 'application/json' }); res.end('{"input_tokens":1}');
     });
@@ -98,6 +116,7 @@ try {
       writeFileSync(join(config, '.config.json'), JSON.stringify(globalConfig));
       writeFileSync(join(config, 'settings.json'), JSON.stringify(settings));
       const env = { ...secrets, PATH: process.env.PATH, HOME: home, CLAUDE_CONFIG_DIR: config, ANTHROPIC_API_KEY: 'local-dummy', ANTHROPIC_BASE_URL: url, DISABLE_TELEMETRY: '1', DISABLE_AUTOUPDATER: '1', CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1', CLAUDE_CODE_MAX_RETRIES: '0' };
+      if (c.effortState) env.CLAUDE_CODE_ALWAYS_ENABLE_EFFORT = '1';
       if (c.latchUsage) env.CLAUDE_CODE_MAX_RETRIES = '2'
       if (c.tmuxMode) env.NOA_CLAUDE_BASH_FIRST_VARIANT = 'relaxed';
       if (c.verifyKey) {
@@ -122,7 +141,7 @@ try {
         execFileSync('git', ['config', 'user.name', 'Fixture'], { cwd: project });
         execFileSync('git', ['commit', '--allow-empty', '-qm', 'base'], { cwd: project });
       }
-      if (c.cd || c.latchUsage || c.worktreeExit || c.tmuxMode) {
+      if (c.cd || c.latchUsage || c.worktreeExit || c.tmuxMode || c.effortState) {
         const target = join(dir, 'target'); mkdirSync(target); execFileSync('git', ['init', '-q'], { cwd: target });
         const socket = 'noa-startup-' + process.pid, tmux = (...a) => execFileSync('tmux', ['-L', socket, ...a], { encoding: 'utf8' });
         const sh = v => "'" + v.replaceAll("'", "'\\''") + "'";
@@ -132,10 +151,36 @@ try {
         const readConfig = () => JSON.parse(readFileSync(join(config, '.config.json'), 'utf8'));
         // env -i: the tmux server inherits the caller's environment, and a caller
         // running inside Noa (CLAUDE_CODE_PRODUCT_DIR) would point the TUI at the real config.
-        tmux('new-session', '-d', '-s', 'cd', '-x', '120', '-y', '40', ['cd', sh(project), '&&', 'env', '-i', 'TERM=xterm-256color', ...Object.entries(env).map(([k, v]) => sh(k + '=' + v)), sh(entry), '--model', 'claude-opus-5-5', ...(c.tmuxMode ? ['--dangerously-skip-permissions'] : []), ...(c.worktreeExit ? ['--worktree', 'fixture'] : [])].join(' ') + (c.worktreeExit ? '; printf "\\nCLI_EXIT=%s\\n" "$?"; read -r fixture_end' : ''));
+        tmux('new-session', '-d', '-s', 'cd', '-x', '120', '-y', '40', ['cd', sh(project), '&&', 'env', '-i', 'TERM=xterm-256color', ...Object.entries(env).map(([k, v]) => sh(k + '=' + v)), sh(entry), '--model', c.effortState ? 'claude-opus-5' : 'claude-opus-5-5', ...(c.effortState ? ['--effort', 'high'] : []), ...(c.tmuxMode ? ['--dangerously-skip-permissions'] : []), ...(c.worktreeExit ? ['--worktree', 'fixture'] : [])].join(' ') + (c.worktreeExit ? '; printf "\\nCLI_EXIT=%s\\n" "$?"; read -r fixture_end' : ''));
         try {
           await until('prompt', () => /shift\+tab to cycle/.test(screen()));
-          if (c.tmuxMode) {
+          if (c.effortState) {
+            tmux('send-keys', '-t', 'cd', '-l', 'Run the effort fixture.');
+            await until('effort fixture input', () => screen().includes('Run the effort fixture.'));
+            tmux('send-keys', '-t', 'cd', 'Enter');
+            await effortResponseStarted;
+            await until('effort spinner', () => /thinking with (high|medium) effort/.test(screen()));
+            const before = screen();
+            tmux('send-keys', '-t', 'cd', '-l', '/effort low');
+            await until('effort command input', () => screen().includes('/effort low'));
+            tmux('send-keys', '-t', 'cd', 'Enter');
+            await until('effort selection acknowledgement', () => screen().includes('Set effort level to low'));
+            const after = screen();
+            releaseEffortResponse();
+            await until('effort fixture answer', () => screen().includes('BOUNDARY_OK'));
+            const readAssistant = () => {
+              const jsonlFiles = (function files(dir) { return existsSync(dir) ? readdirSync(dir, { withFileTypes: true }).flatMap(e => e.isDirectory() ? files(join(dir, e.name)) : e.name.endsWith('.jsonl') ? [join(dir, e.name)] : []) : []; })(join(config, 'projects'));
+              return jsonlFiles.flatMap(file => readFileSync(file, 'utf8').split('\n').flatMap(line => { try { return [JSON.parse(line)]; } catch { return []; } })).find(row => row.type === 'assistant' && row.message?.model === 'claude-opus-5' && JSON.stringify(row.message?.content).includes('BOUNDARY_OK'));
+            };
+            let assistant;
+            await until('effort transcript flush', () => { assistant = readAssistant(); return assistant !== undefined; });
+            const request = requests.find(r => r.url.includes('/messages') && !r.url.includes('count_tokens') && r.body?.model === 'claude-opus-5');
+            observation = { name: c.name, screen: after, before, after, assistant, requestEffort: request?.body?.output_config?.effort, projects: readConfig().projects, requests };
+            assert.equal(request?.body?.output_config?.effort, 'high', 'fixture request did not use high effort');
+            assert.ok(after.includes('thinking with high effort'), 'current request spinner stopped showing its sent effort');
+            assert.ok(!after.includes('thinking with low effort'), 'current request spinner prematurely showed the next effort');
+            assert.equal(assistant?.effort, 'high', 'transcript did not preserve the request effort');
+          } else if (c.tmuxMode) {
             tmux('send-keys', '-t', 'cd', '-l', 'Run the compatibility fixture.');
             await until('fixture input', () => screen().includes('Run the compatibility fixture.'));
             tmux('send-keys', '-t', 'cd', 'Enter');
@@ -192,7 +237,7 @@ try {
             assert.ok(postExit.includes('Resume using the dedicated tools for file reads, searches, and edits.'), 'bash-first exit did not restore dedicated tools');
           }
           writeFileSync(join(dir, 'observed.json'), JSON.stringify(observation, null, 2));
-        } finally { try { observation ??= { name: c.name, screen: screen() }; if (c.worktreeExit) observation.scrollback = scrollback(); writeFileSync(join(dir, 'observed.json'), JSON.stringify(observation, null, 2)); } catch {} try { tmux('kill-server'); } catch {} }
+        } finally { try { releaseEffortResponse?.(); } catch {} try { observation ??= { name: c.name, screen: screen() }; if (c.worktreeExit) observation.scrollback = scrollback(); writeFileSync(join(dir, 'observed.json'), JSON.stringify(observation, null, 2)); } catch {} try { tmux('kill-server'); } catch {} }
         assert.equal(observation.projects[realpathSync(project)].hasTrustDialogAccepted, true);
         results.push({ name: c.name, passed: true }); console.log('PASS ' + c.name); continue;
       }

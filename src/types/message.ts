@@ -7,6 +7,7 @@ import type { ContentBlockParam } from '@anthropic-ai/sdk/resources/index.mjs'
 import type { APIError } from '@anthropic-ai/sdk'
 import type { SDKAssistantMessageErrorSchema } from '../entrypoints/sdk/coreSchemas.js'
 import type { Attachment } from '../utils/attachments.js'
+import type { EffortLevel } from '../utils/effort.js'
 import type { UUID } from 'crypto'
 
 type SDKAssistantMessageError = z.infer<
@@ -119,6 +120,7 @@ export type AssistantMessage = MessageBase & {
   requestId?: string
   /** The model this request asked for; a gateway may name another in `message.model`. */
   requestedModel?: string
+  effort?: EffortLevel
   apiError?: string
   apiFailureCategory?: ApiFailureCategory
   error?: SDKAssistantMessageError
@@ -215,12 +217,13 @@ export type ToolUseSummaryMessage = {
 }
 
 // Raw API stream event passthrough, yielded by queryModelWithStreaming
-// (services/api/claude.ts) for partial-message consumers. ttftMs rides on
-// the message_start event only.
+// (services/api/claude.ts) for partial-message consumers. ttftMs and sentEffort
+// ride on the message_start event only.
 export type StreamEvent = {
   type: 'stream_event'
   event: BetaRawMessageStreamEvent
   ttftMs?: number
+  sentEffort?: EffortLevel
 }
 
 // Yielded by the query loop at the top of each iteration, before the API

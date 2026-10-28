@@ -601,6 +601,7 @@ export function logAPISuccessAndDuration({
   fastMode,
   previousRequestId,
   betas,
+  effort,
 }: {
   model: string
   preNormalizedModel: string
@@ -634,6 +635,7 @@ export function logAPISuccessAndDuration({
   /** Request ID from the previous API call in this session */
   previousRequestId?: string | null
   betas?: string[]
+  effort?: EffortLevel
 }): void {
   const gateway = detectGateway({
     headers,
@@ -721,6 +723,7 @@ export function logAPISuccessAndDuration({
     cost_usd: String(costUSD),
     duration_ms: String(durationMs),
     speed: fastMode ? 'fast' : 'normal',
+    effort,
   })
 
   // Extract model output, thinking output, and tool call flag when beta tracing is enabled
@@ -771,6 +774,7 @@ export function logAPISuccessAndDuration({
     ttftMs: ttftMs ?? undefined,
     requestSetupMs,
     attemptStartTimes,
+    effort,
   })
 
   // Log first successful message for teleported sessions (reliability tracking)

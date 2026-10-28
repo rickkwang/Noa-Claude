@@ -28,7 +28,7 @@ import { useSettings } from '../hooks/useSettings.js';
 import { isInProcessTeammateTask } from '../tasks/InProcessTeammateTask/types.js';
 import { isBackgroundTask } from '../tasks/types.js';
 import { getAllInProcessTeammateTasks } from '../tasks/InProcessTeammateTask/InProcessTeammateTask.js';
-import { getEffortSuffix } from '../utils/effort.js';
+import { getEffortSuffix, type EffortLevel } from '../utils/effort.js';
 import { getMainLoopModel } from '../utils/model/model.js';
 import { getViewedTeammateTask } from '../state/selectors.js';
 import { TEARDROP_ASTERISK } from '../constants/figures.js';
@@ -58,6 +58,7 @@ type Props = {
   /** While compacting: the timer runs from compaction start instead of the
    *  turn's loading start. The token count stays on the streamed-char counter. */
   compact?: { startedAt: number };
+  sentEffort?: EffortLevel;
 };
 
 // Thin wrapper: branches on isBriefOnly so the two variants have independent
@@ -97,7 +98,8 @@ function SpinnerWithVerbInner({
   verbose,
   hasActiveTools = false,
   leaderIsIdle = false,
-  compact
+  compact,
+  sentEffort
 }: Props): React.ReactNode {
   const settings = useSettings();
   const reducedMotion = settings.prefersReducedMotion ?? false;
@@ -183,7 +185,7 @@ function SpinnerWithVerbInner({
     };
   }, [mode]);
   const effortValue = useAppState(s_4 => s_4.effortValue);
-  const effortSuffix = getEffortSuffix(getMainLoopModel(), effortValue);
+  const effortSuffix = getEffortSuffix(getMainLoopModel(), effortValue, sentEffort);
 
   // Check if any running in-process teammates exist (needed for both modes)
   const runningTeammates = getAllInProcessTeammateTasks(tasks).filter(t => t.status === 'running');

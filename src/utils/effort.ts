@@ -500,9 +500,10 @@ export function getDisplayedEffortLevel(
 export function getEffortSuffix(
   model: string,
   effortValue: EffortValue | null | undefined,
+  sentEffort?: EffortLevel,
 ): string {
-  if (effortValue === null || effortValue === undefined && getInitialEffortSetting(model) === undefined) return ''
-  const resolved = resolveAppliedEffort(model, effortValue)
+  if (sentEffort === undefined && (effortValue === null || effortValue === undefined && getInitialEffortSetting(model) === undefined)) return ''
+  const resolved = sentEffort ?? resolveAppliedEffort(model, effortValue)
   if (resolved === undefined) return ''
   return ` with ${convertEffortValueToLevel(resolved)} effort`
 }
