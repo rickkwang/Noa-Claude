@@ -176,6 +176,12 @@ export const SDKControlGetContextUsageRequestSchema = lazySchema(() =>
   z
     .object({
       subtype: z.literal('get_context_usage'),
+      detail: z
+        .enum(['summary', 'full'])
+        .optional()
+        .describe(
+          "'full' counts each category with the token-count API; 'summary' answers from local estimates without the per-category token-count calls. Defaults to 'full'.",
+        ),
     })
     .describe(
       'Requests a breakdown of current context window usage by category.',
@@ -184,10 +190,12 @@ export const SDKControlGetContextUsageRequestSchema = lazySchema(() =>
 
 const ContextCategorySchema = lazySchema(() =>
   z.object({
+    id: z.string().optional(),
     name: z.string(),
     tokens: z.number(),
     color: z.string(),
     isDeferred: z.boolean().optional(),
+    kind: z.enum(['used', 'free', 'buffer', 'deferred']).optional(),
   }),
 )
 
@@ -209,6 +217,9 @@ export const SDKControlGetContextUsageResponseSchema = lazySchema(() =>
       totalTokens: z.number(),
       maxTokens: z.number(),
       rawMaxTokens: z.number(),
+      autocompactSource: z
+        .enum(['env', 'settings', 'model-default', 'unknown-model', 'auto'])
+        .optional(),
       percentage: z.number(),
       gridRows: z.array(z.array(ContextGridSquareSchema())),
       model: z.string(),
@@ -227,6 +238,9 @@ export const SDKControlGetContextUsageResponseSchema = lazySchema(() =>
           isLoaded: z.boolean().optional(),
         }),
       ),
+      mcpInstructions: z
+        .array(z.object({ serverName: z.string(), tokens: z.number() }))
+        .optional(),
       deferredBuiltinTools: z
         .array(
           z.object({
@@ -247,6 +261,8 @@ export const SDKControlGetContextUsageResponseSchema = lazySchema(() =>
           agentType: z.string(),
           source: z.string(),
           tokens: z.number(),
+          pluginId: z.string().optional(),
+          path: z.string().optional(),
         }),
       ),
       slashCommands: z
@@ -265,6 +281,7 @@ export const SDKControlGetContextUsageResponseSchema = lazySchema(() =>
             z.object({
               name: z.string(),
               source: z.string(),
+              pluginName: z.string().optional(),
               tokens: z.number(),
             }),
           ),

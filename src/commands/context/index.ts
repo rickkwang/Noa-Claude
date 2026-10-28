@@ -5,8 +5,10 @@ import type { Command } from '../../commands.js'
 export const context: Command = {
   name: 'context',
   description: 'Visualize current context usage as a colored grid',
+  argumentHint: '[all]',
   isEnabled: () => !getIsNonInteractiveSession(),
   type: 'local-jsx',
+  thinClientDispatch: 'control-request',
   load: () => import('./context.js'),
 }
 

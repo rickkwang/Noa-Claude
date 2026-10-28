@@ -45,7 +45,15 @@ export function getSettingSourceName(source: SettingSource): string {
  * @returns Short capitalized display name like 'User', 'Project', 'Plugin'
  */
 export function getSourceDisplayName(
-  source: SettingSource | 'plugin' | 'built-in',
+  source:
+    | SettingSource
+    | 'plugin'
+    | 'built-in'
+    | 'builtin'
+    | 'bundled'
+    | 'mcp'
+    | 'memoryStore'
+    | 'syncedSkills',
 ): string {
   switch (source) {
     case 'userSettings':
@@ -61,7 +69,15 @@ export function getSourceDisplayName(
     case 'plugin':
       return 'Plugin'
     case 'built-in':
+    case 'builtin':
+    case 'bundled':
       return 'Built-in'
+    case 'mcp':
+      return 'MCP'
+    case 'memoryStore':
+      return 'Memory store'
+    case 'syncedSkills':
+      return 'claude.ai sync'
   }
 }
 

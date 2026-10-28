@@ -94,13 +94,15 @@ export interface ContextUsage {
   percentage: number
   model: string
   rawMaxTokens?: number
-  categories?: { name: string; tokens: number; isDeferred?: boolean }[]
+  autocompactSource?: "env" | "settings" | "model-default" | "unknown-model" | "auto"
+  categories?: { id?: string; name: string; tokens: number; isDeferred?: boolean; kind?: "used" | "free" | "buffer" | "deferred" }[]
   memoryFiles?: { path: string; type: string; tokens: number }[]
   mcpTools?: { name: string; serverName: string; tokens: number; isLoaded?: boolean }[]
+  mcpInstructions?: { serverName: string; tokens: number }[]
   systemTools?: { name: string; tokens: number }[]
   systemPromptSections?: { name: string; tokens: number }[]
-  agents?: { agentType: string; source: string; tokens: number }[]
-  skills?: { totalSkills: number; includedSkills: number; tokens: number; skillFrontmatter: { name: string; source: string; tokens: number }[] }
+  agents?: { agentType: string; source: string; tokens: number; pluginId?: string; path?: string }[]
+  skills?: { totalSkills: number; includedSkills: number; tokens: number; skillFrontmatter: { name: string; source: string; pluginName?: string; tokens: number }[] }
   isAutoCompactEnabled?: boolean
   autoCompactThreshold?: number
   apiUsage?: { input_tokens: number; output_tokens: number; cache_creation_input_tokens: number; cache_read_input_tokens: number } | null

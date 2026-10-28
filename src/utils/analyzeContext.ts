@@ -5,8 +5,6 @@ import {
   getSystemPrompt,
   SYSTEM_PROMPT_DYNAMIC_BOUNDARY,
 } from 'src/constants/prompts.js'
-import { microcompactMessages } from 'src/services/compact/microCompact.js'
-import { getSdkBetas } from '../bootstrap/state.js'
 import { getCommandName } from '../commands.js'
 import { getSystemContext } from '../context.js'
 import {
@@ -14,6 +12,9 @@ import {
   getEffectiveContextWindowSize,
   isAutoCompactEnabled,
   MANUAL_COMPACT_BUFFER_TOKENS,
+  resolveAutoCompactWindow,
+  type AutoCompactWindowOverride,
+  type AutoCompactWindowSource,
 } from '../services/compact/autoCompact.js'
 import {
   countMessagesTokensWithAPI,
@@ -48,7 +49,6 @@ import type {
 } from '../types/message.js'
 import { toolToAPISchema } from './api.js'
 import { filterInjectedMemoryFiles, getMemoryFiles } from './claudemd.js'
-import { getContextWindowForModel } from './context.js'
 import { getCwd } from './cwd.js'
 import { logForDebugging } from './debug.js'
 import { isEnvTruthy } from './envUtils.js'
@@ -61,6 +61,8 @@ import { jsonStringify } from './slowOperations.js'
 import { buildEffectiveSystemPrompt } from './systemPrompt.js'
 import type { Theme } from './theme.js'
 import { getCurrentUsage } from './tokens.js'
+import { formatTokens } from './format.js'
+import type { MCPServerConnection } from '../services/mcp/types.js'
 
 const RESERVED_CATEGORY_NAME = 'Autocompact buffer'
 const MANUAL_COMPACT_BUFFER_NAME = 'Compact buffer'
@@ -108,12 +110,170 @@ async function countTokensWithFallback(
   }
 }
 
+export type ContextDetail = 'summary' | 'full'
+
+type TokenCounter = (
+  messages: Anthropic.Beta.Messages.BetaMessageParam[],
+  tools: Anthropic.Beta.Messages.BetaToolUnion[],
+) => Promise<number | null>
+
+/** Local-only estimate used by `detail: 'summary'`, which must not hit the API. */
+function estimateTokensLocally(
+  messages: Anthropic.Beta.Messages.BetaMessageParam[],
+  tools: Anthropic.Beta.Messages.BetaToolUnion[],
+): number {
+  let total = 0
+  for (const message of messages) {
+    const content = (message as { content?: unknown }).content
+    total +=
+      typeof content === 'string'
+        ? roughTokenCountEstimation(content)
+        : roughTokenCountEstimation(jsonStringify(content))
+  }
+  for (const tool of tools) {
+    total += roughTokenCountEstimation(jsonStringify(tool))
+  }
+  return total
+}
+
+function createTokenCounter(detail: ContextDetail): TokenCounter {
+  return detail === 'summary'
+    ? async (messages, tools) => estimateTokensLocally(messages, tools)
+    : countTokensWithFallback
+}
+
+function categoryKind(
+  category: Pick<ContextCategory, 'name' | 'isDeferred'>,
+): ContextCategoryKind {
+  if (category.name === 'Free space') return 'free'
+  if (
+    category.name === RESERVED_CATEGORY_NAME ||
+    category.name === MANUAL_COMPACT_BUFFER_NAME
+  ) {
+    return 'buffer'
+  }
+  if (category.isDeferred) return 'deferred'
+  return 'used'
+}
+
+export function formatApproxTokens(count: number): string {
+  if (count < 20) return '< 20'
+  return `~${formatTokens(Math.round(count / 10) * 10)}`
+}
+
+export function getContextOverLimit(
+  data: Pick<ContextData, 'totalTokens' | 'rawMaxTokens' | 'autocompactSource'>,
+): { tokensOver: number; kind: 'hard_limit' | 'compaction_window' } | null {
+  if (data.totalTokens <= data.rawMaxTokens) return null
+  return {
+    tokensOver: data.totalTokens - data.rawMaxTokens,
+    kind: data.autocompactSource === 'auto' ? 'hard_limit' : 'compaction_window',
+  }
+}
+
+export function formatContextOverLimit(
+  data: Pick<ContextData, 'totalTokens' | 'rawMaxTokens' | 'autocompactSource'>,
+): string | null {
+  const info = getContextOverLimit(data)
+  if (info === null) return null
+  const tokensOver = formatTokens(info.tokensOver)
+  const window = formatTokens(data.rawMaxTokens)
+  if (info.kind === 'hard_limit') {
+    const command = isEnvTruthy(process.env.DISABLE_COMPACT)
+      ? '/clear'
+      : '/compact or /clear'
+    return `Context exceeds the ${window}-token limit by ${tokensOver} tokens \u2014 run ${command} to continue.`
+  }
+  const command = isEnvTruthy(process.env.DISABLE_COMPACT)
+    ? '/clear'
+    : '/compact'
+  return `Context is ${tokensOver} tokens past the ${window}-token compaction window \u2014 run ${command} to reduce usage.`
+}
+
+export interface ContextUsageSummary {
+  model: string
+  total_tokens: number
+  raw_max_tokens: number
+  percentage: number
+  over_limit?: { tokens_over: number; kind: 'hard_limit' | 'compaction_window' }
+  categories: Array<{
+    name: string
+    tokens: number
+    kind: ContextCategoryKind
+  }>
+  mcp_tools: Array<{ name: string; server_name: string; tokens: number }>
+  memory_files: Array<{ path: string; type: string; tokens: number }>
+  agents: Array<{ agent_type: string; source: string; tokens: number }>
+  skills?: Array<{
+    name: string
+    source: string
+    plugin_name?: string
+    tokens: number
+  }>
+}
+
+export function buildContextUsage(data: ContextData): ContextUsageSummary {
+  const overLimit = getContextOverLimit(data)
+  return {
+    model: data.model,
+    total_tokens: data.totalTokens,
+    raw_max_tokens: data.rawMaxTokens,
+    percentage: data.percentage,
+    ...(overLimit !== null && {
+      over_limit: {
+        tokens_over: overLimit.tokensOver,
+        kind: overLimit.kind,
+      },
+    }),
+    categories: data.categories.map(category => ({
+      name: category.name,
+      tokens: category.tokens,
+      kind: category.kind ?? categoryKind(category),
+    })),
+    mcp_tools: data.mcpTools.map(tool => ({
+      name: tool.name,
+      server_name: tool.serverName,
+      tokens: tool.tokens,
+    })),
+    memory_files: data.memoryFiles.map(file => ({
+      path: file.path,
+      type: file.type,
+      tokens: file.tokens,
+    })),
+    agents: data.agents.map(agent => ({
+      agent_type: agent.agentType,
+      source: agent.source,
+      tokens: agent.tokens,
+    })),
+    ...(data.skills &&
+      data.skills.skillFrontmatter.length > 0 && {
+        skills: data.skills.skillFrontmatter.map(skill => ({
+          name: skill.name,
+          source: skill.source,
+          ...(skill.pluginName !== undefined && {
+            plugin_name: skill.pluginName,
+          }),
+          tokens: skill.tokens,
+        })),
+      }),
+  }
+}
+
+export type ContextCategoryKind = 'used' | 'free' | 'buffer' | 'deferred'
+
 interface ContextCategory {
+  id?: string
   name: string
   tokens: number
   color: keyof Theme
   /** When true, these tokens are deferred and don't count toward context usage */
   isDeferred?: boolean
+  kind?: ContextCategoryKind
+}
+
+interface McpInstructionDetail {
+  serverName: string
+  tokens: number
 }
 
 interface GridSquare {
@@ -169,7 +329,15 @@ interface SlashCommandInfo {
 /** Individual skill detail for context display */
 interface SkillFrontmatter {
   name: string
-  source: SettingSource | 'plugin'
+  source:
+    | SettingSource
+    | 'plugin'
+    | 'built-in'
+    | 'builtin'
+    | 'bundled'
+    | 'mcp'
+    | 'syncedSkills'
+  pluginName?: string
   tokens: number
 }
 
@@ -192,16 +360,19 @@ export interface ContextData {
   readonly totalTokens: number
   readonly maxTokens: number
   readonly rawMaxTokens: number
+  readonly autocompactSource: AutoCompactWindowSource
   readonly percentage: number
   readonly gridRows: GridSquare[][]
   readonly model: string
   readonly memoryFiles: MemoryFile[]
   readonly mcpTools: McpTool[]
-  /** Ant-only: per-tool breakdown of deferred built-in tools */
+  /** Only populated when local paths were requested. */
+  readonly mcpInstructions?: McpInstructionDetail[]
+  /** Retained for wire compatibility; the analysis no longer populates it. */
   readonly deferredBuiltinTools?: DeferredBuiltinTool[]
-  /** Ant-only: per-tool breakdown of always-loaded built-in tools */
+  /** Retained for wire compatibility; the analysis no longer populates it. */
   readonly systemTools?: SystemToolDetail[]
-  /** Ant-only: per-section breakdown of system prompt */
+  /** Retained for wire compatibility; the analysis no longer populates it. */
   readonly systemPromptSections?: SystemPromptSectionDetail[]
   readonly agents: Agent[]
   readonly slashCommands?: SlashCommandInfo
@@ -236,6 +407,7 @@ export async function countToolDefinitionTokens(
   getToolPermissionContext: () => Promise<ToolPermissionContext>,
   agentInfo: AgentDefinitionsResult | null,
   model?: string,
+  countTokens: TokenCounter = countTokensWithFallback,
 ): Promise<number> {
   const toolSchemas = await Promise.all(
     tools.map(tool =>
@@ -247,7 +419,7 @@ export async function countToolDefinitionTokens(
       }),
     ),
   )
-  const result = await countTokensWithFallback([], toolSchemas)
+  const result = await countTokens([], toolSchemas)
   if (result === null || result === 0) {
     const toolNames = tools.map(t => t.name).join(', ')
     logForDebugging(
@@ -271,6 +443,7 @@ function extractSectionName(content: string): string {
 
 async function countSystemTokens(
   effectiveSystemPrompt: readonly string[],
+  countTokens: TokenCounter = countTokensWithFallback,
 ): Promise<{
   systemPromptTokens: number
   systemPromptSections: SystemPromptSectionDetail[]
@@ -298,7 +471,7 @@ async function countSystemTokens(
 
   const systemTokenCounts = await Promise.all(
     namedEntries.map(({ content }) =>
-      countTokensWithFallback([{ role: 'user', content }], []),
+      countTokens([{ role: 'user', content }], []),
     ),
   )
 
@@ -317,7 +490,9 @@ async function countSystemTokens(
   return { systemPromptTokens, systemPromptSections }
 }
 
-async function countMemoryFileTokens(): Promise<{
+async function countMemoryFileTokens(
+  countTokens: TokenCounter = countTokensWithFallback,
+): Promise<{
   memoryFileDetails: MemoryFile[]
   claudeMdTokens: number
 }> {
@@ -339,7 +514,7 @@ async function countMemoryFileTokens(): Promise<{
 
   const claudeMdTokenCounts = await Promise.all(
     memoryFilesData.map(async file => {
-      const tokens = await countTokensWithFallback(
+      const tokens = await countTokens(
         [{ role: 'user', content: file.content }],
         [],
       )
@@ -366,6 +541,7 @@ async function countBuiltInToolTokens(
   agentInfo: AgentDefinitionsResult | null,
   model?: string,
   messages?: Message[],
+  countTokens: TokenCounter = countTokensWithFallback,
 ): Promise<{
   builtInToolTokens: number
   deferredBuiltinDetails: DeferredBuiltinTool[]
@@ -405,6 +581,7 @@ async function countBuiltInToolTokens(
           getToolPermissionContext,
           agentInfo,
           model,
+          countTokens,
         )
       : 0
 
@@ -469,6 +646,7 @@ async function countBuiltInToolTokens(
           getToolPermissionContext,
           agentInfo,
           model,
+          countTokens,
         ),
       ),
     )
@@ -496,6 +674,7 @@ async function countBuiltInToolTokens(
       getToolPermissionContext,
       agentInfo,
       model,
+      countTokens,
     )
     return {
       builtInToolTokens: alwaysLoadedTokens + deferredTokens,
@@ -522,6 +701,7 @@ async function countSlashCommandTokens(
   tools: Tools,
   getToolPermissionContext: () => Promise<ToolPermissionContext>,
   agentInfo: AgentDefinitionsResult | null,
+  countTokens: TokenCounter = countTokensWithFallback,
 ): Promise<{
   slashCommandTokens: number
   commandInfo: { totalCommands: number; includedCommands: number }
@@ -540,6 +720,8 @@ async function countSlashCommandTokens(
     [slashCommandTool],
     getToolPermissionContext,
     agentInfo,
+    undefined,
+    countTokens,
   )
 
   return {
@@ -555,6 +737,7 @@ async function countSkillTokens(
   tools: Tools,
   getToolPermissionContext: () => Promise<ToolPermissionContext>,
   agentInfo: AgentDefinitionsResult | null,
+  countTokens: TokenCounter = countTokensWithFallback,
 ): Promise<{
   skillTokens: number
   skillInfo: {
@@ -582,6 +765,8 @@ async function countSkillTokens(
       [slashCommandTool],
       getToolPermissionContext,
       agentInfo,
+      undefined,
+      countTokens,
     )
 
     // Calculate per-skill token estimates based on frontmatter only
@@ -591,6 +776,10 @@ async function countSkillTokens(
       source: (skill.type === 'prompt' ? skill.source : 'plugin') as
         | SettingSource
         | 'plugin',
+      pluginName:
+        skill.type === 'prompt'
+          ? skill.pluginInfo?.pluginManifest.name
+          : undefined,
       tokens: estimateSkillFrontmatterTokens(skill),
     }))
 
@@ -619,6 +808,7 @@ export async function countMcpToolTokens(
   agentInfo: AgentDefinitionsResult | null,
   model: string,
   messages?: Message[],
+  countTokens: TokenCounter = countTokensWithFallback,
 ): Promise<{
   mcpToolTokens: number
   mcpToolDetails: McpTool[]
@@ -633,6 +823,7 @@ export async function countMcpToolTokens(
     getToolPermissionContext,
     agentInfo,
     model,
+    countTokens,
   )
   // Subtract the single overhead since we made one bulk call
   const totalTokens = Math.max(
@@ -729,9 +920,79 @@ export async function countMcpToolTokens(
   }
 }
 
-async function countCustomAgentTokens(agentDefinitions: {
-  activeAgents: AgentDefinition[]
-}): Promise<{
+async function countMcpInstructionTokens(
+  clients: MCPServerConnection[],
+  countTokens: TokenCounter = countTokensWithFallback,
+): Promise<{
+  mcpInstructionsTokens: number
+  mcpInstructionsDetails: McpInstructionDetail[]
+}> {
+  if (
+    isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_ATTACHMENTS) ||
+    isEnvTruthy(process.env.CLAUDE_CODE_SIMPLE)
+  ) {
+    return { mcpInstructionsTokens: 0, mcpInstructionsDetails: [] }
+  }
+
+  const withInstructions = clients
+    .filter(
+      (client): client is Extract<MCPServerConnection, { type: 'connected' }> =>
+        client.type === 'connected' &&
+        typeof client.instructions === 'string' &&
+        client.instructions.trim().length > 0,
+    )
+    .sort((a, b) => a.name.localeCompare(b.name))
+
+  if (withInstructions.length === 0) {
+    return { mcpInstructionsTokens: 0, mcpInstructionsDetails: [] }
+  }
+
+  const joined = withInstructions.map(client => client.instructions).join('\n\n')
+  const total = (await countTokens([{ role: 'user', content: joined }], [])) ?? 0
+  if (total === 0) {
+    return { mcpInstructionsTokens: 0, mcpInstructionsDetails: [] }
+  }
+
+  const estimates = withInstructions.map(client =>
+    roughTokenCountEstimation(client.instructions!),
+  )
+  const perServer = distributeTokens(total, estimates)
+
+  return {
+    mcpInstructionsTokens: total,
+    mcpInstructionsDetails: withInstructions.map((client, index) => ({
+      serverName: client.name,
+      tokens: perServer[index]!,
+    })),
+  }
+}
+
+/** Split `total` across weights with the largest-remainder method. */
+function distributeTokens(total: number, weights: number[]): number[] {
+  const weightTotal = weights.reduce((sum, weight) => sum + weight, 0)
+  if (weightTotal <= 0) {
+    return weights.map(() => Math.floor(total / weights.length))
+  }
+  const exact = weights.map(weight => (weight / weightTotal) * total)
+  const shares = exact.map(value => Math.floor(value))
+  let remainder = total - shares.reduce((sum, share) => sum + share, 0)
+  const order = exact
+    .map((value, index) => ({ fraction: value - shares[index]!, index }))
+    .sort((a, b) => b.fraction - a.fraction)
+  for (const { index } of order) {
+    if (remainder <= 0) break
+    shares[index]! += 1
+    remainder -= 1
+  }
+  return shares
+}
+
+async function countCustomAgentTokens(
+  agentDefinitions: {
+    activeAgents: AgentDefinition[]
+  },
+  countTokens: TokenCounter = countTokensWithFallback,
+): Promise<{
   agentTokens: number
   agentDetails: Agent[]
 }> {
@@ -743,7 +1004,7 @@ async function countCustomAgentTokens(agentDefinitions: {
 
   const tokenCounts = await Promise.all(
     customAgents.map(agent =>
-      countTokensWithFallback(
+      countTokens(
         [
           {
             role: 'user',
@@ -852,9 +1113,8 @@ function processAttachment(
 
 async function approximateMessageTokens(
   messages: Message[],
+  countTokens: TokenCounter = countTokensWithFallback,
 ): Promise<MessageBreakdown> {
-  const microcompactResult = await microcompactMessages(messages)
-
   const breakdown: MessageBreakdown = {
     totalTokens: 0,
     toolCallTokens: 0,
@@ -869,7 +1129,7 @@ async function approximateMessageTokens(
 
   // Build a map of tool_use_id to tool_name for easier lookup
   const toolUseIdToName = new Map<string, string>()
-  for (const msg of microcompactResult.messages) {
+  for (const msg of messages) {
     if (msg.type === 'assistant') {
       for (const block of msg.message.content) {
         if ('type' in block && block.type === 'tool_use') {
@@ -885,7 +1145,7 @@ async function approximateMessageTokens(
   }
 
   // Process each message for detailed breakdown
-  for (const msg of microcompactResult.messages) {
+  for (const msg of messages) {
     if (msg.type === 'assistant') {
       processAssistantMessage(msg, breakdown)
     } else if (msg.type === 'user') {
@@ -895,9 +1155,20 @@ async function approximateMessageTokens(
     }
   }
 
+  // Instructions ride along in attachments and are counted as their own
+  // category (or not at all), matching how the API view excludes them here.
+  const messagesForTotals = messages.filter(
+    msg =>
+      !(
+        msg.type === 'attachment' &&
+        (msg.attachment.type === 'instructions' ||
+          msg.attachment.type === 'mcp_instructions_delta')
+      ),
+  )
+
   // Calculate total tokens using the API for accuracy
-  const approximateMessageTokens = await countTokensWithFallback(
-    normalizeMessagesForAPI(microcompactResult.messages).map(_ => {
+  const approximateMessageTokens = await countTokens(
+    normalizeMessagesForAPI(messagesForTotals).map(_ => {
       if (_.type === 'assistant') {
         return {
           // Important: strip out fields like id, etc. -- the counting API errors if they're present
@@ -923,14 +1194,33 @@ export async function analyzeContextUsage(
   terminalWidth?: number,
   toolUseContext?: Pick<ToolUseContext, 'options'>,
   mainThreadAgentDefinition?: AgentDefinition,
-  /** Original messages before microcompact, used to extract API usage */
+  /** Original messages, used to extract API usage */
   originalMessages?: Message[],
+  /** `summary` answers from local estimates without per-category count calls. */
+  detail: ContextDetail = 'full',
+  /** Session/agent auto-compact window above the settings files. */
+  configuredWindow?: AutoCompactWindowOverride,
+  /** Include local paths and MCP instructions in the data (SDK/CLI callers). */
+  localPaths = false,
 ): Promise<ContextData> {
   const runtimeModel = getRuntimeMainLoopModel({
     permissionMode: (await getToolPermissionContext()).mode,
     mainLoopModel: model,
   })
-  const contextWindow = getContextWindowForModel(runtimeModel, getSdkBetas())
+  // Upstream's `rt`: a caller-supplied window only applies while autocompact
+  // is enabled, and the same value feeds both the displayed window and the
+  // threshold — otherwise the buffer is computed against a different window.
+  const isAutoCompact = isAutoCompactEnabled()
+  const effectiveWindowOverride = isAutoCompact
+    ? (toolUseContext?.options.autoCompactWindow ?? configuredWindow)
+    : undefined
+  const windowResolution = resolveAutoCompactWindow(
+    runtimeModel,
+    effectiveWindowOverride,
+  )
+  const contextWindow = windowResolution.window
+  const autocompactSource = windowResolution.source
+  const countTokens = createTokenCounter(detail)
 
   // Build the effective system prompt using the shared utility
   const defaultSystemPrompt = await getSystemPrompt(tools, runtimeModel)
@@ -946,27 +1236,24 @@ export async function analyzeContextUsage(
 
   // Critical operations that should not fail due to skills
   const [
-    { systemPromptTokens, systemPromptSections },
+    { systemPromptTokens },
     { claudeMdTokens, memoryFileDetails },
-    {
-      builtInToolTokens,
-      deferredBuiltinDetails,
-      deferredBuiltinTokens,
-      systemToolDetails,
-    },
+    { builtInToolTokens, deferredBuiltinTokens },
     { mcpToolTokens, mcpToolDetails, deferredToolTokens },
+    { mcpInstructionsTokens, mcpInstructionsDetails },
     { agentTokens, agentDetails },
     { slashCommandTokens, commandInfo },
     messageBreakdown,
   ] = await Promise.all([
-    countSystemTokens(effectiveSystemPrompt),
-    countMemoryFileTokens(),
+    countSystemTokens(effectiveSystemPrompt, countTokens),
+    countMemoryFileTokens(countTokens),
     countBuiltInToolTokens(
       tools,
       getToolPermissionContext,
       agentDefinitions,
       runtimeModel,
       messages,
+      countTokens,
     ),
     countMcpToolTokens(
       tools,
@@ -974,10 +1261,20 @@ export async function analyzeContextUsage(
       agentDefinitions,
       runtimeModel,
       messages,
+      countTokens,
     ),
-    countCustomAgentTokens(agentDefinitions),
-    countSlashCommandTokens(tools, getToolPermissionContext, agentDefinitions),
-    approximateMessageTokens(messages),
+    countMcpInstructionTokens(
+      toolUseContext?.options.mcpClients ?? [],
+      countTokens,
+    ),
+    countCustomAgentTokens(agentDefinitions, countTokens),
+    countSlashCommandTokens(
+      tools,
+      getToolPermissionContext,
+      agentDefinitions,
+      countTokens,
+    ),
+    approximateMessageTokens(messages, countTokens),
   ])
 
   // Count skills separately with error isolation
@@ -985,6 +1282,7 @@ export async function analyzeContextUsage(
     tools,
     getToolPermissionContext,
     agentDefinitions,
+    countTokens,
   )
   const skillInfo = skillResult.skillInfo
   // Use sum of individual skill token estimates (matches what's shown in details)
@@ -996,10 +1294,9 @@ export async function analyzeContextUsage(
 
   const messageTokens = messageBreakdown.totalTokens
 
-  // Check if autocompact is enabled and calculate threshold
-  const isAutoCompact = isAutoCompactEnabled()
+  // Calculate the threshold against the same window override used above.
   const autoCompactThreshold = isAutoCompact
-    ? getEffectiveContextWindowSize(model, toolUseContext?.options.autoCompactWindow) -
+    ? getEffectiveContextWindowSize(model, effectiveWindowOverride) -
       AUTOCOMPACT_BUFFER_TOKENS
     : undefined
 
@@ -1008,6 +1305,7 @@ export async function analyzeContextUsage(
   // System prompt is always shown first (fixed overhead)
   if (systemPromptTokens > 0) {
     cats.push({
+      id: 'system_prompt',
       name: 'System prompt',
       tokens: systemPromptTokens,
       color: 'promptBorder',
@@ -1019,10 +1317,8 @@ export async function analyzeContextUsage(
   const systemToolsTokens = builtInToolTokens - skillFrontmatterTokens
   if (systemToolsTokens > 0) {
     cats.push({
-      name:
-        process.env.USER_TYPE === 'ant'
-          ? '[ANT-ONLY] System tools'
-          : 'System tools',
+      id: 'system_tools',
+      name: 'System tools',
       tokens: systemToolsTokens,
       color: 'inactive',
     })
@@ -1031,9 +1327,19 @@ export async function analyzeContextUsage(
   // MCP tools after system tools
   if (mcpToolTokens > 0) {
     cats.push({
+      id: 'mcp_tools',
       name: 'MCP tools',
       tokens: mcpToolTokens,
       color: 'cyan_FOR_SUBAGENTS_ONLY',
+    })
+  }
+
+  if (mcpInstructionsTokens > 0) {
+    cats.push({
+      id: 'mcp_instructions',
+      name: 'MCP server instructions',
+      tokens: mcpInstructionsTokens,
+      color: 'green_FOR_SUBAGENTS_ONLY',
     })
   }
 
@@ -1041,6 +1347,7 @@ export async function analyzeContextUsage(
   // These don't count toward context usage but we show them for visibility
   if (deferredToolTokens > 0) {
     cats.push({
+      id: 'mcp_tools_deferred',
       name: 'MCP tools (deferred)',
       tokens: deferredToolTokens,
       color: 'inactive',
@@ -1051,6 +1358,7 @@ export async function analyzeContextUsage(
   // Show deferred builtin tools (when tool search is enabled)
   if (deferredBuiltinTokens > 0) {
     cats.push({
+      id: 'system_tools_deferred',
       name: 'System tools (deferred)',
       tokens: deferredBuiltinTokens,
       color: 'inactive',
@@ -1061,6 +1369,7 @@ export async function analyzeContextUsage(
   // Custom agents after MCP tools
   if (agentTokens > 0) {
     cats.push({
+      id: 'custom_agents',
       name: 'Custom agents',
       tokens: agentTokens,
       color: 'permission',
@@ -1070,6 +1379,7 @@ export async function analyzeContextUsage(
   // Memory files after custom agents
   if (claudeMdTokens > 0) {
     cats.push({
+      id: 'memory_files',
       name: 'Memory files',
       tokens: claudeMdTokens,
       color: 'claude',
@@ -1079,6 +1389,7 @@ export async function analyzeContextUsage(
   // Skills after memory files
   if (skillFrontmatterTokens > 0) {
     cats.push({
+      id: 'skills',
       name: 'Skills',
       tokens: skillFrontmatterTokens,
       color: 'warning',
@@ -1087,6 +1398,7 @@ export async function analyzeContextUsage(
 
   if (messageTokens !== null && messageTokens > 0) {
     cats.push({
+      id: 'messages',
       name: 'Messages',
       tokens: messageTokens,
       color: 'purple_FOR_SUBAGENTS_ONLY',
@@ -1105,14 +1417,18 @@ export async function analyzeContextUsage(
   // is suppressed in shouldAutoCompact, so an autocompact buffer shown here
   // would be misleading — skip it and let Free space fill the grid.
   let reservedTokens = 0
-  let skipReservedBuffer = false
 
-  if (skipReservedBuffer) {
-    // No buffer category pushed.
-  } else if (isAutoCompact && autoCompactThreshold !== undefined) {
+  // Under the "auto" source the collapse ladder owns the threshold, so an
+  // autocompact buffer here would be misleading; let Free space fill the grid.
+  if (
+    isAutoCompact &&
+    autocompactSource !== 'auto' &&
+    autoCompactThreshold !== undefined
+  ) {
     // Autocompact buffer (from effective context)
     reservedTokens = contextWindow - autoCompactThreshold
     cats.push({
+      id: 'autocompact_buffer',
       name: RESERVED_CATEGORY_NAME,
       tokens: reservedTokens,
       color: 'inactive',
@@ -1121,6 +1437,7 @@ export async function analyzeContextUsage(
     // Compact buffer reserve (3k from actual context limit)
     reservedTokens = MANUAL_COMPACT_BUFFER_TOKENS
     cats.push({
+      id: 'compact_buffer',
       name: MANUAL_COMPACT_BUFFER_NAME,
       tokens: reservedTokens,
       color: 'inactive',
@@ -1131,6 +1448,7 @@ export async function analyzeContextUsage(
   const freeTokens = Math.max(0, contextWindow - actualUsage - reservedTokens)
 
   cats.push({
+    id: 'free_space',
     name: 'Free space',
     tokens: freeTokens,
     color: 'promptBorder',
@@ -1320,21 +1638,23 @@ export async function analyzeContextUsage(
   }
 
   return {
-    categories: cats,
+    categories: cats.map(category => ({
+      ...category,
+      kind: categoryKind(category),
+    })),
     totalTokens: finalTotalTokens,
     maxTokens: contextWindow,
     rawMaxTokens: contextWindow,
+    autocompactSource,
     percentage: Math.round((finalTotalTokens / contextWindow) * 100),
     gridRows,
     model: runtimeModel,
     memoryFiles: memoryFileDetails,
     mcpTools: mcpToolDetails,
-    deferredBuiltinTools:
-      process.env.USER_TYPE === 'ant' ? deferredBuiltinDetails : undefined,
-    systemTools:
-      process.env.USER_TYPE === 'ant' ? systemToolDetails : undefined,
-    systemPromptSections:
-      process.env.USER_TYPE === 'ant' ? systemPromptSections : undefined,
+    ...(localPaths && { mcpInstructions: mcpInstructionsDetails }),
+    deferredBuiltinTools: undefined,
+    systemTools: undefined,
+    systemPromptSections: undefined,
     agents: agentDetails,
     slashCommands:
       slashCommandTokens > 0

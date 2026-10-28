@@ -1,23 +1,25 @@
 // @ts-nocheck
-import { microcompactMessages } from '../../services/compact/microCompact.js'
 import type { AppState } from '../../state/AppStateStore.js'
+import { getIsRemoteMode } from '../../bootstrap/state.js'
 import type { Tools, ToolUseContext } from '../../Tool.js'
 import type { AgentDefinitionsResult } from '../../tools/AgentTool/loadAgentsDir.js'
 import type { Message } from '../../types/message.js'
 import {
   analyzeContextUsage,
+  buildContextUsage,
+  formatApproxTokens,
+  formatContextOverLimit,
   type ContextData,
+  type ContextDetail,
 } from '../../utils/analyzeContext.js'
 import { formatTokens } from '../../utils/format.js'
 import { getMessagesAfterCompactBoundary } from '../../utils/messages.js'
 import { getSourceDisplayName } from '../../utils/settings/constants.js'
-import { plural } from '../../utils/stringUtils.js'
 
 /**
  * Shared data-collection path for `/context` (slash command) and the SDK
- * `get_context_usage` control request. Mirrors query.ts's pre-API transforms
- * (compact boundary, projectView, microcompact) so the token count reflects
- * what the model actually sees.
+ * `get_context_usage` control request. Applies the compact boundary, the same
+ * transform `/context` uses, so the token count reflects what the model sees.
  */
 type CollectContextDataInput = {
   messages: Message[]
@@ -28,7 +30,12 @@ type CollectContextDataInput = {
     agentDefinitions: AgentDefinitionsResult
     customSystemPrompt?: string
     appendSystemPrompt?: string
+    mcpClients?: ToolUseContext['options']['mcpClients']
+    autoCompactWindow?: ToolUseContext['options']['autoCompactWindow']
   }
+  detail?: ContextDetail
+  terminalWidth?: number
+  localPaths?: boolean
 }
 
 export async function collectContextData(
@@ -43,44 +50,57 @@ export async function collectContextData(
       agentDefinitions,
       customSystemPrompt,
       appendSystemPrompt,
+      mcpClients,
+      autoCompactWindow,
     },
+    detail = 'full',
+    terminalWidth,
+    localPaths = false,
   } = context
 
-  let apiView = getMessagesAfterCompactBoundary(messages)
-
-  const { messages: compactedMessages } = await microcompactMessages(apiView)
+  const apiView = getMessagesAfterCompactBoundary(messages)
   const appState = getAppState()
 
   return analyzeContextUsage(
-    compactedMessages,
+    apiView,
     mainLoopModel,
     async () => appState.toolPermissionContext,
     tools,
     agentDefinitions,
-    undefined, // terminalWidth
-    // analyzeContextUsage only reads options.{customSystemPrompt,appendSystemPrompt}
-    // but its signature declares the full Pick<ToolUseContext, 'options'>.
-    { options: { customSystemPrompt, appendSystemPrompt } } as Pick<
-      ToolUseContext,
-      'options'
-    >,
+    terminalWidth,
+    // analyzeContextUsage only reads options.* from this argument, but its
+    // signature declares the full Pick<ToolUseContext, 'options'>.
+    {
+      options: { customSystemPrompt, appendSystemPrompt, mcpClients },
+    } as Pick<ToolUseContext, 'options'>,
     undefined, // mainThreadAgentDefinition
     apiView, // original messages for API usage extraction
+    detail,
+    autoCompactWindow,
+    localPaths,
   )
 }
 
 export async function call(
   _args: string,
   context: ToolUseContext,
-): Promise<{ type: 'text'; value: string }> {
+): Promise<{
+  type: 'text'
+  value: string
+  contextUsage: ReturnType<typeof buildContextUsage>
+}> {
   const data = await collectContextData(context)
+  const outputData = getIsRemoteMode()
+    ? { ...data, memoryFiles: [] }
+    : data
   return {
     type: 'text' as const,
-    value: formatContextAsMarkdownTable(data),
+    value: formatContextAsMarkdownTable(outputData),
+    contextUsage: buildContextUsage(outputData),
   }
 }
 
-function formatContextAsMarkdownTable(data: ContextData): string {
+export function formatContextAsMarkdownTable(data: ContextData): string {
   const {
     categories,
     totalTokens,
@@ -91,19 +111,15 @@ function formatContextAsMarkdownTable(data: ContextData): string {
     mcpTools,
     agents,
     skills,
-    messageBreakdown,
-    systemTools,
-    systemPromptSections,
   } = data
 
   let output = `## Context Usage\n\n`
   output += `**Model:** ${model}  \n`
   output += `**Tokens:** ${formatTokens(totalTokens)} / ${formatTokens(rawMaxTokens)} (${percentage}%)\n`
-
-  // Context-collapse status. Always show when the runtime gate is on —
-  // the user needs to know which strategy is managing their context
-  // even before anything has fired.
-
+  const overLimit = formatContextOverLimit(data)
+  if (overLimit) {
+    output += `**Over limit:** ${overLimit}\n`
+  }
   output += '\n'
 
   // Main categories table
@@ -154,36 +170,6 @@ function formatContextAsMarkdownTable(data: ContextData): string {
     output += `|------|--------|--------|\n`
     for (const tool of mcpTools) {
       output += `| ${tool.name} | ${tool.serverName} | ${formatTokens(tool.tokens)} |\n`
-    }
-    output += `\n`
-  }
-
-  // System tools (ant-only)
-  if (
-    systemTools &&
-    systemTools.length > 0 &&
-    process.env.USER_TYPE === 'ant'
-  ) {
-    output += `### [ANT-ONLY] System Tools\n\n`
-    output += `| Tool | Tokens |\n`
-    output += `|------|--------|\n`
-    for (const tool of systemTools) {
-      output += `| ${tool.name} | ${formatTokens(tool.tokens)} |\n`
-    }
-    output += `\n`
-  }
-
-  // System prompt sections (ant-only)
-  if (
-    systemPromptSections &&
-    systemPromptSections.length > 0 &&
-    process.env.USER_TYPE === 'ant'
-  ) {
-    output += `### [ANT-ONLY] System Prompt Sections\n\n`
-    output += `| Section | Tokens |\n`
-    output += `|---------|--------|\n`
-    for (const section of systemPromptSections) {
-      output += `| ${section.name} | ${formatTokens(section.tokens)} |\n`
     }
     output += `\n`
   }
@@ -242,42 +228,14 @@ function formatContextAsMarkdownTable(data: ContextData): string {
     output += `| Skill | Source | Tokens |\n`
     output += `|-------|--------|--------|\n`
     for (const skill of skills.skillFrontmatter) {
-      output += `| ${skill.name} | ${getSourceDisplayName(skill.source)} | ${formatTokens(skill.tokens)} |\n`
+      const sourceLabel = `${getSourceDisplayName(skill.source)}${
+        skill.pluginName && skill.source !== 'syncedSkills'
+          ? ` (${skill.pluginName})`
+          : ''
+      }`
+      output += `| ${skill.name} | ${sourceLabel} | ${formatApproxTokens(skill.tokens)} |\n`
     }
     output += `\n`
-  }
-
-  // Message breakdown (ant-only)
-  if (messageBreakdown && process.env.USER_TYPE === 'ant') {
-    output += `### [ANT-ONLY] Message Breakdown\n\n`
-    output += `| Category | Tokens |\n`
-    output += `|----------|--------|\n`
-    output += `| Tool calls | ${formatTokens(messageBreakdown.toolCallTokens)} |\n`
-    output += `| Tool results | ${formatTokens(messageBreakdown.toolResultTokens)} |\n`
-    output += `| Attachments | ${formatTokens(messageBreakdown.attachmentTokens)} |\n`
-    output += `| Assistant messages (non-tool) | ${formatTokens(messageBreakdown.assistantMessageTokens)} |\n`
-    output += `| User messages (non-tool-result) | ${formatTokens(messageBreakdown.userMessageTokens)} |\n`
-    output += `\n`
-
-    if (messageBreakdown.toolCallsByType.length > 0) {
-      output += `#### Top Tools\n\n`
-      output += `| Tool | Call Tokens | Result Tokens |\n`
-      output += `|------|-------------|---------------|\n`
-      for (const tool of messageBreakdown.toolCallsByType) {
-        output += `| ${tool.name} | ${formatTokens(tool.callTokens)} | ${formatTokens(tool.resultTokens)} |\n`
-      }
-      output += `\n`
-    }
-
-    if (messageBreakdown.attachmentsByType.length > 0) {
-      output += `#### Top Attachments\n\n`
-      output += `| Attachment | Tokens |\n`
-      output += `|------------|--------|\n`
-      for (const attachment of messageBreakdown.attachmentsByType) {
-        output += `| ${attachment.name} | ${formatTokens(attachment.tokens)} |\n`
-      }
-      output += `\n`
-    }
   }
 
   return output

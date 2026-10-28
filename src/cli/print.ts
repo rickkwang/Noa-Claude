@@ -3022,6 +3022,16 @@ function runHeadlessStreaming(
           })
         } else if (message.request.subtype === 'get_context_usage') {
           try {
+            const detail = message.request.detail
+            if (
+              detail !== undefined &&
+              detail !== 'summary' &&
+              detail !== 'full'
+            ) {
+              throw new Error(
+                "get_context_usage: detail must be 'summary' or 'full'",
+              )
+            }
             const appState = getAppState()
             const data = await collectContextData({
               messages: mutableMessages,
@@ -3032,9 +3042,14 @@ function runHeadlessStreaming(
                 agentDefinitions: appState.agentDefinitions,
                 customSystemPrompt: options.systemPrompt,
                 appendSystemPrompt: options.appendSystemPrompt,
+                mcpClients: appState.mcp.clients,
               },
+              detail,
             })
-            sendControlResponseSuccess(message, { ...data })
+            const outputData = getIsRemoteMode()
+              ? { ...data, memoryFiles: [] }
+              : data
+            sendControlResponseSuccess(message, { ...outputData })
           } catch (error) {
             sendControlResponseError(message, errorMessage(error))
           }

@@ -15,7 +15,12 @@ import type { Message } from './message.js'
 import type { PluginManifest } from './plugin.js'
 
 export type LocalCommandResult =
-  | { type: 'text'; value: string }
+  | {
+      type: 'text'
+      value: string
+      /** Structured usage summary returned by /context (SDK/remote consumers). */
+      contextUsage?: Record<string, unknown>
+    }
   | {
       type: 'compact'
       compactionResult: CompactionResult
@@ -191,6 +196,8 @@ export type CommandBase = {
   aliases?: string[]
   isMcp?: boolean
   argumentHint?: string // Hint text for command arguments (displayed in gray after command)
+  /** Remote/thin-client handling: `control-request` asks the host, `post-text` sends the text back. */
+  thinClientDispatch?: 'control-request' | 'post-text'
   whenToUse?: string // From the "Skill" spec. Detailed usage scenarios for when to use this command
   version?: string // Version of the command/skill
   disableModelInvocation?: boolean // Whether to disable this command from being invoked by models
