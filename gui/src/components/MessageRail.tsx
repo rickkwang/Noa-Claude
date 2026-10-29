@@ -16,7 +16,7 @@ interface MessageRailProps {
   visible?: boolean
 }
 
-// Codex shows the rail from four user messages on, opens the preview after a
+// The rail shows from four user messages on, opens the preview after a
 // short hover delay, and keeps it open while the pointer crosses into the card.
 const OPEN_DELAY = 110
 const CLOSE_DELAY = 200

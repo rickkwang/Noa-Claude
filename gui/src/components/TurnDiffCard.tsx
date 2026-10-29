@@ -95,7 +95,7 @@ export function TurnDiffCard({ diff, onOpen, onAction, pending }: {
   )
 }
 
-/** Codex's in-progress row above the composer: files changed while the turn runs. */
+/** In-progress row above the composer: files changed while the turn runs. */
 export function LiveDiffSummary({ diff, onOpen }: { diff: TurnDiff; onOpen: () => void }) {
   const count = diff.files.length
   if (count === 0) return null

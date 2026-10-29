@@ -11,7 +11,7 @@ type State = {
   key?: unknown
 }
 
-// Keeps one broken turn from blanking the whole transcript, as Codex's per-turn boundary does.
+// Keeps one broken turn from blanking the whole transcript.
 export class ErrorBoundary extends Component<Props, State> {
   state: State = { key: this.props.resetKey }
 

@@ -25,7 +25,7 @@ export type ActivityUnit =
   | { kind: "thinking"; block: ThinkingBlock }
   | { kind: "text"; block: Extract<Block, { kind: "text" }> }
 
-// Codex renders one collapsible activity group per run of reasoning and tool
+// One collapsible activity group per run of reasoning and tool
 // calls. Text breaks the run and is always visible outside the group.
 export type ActivityRun =
   | { kind: "status"; block: Extract<Block, { kind: "compaction" | "retry" }> }
@@ -193,7 +193,7 @@ export function toolActivitySummary(blocks: Pick<ToolBlock, "name" | "input" | "
   })
   const edits = editedFiles.size
 
-  // Same order as Codex: tool calls, file changes, exploration, commands, web search.
+  // Order: tool calls, file changes, exploration, commands, web search.
   const parts: string[] = []
   const stopped = blocks.some(block => block.name === "Bash" && block.status === "stopped")
   if (tools) parts.push(tools === 1 ? "Called a tool" : "Called tools")
@@ -303,7 +303,7 @@ export function groupActivityBlocks(blocks: Block[]): ActivityUnit[] {
       continue
     }
     if (block.kind === "thinking") {
-      // Codex shows reasoning only as a live "Thinking" status; finished reasoning has no row.
+      // Reasoning shows only as a live "Thinking" status; finished reasoning has no row.
       if (!block.done) {
         flush()
         units.push({ kind: "thinking", block })

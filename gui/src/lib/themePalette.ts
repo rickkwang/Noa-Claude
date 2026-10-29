@@ -18,7 +18,7 @@ export const THEME_SURFACES = {
     // Absolutely (dark) background.
     primary: '#2D2D2B',
     secondary: '#1E1E1C',
-    // Codex (dark) sidebar, sampled from the running app; solid, not translucent.
+    // Dark sidebar; solid, not translucent.
     sidebar: '#30302F',
     // Translucent-sidebar tint over the native `menu` material.
     sidebarMaterial: '#343432',

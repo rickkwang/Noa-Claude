@@ -211,7 +211,7 @@ function trackTurnResult(run: AgentRun, message: AgentMessage) {
   if (Array.isArray(message.message.content))
     for (const block of message.message.content)
       if (block.type === "tool_result" && block.tool_use_result) track(block.tool_use_result)
-  // Codex's live diff comes from patch batches, not from a git snapshot.
+  // The live diff comes from patch batches, not from a git snapshot.
   if (fileChanged) scheduleLiveDiff(run)
 }
 
@@ -230,7 +230,7 @@ export async function computeLiveDiff(run: AgentRun) {
   const turn = run.turn
   if (!turn || turn.finalizing) return
   turn.liveAt = Date.now()
-  // Tool-result patches are the live source in Codex too; the completed card
+  // Tool-result patches are the live source; the completed card
   // still uses the full tree, which also catches shell-made edits.
   const diff = await collectDiff(run.cwd, turn.changes).catch(() => undefined)
   if (diff !== undefined && run.turn === turn && !turn.finalizing)

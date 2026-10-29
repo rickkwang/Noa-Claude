@@ -152,7 +152,7 @@ function TaskBlock({ block, tasks, active }: { block: Block; tasks?: AgentTask[]
   return null
 }
 
-// Codex heading: "Raw {server}.{tool} tool call output".
+// Heading: "Raw {server}.{tool} tool call output".
 function rawMcpTitle(name: string): string {
   const [, server, ...tool] = name.split("__")
   return `Raw ${server}.${tool.join("__")} tool call output`
@@ -512,7 +512,7 @@ function ShellOutput({ block, onCollapse }: { block: ToolBlock; onCollapse: () =
   )
 }
 
-// Line-level diff: unchanged lines stay in place as context, as in Codex's unified diff.
+// Line-level diff: unchanged lines stay in place as context, as in a unified diff.
 function DiffView({ oldText, newText }: { oldText: string; newText: string }) {
   const lines = diffLines(oldText, newText).flatMap((part) => {
     const text = part.value.endsWith("\n") ? part.value.slice(0, -1) : part.value

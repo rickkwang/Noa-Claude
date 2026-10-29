@@ -49,7 +49,7 @@ export default function ThemeInjector({ settings }: ThemeInjectorProps) {
       root.style.setProperty('--border-primary', 'var(--divider-subtle)');
       root.style.setProperty('--panel-divider', 'var(--divider-subtle)');
       root.style.setProperty('--control-shadow-ink', '#000000');
-      // Codex model/effort popover (dark, sampled from the running app).
+      // Model/effort popover (dark).
       root.style.setProperty('--effort-menu', '#40403E');
       root.style.setProperty('--effort-chip', '#4F4F4C');
       root.style.setProperty('--effort-track', '#525250');
@@ -60,7 +60,7 @@ export default function ThemeInjector({ settings }: ThemeInjectorProps) {
       root.style.setProperty('--sidebar-material-tint', '70%');
       // Light counterpart of the dark stack, at lower weight since light floors don't band.
       root.style.setProperty('--sidebar-preview-shadow', '0 0 0 1px rgba(45,45,43,0.03), 3px 0 6px -2px rgba(45,45,43,0.035), 10px 0 22px -6px rgba(45,45,43,0.04), 26px 0 54px -16px rgba(45,45,43,0.05)');
-      // Absolutely (light) foreground; secondary and tertiary follow Codex's light gray ramp.
+      // Absolutely (light) foreground; secondary and tertiary follow a light gray ramp.
       root.style.setProperty('--text-primary', '#2D2D2B');
       root.style.setProperty('--text-secondary', '#5D5D5D');
       root.style.setProperty('--text-tertiary', '#8F8F8F');
@@ -162,7 +162,7 @@ export default function ThemeInjector({ settings }: ThemeInjectorProps) {
       }
       /* Code keeps its upright face; the UI font style is for prose and chrome. */
       code, pre, kbd, samp { font-style: normal; }
-      /* Text tiers scale proportionally with the UI font size, as Codex does: each reference size times
+      /* Text tiers scale proportionally with the UI font size: each reference size times
          uiFontSize / 13 (the 13px default), so the default matches noa.css fallbacks exactly. */
       :root {
         --font-ui-size: ${uiFontSize}px;

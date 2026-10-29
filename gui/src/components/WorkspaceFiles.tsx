@@ -11,7 +11,7 @@ type Change = { path: string; oldPath?: string; status: string; additions: numbe
 type Changes = { isGit: boolean; branch: string; files: Change[]; additions: number; deletions: number }
 type Preview = { path: string; scope: string; view: string; content?: string; snapshot?: string; revision?: string; truncated?: boolean; binary?: boolean; kind?: string; dataUrl?: string }
 
-// File-type glyphs and brand colors, as in Codex's tree.
+// File-type glyphs and brand colors.
 const GLYPHS: Record<string, [typeof FileText, string]> = {
   ts: [BrandTypescript, "#3178C6"], mts: [BrandTypescript, "#3178C6"], cts: [BrandTypescript, "#3178C6"],
   tsx: [BrandReact, "#61DAFB"], jsx: [BrandReact, "#61DAFB"],
@@ -31,13 +31,13 @@ function FileGlyph({ name }: { name: string }) {
   const Glyph = glyph[0]
   return <Glyph size={15} style={{ color: glyph[1] }} />
 }
-// Middle truncation as in Codex's path labels: the directory shrinks first, the file name stays whole.
+// Middle truncation for path labels: the directory shrinks first, the file name stays whole.
 function MiddlePath({ path }: { path: string }) {
   const cut = path.lastIndexOf("/")
   return <span className="noa-middle-path">{cut >= 0 && <span className="noa-middle-path-dir">{path.slice(0, cut + 1)}</span>}<span className="noa-middle-path-base">{path.slice(cut + 1)}</span></span>
 }
 
-// Codex's git lane glyphs (base-file-tree): a rounded square holding a plus, minus or dot.
+// Git lane glyphs: a rounded square holding a plus, minus or dot.
 const GIT_FRAME = "M12.666 2.66797C13.3549 2.66797 13.9121 2.66735 14.3623 2.7041C14.8202 2.74151 15.2268 2.82084 15.6035 3.0127C16.1989 3.31608 16.6829 3.80115 16.9863 4.39649C17.1781 4.77304 17.2575 5.17902 17.2949 5.63672C17.3317 6.08689 17.3311 6.64406 17.3311 7.33301V12.666C17.3311 13.3549 17.3317 13.9121 17.2949 14.3623C17.2575 14.8203 17.1782 15.2268 16.9863 15.6035C16.6829 16.1988 16.1988 16.6829 15.6035 16.9863C15.2268 17.1783 14.8203 17.2575 14.3623 17.2949C13.9121 17.3317 13.3549 17.3311 12.666 17.3311H7.33301C6.64403 17.3311 6.08691 17.3317 5.63672 17.2949C5.17899 17.2575 4.77306 17.1781 4.39649 16.9863C3.80114 16.6829 3.31609 16.1989 3.0127 15.6035C2.82085 15.2269 2.74151 14.8202 2.7041 14.3623C2.66736 13.9122 2.66797 13.3548 2.66797 12.666V7.33301C2.66797 6.64406 2.66732 6.08689 2.7041 5.63672C2.74152 5.17904 2.82093 4.77302 3.0127 4.39649C3.31613 3.80104 3.80103 3.31611 4.39649 3.0127C4.77304 2.82092 5.17902 2.74152 5.63672 2.7041C6.08691 2.66732 6.64403 2.66797 7.33301 2.66797H12.666ZM7.33301 3.99805C6.6221 3.99805 6.12859 3.99894 5.74512 4.03027C5.36955 4.06098 5.15798 4.11775 5 4.19824C4.65484 4.37414 4.37416 4.65485 4.19824 5C4.11775 5.15797 4.06098 5.36959 4.03027 5.74512C3.99894 6.12858 3.99805 6.62214 3.99805 7.33301V12.666C3.99805 13.3767 3.99898 13.8705 4.03027 14.2539C4.06094 14.6292 4.11788 14.8411 4.19824 14.999C4.37412 15.3442 4.65487 15.6258 5 15.8018C5.15795 15.8822 5.36972 15.939 5.74512 15.9697C6.12859 16.0011 6.6221 16.001 7.33301 16.001H12.666C13.3767 16.001 13.8705 16.001 14.2539 15.9697C14.6292 15.9391 14.8411 15.8821 14.999 15.8018C15.3443 15.6258 15.6258 15.3443 15.8018 14.999C15.8821 14.8411 15.9391 14.6292 15.9697 14.2539C16.001 13.8705 16.001 13.3767 16.001 12.666V7.33301C16.001 6.62213 16.0011 6.12858 15.9697 5.74512C15.939 5.36976 15.8822 5.15795 15.8018 5C15.6258 4.65488 15.3442 4.37411 14.999 4.19824C14.8411 4.11787 14.6292 4.06094 14.2539 4.03027C13.8705 3.99898 13.3767 3.99805 12.666 3.99805H7.33301Z"
 const GIT_MARK = {
   added: "M10 6.41797C10.367 6.41815 10.6649 6.71599 10.665 7.08301V9.33496H12.916C13.2832 9.33496 13.5809 9.63287 13.5811 10C13.5809 10.3671 13.2832 10.665 12.916 10.665H10.665V12.916C10.665 13.2832 10.3671 13.5809 10 13.5811C9.63284 13.5809 9.33496 13.2832 9.33496 12.916V10.665H7.08301C6.71596 10.6649 6.41815 10.367 6.41797 10C6.41813 9.63295 6.71595 9.33509 7.08301 9.33496H9.33496V7.08301C9.33513 6.71596 9.63295 6.4181 10 6.41797Z",
@@ -366,7 +366,7 @@ export function WorkspaceFiles({ cwd, changes = false, scope: scopeProp, focus, 
   const row = (key: string, name: string, depth: number, opts: { directory?: boolean; opened?: boolean; marked?: boolean; change?: Change; stats?: boolean; onClick: () => void; title?: string; label?: ReactNode; menuPath?: string; treePath?: string }) => {
     const tone = opts.change ? toneOf(opts.change.status) : undefined
     const menuPath = opts.menuPath
-    // Open folders stick under their ancestors (one 28px row per level), as Codex's tree does.
+    // Open folders stick under their ancestors (one 28px row per level).
     const sticky = opts.directory && opts.opened && depth >= rootDepth ? { position: "sticky" as const, top: (depth - rootDepth) * 28, zIndex: 20 - depth } : undefined
     return <button key={key} type="button" className={`noa-file-row${tone ? ` is-${tone}` : ""}${sticky ? " is-sticky" : ""}`} role="treeitem" aria-expanded={opts.directory ? !!opts.opened : undefined} style={sticky} title={opts.title ?? key} data-tree-path={opts.treePath} onClick={opts.onClick} onContextMenu={menuPath === undefined ? undefined : (event) => openMenu(event, menuPath, !!opts.directory, !!opts.change?.status.includes("D"))}>
       {depth > 0 && <span className={`noa-file-guides${opts.directory ? " is-folder" : ""}`} aria-hidden="true">{Array.from({ length: depth }, (_, i) => <span key={i} />)}</span>}

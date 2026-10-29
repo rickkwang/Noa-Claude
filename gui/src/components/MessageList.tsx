@@ -259,7 +259,7 @@ export function MessageList({ turns, cwd, onOpenFile, busy, result, readingWidth
 
   const lastUserIndex = segments.reduce((last, segment, index) => segment.role === "user" ? index : last, -1)
 
-  // The rail previews each prompt with the final answer of the reply that follows it, as Codex does.
+  // The rail previews each prompt with the final answer of the reply that follows it.
   const railItems: MessageRailItem[] = []
   for (let index = 0; index < segments.length; index++) {
     const segment = segments[index]!
@@ -283,7 +283,7 @@ export function MessageList({ turns, cwd, onOpenFile, busy, result, readingWidth
       preview,
     })
   }
-  // Every user message crossing the viewport is active, as Codex marks the whole
+  // Every user message crossing the viewport is active, marking the whole
   // visible range; when none is visible, the prompt the reader has passed stays lit.
   const railTop = viewport.top
   const railBottom = viewport.top + (viewport.height || 800)
@@ -431,7 +431,7 @@ export function MessageList({ turns, cwd, onOpenFile, busy, result, readingWidth
       }}
       className="noa-agent-scroll noa-scroll-fade relative flex-1 min-h-0 overflow-y-auto overscroll-contain"
     >
-      {/* Codex reserves 48px around the transcript column so the rail lives in the
+      {/* 48px around the transcript column is reserved so the rail lives in the
           gutter and its expanded tick never crosses the text on narrow windows. */}
       <div ref={contentRef} className="mx-auto flex flex-col gap-4 px-5 pt-8" style={{ width: "calc(100% - 48px)", maxWidth: readingWidth, paddingBottom: "calc(var(--composer-overlay, 0px) + 32px)" }}>
         {!!historyBefore && <button type="button" disabled={historyLoading} onClick={onLoadEarlier} className="self-center rounded-lg px-3 py-2 text-caption text-[var(--text-secondary)]">{historyLoading ? "Loading earlier messages…" : "Load earlier messages"}</button>}
@@ -462,7 +462,7 @@ export function MessageList({ turns, cwd, onOpenFile, busy, result, readingWidth
 
     </div>
       <MessageRail key={sessionId ?? "new"} items={railItems} activeIds={activeRailIds} sessionId={sessionId} onJump={scrollToSegment} visible={showRail} />
-      {/* Codex's scroll-to-bottom: a 32px round button that fades rather than mounts. */}
+      {/* Scroll-to-bottom: a 32px round button that fades rather than mounts. */}
       <button
         type="button"
         aria-label="Scroll to bottom"
@@ -472,7 +472,7 @@ export function MessageList({ turns, cwd, onOpenFile, busy, result, readingWidth
         data-show={showJump}
         className="noa-scroll-bottom noa-press"
       >
-        {/* While the agent works the button shows Codex's working dots; hover swaps back to the arrow. */}
+        {/* While the agent works the button shows working dots; hover swaps back to the arrow. */}
         {busy && <span className="noa-scroll-bottom-dots" aria-hidden="true"><span /><span /><span /></span>}
         <ArrowDown size={14} className={busy ? "noa-scroll-bottom-arrow" : undefined} />
       </button>
@@ -612,7 +612,7 @@ function earliest(a: number | undefined, b: number | undefined): number | undefi
   return Math.min(a, b)
 }
 
-// Consecutive assistant turns after one user message form one reply, as in Codex.
+// Consecutive assistant turns after one user message form one reply.
 function groupTurns(turns: Turn[]): Segment[] {
   const segments: Segment[] = []
   for (const turn of turns) {
@@ -685,10 +685,10 @@ function AssistantSegment({ segment, busy, durationMs, interrupted, liveDiff, ta
   const liveDuration = segment.streaming && hasActivity && finalStartedAt === undefined && segment.startedAt !== undefined
     ? Math.max(0, now - segment.startedAt)
     : undefined
-  // Codex collapses everything that happened before the final answer into one disclosure. Noa's
+  // Everything that happened before the final answer collapses into one disclosure. Noa's
   // protocol has no final-channel flag, so the last text run is the final answer.
   const finalIndex = runs.map((run) => run.kind).lastIndexOf("text")
-  // Trailing tool calls after the final answer still fold into the turn; Codex
+  // Trailing tool calls after the final answer still fold into the turn; it
   // collapses as soon as the final assistant message has started.
   const canCollapse = !busy && !segment.streaming && !interrupted && !segment.error && !segment.incomplete && finalIndex > 0 && runs.slice(0, finalIndex).some(run => run.kind !== "status")
   const collapsedCount = finalIndex > 0
@@ -742,7 +742,7 @@ function AssistantSegment({ segment, busy, durationMs, interrupted, liveDiff, ta
     )
   }
 
-  // Codex keeps only the newest todo list expanded; earlier snapshots stay folded.
+  // Only the newest todo list stays expanded; earlier snapshots stay folded.
   const latestTodo = segment.blocks.findLast((block): block is ToolBlock => block.kind === "tool" && TODO_TOOLS.includes(block.name))
 
   function renderStandalone(block: ToolBlock, index: number) {
@@ -818,7 +818,7 @@ function AssistantSegment({ segment, busy, durationMs, interrupted, liveDiff, ta
   )
 }
 
-// One collapsible summary per run of reasoning and tool calls, as Codex's
+// One collapsible summary per run of reasoning and tool calls, an
 // agent-activity group. The body stays folded unless the user opens it.
 function ActivityGroup({ blocks, tasks, onStopTask, onOpenTask }: {
   blocks: (ToolBlock | ThinkingBlockData)[]
@@ -941,7 +941,7 @@ function WorkedFor({ durationMs, count, interrupted, collapsed, live, onToggle }
   )
 }
 
-// Long user messages fold after 20 lines under a fade, as in Codex.
+// Long user messages fold after 20 lines under a fade.
 function UserBubble({ text }: { text: string }) {
   const ref = useRef<HTMLDivElement>(null)
   const [long, setLong] = useState(false)

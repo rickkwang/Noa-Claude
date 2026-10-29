@@ -210,7 +210,7 @@ export type Envelope =
   | { kind: "agent"; message: AgentMessage }
   | { kind: "turn-diff"; diff: TurnDiff; updateOnly?: boolean }
   // While a turn runs, the bridge streams its diff so the composer can show a
-  // live summary, as Codex does above the composer.
+  // live summary above it.
   | { kind: "turn-diff-live"; diff: TurnDiff }
   | {
       kind: "turn-diff-action"

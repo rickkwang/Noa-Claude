@@ -43,7 +43,7 @@ export async function captureTree(cwd: string): Promise<TreeSnapshot | null> {
     git(cwd, ["rev-parse", "--show-toplevel"]),
   ])
   const repo = repoObjects.trim()
-  // Snapshot the whole worktree, as Codex's patch batches can cover cwds other
+  // Snapshot the whole worktree, as patch batches can cover cwds other
   // than the one the turn started in. Paths are narrowed to `cwd` for display.
   const top = root.trim()
   const temp = await mkdtemp(join(tmpdir(), "noa-turn-"))
@@ -220,7 +220,7 @@ async function applyFile(root: string, patch: string, reverse: boolean, check = 
   return { ok: code === 0, stderr: stderr.trim() }
 }
 
-/** Undo (reverse) or reapply a turn's patch file by file, as Codex's patch actions. */
+/** Undo (reverse) or reapply a turn's patch file by file, for patch actions. */
 export async function applyTurnDiff(cwd: string, patch: string | undefined, reverse: boolean, paths: string[]): Promise<TurnDiffActionResult> {
   const inside = await git(cwd, ["rev-parse", "--is-inside-work-tree"]).catch(() => "")
   if (inside.trim() !== "true")
@@ -228,7 +228,7 @@ export async function applyTurnDiff(cwd: string, patch: string | undefined, reve
   if (!patch || !patch.trim())
     return { ok: false, errorCode: "no-patch", appliedPaths: [], skippedPaths: [], conflictedPaths: [] }
   const root = (await git(cwd, ["rev-parse", "--show-toplevel"])).trim()
-  // Check and apply the complete batch atomically, as Codex's atomic mode.
+  // Check and apply the complete batch atomically.
   const check = await applyFile(root, patch, reverse, true)
   if (!check.ok) return {
     ok: false, errorCode: "apply-failed", error: check.stderr,
@@ -244,7 +244,7 @@ export async function applyTurnDiff(cwd: string, patch: string | undefined, reve
 
 /**
  * Split a full diff into the capped client view and the uncapped patch kept in
- * the sidecar for Undo. Codex keeps the full unified diff for patch actions.
+ * the sidecar for Undo; patch actions need the full unified diff.
  */
 export function diffForView(diff: TurnDiff): { diff: TurnDiff; fullPatch?: string } {
   if (diff.patch && diff.patch.length > MAX_PATCH)

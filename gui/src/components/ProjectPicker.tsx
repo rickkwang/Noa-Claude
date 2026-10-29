@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react"
 import type { ProjectInfo } from "../api"
 import { Check, Folder, Plus, Search } from "../lib/icons"
 
-// Codex-style project chooser: search, the projects with the active one ticked, then "New project".
+// Project chooser: search, the projects with the active one ticked, then "New project".
 export function ProjectPicker({
   projects,
   activeCwd,
@@ -21,7 +21,7 @@ export function ProjectPicker({
   const matches = projects.filter(
     (project) => !project.missing && project.name.toLowerCase().includes(query.trim().toLowerCase()),
   )
-  // Like Codex, a row shows its full path on hover only when another project has the same name.
+  // A row shows its full path on hover only when another project has the same name.
   const duplicateNames = new Set(
     projects.filter((p) => projects.filter((q) => q.name === p.name).length > 1).map((p) => p.name),
   )
