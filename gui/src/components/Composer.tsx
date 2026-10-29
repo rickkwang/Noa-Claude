@@ -1,7 +1,8 @@
 import { SlashCommandMenu } from "./SlashCommandMenu"
 import { composerCommands, findComposerCommand, filterComposerCommands, slashAtCaret, type ComposerCommand, type GuiCommandAction } from "../agent/commands"
 import { loadImageDraft, saveImageDraft } from "../agent/imageDrafts"
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react"
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from "react"
+import { startEffortMaxFill } from "./effortMaxFill"
 import type { ContextUsage, ImageAttachment, UserContent, ModelInfo, PermissionMode, SlashCommand } from "../agent/protocol"
 import { Check, Edit2, FileText, RotateCcw, X } from "../lib/icons"
 import { Lightbox } from "./Lightbox"
@@ -846,11 +847,12 @@ export function Composer({
               }
               disabled={disabled || busy || models.length === 0}
               items={modelItems}
-              header={effortLevels.length > 0 ? (toggleModels) => (
+              header={effortLevels.length > 0 ? (toggleModels, active) => (
                 <EffortSlider
                   levels={effortLevels}
                   effort={effort ?? null}
                   modelName={currentModel?.displayName ?? ""}
+                  active={active}
                   onEffort={onEffort}
                   onToggleModels={toggleModels}
                 />
@@ -920,16 +922,59 @@ const MODE_ICONS: Partial<Record<PermissionMode, ReactNode>> = {
   bypassPermissions: <IconAlertCircle size={16} stroke={1.5} />,
 }
 
+// Spring presets for the effort slider: thumb travel, and the thumb's grow/shrink under hover or press.
+const THUMB_TRAVEL = { stiffness: 300, damping: 27 }
+const THUMB_GROW = { stiffness: 420, damping: 38 }
+const THUMB_SETTLE = { stiffness: 220, damping: 26 }
+const THUMB_PRESSED_SCALE = 32 / 28
+
+function createSpring(initial: number, apply: (value: number) => void) {
+  let value = initial
+  let velocity = 0
+  let frame = 0
+  const stop = () => {
+    cancelAnimationFrame(frame)
+    frame = 0
+  }
+  const jump = (next: number) => {
+    stop()
+    value = next
+    velocity = 0
+    apply(next)
+  }
+  const to = (target: number, { stiffness, damping }: { stiffness: number; damping: number }) => {
+    stop()
+    if (document.hidden || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return jump(target)
+    let last = performance.now()
+    const step = (now: number) => {
+      const dt = Math.min(0.064, Math.max(0, now - last) / 1000)
+      last = now
+      const substeps = Math.max(1, Math.ceil(dt / 0.004))
+      for (let i = 0; i < substeps; i++) {
+        velocity += (-stiffness * (value - target) - damping * velocity) * (dt / substeps)
+        value += velocity * (dt / substeps)
+      }
+      if (Math.abs(velocity) < 0.001 && Math.abs(value - target) < 1e-4) return jump(target)
+      apply(value)
+      frame = requestAnimationFrame(step)
+    }
+    frame = requestAnimationFrame(step)
+  }
+  return { jump, to, stop, get value() { return value } }
+}
+
 function EffortSlider({
   levels,
   effort,
   modelName,
+  active,
   onEffort,
   onToggleModels,
 }: {
   levels: string[]
   effort: string | null
   modelName: string
+  active: boolean
   onEffort: (effort: string | null) => void
   onToggleModels: () => void
 }) {
@@ -937,19 +982,57 @@ function EffortSlider({
   const last = levels.length - 1
   // No explicit effort (or one this model lacks) means the model default, shown as "Default" with no thumb.
   const selected = effort ? levels.indexOf(effort) : -1
-  const pct = selected >= 0 && last > 0 ? (selected / last) * 100 : 0
+  const target = selected >= 0 && last > 0 ? selected / last : 0
   const label = selected >= 0 ? levels[selected]!.charAt(0).toUpperCase() + levels[selected]!.slice(1) : "Default"
+  const drag = useRef<{ x: number; y: number; grab: number; moving: boolean } | null>(null)
+  const hovered = useRef(false)
+  const mounted = useRef(false)
+  const isMax = last > 0 && selected === last
+  const maxPresence = usePresence(isMax, 300)
+  // Reaching the top level by hand plays the burst and sweeps the fill in; arriving already there just shows it.
+  const [burst, setBurst] = useState(0)
+  const commit = (level: string | null) => {
+    if (level !== null && last > 0 && level === levels[last] && level !== effort) setBurst((k) => k + 1)
+    onEffort(level)
+  }
 
-  const pick = (clientX: number) => {
+  const springs = useMemo(() => {
+    const set = (name: string) => (value: number) => trackRef.current?.style.setProperty(name, String(value))
+    return { pos: createSpring(0, set("--effort-pos")), scale: createSpring(1, set("--effort-scale")) }
+  }, [])
+  useLayoutEffect(() => () => { springs.pos.stop(); springs.scale.stop() }, [springs])
+  useLayoutEffect(() => {
+    if (!mounted.current) {
+      mounted.current = true
+      springs.pos.jump(target)
+      springs.scale.jump(1)
+    } else if (!drag.current?.moving) springs.pos.to(target, THUMB_TRAVEL)
+  }, [springs, target])
+
+  const fraction = (clientX: number, grab = 0) => {
     const rect = trackRef.current!.getBoundingClientRect()
-    const ratio = Math.min(1, Math.max(0, (clientX - rect.left - 14) / Math.max(1, rect.width - 28)))
+    return Math.min(1, Math.max(0, (clientX - rect.left - 14 - grab) / Math.max(1, rect.width - 28)))
+  }
+  const thumbCenter = () => {
+    const rect = trackRef.current!.getBoundingClientRect()
+    return rect.left + 14 + (rect.width - 28) * springs.pos.value
+  }
+  const choose = (ratio: number) => {
     const level = levels[Math.round(ratio * last)]!
-    if (level !== effort) onEffort(level)
+    if (level !== effort) commit(level)
+  }
+  const growThumb = (grown: boolean) => springs.scale.to(grown ? THUMB_PRESSED_SCALE : 1, grown ? THUMB_GROW : THUMB_SETTLE)
+  const release = (e: ReactPointerEvent) => {
+    const state = drag.current
+    drag.current = null
+    hovered.current = selected >= 0 && Math.abs(e.clientX - thumbCenter()) <= 17
+    growThumb(hovered.current)
+    if (state?.moving) springs.pos.to(Math.round(springs.pos.value * last) / Math.max(1, last), THUMB_TRAVEL)
   }
 
   return (
     <div className="noa-model-picker-header">
-      <div className="noa-model-picker-controls">
+      <div className="noa-model-picker-controls" data-active={active}>
         <button type="button" onClick={onToggleModels} aria-label="Select model" className="noa-model-picker-view">
           <span className="noa-model-picker-labels">
             <span
@@ -966,51 +1049,185 @@ function EffortSlider({
           aria-label="Use default effort"
           title="Use default effort"
           disabled={selected < 0}
-          onClick={() => onEffort(null)}
+          onClick={() => commit(null)}
           className="noa-model-picker-reset"
         >
           <RotateCcw size={16} />
         </button>
       </div>
-      <div className="noa-model-picker-slider">
+      <div className="noa-model-picker-slider" data-active={active}>
         <div
           ref={trackRef}
           role="slider"
-          tabIndex={0}
+          tabIndex={active ? 0 : -1}
           aria-label="Reasoning effort"
           aria-valuemin={0}
           aria-valuemax={last}
           aria-valuenow={Math.max(0, selected)}
           aria-valuetext={label}
+          data-empty={selected < 0}
           onPointerDown={(e) => {
             e.currentTarget.setPointerCapture(e.pointerId)
-            pick(e.clientX)
+            const onThumb = selected >= 0 && Math.abs(e.clientX - thumbCenter()) <= 17
+            drag.current = { x: e.clientX, y: e.clientY, grab: onThumb ? e.clientX - thumbCenter() : 0, moving: false }
+            growThumb(true)
+            if (!onThumb) choose(fraction(e.clientX))
           }}
           onPointerMove={(e) => {
-            if (e.buttons) pick(e.clientX)
+            const state = drag.current
+            if (!state) {
+              const over = selected >= 0 && Math.abs(e.clientX - thumbCenter()) <= 17
+              if (over !== hovered.current) {
+                hovered.current = over
+                growThumb(over)
+              }
+              return
+            }
+            if (!state.moving && (e.clientX - state.x) ** 2 + (e.clientY - state.y) ** 2 < 16) return
+            state.moving = true
+            const ratio = fraction(e.clientX, state.grab)
+            springs.pos.jump(ratio)
+            choose(ratio)
+          }}
+          onPointerUp={release}
+          onPointerCancel={release}
+          onPointerLeave={() => {
+            if (drag.current || !hovered.current) return
+            hovered.current = false
+            growThumb(false)
           }}
           onKeyDown={(e) => {
             if (["ArrowRight", "ArrowUp", "ArrowLeft", "ArrowDown"].includes(e.key)) e.preventDefault()
-            if (e.key === "ArrowRight" || e.key === "ArrowUp") onEffort(levels[Math.min(last, selected + 1)]!)
-            if (e.key === "ArrowLeft" || e.key === "ArrowDown") onEffort(levels[Math.max(0, selected - 1)]!)
+            if (e.key === "ArrowRight" || e.key === "ArrowUp") commit(levels[Math.min(last, selected + 1)]!)
+            if (e.key === "ArrowLeft" || e.key === "ArrowDown") commit(levels[Math.max(0, selected - 1)]!)
           }}
-          className="noa-model-picker-track relative flex cursor-pointer touch-none select-none items-center rounded-full bg-[var(--effort-track)]"
+          className="noa-model-picker-track"
         >
-          <div className="absolute inset-y-0 left-0 rounded-full bg-[var(--accent-color)]" style={{ width: selected >= 0 ? `calc(14px + (100% - 28px) * ${pct / 100})` : 0 }} />
+          <div className="noa-model-picker-range">
+            {maxPresence.mounted && active && <EffortMaxEffects closing={maxPresence.closing} reveal={burst > 0} />}
+          </div>
           {levels.map((level, i) => (
             <span
               key={level}
-              className="absolute top-1/2 size-1 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[var(--effort-dot)]"
+              className="noa-model-picker-tick"
+              data-selected={i <= selected}
               style={{ left: `calc(14px + (100% - 28px) * ${last > 0 ? i / last : 0})` }}
             />
           ))}
-          {selected >= 0 && (
-            <span
-              className="absolute top-1/2 size-7 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[var(--effort-thumb)] shadow-[0_1px_3px_rgba(0,0,0,0.3)]"
-              style={{ left: `calc(14px + (100% - 28px) * ${pct / 100})` }}
-            />
+          {burst > 0 && (
+            <span key={burst} aria-hidden="true" className="noa-model-picker-burst">
+              {Array.from({ length: 16 }, (_, i) => <span key={i} />)}
+            </span>
           )}
+          <span className="noa-model-picker-thumb" />
         </div>
+      </div>
+    </div>
+  )
+}
+
+function trackParticleHash(index: number, salt: number) {
+  const n = Math.sin((index + 1) * 12.9898 + salt * 78.233) * 43758.5453
+  return n - Math.floor(n)
+}
+
+function randomParticle(next: () => number) {
+  const x = next()
+  const y = next()
+  return { scale: 0.8 + next() * 1.2, dx: Math.round((x - 0.5) * 8), y: Math.round(12 + (y - 0.5) * 14) }
+}
+
+function TrackParticle({ index, animate }: { index: number; animate: boolean }) {
+  const [state, setState] = useState(() => {
+    let salt = 1
+    return randomParticle(() => trackParticleHash(index, salt++))
+  })
+  useEffect(() => {
+    if (!animate) return
+    let timer = 0
+    const tick = () => {
+      const next = randomParticle(Math.random)
+      setState(next)
+      timer = window.setTimeout(tick, 1600 * next.scale)
+    }
+    const frame = requestAnimationFrame(tick)
+    return () => {
+      cancelAnimationFrame(frame)
+      clearTimeout(timer)
+    }
+  }, [animate])
+  return (
+    <span
+      className="noa-model-picker-particle"
+      style={{
+        left: `calc(${Math.round(4 + trackParticleHash(index, 14) * 92)}% + ${state.dx}px)`,
+        top: state.y,
+        opacity: 0.4 + trackParticleHash(index, 11) * 0.6,
+        transform: `translate(-50%, -50%) scale(${0.5 + trackParticleHash(index, 12) * 0.45})`,
+        transitionDuration: `${1.6 * state.scale}s`,
+      }}
+    />
+  )
+}
+
+// Top effort level: drifting gradient fill plus sparkles inside the filled track.
+function EffortMaxEffects({ closing, reveal }: { closing: boolean; reveal: boolean }) {
+  const canvas = useRef<HTMLCanvasElement>(null)
+  const still = typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches
+  useLayoutEffect(() => {
+    const el = canvas.current
+    const track = el?.closest<HTMLElement>(".noa-model-picker-track")
+    const measure = () => track?.style.setProperty("--effort-track-w", `${track.offsetWidth}px`)
+    measure()
+    const observer = track ? new ResizeObserver(measure) : undefined
+    if (track) observer?.observe(track)
+    const stop = el ? startEffortMaxFill(el, still) : undefined
+    return () => {
+      observer?.disconnect()
+      stop?.()
+    }
+  }, [still])
+  return (
+    <span aria-hidden="true" className="noa-model-picker-max" data-state={closing ? "closing" : "open"}>
+      <span className="noa-model-picker-max-fill" data-reveal={reveal && !still}>
+        <span className="noa-model-picker-max-mask">
+          <canvas ref={canvas} />
+        </span>
+      </span>
+      <span className="noa-model-picker-particles">
+        {Array.from({ length: 14 }, (_, i) => <TrackParticle key={i} index={i} animate={!still && !closing} />)}
+      </span>
+    </span>
+  )
+}
+
+// Slider and model list share one panel: the panel height eases between them while each view slides and fades.
+function PickerViews({ showingModels, slider, children }: { showingModels: boolean; slider: ReactNode; children: ReactNode }) {
+  const sliderView = useRef<HTMLDivElement>(null)
+  const listView = useRef<HTMLDivElement>(null)
+  const [height, setHeight] = useState<number>()
+  const [ready, setReady] = useState(false)
+
+  useLayoutEffect(() => {
+    const views = [sliderView.current!, listView.current!]
+    views[0]!.toggleAttribute("inert", showingModels)
+    views[1]!.toggleAttribute("inert", !showingModels)
+    const measure = () => setHeight(views[showingModels ? 1 : 0]!.offsetHeight)
+    measure()
+    const observer = new ResizeObserver(measure)
+    views.forEach((view) => observer.observe(view))
+    return () => observer.disconnect()
+  }, [showingModels])
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => setReady(true))
+    return () => cancelAnimationFrame(frame)
+  }, [])
+
+  return (
+    <div className="noa-model-picker-views" data-ready={ready} style={{ height }}>
+      <div ref={sliderView} className="noa-model-picker-view-pane">{slider}</div>
+      <div ref={listView} className="noa-model-picker-view-pane noa-model-picker-list-motion" data-active={showingModels}>
+        {children}
       </div>
     </div>
   )
@@ -1041,7 +1258,7 @@ function Picker({
   modelPicker?: boolean
   compactPadding?: boolean
   menuTitle?: string
-  header?: (toggleModels: () => void) => ReactNode
+  header?: (toggleModels: () => void, active: boolean) => ReactNode
 }) {
   const [open, setOpen] = useState(false)
   const presence = usePresence(open)
@@ -1066,6 +1283,46 @@ function Picker({
       document.removeEventListener("keydown", onKey)
     }
   }, [open])
+
+  const list = (
+    <div className={modelPicker ? "noa-model-picker-list" : undefined}>
+            {items.map((item) => (
+      <div key={item.key}>
+        {item.heading && (
+          <div className="px-2.5 pb-1 pt-2 text-caption text-[var(--sidebar-text-muted)]">{item.heading}</div>
+        )}
+        <button
+          type="button"
+          disabled={item.disabled}
+          onClick={() => {
+            item.onSelect()
+            setOpen(false)
+          }}
+          aria-pressed={item.active}
+          className={modelPicker ? "noa-model-picker-option" : item.icon ? `noa-approval-item${item.danger ? " is-danger" : ""}` : `flex w-full flex-col gap-0.5 rounded-md px-2.5 py-1.5 text-left ${
+            item.active
+              ? "bg-[color-mix(in_srgb,var(--text-primary,#2D2D2B)_8%,transparent)]"
+              : "hover:bg-[color-mix(in_srgb,var(--text-primary,#2D2D2B)_5%,transparent)]"
+          }`}
+        >
+          {item.icon && <span className="noa-approval-icon">{item.icon}</span>}
+          <span className={item.icon ? "noa-approval-text" : "contents"}>
+            <span className={modelPicker ? "noa-model-picker-option-label" : item.icon ? undefined : "text-body font-medium"}>
+              {item.title}
+              {modelPicker && item.active && <Check size={16} aria-hidden="true" />}
+            </span>
+            {item.description && (
+              <span className={item.icon ? "noa-approval-desc" : "break-words text-caption text-[var(--sidebar-text-muted,#898781)]"}>
+                {item.description}
+              </span>
+            )}
+          </span>
+          {item.icon && item.active && <Check size={16} className="noa-approval-check" aria-hidden="true" />}
+        </button>
+      </div>
+    ))}
+    </div>
+  )
 
   return (
     <div className="relative" ref={ref}>
@@ -1093,45 +1350,11 @@ function Picker({
             : `${modelPicker ? "noa-model-picker" : ""} noa-floating-panel absolute bottom-full ${align === "left" ? "left-0" : "right-0"} z-30 mb-2 max-h-[55vh] w-64 max-w-[80vw] overflow-auto rounded-panel p-1 ${header ? "bg-[var(--effort-menu)]" : "bg-[var(--bg-card,#FFFFFF)]"}`}
         >
           {menuTitle && <div className="noa-approval-title">{menuTitle}</div>}
-          {!showingModels && header?.(() => setShowingModels(true))}
-          <div className={modelPicker ? "noa-model-picker-list" : undefined} hidden={!!header && !showingModels}>
-            {items.map((item) => (
-              <div key={item.key}>
-                {item.heading && (
-                  <div className="px-2.5 pb-1 pt-2 text-caption text-[var(--sidebar-text-muted)]">{item.heading}</div>
-                )}
-                <button
-                  key={item.key}
-                  type="button"
-                  disabled={item.disabled}
-                  onClick={() => {
-                    item.onSelect()
-                    setOpen(false)
-                  }}
-                  aria-pressed={item.active}
-                  className={modelPicker ? "noa-model-picker-option" : item.icon ? `noa-approval-item${item.danger ? " is-danger" : ""}` : `flex w-full flex-col gap-0.5 rounded-md px-2.5 py-1.5 text-left ${
-                    item.active
-                      ? "bg-[color-mix(in_srgb,var(--text-primary,#2D2D2B)_8%,transparent)]"
-                      : "hover:bg-[color-mix(in_srgb,var(--text-primary,#2D2D2B)_5%,transparent)]"
-                  }`}
-                >
-                  {item.icon && <span className="noa-approval-icon">{item.icon}</span>}
-                  <span className={item.icon ? "noa-approval-text" : "contents"}>
-                    <span className={modelPicker ? "noa-model-picker-option-label" : item.icon ? undefined : "text-body font-medium"}>
-                      {item.title}
-                      {modelPicker && item.active && <Check size={16} aria-hidden="true" />}
-                    </span>
-                    {item.description && (
-                      <span className={item.icon ? "noa-approval-desc" : "break-words text-caption text-[var(--sidebar-text-muted,#898781)]"}>
-                        {item.description}
-                      </span>
-                    )}
-                  </span>
-                  {item.icon && item.active && <Check size={16} className="noa-approval-check" aria-hidden="true" />}
-                </button>
-              </div>
-            ))}
-          </div>
+          {header ? (
+            <PickerViews showingModels={showingModels} slider={header(() => setShowingModels(true), !showingModels)}>
+              {list}
+            </PickerViews>
+          ) : list}
         </div>
       )}
     </div>

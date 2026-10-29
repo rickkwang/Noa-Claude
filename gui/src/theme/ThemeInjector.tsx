@@ -74,9 +74,9 @@ export default function ThemeInjector({ settings }: ThemeInjectorProps) {
       root.style.setProperty('--border-primary', 'var(--border-default)');
       root.style.setProperty('--panel-divider', 'var(--divider-subtle)');
       root.style.setProperty('--control-shadow-ink', '#E6E2DA');
-      root.style.setProperty('--effort-menu', '#FFFFFF');
+      root.style.setProperty('--effort-menu', '#FAFAF8');
       root.style.setProperty('--effort-chip', 'rgba(45,45,43,0.05)');
-      root.style.setProperty('--effort-track', 'rgba(45,45,43,0.1)');
+      root.style.setProperty('--effort-track', '#E6E6E3');
       root.style.setProperty('--effort-dot', 'rgba(45,45,43,0.3)');
       root.style.setProperty('--effort-thumb', '#FFFFFF');
     }
