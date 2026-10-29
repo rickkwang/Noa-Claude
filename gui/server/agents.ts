@@ -18,16 +18,24 @@ import {
 } from "./turnDiff"
 import type { AgentMessage, Envelope, Outgoing, QueuedMessage, TurnDiff, TurnDiffActionResult } from "../src/agent/protocol"
 
+// Modes the composer can start a session in; bypassPermissions is excluded because it is only entered from the menu.
+export const SPAWN_PERMISSION_MODES = new Set(["default", "acceptEdits", "plan", "auto"])
+
+// Last known mode per runtime, so a CLI that exited and is respawned for the same task resumes in it.
+const runModes = new Map<string, string>()
+
 export interface SocketData {
   cwd: string
   resume?: string
   runtimeId: string
+  mode?: string
   run?: AgentRun
 }
 interface AgentRun {
   id: string
   cwd: string
   additionalDirectories: string[]
+  mode?: string
   sessionId?: string
   pendingTimeline?: { sessionId: string; turn: number; offset: number; message: AgentMessage }[]
   lastTranscriptUuid?: string
@@ -88,6 +96,7 @@ export function emit(run: AgentRun, envelope: Envelope) {
   let finishedTask = false
   if (envelope.kind === "agent" && envelope.message.type === "system") {
     const message = envelope.message
+    if ((message.subtype === "init" || message.subtype === "status") && message.permissionMode) { run.mode = message.permissionMode; runModes.set(run.id, message.permissionMode) }
     if (message.subtype === "task_started" || message.subtype === "task_progress") (run.activeTasks ??= new Set()).add(message.task_id)
     else if (message.subtype === "task_notification" && ["completed", "failed", "stopped"].includes(message.status ?? "")) {
       run.activeTasks?.delete(message.task_id)
@@ -353,6 +362,10 @@ export function attachAgent(ws: ServerWebSocket<SocketData>, root: string) {
     const additionalDirectories = projectAdditionalDirectories(root, ws.data.cwd)
     if (additionalDirectories.length) args.push("--add-dir", ...additionalDirectories)
     if (ws.data.resume) args.push("--resume", ws.data.resume)
+    // A respawn keeps the mode the session was in; only start-safe modes are restored, never bypass.
+    const lastMode = run?.mode ?? runModes.get(ws.data.runtimeId)
+    const startMode = lastMode && SPAWN_PERMISSION_MODES.has(lastMode) ? lastMode : ws.data.mode
+    if (startMode) args.push("--permission-mode", startMode)
     const retainedQueue = run?.queue ?? []
     // A resumed session continues from its transcript turn count, not from the
     // last stored diff, so skipped-diff turns do not shift later indexes.
@@ -379,6 +392,7 @@ export function attachAgent(ws: ServerWebSocket<SocketData>, root: string) {
       id: ws.data.runtimeId,
       cwd: ws.data.cwd,
       additionalDirectories,
+      mode: startMode,
       sessionId: ws.data.resume,
       proc,
       clients: new Set(),
@@ -501,7 +515,7 @@ export function attachAgent(ws: ServerWebSocket<SocketData>, root: string) {
   current.historyReady.then(() => {
     if (ws.readyState !== 1) return
     current.clients.add(ws)
-    ws.send(JSON.stringify({ kind: "attached", runtimeId: current.id }))
+    ws.send(JSON.stringify({ kind: "attached", runtimeId: current.id, mode: current.mode }))
     for (const envelope of current.journal) ws.send(JSON.stringify(envelope))
   })
 }

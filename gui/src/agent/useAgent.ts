@@ -91,6 +91,8 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
     if (cwd) params.set("cwd", cwd)
     if (resume) params.set("resume", resume)
     params.set("runtime", runtimeId)
+    // Start the CLI in the chosen mode so the first turn and a resumed session already run under it.
+    if (defaultModeRef.current && defaultModeRef.current !== "bypassPermissions" && defaultModeRef.current !== "dontAsk") params.set("mode", defaultModeRef.current)
     const url = new URL(`/ws?${params}`, window.location.href)
     url.protocol = url.protocol.replace("http", "ws")
 
@@ -148,6 +150,7 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
           dispatch({ type: "interrupt-requested" })
           break
         case "attached":
+          if (envelope.mode) modeRef.current = envelope.mode
           break
         case "turn-diff":
           dispatch({ type: "turn-diff", diff: envelope.diff, updateOnly: envelope.updateOnly })
@@ -281,10 +284,7 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
         if (applied?.model) dispatch({ type: "model-set", model: applied.model })
         dispatch({ type: "effort-set", effort: applied?.effort ?? undefined })
         if (kind === "startup_settings") {
-          const cliMode = modeRef.current ?? effective?.permissions?.defaultMode ?? "default"
-          const guiMode = defaultModeRef.current
-          if (!resume && !modeRef.current && guiMode && guiMode !== cliMode) control({ subtype: "set_permission_mode", mode: guiMode }, { mode: guiMode })
-          else dispatch({ type: "permission-mode-set", mode: cliMode })
+          dispatch({ type: "permission-mode-set", mode: modeRef.current ?? effective?.permissions?.defaultMode ?? "default" })
         }
       } else {
         dispatch({ type: "control", payload: { kind: "context_usage", usage: body as unknown as ContextUsage } })

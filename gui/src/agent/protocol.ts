@@ -203,7 +203,7 @@ export interface TurnDiffActionResult {
 
 export type Envelope =
   | { kind: "interrupt" }
-  | { kind: "attached"; runtimeId: string }
+  | { kind: "attached"; runtimeId: string; mode?: PermissionMode }
   | { kind: "history"; items: HistoryItem[]; before?: number; prepend?: boolean }
   | { kind: "user"; id: string; content: UserContent }
   | { kind: "queue"; messages: QueuedMessage[]; paused?: boolean }

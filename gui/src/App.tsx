@@ -68,10 +68,9 @@ function Workspace({ cwd }: { cwd: string }) {
       const appearance = JSON.parse(localStorage.getItem("noa-agent.appearance") ?? "{}")
       if (appearance.maxWidth === 880) appearance.maxWidth = defaultSettings.appearance.maxWidth
       const agent = { ...defaultSettings.agent, ...JSON.parse(localStorage.getItem("noa-agent.agent") ?? "{}") }
-      if (agent.defaultPermissionMode === "bypassPermissions") {
-        agent.defaultPermissionMode = defaultSettings.agent.defaultPermissionMode
-        agent.showFullAccess = true
-      }
+      // Superseded by permissionDefault. A stored "default" was the old initial value, so only explicit choices carry over.
+      if (["acceptEdits", "plan", "auto"].includes(agent.defaultPermissionMode)) agent.permissionDefault = agent.defaultPermissionMode
+      delete agent.defaultPermissionMode
       return {
         ...defaultSettings,
         appearance: {
@@ -130,7 +129,7 @@ function Workspace({ cwd }: { cwd: string }) {
       resume: session.resume,
       sessionKey: session.key,
       runtimeId: session.runtimeId,
-      defaultPermissionMode: settings.agent.defaultPermissionMode,
+      defaultPermissionMode: settings.agent.permissionDefault === "inherit" ? undefined : settings.agent.permissionDefault,
     })
 
   useEffect(() => {
@@ -830,7 +829,6 @@ function Workspace({ cwd }: { cwd: string }) {
                 models={state.models}
                 model={state.model}
                 mode={state.permissionMode}
-                showFullAccess={settings.agent.showFullAccess}
                 commands={state.commands}
                 onSend={sendComposer}
                 onCommand={(action) => {

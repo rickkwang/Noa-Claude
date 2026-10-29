@@ -5,7 +5,6 @@ import type { AgentState } from "../agent/reducer"
 import type { AccountInfo } from "../agent/protocol"
 import { ArrowLeft, ChevronDown, Keyboard, Palette, Search, Settings } from "../lib/icons"
 import { SYSTEM_DEFAULT_FONT, UI_FONT_STYLES } from "../lib/fontFamily"
-import { useConfirm } from "./ConfirmDialog"
 import { AuthDialog } from "./AuthDialog"
 
 const dragRegion = { WebkitAppRegion: "drag" } as CSSProperties
@@ -13,7 +12,7 @@ const noDragRegion = { WebkitAppRegion: "no-drag" } as CSSProperties
 
 type Page = "general" | "appearance" | "shortcuts"
 type Theme = AppSettings["appearance"]["theme"]
-type DefaultMode = AppSettings["agent"]["defaultPermissionMode"]
+type DefaultMode = AppSettings["agent"]["permissionDefault"]
 
 const pages: { key: Page; label: string; icon: ReactNode }[] = [
   { key: "general", label: "General", icon: <Settings size={16} /> },
@@ -22,9 +21,11 @@ const pages: { key: Page; label: string; icon: ReactNode }[] = [
 ]
 
 const permissionOptions: [DefaultMode, string][] = [
-  ["default", "Ask before acting"],
-  ["acceptEdits", "Edit automatically"],
-  ["plan", "Plan mode"],
+  ["inherit", "Follow Noa settings"],
+  ["auto", "Auto"],
+  ["default", "Manual"],
+  ["acceptEdits", "Accept edits"],
+  ["plan", "Plan"],
 ]
 
 const shortcuts: [string, string[]][] = [
@@ -70,26 +71,12 @@ export function SettingsDialog({
   const dialogRef = useRef<HTMLDivElement>(null)
   const backRef = useRef<HTMLButtonElement>(null)
   const appearance = settings.appearance
-  const permissionMode = settings.agent.defaultPermissionMode
-  const showFullAccess = settings.agent.showFullAccess
+  const permissionMode = settings.agent.permissionDefault
   const providerLabel = account?.apiProvider ? providerDisplayName(account.apiProvider) : undefined
-  const { confirm, dialog } = useConfirm()
   const change = (patch: Partial<AppSettings["appearance"]>) =>
     onChange({ ...settings, appearance: { ...appearance, ...patch } })
-  const setPermission = (defaultPermissionMode: DefaultMode) =>
-    onChange({ ...settings, agent: { ...settings.agent, defaultPermissionMode } })
-  const setFullAccess = async (on: boolean) => {
-    if (!on) {
-      onChange({ ...settings, agent: { ...settings.agent, showFullAccess: false } })
-      return
-    }
-    if (await confirm({
-      title: "Make Full access available?",
-      description: "When selected, Noa can access the internet and read and edit files without asking for approval, including potentially destructive commands. Turning this on only shows Full access in the composer; it does not switch this task.",
-      confirmLabel: "Confirm",
-      danger: true,
-    })) onChange({ ...settings, agent: { ...settings.agent, showFullAccess: true } })
-  }
+  const setPermission = (permissionDefault: DefaultMode) =>
+    onChange({ ...settings, agent: { ...settings.agent, permissionDefault } })
   const [localFonts, setLocalFonts] = useState<string[]>([])
   const visiblePages = pages.filter((p) => p.label.toLowerCase().includes(query.trim().toLowerCase()))
   const current = pages.find((p) => p.key === page)
@@ -238,19 +225,13 @@ export function SettingsDialog({
               <Section title="Permissions">
               <Row
                 label="Default permissions"
-                description="By default, Noa can read and edit files in its workspace. It asks before running commands or making other changes."
+                description="The mode new tasks start in. Follow Noa settings uses permissions.defaultMode from settings.json."
               >
                 <Select
                   value={permissionMode}
                   options={permissionOptions}
                   onChange={(value) => setPermission(value as DefaultMode)}
                 />
-              </Row>
-              <Row
-                label="Full access"
-                description="Show Full access in the composer permissions menu. It is never selected by default."
-              >
-                <Toggle checked={showFullAccess} onChange={(on) => void setFullAccess(on)} />
               </Row>
               </Section>
             </>
@@ -370,7 +351,6 @@ export function SettingsDialog({
           onSubmitCode={onSubmitAuthenticationCode}
         />
       )}
-      {dialog}
     </div>,
     document.body,
   )

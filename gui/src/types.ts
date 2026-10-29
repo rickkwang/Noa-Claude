@@ -13,8 +13,8 @@ export interface AppSettings {
     fontSmoothing: boolean;
   };
   agent: {
-    defaultPermissionMode: 'default' | 'acceptEdits' | 'plan';
-    showFullAccess: boolean;
+    // 'inherit' starts sessions in the mode from Noa's settings.json instead of overriding it.
+    permissionDefault: 'inherit' | 'default' | 'acceptEdits' | 'plan' | 'auto';
   };
 }
 

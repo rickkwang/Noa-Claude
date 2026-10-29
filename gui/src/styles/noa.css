@@ -773,6 +773,59 @@ html[data-translucent-sidebar="enabled"]:where(:not([data-settings-open="true"])
   box-shadow: var(--shadow-dialog);
 }
 
+/* Permission menu: rows with a leading icon, a two-line label and a trailing check. */
+.noa-approval-menu {
+  box-sizing: border-box;
+  width: max-content;
+  min-width: 260px;
+  max-width: min(420px, 80vw);
+  margin: 1px 0 8px;
+  padding: 4px;
+  border-radius: 16px;
+  background-color: #F9F9F9;
+  color: var(--text-primary, #1A1C1F);
+  box-shadow: 0 0 0 .5px color-mix(in srgb, var(--text-primary, #1A1C1F) 8%, transparent), 0 8px 16px -4px rgba(0, 0, 0, .12);
+  animation: noa-floating-in 120ms cubic-bezier(.19,1,.22,1);
+}
+[data-theme="dark"] .noa-approval-menu { background-color: var(--bg-card, #2D2D2B); }
+.noa-approval-title {
+  display: flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 4px 8px;
+  font-size: 12.2px;
+  line-height: 16px;
+  color: color-mix(in srgb, var(--text-primary, #1A1C1F) 50%, transparent);
+}
+.noa-approval-item {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 12px;
+  text-align: left;
+  font-size: 12.2px;
+  line-height: calc(1.25 / .875);
+}
+.noa-approval-item:hover,
+.noa-approval-item:focus-visible { background-color: rgba(0, 0, 0, .05); outline: none; box-shadow: none; }
+[data-theme="dark"] .noa-approval-item:hover,
+[data-theme="dark"] .noa-approval-item:focus-visible { background-color: rgba(255, 255, 255, .1); }
+.noa-approval-icon { display: inline-flex; width: 16px; flex: none; align-items: center; justify-content: center; }
+.noa-approval-text { display: flex; min-width: 0; flex: 1; flex-direction: column; }
+.noa-approval-desc {
+  font-size: 12px;
+  line-height: calc(7 / 6);
+  white-space: normal;
+  color: color-mix(in srgb, var(--text-primary, #1A1C1F) 50%, transparent);
+}
+.noa-approval-check { flex: none; }
+.noa-approval-item:disabled { cursor: default; opacity: .5; }
+.noa-approval-item:disabled:hover { background-color: transparent; }
+.noa-approval-item.is-danger,
+.noa-approval-item.is-danger .noa-approval-desc { color: #D9622B; }
+
 /* DARK MODE: data-theme="dark" on <html>; [data-theme] selectors for specificity over Tailwind. */
 
 [data-theme="dark"] body {

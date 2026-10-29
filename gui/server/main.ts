@@ -4,7 +4,7 @@ import { resolve, sep } from "node:path"
 import { SESSION_ID, listSessions, loadHistory, renameSession } from "./sessions"
 import { addProject, listProjects, removeProject } from "./projects"
 import { mediaResponse, workspaceRequest } from "./workspace"
-import { attachAgent, agentMessage, detachAgent, listAgentRuns, type SocketData } from "./agents"
+import { attachAgent, agentMessage, detachAgent, listAgentRuns, SPAWN_PERMISSION_MODES, type SocketData } from "./agents"
 
 const REPO_ROOT = resolve(import.meta.dir, "../..")
 const DIST_DIR = resolve(import.meta.dir, "../dist")
@@ -110,7 +110,9 @@ Bun.serve<SocketData>({
       if (resume && !SESSION_ID.test(resume)) return new Response("invalid session id", { status: 400 })
       const runtimeId = url.searchParams.get("runtime") ?? crypto.randomUUID()
       if (!SESSION_ID.test(runtimeId)) return new Response("invalid runtime id", { status: 400 })
-      if (server.upgrade(req, { data: { cwd, resume, runtimeId } })) return undefined
+      const modeParam = url.searchParams.get("mode") ?? undefined
+      if (modeParam && !SPAWN_PERMISSION_MODES.has(modeParam)) return new Response("invalid permission mode", { status: 400 })
+      if (server.upgrade(req, { data: { cwd, resume, runtimeId, mode: modeParam } })) return undefined
       return new Response("Expected WebSocket upgrade", { status: 426 })
     }
 

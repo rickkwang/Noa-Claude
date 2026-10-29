@@ -5,8 +5,9 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react"
 import type { ContextUsage, ImageAttachment, UserContent, ModelInfo, PermissionMode, SlashCommand } from "../agent/protocol"
 import { Check, Edit2, FileText, RotateCcw, X } from "../lib/icons"
 import { Lightbox } from "./Lightbox"
+import { useConfirm } from "./ConfirmDialog"
 import { EnvironmentMenu } from "./EnvironmentMenu"
-import { IconShieldCheck } from "@tabler/icons-react"
+import { IconAlertCircle, IconHandStop, IconListCheck, IconPencil, IconShieldCheck } from "@tabler/icons-react"
 import {
   ComposerApprovalIcon,
   ComposerChevronIcon,
@@ -20,15 +21,11 @@ import type { ProjectInfo } from "../api"
 import type { AgentState } from "../agent/reducer"
 
 export const MODE_OPTIONS: { value: PermissionMode; label: string; description: string }[] = [
-  { value: "default", label: "Ask before acting", description: "Asks before editing files or running commands" },
-  {
-    value: "auto",
-    label: "Approve for me",
-    description: "Noa evaluates tool actions and asks when approval is needed",
-  },
-  { value: "acceptEdits", label: "Edit automatically", description: "Applies file edits without asking" },
-  { value: "plan", label: "Plan mode", description: "Plans the work without making changes" },
-  { value: "bypassPermissions", label: "Bypass permissions", description: "Runs tools without asking" },
+  { value: "auto", label: "Auto", description: "Noa handles permission decisions" },
+  { value: "default", label: "Manual", description: "Always ask before making changes" },
+  { value: "acceptEdits", label: "Accept edits", description: "Automatically accept all file edits" },
+  { value: "plan", label: "Plan", description: "Create a plan before making changes" },
+  { value: "bypassPermissions", label: "Bypass permissions", description: "Noa can modify or delete files without asking" },
 ]
 
 type MentionEntry = { name: string; path: string; directory: boolean }
@@ -49,7 +46,6 @@ interface ComposerProps {
   models: ModelInfo[]
   model?: string
   mode?: PermissionMode
-  showFullAccess: boolean
   commands: SlashCommand[]
   onSend: (content: UserContent) => boolean
   onCommand: (action: GuiCommandAction) => void
@@ -84,7 +80,6 @@ export function Composer({
   models,
   model,
   mode,
-  showFullAccess,
   commands,
   onSend,
   onCommand,
@@ -252,11 +247,31 @@ export function Composer({
 
   const currentModel = findModel(models, model)
   const currentMode = MODE_OPTIONS.find((m) => m.value === mode)
+  // Auto stays listed (greyed out) when the model can't run it; it is hidden only while the model list is loading.
+  const autoUnsupported = !!currentModel && !currentModel.supportsAutoMode
   const permissionModes = MODE_OPTIONS.filter(
     (option) =>
-      (option.value !== "auto" || currentModel?.supportsAutoMode || mode === "auto") &&
-      (option.value !== "bypassPermissions" || showFullAccess || mode === "bypassPermissions"),
+      option.value !== "auto" || currentModel !== undefined || mode === "auto",
   )
+  const { confirm, dialog } = useConfirm()
+  // Bypass skips every approval, so entering it needs an explicit confirmation.
+  const selectMode = async (value: PermissionMode) => {
+    if (value === "bypassPermissions" && mode !== "bypassPermissions" && !(await confirm({
+      title: "Bypass permissions?",
+      description: "Noa can access the internet and read and edit files without asking for approval, including potentially destructive commands, until you switch modes.",
+      confirmLabel: "Confirm",
+      danger: true,
+    }))) return
+    onMode(value)
+  }
+  const modeUnavailable = (value: PermissionMode) => value === "auto" && autoUnsupported && mode !== "auto"
+  // Switching to a model that can't run auto drops back to Manual. Startup and resume keep the chosen mode.
+  const previousModel = useRef(currentModel?.value)
+  useEffect(() => {
+    const switched = previousModel.current !== undefined && currentModel?.value !== undefined && previousModel.current !== currentModel.value
+    previousModel.current = currentModel?.value ?? previousModel.current
+    if (switched && mode === "auto" && autoUnsupported) onMode("default")
+  }, [currentModel?.value])
   const effortLevels = currentModel?.supportsEffort ? (currentModel.supportedEffortLevels ?? []) : []
   const allCommands = useMemo(() => composerCommands(commands).map((command) => ({
     ...command,
@@ -271,7 +286,7 @@ export function Composer({
     : submenu === "effort"
       ? [{ name: "Default", value: "default", description: "Use the model default", argumentHint: "", action: "effort", group: "Reasoning effort", active: !effort, disabled: disabled || busy }, ...effortLevels.map((level) => ({ name: level, value: level, description: "", argumentHint: "", action: "effort" as const, group: "Reasoning effort", active: level === effort, disabled: disabled || busy }))]
       : submenu === "permissions"
-        ? permissionModes.map((option) => ({ name: option.label, value: option.value, description: option.description, argumentHint: "", action: "permissions", group: "Permissions", active: option.value === mode, disabled: disabled || busy }))
+        ? permissionModes.map((option) => ({ name: option.label, value: option.value, description: modeUnavailable(option.value) ? "Not available for the selected model" : option.description, argumentHint: "", action: "permissions", group: "Permissions", active: option.value === mode, disabled: disabled || busy || modeUnavailable(option.value) }))
         : allCommands.filter((command) => !browserFilter || command.group === browserFilter)
   const menuItems = filterComposerCommands(choices, slashQuery ?? "")
   const menuOpen = !menuDismissed && (browserOpen || (!browserAction && inputFocused && slashQuery !== undefined))
@@ -382,8 +397,8 @@ export function Composer({
       if (value !== "default" && !effortLevels.includes(value)) { setAttachmentError("Choose one of this model’s supported effort levels."); return }
       onEffort(value === "default" ? null : value)
     } else if (action === "permissions") {
-      if (!permissionModes.some((option) => option.value === value)) { setAttachmentError("Choose an available permission mode."); return }
-      onMode(value as PermissionMode)
+      if (!permissionModes.some((option) => option.value === value) || modeUnavailable(value as PermissionMode)) { setAttachmentError("Choose an available permission mode."); return }
+      void selectMode(value as PermissionMode)
     } else if (action === "help" || action === "skills") {
       setBrowserFilter(action === "skills" ? "Skills" : undefined)
       setBrowserSearch(""); setBrowserOpen(true); setBrowserAction(undefined); setMenuDismissed(false); if (slash) replaceSlash(""); textareaRef.current?.focus(); return
@@ -761,10 +776,14 @@ export function Composer({
               items={permissionModes.map((m) => ({
                 key: m.value,
                 title: m.label,
-                description: m.description,
+                description: modeUnavailable(m.value) ? "Not available for the selected model" : m.description,
                 active: m.value === mode,
-                onSelect: () => onMode(m.value),
+                disabled: modeUnavailable(m.value),
+                icon: MODE_ICONS[m.value],
+                danger: m.value === "bypassPermissions",
+                onSelect: () => void selectMode(m.value),
               }))}
+              menuTitle="Permissions · this session"
             />
           </div>
           <div className="ml-auto flex min-w-0 items-center gap-1">
@@ -861,6 +880,7 @@ export function Composer({
           onClose={() => setImagePreview(undefined)}
         />
       )}
+      {dialog}
     </div>
   )
 }
@@ -887,6 +907,17 @@ interface PickerItem {
   active: boolean
   onSelect: () => void
   heading?: string
+  icon?: ReactNode
+  danger?: boolean
+  disabled?: boolean
+}
+
+const MODE_ICONS: Partial<Record<PermissionMode, ReactNode>> = {
+  default: <IconHandStop size={16} stroke={1.5} />,
+  auto: <IconShieldCheck size={16} stroke={1.5} />,
+  acceptEdits: <IconPencil size={16} stroke={1.5} />,
+  plan: <IconListCheck size={16} stroke={1.5} />,
+  bypassPermissions: <IconAlertCircle size={16} stroke={1.5} />,
 }
 
 function EffortSlider({
@@ -997,6 +1028,7 @@ function Picker({
   header,
   modelPicker,
   compactPadding,
+  menuTitle,
 }: {
   label: ReactNode
   items: PickerItem[]
@@ -1008,6 +1040,7 @@ function Picker({
   iconOnly?: boolean
   modelPicker?: boolean
   compactPadding?: boolean
+  menuTitle?: string
   header?: (toggleModels: () => void) => ReactNode
 }) {
   const [open, setOpen] = useState(false)
@@ -1055,8 +1088,11 @@ function Picker({
       {presence.mounted && (
         <div
           data-state={presence.closing ? "closing" : "open"}
-          className={`${modelPicker ? "noa-model-picker" : ""} noa-floating-panel absolute bottom-full ${align === "left" ? "left-0" : "right-0"} z-30 mb-2 max-h-[55vh] w-64 max-w-[80vw] overflow-auto rounded-panel p-1 ${header ? "bg-[var(--effort-menu)]" : "bg-[var(--bg-card,#FFFFFF)]"}`}
+          className={menuTitle
+            ? `noa-approval-menu absolute bottom-full ${align === "left" ? "left-0" : "right-0"} z-30 mb-2 max-h-[55vh] overflow-auto`
+            : `${modelPicker ? "noa-model-picker" : ""} noa-floating-panel absolute bottom-full ${align === "left" ? "left-0" : "right-0"} z-30 mb-2 max-h-[55vh] w-64 max-w-[80vw] overflow-auto rounded-panel p-1 ${header ? "bg-[var(--effort-menu)]" : "bg-[var(--bg-card,#FFFFFF)]"}`}
         >
+          {menuTitle && <div className="noa-approval-title">{menuTitle}</div>}
           {!showingModels && header?.(() => setShowingModels(true))}
           <div className={modelPicker ? "noa-model-picker-list" : undefined} hidden={!!header && !showingModels}>
             {items.map((item) => (
@@ -1067,26 +1103,31 @@ function Picker({
                 <button
                   key={item.key}
                   type="button"
+                  disabled={item.disabled}
                   onClick={() => {
                     item.onSelect()
                     setOpen(false)
                   }}
                   aria-pressed={item.active}
-                  className={modelPicker ? "noa-model-picker-option" : `flex w-full flex-col gap-0.5 rounded-md px-2.5 py-1.5 text-left ${
+                  className={modelPicker ? "noa-model-picker-option" : item.icon ? `noa-approval-item${item.danger ? " is-danger" : ""}` : `flex w-full flex-col gap-0.5 rounded-md px-2.5 py-1.5 text-left ${
                     item.active
                       ? "bg-[color-mix(in_srgb,var(--text-primary,#2D2D2B)_8%,transparent)]"
                       : "hover:bg-[color-mix(in_srgb,var(--text-primary,#2D2D2B)_5%,transparent)]"
                   }`}
                 >
-                  <span className={modelPicker ? "noa-model-picker-option-label" : "text-body font-medium"}>
-                    {item.title}
-                    {modelPicker && item.active && <Check size={16} aria-hidden="true" />}
-                  </span>
-                  {item.description && (
-                    <span className="break-words text-caption text-[var(--sidebar-text-muted,#898781)]">
-                      {item.description}
+                  {item.icon && <span className="noa-approval-icon">{item.icon}</span>}
+                  <span className={item.icon ? "noa-approval-text" : "contents"}>
+                    <span className={modelPicker ? "noa-model-picker-option-label" : item.icon ? undefined : "text-body font-medium"}>
+                      {item.title}
+                      {modelPicker && item.active && <Check size={16} aria-hidden="true" />}
                     </span>
-                  )}
+                    {item.description && (
+                      <span className={item.icon ? "noa-approval-desc" : "break-words text-caption text-[var(--sidebar-text-muted,#898781)]"}>
+                        {item.description}
+                      </span>
+                    )}
+                  </span>
+                  {item.icon && item.active && <Check size={16} className="noa-approval-check" aria-hidden="true" />}
                 </button>
               </div>
             ))}

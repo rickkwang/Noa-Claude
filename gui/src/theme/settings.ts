@@ -16,7 +16,6 @@ export const defaultSettings: AppSettings = {
     fontSmoothing: true,
   },
   agent: {
-    defaultPermissionMode: 'default',
-    showFullAccess: false,
+    permissionDefault: 'inherit',
   },
 };
