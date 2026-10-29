@@ -15,13 +15,19 @@
   box-shadow: 0 0 0 1px #0000000a, 0 2px 8px #0000000a, 0 4px 80px 8px #00000006;
 }
 [data-theme="dark"] .noa-agent-input { background: #474745; box-shadow: inset 0 0 1px #fff3; }
+/* The home composer's environment rail: 13px inline inset, 16px top corners, 5px
+   above and below 28px controls, tucked 20px under the composer. Labels are 12/16px in the primary ink with
+   16px icons 6px away, at most 224px wide. */
 .noa-agent-environment {
-  height: 56px;
-  margin: 0 13px -16px;
-  padding: 4px 6px 20px;
+  height: 58px;
+  margin: 0 13px -20px;
+  padding: 5px 6px 25px;
   border-radius: 16px 16px 0 0;
   background: #F1F1EF;
+  color: var(--text-primary);
 }
+.noa-agent-environment button { gap: 6px; max-width: 224px; color: var(--text-primary); font-size: 12px; line-height: 16px; }
+.noa-agent-environment > span { gap: 6px; font-size: 12px; line-height: 16px; }
 [data-theme="dark"] .noa-agent-environment { background: #3B3B39; }
 @media (width < 640px) {
   .noa-agent-input { box-shadow: 0 0 0 1px #0000000a, 0 2px 8px #0000000a, 0 4px 40px 8px #00000006; }
@@ -37,7 +43,7 @@
 .noa-sidebar-surface, .noa-sidebar-surface .font-ui {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, "PingFang SC", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif !important;
 }
-.noa-agent-sidebar-row { min-height: 32px; transition: background-color 120ms ease; }
+.noa-agent-sidebar-row { min-height: 26px; transition: background-color 120ms ease; }
 .noa-agent-sidebar-row:hover,
 .noa-agent-sidebar-row.is-active { background: #EAEAE8; }
 [data-theme="dark"] .noa-agent-sidebar-row:hover,
@@ -91,12 +97,12 @@ body[data-pane-dragging="true"] * { cursor: col-resize !important; user-select: 
   --text-caption: calc(var(--text-body) - 2px);
   --text-title: calc(var(--text-body) * 2);
   --text-heading-sm: 18px;
-  /* Codex text-size-chat-sm: one step under chat text, for disclosures, file bars and pills. */
+  /* Chat small text: one step under chat text, for disclosures, file bars and pills. */
   --text-chat-sm: calc(var(--text-body) - 1px);
 }
 
-/* One chat typography token set, as Codex's --font-text-md-*: chat text follows the UI font size setting,
-   with Codex's relaxed leading (1.625). Every chat surface reads these, so one setting drives them all. */
+/* One chat typography token set: chat text follows the UI font size setting,
+   with a relaxed leading (1.625). Every chat surface reads these, so one setting drives them all. */
 :root {
   --font-text-md-size: var(--text-body);
   --font-text-md-line-height: calc(var(--font-text-md-size) * 1.625);
@@ -223,7 +229,7 @@ body {
   font-size: var(--text-body);
   line-height: 1.5;
   --panel-divider: var(--divider-subtle, #E6E2DA);
-  /* Unlike Codex's single-layer fade mask, keep this strip fully opaque so the
+  /* Unlike a single-layer fade mask, keep this strip fully opaque so the
      fade never washes out the scrollbar thumb. */
   --noa-scrollbar-strip: 8px;
   /* Shadows: ambient = in-flow cards, elevated = raised graph panels, floating = dropdowns/toasts, dialog = modal dialogs. Floating and dialog stack a tight contact layer over a soft spread. */
@@ -1307,7 +1313,7 @@ html[data-capture-redact="true"] [data-capture-redact]::after {
 }
 
 
-/* As Codex: thin overlay scrollbars. They never reserve layout space, so panels
+/* Thin overlay scrollbars. They never reserve layout space, so panels
    don't reflow when content crosses the overflow threshold. */
 * {
   scrollbar-width: thin;
@@ -2008,6 +2014,35 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
 .noa-context-menu-separator { height: 1px; margin: 4px; background: var(--divider-subtle); }
 .noa-context-menu.is-submenu { position: absolute; left: calc(100% + 2px); top: -4px; }
 .noa-context-menu.is-submenu[data-flip] { left: auto; right: calc(100% + 2px); }
+/* PopupMenu: 4px gutter, 16px radius, 220px minimum width, rows padded 5px 8px
+   at 13px with a 1.4286 line height, 12px row radius, 6px icon gap, 12px after the label, section labels and
+   separators padded 4px 8px in the 50% ink, a 0.5px ring plus a large shadow, and a 90% blurred surface. */
+.noa-context-menu.noa-popup-menu {
+  min-width: 220px;
+  padding: 4px;
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--surface-page, #F9F9F7) 90%, transparent);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.1), 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+  font-size: 13px;
+  line-height: calc(1.25 / 0.875);
+}
+.noa-popup-menu .noa-context-menu-entry > button { display: flex; width: 100%; align-items: center; gap: 6px; padding: 5px 8px; border-radius: 12px; color: var(--text-primary); text-align: left; white-space: nowrap; }
+.noa-popup-menu .noa-context-menu-entry > button:hover,
+.noa-popup-menu .noa-context-menu-entry > button:focus-visible,
+.noa-popup-menu .noa-context-menu-entry > button[aria-expanded="true"] { background: color-mix(in srgb, var(--text-primary) 5%, transparent); outline: none; }
+.noa-popup-menu .noa-context-menu-entry > button:disabled { color: color-mix(in srgb, var(--text-primary) 50%, transparent); pointer-events: none; }
+.noa-popup-menu-icon { flex-shrink: 0; color: var(--text-primary); }
+.noa-popup-menu-label { min-width: 0; flex: 1; margin-inline-end: 12px; overflow: hidden; text-overflow: ellipsis; }
+.noa-popup-menu-trailing { flex-shrink: 0; color: var(--text-primary); }
+.noa-popup-menu-chevron { color: color-mix(in srgb, var(--text-primary) 50%, transparent); }
+.noa-popup-menu-heading { padding: 4px 8px; color: color-mix(in srgb, var(--text-primary) 50%, transparent); }
+.noa-popup-menu > .noa-context-menu-separator { margin: 0; height: auto; padding: 4px 8px; background: none; }
+.noa-popup-menu > .noa-context-menu-separator::before { content: ""; display: block; height: 1px; background: rgb(0 0 0 / 0.1); }
+[data-theme="dark"] .noa-popup-menu > .noa-context-menu-separator::before { background: rgb(255 255 255 / 0.15); }
+.noa-popup-menu.is-submenu { top: -4px; }
+.noa-popup-switch { width: 28px; height: 16px; flex-shrink: 0; border-radius: 9999px; background: color-mix(in srgb, var(--text-primary) 10%, transparent); }
 
 .noa-panel-details { display: flex; flex: 1; flex-direction: column; gap: 14px; min-height: 0; padding: 8px 16px 16px; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; font-size: var(--text-chat-sm); }
 .noa-panel-sections { display: flex; flex-direction: column; gap: 2px; margin: 0 -8px; }
@@ -2041,11 +2076,11 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
 .noa-file-tree:hover .noa-file-guides > span { opacity: .75; }
 .noa-glyph-blue { color: #1a85d4; } .noa-glyph-cyan { color: #1ca1c7; } .noa-glyph-green { color: #199f43; }
 [data-theme="dark"] .noa-glyph-blue { color: #69b1ff; } [data-theme="dark"] .noa-glyph-cyan { color: #68cdf2; } [data-theme="dark"] .noa-glyph-green { color: #5ecc71; }
-/* Codex review tree stats: 12px "+N -N" in git colours, 4px apart, before the git lane. */
+/* Review tree stats: 12px "+N -N" in git colours, 4px apart, before the git lane. */
 .noa-row-stats { display: inline-flex; flex-shrink: 0; gap: 4px; font-size: 12px; font-variant-numeric: tabular-nums; }
 .noa-row-stats .is-added { color: #168447; } .noa-row-stats .is-removed { color: #C24444; }
 [data-theme="dark"] .noa-row-stats .is-added { color: #69C98B; } [data-theme="dark"] .noa-row-stats .is-removed { color: #EE8A8A; }
-/* Diff colours follow Codex's @pierre/diffs tokens: line = 12% of the base over the page, gutter = 9%, inline emphasis = 15% alpha, hunk rows tinted with the info colour, 20px lines. */
+/* Diff colours: line = 12% of the base over the page, gutter = 9%, inline emphasis = 15% alpha, hunk rows tinted with the info colour, 20px lines. */
 .noa-code-view { --diff-add-base: #0DBE4E; --diff-del-base: #FF2E3F; --code-addition: color-mix(in lab, var(--surface-page, #F9F9F7) 88%, var(--diff-add-base)); --code-deletion: color-mix(in lab, var(--surface-page, #F9F9F7) 88%, var(--diff-del-base)); --code-addition-gutter: color-mix(in lab, var(--surface-page, #F9F9F7) 91%, var(--diff-add-base)); --code-deletion-gutter: color-mix(in lab, var(--surface-page, #F9F9F7) 91%, var(--diff-del-base)); line-height: 1.8; }
 [data-theme="dark"] .noa-code-view { --diff-add-base: #5ECC71; --diff-del-base: #FF6762; --code-addition: color-mix(in lab, var(--surface-page) 80%, var(--diff-add-base)); --code-deletion: color-mix(in lab, var(--surface-page) 80%, var(--diff-del-base)); --code-addition-gutter: color-mix(in lab, var(--surface-page) 85%, var(--diff-add-base)); --code-deletion-gutter: color-mix(in lab, var(--surface-page) 85%, var(--diff-del-base)); }
 .noa-code-line, .noa-source-line { min-height: 1.8em; }
@@ -2072,7 +2107,7 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
 .noa-panel-title { padding-left: 6px; }
 .noa-panel-toolbar > .noa-panel-button:first-child + .noa-panel-title { padding-left: 2px; }
 .noa-activity-list > div > button { padding-inline: 16px; }
-/* Codex's vertical-scroll-fade-mask-top: the top edge fades over 40px once scrolled (scroll-driven); the bottom is covered by the floating composer. */
+/* Top scroll fade: the top edge fades over 40px once scrolled (scroll-driven); the bottom is covered by the floating composer. */
 @property --top-fade { syntax: "<length>"; inherits: false; initial-value: 0px; }
 @keyframes noa-edge-fade { 0%, 1% { --top-fade: 0px; } 99%, 100% { --top-fade: var(--edge-fade-distance); } }
 .noa-scroll-fade { --edge-fade-distance: 40px; }
@@ -2080,11 +2115,11 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
   /* Keep the overlay scrollbar out of the fade. */
   .noa-scroll-fade { mask: linear-gradient(to bottom, transparent, #000 var(--top-fade)), linear-gradient(#000, #000) right / var(--noa-scrollbar-strip) 100% no-repeat; animation: noa-edge-fade linear both; animation-timeline: scroll(self y); }
 }
-/* Codex's scroll-to-bottom (h-8 w-8 rounded-full border-default bg-surface text-secondary), 24px above the composer card (the overlay includes its 32px gradient), no shadow. */
+/* Scroll-to-bottom: a 32px round bordered button, 24px above the composer card (the overlay includes its 32px gradient), no shadow. */
 .noa-scroll-bottom { position: absolute; bottom: calc(var(--composer-overlay, 0px) - 8px); left: 50%; z-index: 30; display: flex; width: 32px; height: 32px; translate: -50% 0; align-items: center; justify-content: center; border: 1px solid color-mix(in srgb, var(--text-primary) 8%, transparent); border-radius: 999px; background: var(--surface-page, #F9F9F7) padding-box; color: var(--sidebar-text-muted); transition: opacity 200ms ease, color 120ms; }
 .noa-scroll-bottom:hover { color: var(--text-primary); }
 .noa-scroll-bottom[data-show="false"] { opacity: 0; pointer-events: none; }
-/* Per-turn diff card, as Codex's TurnDiffContent: header + up to three file rows. */
+/* Per-turn diff card: header + up to three file rows. */
 .noa-turn-diff-card { container-type: inline-size; margin-top: 2px; overflow: hidden; border-radius: 10px; background: color-mix(in srgb, var(--bg-card) 70%, transparent); box-shadow: 0 0 0 .5px rgba(13, 13, 13, .15); }
 [data-theme="dark"] .noa-turn-diff-card { box-shadow: 0 0 0 .5px rgba(255, 255, 255, .20); }
 .noa-live-diff { display: inline-flex; max-width: 100%; align-items: center; gap: 6px; align-self: center; padding: 2px 6px; border-radius: 6px; color: var(--sidebar-text-muted); font-size: var(--text-caption); }
@@ -2131,7 +2166,7 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
 /* Floating composer: the page colour ramps in over 32px above the card so text dissolves instead of being cut. */
 .noa-conversation-footer { position: absolute; inset-inline: 0 calc(var(--noa-scrollbar-strip) + var(--noa-overview-dock, 0px)); bottom: 0; z-index: 20; display: flex; max-height: 100%; flex-direction: column; padding: 32px 21px 12px 29px; background: linear-gradient(to bottom, color-mix(in srgb, var(--surface-page, #F9F9F7) 0%, transparent), var(--surface-page, #F9F9F7) 32px); pointer-events: none; }
 .noa-conversation-footer > * { min-height: 0; width: 100%; pointer-events: auto; }
-/* Codex's loading shimmer: a stable base with a narrow highlight band. */
+/* Loading shimmer: a stable base with a narrow highlight band. */
 .noa-shimmer {
   --noa-shimmer-foreground: var(--text-secondary, #5D5D5D);
   --noa-shimmer-base: var(--noa-shimmer-foreground);
@@ -2161,8 +2196,7 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
 @keyframes noa-shimmer { from { background-position: -100% 0; } to { background-position: 250% 0; } }
 @media (prefers-reduced-motion: reduce) { .noa-shimmer { animation: none; color: var(--text-secondary, #5D5D5D); background: none; -webkit-text-fill-color: currentColor; } }
 
-/* New live text and block decorations fade in as they arrive, matching
-   Codex's 0.7s adaptive-streaming fade. */
+/* New live text and block decorations fade in as they arrive over 0.7s. */
 .noa-stream-seg,
 .noa-stream-block {
   animation: noa-stream-in 700ms cubic-bezier(.37, .55, .86, .88) both;
@@ -2201,7 +2235,7 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
   }
 }
 
-/* Per-file change list, opened on hover/focus above the summary (Codex: min-w-64, max-h-72, rows px-3 py-1.5). */
+/* Per-file change list, opened on hover/focus above the summary (min width 256px, max height 288px, rows padded 6px 12px). */
 .noa-turn-diff-stats { display: inline-flex; flex-shrink: 0; gap: 4px; font-size: inherit; font-variant-numeric: tabular-nums; color: var(--sidebar-text-muted); }
 .noa-turn-diff-stats .is-added { color: #168447; } .noa-turn-diff-stats .is-removed { color: #C24444; }
 [data-theme="dark"] .noa-turn-diff-stats .is-added { color: #69C98B; } [data-theme="dark"] .noa-turn-diff-stats .is-removed { color: #EE8A8A; }
@@ -2220,7 +2254,7 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
 .noa-middle-path { display: flex; min-width: 0; }
 .noa-middle-path-dir { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--sidebar-text-muted); }
 .noa-middle-path-base { flex-shrink: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* Git decoration as in Codex's file tree: icon, name and lane glyph share one status colour; folders holding
+/* Git decoration in the file tree: icon, name and lane glyph share one status colour; folders holding
    changes get a half-opacity modified dot. Modified is orange in Files and blue in the Changes (review) tree. */
 .noa-workspace-panel { --git-added: #168447; --git-deleted: #C24444; --git-modified: #C2410C; }
 .noa-workspace-panel.is-review { --git-modified: #3A83F7; }
@@ -2261,9 +2295,34 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
 }
 
 /* Sidebar session ordering: the dragged row dims, the drop edge draws an accent rail. */
-.noa-session-row-dragging { opacity: 0.55; }
-.noa-session-drop-before { box-shadow: inset 0 2px 0 var(--accent-color); }
-.noa-session-drop-after { box-shadow: inset 0 -2px 0 var(--accent-color); }
+/* Sidebar drag reordering: the source row fades to 20%, a translucent bordered copy
+   follows the pointer, and the drop edge is a 2px accent rule starting at a hollow 8px ring. */
+.noa-session-row-dragging { opacity: 0.2; }
+/* The pointer stays captured by the source row, so its hover fill and actions would otherwise stay lit. */
+.noa-session-row-dragging.noa-session-row-dragging { background: transparent; }
+.noa-session-row-dragging [data-session-action] { opacity: 0 !important; }
+.noa-drag-overlay {
+  border: 1px solid var(--divider-subtle);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  opacity: 0.7;
+  box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+}
+.noa-drop-indicator::before,
+.noa-drop-indicator::after { content: ""; position: absolute; border-radius: 9999px; }
+.noa-drop-indicator::before { top: -1px; left: 8px; right: 8px; height: 2px; background: var(--accent-color); }
+.noa-drop-indicator::after {
+  top: -4px;
+  left: 4px;
+  width: 8px;
+  height: 8px;
+  box-sizing: border-box;
+  border: 2px solid var(--accent-color);
+  background: var(--bg-sidebar, #F4F4F2);
+}
+/* Task rows start the rule where their titles start. */
+.noa-drop-indicator.is-indented::before { left: 29px; }
+.noa-drop-indicator.is-indented::after { left: 25px; }
 body.noa-session-dragging,
 body.noa-session-dragging * { cursor: grabbing !important; }
 
@@ -2335,7 +2394,7 @@ body.noa-session-dragging * { cursor: grabbing !important; }
 .noa-activity-scroll > [data-tool-activity] > button:hover { color: var(--text-primary); }
 .noa-activity-scroll > [data-tool-activity] > button > svg:first-child { width: 16px; height: 16px; }
 
-/* Installed Codex Absolutely Light/Dark token colours, shared by chat and file code. */
+/* Absolutely Light/Dark token colours, shared by chat and file code. */
 :is(.noa-code-block, .noa-code-view) :is(.hljs-keyword, .hljs-selector-tag, .hljs-number, .hljs-literal) { color: #FF5F38 !important; }
 :is(.noa-code-block, .noa-code-view) :is(.hljs-string, .hljs-regexp, .hljs-symbol) { color: #00C853 !important; }
 :is(.noa-code-block, .noa-code-view) .hljs-type { color: #D28E73 !important; }
@@ -2356,7 +2415,7 @@ body.noa-session-dragging * { cursor: grabbing !important; }
 .noa-output-markdown blockquote p::before,
 .noa-output-markdown blockquote p::after { content: none; }
 
-/* Codex local conversation Markdown (_MarkdownRoot_16avx_2), scaled to Noa's chat font. */
+/* Conversation Markdown, scaled to Noa's chat font. */
 .noa-output-markdown {
   --tw-prose-links: var(--accent-color);
   --output-space: calc(var(--font-text-md-size) / 4);
@@ -2399,7 +2458,7 @@ body.noa-session-dragging * { cursor: grabbing !important; }
 
 .noa-source-line[data-reference-line] { background: color-mix(in srgb, var(--accent-color) 10%, transparent); }
 
-/* Create project dialog, aligned to Codex's packaged dialog, field and button rules. */
+/* Create project dialog, with the shared dialog, field and button rules. */
 .noa-project-dialog {
   --project-surface: rgb(255 255 255 / 90%);
   --project-field: rgb(227 227 227 / 96%);
@@ -2810,7 +2869,7 @@ body.noa-session-dragging * { cursor: grabbing !important; }
   .noa-project-dialog__spinner { animation: none; }
 }
 
-/* ── Conversation rail (Codex's floating user-message navigation) ──
+/* ── Conversation rail (floating user-message navigation) ──
    Ticks rest at 6px, grow to 26px as they approach the hovered or scrubbed turn,
    and the hover card anchors to the tick's vertical centre. */
 .noa-message-rail-layer {

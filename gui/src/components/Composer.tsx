@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react"
 import type { ContextUsage, ImageAttachment, UserContent, ModelInfo, PermissionMode, SlashCommand } from "../agent/protocol"
 import { Check, Edit2, FileText, RotateCcw, X } from "../lib/icons"
 import { Lightbox } from "./Lightbox"
+import { EnvironmentMenu } from "./EnvironmentMenu"
 import { IconShieldCheck } from "@tabler/icons-react"
 import {
   ComposerApprovalIcon,
@@ -13,7 +14,6 @@ import {
   ComposerFolderIcon,
   ComposerPlusIcon,
   ComposerSendIcon,
-  ComposerSettingsIcon,
 } from "./ComposerIcons"
 import type { ReactNode } from "react"
 import type { ProjectInfo } from "../api"
@@ -70,6 +70,8 @@ interface ComposerProps {
   onProject: (cwd: string) => void
   // Current git branch of the project, shown in the environment popover.
   branch?: string
+  // Called after the environment menu checks out or creates a branch.
+  onBranchChange: () => void
   onFiles: () => void
   newTask: boolean
   contextUsage?: ContextUsage
@@ -101,6 +103,7 @@ export function Composer({
   projects,
   onProject,
   branch,
+  onBranchChange,
   onFiles,
   newTask,
   contextUsage,
@@ -203,23 +206,6 @@ export function Composer({
   const [menuDismissed, setMenuDismissed] = useState(false)
   const [browserSearch, setBrowserSearch] = useState("")
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const envRef = useRef<HTMLDivElement>(null)
-  const [envOpen, setEnvOpen] = useState(false)
-  useEffect(() => {
-    if (!envOpen) return
-    const close = (event: MouseEvent) => {
-      if (!envRef.current?.contains(event.target as Node)) setEnvOpen(false)
-    }
-    const escape = (event: globalThis.KeyboardEvent) => {
-      if (event.key === "Escape") setEnvOpen(false)
-    }
-    document.addEventListener("mousedown", close)
-    document.addEventListener("keydown", escape)
-    return () => {
-      document.removeEventListener("mousedown", close)
-      document.removeEventListener("keydown", escape)
-    }
-  }, [envOpen])
 
   useEffect(() => {
     if (text) localStorage.setItem(draftKey, text)
@@ -523,14 +509,14 @@ export function Composer({
   return (
     <div ref={composerRef} className="noa-agent-composer relative">
       {newTask && (
-        <div className="noa-agent-environment flex items-center gap-2 text-chat-sm text-[var(--sidebar-text)]">
+        <div className="noa-agent-environment flex items-center gap-2 text-chat-sm">
           <Picker
             align="left"
             hideChevron
             label={
               <>
                 <ComposerFolderIcon />
-                <span className="max-w-36 truncate">{cwd.split("/").pop()}</span>
+                <span className="min-w-0 truncate">{cwd.split("/").pop()}</span>
               </>
             }
             items={projects
@@ -547,45 +533,7 @@ export function Composer({
             <ComposerComputerIcon />
             This computer
           </span>
-          <div ref={envRef} className="relative ml-auto">
-            <button
-              type="button"
-              onClick={() => setEnvOpen((open) => !open)}
-              aria-label="Configure local environment"
-              aria-expanded={envOpen}
-              className="flex size-7 items-center justify-center rounded-full noa-sidebar-hover-surface-subtle"
-            >
-              <ComposerSettingsIcon />
-            </button>
-            {envOpen && (
-              <div
-                role="dialog"
-                aria-label="Configure local environment"
-                className="noa-floating-panel absolute bottom-full right-0 z-30 mb-2 w-64 rounded-panel bg-[var(--bg-card,#FFFFFF)] p-1 text-left text-body"
-              >
-                <p className="m-0 px-2.5 pb-1 pt-1.5 text-caption text-[var(--sidebar-text-muted,#898781)]">
-                  Configure local environment
-                </p>
-                <div
-                  className="flex h-8 items-center justify-between px-2.5 text-[var(--sidebar-text-muted,#898781)]"
-                  title="Worktrees are not available in Noa yet"
-                >
-                  New worktree
-                  <span aria-hidden="true" className="h-4 w-7 rounded-full bg-[var(--divider-subtle)] opacity-60" />
-                </div>
-                <div className="flex h-8 items-center justify-between gap-3 px-2.5">
-                  Branch
-                  <span className="min-w-0 truncate text-[var(--sidebar-text-muted,#898781)]">
-                    {branch ?? "No git repo"}
-                  </span>
-                </div>
-                <div className="flex h-8 items-center justify-between px-2.5 text-[var(--sidebar-text-muted,#898781)]">
-                  Environment
-                  <span>No environment</span>
-                </div>
-              </div>
-            )}
-          </div>
+          <EnvironmentMenu cwd={cwd} branch={branch} onBranchChange={onBranchChange} />
         </div>
       )}
       {mentionPresence.mounted && (

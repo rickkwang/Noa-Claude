@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react"
+import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react"
 import type { AgentState } from "../agent/reducer"
 import type { TurnDiff } from "../agent/protocol"
 import { ChevronRight, MoreHorizontal } from "../lib/icons"
@@ -8,6 +8,10 @@ import { TurnReview } from "./TurnReview"
 import { WorkspaceFiles } from "./WorkspaceFiles"
 
 export type PanelTab = "files" | "changes" | "activity"
+
+// The panel sits in a no-drag column; its tab row drags the window again, except on the tabs themselves.
+const dragRegion = { WebkitAppRegion: "drag" } as CSSProperties
+const noDragRegion = { WebkitAppRegion: "no-drag" } as CSSProperties
 
 const TABS: { id: PanelTab; label: string }[] = [
   { id: "files", label: "Files" },
@@ -29,10 +33,10 @@ interface RightPanelProps {
   turnDiff?: { diff: TurnDiff; path?: string; key: number }
 }
 
-// Right column: one pane under a tab strip, as in Codex's side panel.
+// Right column: one pane under a tab strip.
 export function RightPanel({ state, onStopTask, cwd, tab, onTab, onReference, onWorkspaceChange, workspaceRefreshKey, focusChange, focusFile, turnDiff }: RightPanelProps) {
   const [fileChange, setFileChange] = useState<{ cwd: string; path: string; at: number; scope: "all" }>()
-  // One review source, as Codex's source menu: the last turn's patch or a slice of the working tree.
+  // One review source: the last turn's patch or a slice of the working tree.
   const [source, setSource] = useState<"turn" | "all" | "unstaged" | "staged">("all")
   useEffect(() => {
     setSource(turnDiff ? "turn" : "all")
@@ -69,7 +73,7 @@ export function RightPanel({ state, onStopTask, cwd, tab, onTab, onReference, on
 
   return (
     <div className="flex h-full min-h-0 w-full flex-col bg-[var(--surface-page,#F9F9F7)] font-ui">
-      <div className="flex h-11 shrink-0 items-center gap-1 pl-2 pr-[76px]">
+      <div className="flex h-11 shrink-0 items-center gap-1 pl-2 pr-[76px] select-none" style={dragRegion}>
         <div
           className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto whitespace-nowrap hide-scrollbar"
           role="tablist"
@@ -89,6 +93,7 @@ export function RightPanel({ state, onStopTask, cwd, tab, onTab, onReference, on
                 aria-selected={active}
                 tabIndex={active ? 0 : -1}
                 onClick={() => onTab(t.id)}
+                style={noDragRegion}
                 className={`h-6 shrink-0 rounded-md px-2 text-body transition-colors ${
                   active
                     ? "bg-[color-mix(in_srgb,var(--text-primary,#2D2D2B)_7.5%,transparent)] text-[var(--text-primary,#2D2D2B)]"

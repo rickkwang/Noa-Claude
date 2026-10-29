@@ -50,8 +50,8 @@ Bun.serve<SocketData>({
       catch (error) { return json({ error: (error as Error).message }, 400) }
     }
 
-    if (["/api/files", "/api/file", "/api/changes", "/api/diff", "/api/git-action", "/api/editors", "/api/open-in", "/api/grep"].includes(url.pathname)) {
-      if (req.method !== "GET" && !(req.method === "POST" && ["/api/file", "/api/git-action", "/api/open-in"].includes(url.pathname))) return json({ error: "Method not allowed" }, 405)
+    if (["/api/files", "/api/file", "/api/changes", "/api/diff", "/api/git-action", "/api/editors", "/api/open-in", "/api/grep", "/api/branches"].includes(url.pathname)) {
+      if (req.method !== "GET" && !(req.method === "POST" && ["/api/file", "/api/git-action", "/api/open-in", "/api/branches"].includes(url.pathname))) return json({ error: "Method not allowed" }, 405)
       if (["/api/git-action", "/api/open-in"].includes(url.pathname) && req.method !== "POST") return json({ error: "Method not allowed" }, 405)
       if (!cwd) return json({ error: "cwd is not a directory" }, 400)
       // Writes are limited to listed projects (or folders inside them).

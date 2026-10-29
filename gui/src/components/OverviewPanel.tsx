@@ -27,9 +27,9 @@ interface CardChrome { dragging: boolean; onGripDown: (event: React.PointerEvent
 const MUTED = "text-[var(--sidebar-text-muted)]"
 function RailCard({ id, title, summary, children, chrome }: { id: string; title: string; summary?: ReactNode; children: ReactNode; chrome?: CardChrome }) {
   const [open, toggle] = useCardOpen(id)
-  return <section data-rail-card={id} className="flex flex-col py-3 text-body">
-    <div className="group/railtop relative flex min-h-6 min-w-0 items-center gap-2 px-3">
-      <button type="button" aria-expanded={open} onClick={toggle} onContextMenu={(event) => { event.preventDefault(); chrome?.onMenu(event.clientX, event.clientY) }} className="flex h-6 min-w-0 flex-1 items-center gap-1 rounded-lg px-1.5 text-start text-body font-medium text-[var(--text-primary)] hover:text-[var(--text-primary)]">
+  return <section data-rail-card={id} className="flex flex-col py-1.5 text-body">
+    <div className="group/railtop relative flex min-h-7 min-w-0 items-center gap-2 px-1.5">
+      <button type="button" aria-expanded={open} onClick={toggle} onContextMenu={(event) => { event.preventDefault(); chrome?.onMenu(event.clientX, event.clientY) }} className="flex h-7 min-w-0 flex-1 items-center gap-1 rounded-md px-2 text-start text-body font-medium text-[var(--text-primary)] hover:text-[var(--text-primary)]">
         <span className="shrink-0">{title}</span>
         <span className={`flex size-4 shrink-0 items-center justify-center ${MUTED}`}><ChevronRight size={12} className={`transition-transform duration-[60ms] ease-out ${open ? "rotate-90" : ""}`} aria-hidden="true" /></span>
         {summary !== undefined && <span className={`ms-auto min-w-0 truncate ps-2 font-normal ${MUTED} ${open ? "invisible" : "group-hover/railtop:opacity-0"}`}>{summary}</span>}
@@ -42,7 +42,7 @@ function RailCard({ id, title, summary, children, chrome }: { id: string; title:
         </button>
       </>}
     </div>
-    {open && <div className="flex flex-col gap-0.5 px-3">{children}</div>}
+    {open && <div className="flex flex-col px-1.5">{children}</div>}
   </section>
 }
 
@@ -79,13 +79,13 @@ function ConnectorsCard({ state, chrome }: { state: AgentState; chrome?: CardChr
     <div className="flex flex-col">
       {shown.map((server) => {
         const label = stateLabel(server.status)
-        return <div key={server.name} className="flex min-h-8 min-w-0 items-center gap-2 px-1.5">
-          <Plug size={20} className={`shrink-0 ${MUTED}`} aria-hidden="true" />
+        return <div key={server.name} className="flex min-h-7 min-w-0 items-center gap-[5px] px-2">
+          <Plug size={16} className={`shrink-0 ${MUTED}`} aria-hidden="true" />
           <span className="min-w-0 flex-1 truncate text-[var(--text-primary)]">{server.name}</span>
           {label && <span className={`shrink-0 ${label === "Unavailable" ? MUTED : "text-[#A8741A]"}`}>{label}</span>}
         </div>
       })}
-      {servers.length > CONNECTORS_SHOWN && <button type="button" onClick={() => setAll(!all)} className={`min-h-8 px-1.5 text-start ${MUTED} hover:text-[var(--text-primary)]`}>{all ? "Show less" : `Show ${servers.length - CONNECTORS_SHOWN} more`}</button>}
+      {servers.length > CONNECTORS_SHOWN && <button type="button" onClick={() => setAll(!all)} className={`min-h-7 px-2 text-start ${MUTED} hover:text-[var(--text-primary)]`}>{all ? "Show less" : `Show ${servers.length - CONNECTORS_SHOWN} more`}</button>}
     </div>
   </RailCard>
 }
@@ -226,37 +226,37 @@ export function OverviewPanel({ state, cwd, open, workspaceRefreshKey, endInset,
     onGripKey: (direction) => move(id, layout.order.indexOf(id) + direction),
     onMenu: (x, y) => setMenu({ x, y }),
   })
-  const iconRow = "flex min-h-8 min-w-0 items-center gap-2 px-1.5"
+  const iconRow = "flex min-h-7 min-w-0 items-center gap-[5px] px-2"
   const cards: Record<CardId, ReactNode> = {
     changes: changes?.isGit ? <RailCard id="changes" title="Changes" chrome={chromeFor("changes")} summary={<span><span className="text-[#3E8E57]">+{changes.additions}</span> <span className="text-[#C24444]">−{changes.deletions}</span></span>}>
       <div className={iconRow}>
-        <PlusMinus size={20} className={`shrink-0 ${MUTED}`} aria-hidden="true" />
+        <PlusMinus size={16} className={`shrink-0 ${MUTED}`} aria-hidden="true" />
         {changes.files.length ? <span><span className="text-[#3E8E57]">+{changes.additions}</span> <span className="text-[#C24444]">−{changes.deletions}</span></span> : <span className={MUTED}>Working tree clean</span>}
         <button type="button" onClick={onOpenChanges} className="ms-auto h-6 rounded-lg bg-[color-mix(in_srgb,var(--text-primary)_5%,transparent)] px-2.5 text-[var(--text-primary)] hover:bg-[color-mix(in_srgb,var(--text-primary)_10%,transparent)]">Review changes</button>
       </div>
     </RailCard> : null,
     connectors: <ConnectorsCard state={state} chrome={chromeFor("connectors")} />,
     context: <RailCard id="context" title="Context" chrome={chromeFor("context")} summary={usage ? `${Math.round(usage.percentage)}%` : undefined}>
-      {usage ? <ContextUsageCard usage={usage} home={home} onReference={onReference} /> : <p className={`m-0 px-1.5 ${MUTED}`} role="status">{note}</p>}
-      {usage && <div className="flex items-center justify-between gap-2 px-1.5 pt-1">
+      {usage ? <ContextUsageCard usage={usage} home={home} onReference={onReference} /> : <p className={`m-0 px-2 ${MUTED}`} role="status">{note}</p>}
+      {usage && <div className="flex min-h-7 items-center justify-between gap-2 px-2">
         <p className={`m-0 ${MUTED}`} role={state.contextError ? "alert" : "status"}>{note || (state.contextUpdatedAt ? `Measured ${new Date(state.contextUpdatedAt).toLocaleTimeString()}` : "")}</p>
-        <button type="button" className={`h-6 rounded-lg px-1.5 ${MUTED} hover:text-[var(--text-primary)] disabled:opacity-40`} onClick={onRefreshContext} disabled={state.contextLoading || state.connection !== "ready"} aria-label="Refresh context" title="Refresh">Refresh</button>
+        <button type="button" className={`-me-1.5 h-6 rounded-md px-1.5 ${MUTED} hover:text-[var(--text-primary)] disabled:opacity-40`} onClick={onRefreshContext} disabled={state.contextLoading || state.connection !== "ready"} aria-label="Refresh context" title="Refresh">Refresh</button>
       </div>}
     </RailCard>,
     environment: <RailCard id="environment" title="Environment" chrome={chromeFor("environment")} summary={changes?.branch || cwd.split("/").filter(Boolean).pop()}>
       <div className={iconRow} title={cwd}>
-        <Folder size={20} className={`shrink-0 ${MUTED}`} aria-hidden="true" />
+        <Folder size={16} className={`shrink-0 ${MUTED}`} aria-hidden="true" />
         <span className="shrink-0 text-[var(--text-primary)]">{cwd.split("/").filter(Boolean).pop() ?? "/"}</span>
         <span className={`min-w-0 truncate ${MUTED}`}>· {shortCwd}</span>
       </div>
       {changes?.isGit && changes.branch && <div className={iconRow} title="Current branch">
-        <GitBranch size={20} className={`shrink-0 ${MUTED}`} aria-hidden="true" />
+        <GitBranch size={16} className={`shrink-0 ${MUTED}`} aria-hidden="true" />
         <span className="min-w-0 truncate text-[var(--text-primary)]">{changes.branch}</span>
       </div>}
     </RailCard>,
   }
   const cardClass = (index: number) => docked
-    ? "rounded-xl shadow-[0_0_0_1px_var(--divider-subtle)] empty:hidden"
+    ? "rounded-lg shadow-[0_0_0_0.5px_var(--panel-divider)] empty:hidden"
     : `${index > 0 ? "border-t border-[var(--divider-subtle)] " : ""}empty:hidden`
   const cardEls = visible.map((id, index) => <div key={id} ref={(node) => { if (node) cardRefs.current.set(id, node); else cardRefs.current.delete(id) }}
     className={cardClass(index)}
@@ -265,7 +265,7 @@ export function OverviewPanel({ state, cwd, open, workspaceRefreshKey, endInset,
   </div>)
   return <div className={docked ? "noa-overview-dock" : "noa-overview-layer"} style={{ insetInlineEnd: endInset, ...(docked ? {} : { bottom: bottomInset }) }}>
     {docked
-      ? <aside ref={panelRef} aria-label="Overview" className="flex flex-col gap-2.5 p-px font-ui">{cardEls}</aside>
+      ? <aside ref={panelRef} aria-label="Overview" className="flex flex-col gap-2 p-px font-ui">{cardEls}</aside>
       : <aside ref={panelRef} aria-label="Overview" className="noa-overview font-ui">{cardEls}</aside>}
     {menu && <div role="menu" aria-label="Overview cards" style={{ position: "fixed", left: menu.x, top: menu.y }} onPointerDown={(event) => event.stopPropagation()} className="pointer-events-auto z-50 min-w-40 rounded-xl border border-[var(--divider-subtle)] bg-[var(--bg-card)] p-1 font-ui text-body shadow-lg">
       <div className={`px-2 py-1 ${MUTED}`}>Show</div>

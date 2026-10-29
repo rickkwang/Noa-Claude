@@ -97,11 +97,14 @@ export default function TopBar({
           </button>
         </div>
       </div>
+      {/* Only the title itself opts out of dragging; the empty titlebar around it still moves the window. */}
       <div
         className={`absolute inset-y-0 flex min-w-0 items-center justify-start px-2 ${resizing ? "" : "transition-[left,right] duration-500 ease-in-out"}`}
-        style={{ ...noDragRegion, left: sidebarOpen ? sidebarWidth + 12 : 184, right: rightWidth + 52 }}
+        style={{ left: sidebarOpen ? sidebarWidth + 12 : 184, right: rightWidth + 52 }}
       >
-        {center}
+        <div className="flex min-w-0 items-center" style={noDragRegion}>
+          {center}
+        </div>
       </div>
       <div className="absolute inset-y-0 flex items-center z-40" style={{ right: 15 }}>
         <div className="relative flex items-center gap-0.5" style={noDragRegion}>

@@ -16,6 +16,7 @@ const INTERRUPT_MARKER = /^\[Request interrupted by user(?:\s+for tool use)?\]$/
 interface SessionSummaryCacheEntry {
   size: number
   mtimeMs: number
+  createdAt: number
   owner?: string
   title?: string
 }
@@ -26,6 +27,7 @@ export interface SessionSummary {
   id: string
   title: string
   updatedAt: number
+  createdAt: number
 }
 
 function canonicalCwd(cwd: string): string {
@@ -231,7 +233,7 @@ export function listSessions(cwd: string): SessionSummary[] {
     if (!SESSION_ID.test(id)) return []
     const path = join(dir, file)
     const info = statSync(path)
-    return [{ id, path, size: info.size, updatedAt: info.mtimeMs }]
+    return [{ id, path, size: info.size, updatedAt: info.mtimeMs, birthtimeMs: info.birthtimeMs }]
   }).sort((a, b) => b.updatedAt - a.updatedAt)
 
   const sessions: SessionSummary[] = []
@@ -242,9 +244,12 @@ export function listSessions(cwd: string): SessionSummary[] {
       const entries = readEntries(file.path)
       const owner = entries.find((entry) => typeof entry.cwd === "string")?.cwd
       const first = entries.map(userText).find((t): t is string => t !== null)
+      // The first timestamped entry is when the task started; the file's birth time is the fallback.
+      const started = entries.map((entry) => Date.parse(String(entry.timestamp))).find((time) => Number.isFinite(time))
       cached = {
         size: file.size,
         mtimeMs: file.updatedAt,
+        createdAt: started ?? file.birthtimeMs,
         owner: owner ? canonicalCwd(owner) : undefined,
         title:
           [...entries]
@@ -260,6 +265,7 @@ export function listSessions(cwd: string): SessionSummary[] {
       id: file.id,
       title: cached.title,
       updatedAt: file.updatedAt,
+      createdAt: cached.createdAt,
     })
   }
   for (const path of cache.keys()) if (!seen.has(path)) cache.delete(path)

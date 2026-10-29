@@ -147,7 +147,7 @@ function Workspace({ cwd }: { cwd: string }) {
           const sessions = await fetchSessions(p.path)
           for (const run of runs.filter((r) => r.cwd === p.path && r.sessionId)) {
             let summary = sessions.find((s) => s.id === run.sessionId)
-            if (!summary) { summary = { id: run.sessionId!, title: run.title ?? "New task", updatedAt: Date.now() }; sessions.unshift(summary) }
+            if (!summary) { summary = { id: run.sessionId!, title: run.title ?? "New task", updatedAt: Date.now(), createdAt: Date.now() }; sessions.unshift(summary) }
             summary.status = run.waiting ? "waiting" : run.busy ? "running" : run.queued ? "queued" : undefined
           }
           return [p.path, sessions] as const
@@ -184,6 +184,7 @@ function Workspace({ cwd }: { cwd: string }) {
                 id: run.sessionId,
                 title: run.title ?? "New task",
                 updatedAt: Date.now(),
+                createdAt: Date.now(),
                 status: run.waiting ? "waiting" : run.busy ? "running" : run.queued ? "queued" : undefined,
               })
             }
@@ -235,7 +236,7 @@ function Workspace({ cwd }: { cwd: string }) {
   }, [session.cwd, state.result, refreshTick])
 
   // A new user turn makes the previous turn's diff stale. If Changes is open,
-  // follow the new turn's live/final diff instead, as Codex's Changes tab does.
+  // follow the new turn's live/final diff instead.
   const lastUserId = state.turns.reduce<string | undefined>(
     (id, turn) => (turn.role === "user" ? turn.id : id),
     undefined,
@@ -299,7 +300,7 @@ function Workspace({ cwd }: { cwd: string }) {
     </button>
   )
 
-  // Back and forward step through the tasks the user has opened, like the browser history Codex shows.
+  // Back and forward step through the tasks the user has opened, like browser history.
   const [history, setHistory] = useState<{ entries: { cwd: string; resume?: string; runtimeId?: string }[]; index: number }>()
   const pushHistory = (target: { cwd: string; resume?: string; runtimeId?: string }) =>
     setHistory((h) => {
@@ -737,7 +738,7 @@ function Workspace({ cwd }: { cwd: string }) {
               onAddProject={() => setAddingProject(true)}
             />
           )}
-          {/* With a conversation the composer floats over the list, as Codex's conversation-footer does:
+          {/* With a conversation the composer floats over the list:
               messages scroll beneath it and a gradient fades them out above the card. */}
           <div ref={footerRef} className={hasTurns ? "noa-conversation-footer" : "shrink-0 px-[29px] pb-3 pt-2"}>
             <div className="mx-auto flex flex-col gap-2" style={{ maxWidth: readingWidth + 22 }}>
@@ -820,6 +821,7 @@ function Workspace({ cwd }: { cwd: string }) {
                 projects={projects}
                 onProject={newSession}
                 branch={changes?.branch}
+                onBranchChange={() => setRefreshTick((n) => n + 1)}
                 onFiles={() => showWorkspacePane("files")}
                 newTask={!hasTurns}
                 contextUsage={state.contextUsage}
@@ -884,6 +886,18 @@ function Workspace({ cwd }: { cwd: string }) {
       )}
       {settingsOpen && (
         <SettingsDialog
+          navWidth={sidebarTarget}
+          navResizeHandle={
+            <ResizeHandle
+              label="Resize sidebar"
+              grow={1}
+              width={sidebarTarget}
+              defaultWidth={SIDEBAR_DEFAULT_WIDTH}
+              onResize={sidebar.set}
+              onDraggingChange={setResizing}
+              style={{ left: sidebarTarget - 4 }}
+            />
+          }
           settings={settings}
           onChange={setSettings}
           onClose={() => setSettingsOpen(false)}

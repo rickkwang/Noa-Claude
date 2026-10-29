@@ -123,6 +123,65 @@ async function changes(cwd: string, scope: string, only?: string) {
   return { isGit: true, branch: branch.trim() || "Detached HEAD", files, additions: files.reduce((n, f) => n + f.additions, 0), deletions: files.reduce((n, f) => n + f.deletions, 0) }
 }
 
+// Local branches for the composer's branch switcher: the default branch first,
+// the current branch, then the rest by most recent commit.
+async function branches(cwd: string) {
+  if (!(await git(cwd, ["rev-parse", "--is-inside-work-tree"]).catch(() => "")).trim()) return { isGit: false as const }
+  const [current, refs, origin, status, head] = await Promise.all([
+    git(cwd, ["branch", "--show-current"]),
+    git(cwd, ["for-each-ref", "--sort=-committerdate", "--count=500", "--format=%(refname:short)", "refs/heads"]),
+    git(cwd, ["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"], [0, 1, 128]),
+    git(cwd, ["status", "--porcelain=v1", "-z", "--untracked-files=no"]),
+    git(cwd, ["rev-parse", "--verify", "--quiet", "HEAD"], [0, 1]),
+  ])
+  const local = refs.split("\n").filter(Boolean)
+  const remoteDefault = origin.trim().replace(/^origin\//, "")
+  const ordered = [...new Set([...(local.includes(remoteDefault) ? [remoteDefault] : []), ...(current.trim() ? [current.trim()] : []), ...local])]
+  return {
+    isGit: true as const,
+    current: current.trim() || null,
+    defaultBranch: local.includes(remoteDefault) ? remoteDefault : null,
+    branches: ordered,
+    // Tracked changes only: untracked files follow the checkout and never block it.
+    uncommitted: countStatusEntries(status),
+    hasCommits: head.trim() !== "",
+  }
+}
+
+// Porcelain -z records; a rename or copy carries its source path as one extra record.
+function countStatusEntries(raw: string) {
+  const records = raw.split("\0").filter(Boolean)
+  let count = 0
+  for (let i = 0; i < records.length; i++) {
+    count++
+    if (/^[RC]/.test(records[i]!)) i++
+  }
+  return count
+}
+
+async function switchBranch(cwd: string, body: { action?: unknown; branch?: unknown }) {
+  const name = typeof body?.branch === "string" ? body.branch.trim() : ""
+  if (!name) throw new Error("Enter a branch name")
+  const state = await branches(cwd)
+  if (!state.isGit) throw new Error("This project is not a Git repository")
+  if (body.action === "create") {
+    if (!state.hasCommits) throw new Error("Commit changes to create and checkout a new branch")
+    if (name.endsWith("/")) throw new Error("Branch name cannot end with “/”.")
+    if (name.startsWith("-") || !(await git(cwd, ["check-ref-format", "--branch", name]).then(() => true, () => false)))
+      throw new Error("Enter a valid branch name")
+    if (state.branches.includes(name)) throw new Error("Branch already exists.")
+    await git(cwd, ["switch", "-c", name])
+    return { ok: true }
+  }
+  if (body.action !== "checkout") throw new Error("Invalid branch action")
+  if (!state.branches.includes(name)) throw new Error("That branch no longer exists")
+  if (name === state.current) return { ok: true }
+  // Uncommitted tracked changes must be committed before switching branches.
+  if (state.uncommitted > 0) throw Object.assign(new Error(`Commit changes in ${state.uncommitted} ${state.uncommitted === 1 ? "file" : "files"} to check out ${name}.`), { uncommitted: state.uncommitted })
+  await git(cwd, ["switch", "--no-guess", name])
+  return { ok: true }
+}
+
 async function diff(cwd: string, path: string, scope: string, context: string | null) {
   if (!path) throw new Error("Select a file")
   await inside(cwd, path, true)
@@ -300,6 +359,7 @@ export async function workspaceRequest(url: URL, cwd: string, body?: unknown, si
   if (url.pathname === "/api/editors") return { editors: await installedEditors() }
   if (url.pathname === "/api/grep") return grep(cwd, url.searchParams.get("q") ?? "", Math.min(1000, Math.max(1, Number(url.searchParams.get("max")) || 241)), signal)
   if (url.pathname === "/api/open-in") return openIn(cwd, body as { path?: unknown; target?: unknown })
+  if (url.pathname === "/api/branches") return body === undefined ? branches(cwd) : switchBranch(cwd, body as { action?: unknown; branch?: unknown })
   const scope = url.searchParams.get("scope") ?? "all"
   if (!["all", "staged", "unstaged"].includes(scope)) throw new Error("Invalid changes scope")
   if (url.pathname === "/api/git-action") {

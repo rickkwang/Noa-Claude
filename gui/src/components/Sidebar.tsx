@@ -8,12 +8,14 @@ import {
   type PointerEvent,
   type ReactNode,
 } from "react"
+import { createPortal } from "react-dom"
+import { PopupMenu, anchorBelow, type PopupMenuAnchor } from "./PopupMenu"
 import type { ProjectInfo, SessionSummary } from "../api"
 import {
   Check,
+  ArrowUpDown,
   ChevronRight,
   Folder,
-  FolderOpen,
   FolderPlus,
   MoreHorizontal,
   Pin,
@@ -26,6 +28,8 @@ import {
 
 // Tasks shown per project before "Show more".
 const TASK_PREVIEW = 5
+// Recents lists every project's tasks in one list, ten at a time.
+const RECENTS_PREVIEW = 10
 
 const dragRegion = { WebkitAppRegion: "drag" } as CSSProperties
 const noDragRegion = { WebkitAppRegion: "no-drag" } as CSSProperties
@@ -35,15 +39,34 @@ const noDragRegion = { WebkitAppRegion: "no-drag" } as CSSProperties
 type SessionPrefs = {
   pinned: Record<string, Record<string, true>>
   order: Record<string, string[]>
+  // Project paths in the user's drag order.
+  projects: string[]
 }
 const SESSION_PREFS_KEY = "noa-agent.sessionPrefs"
+
+type RecentsSort = "updated" | "created"
+type RecentsPrefs = { collapsed: boolean; sort: RecentsSort; project: string | null }
+const RECENTS_PREFS_KEY = "noa-agent.recents"
+
+function loadRecentsPrefs(): RecentsPrefs {
+  try {
+    const raw = JSON.parse(localStorage.getItem(RECENTS_PREFS_KEY) ?? "{}") as Partial<RecentsPrefs>
+    return {
+      collapsed: raw.collapsed === true,
+      sort: raw.sort === "created" ? "created" : "updated",
+      project: typeof raw.project === "string" ? raw.project : null,
+    }
+  } catch {
+    return { collapsed: false, sort: "updated", project: null }
+  }
+}
 
 function loadSessionPrefs(): SessionPrefs {
   try {
     const raw = JSON.parse(localStorage.getItem(SESSION_PREFS_KEY) ?? "{}") as Partial<SessionPrefs>
-    return { pinned: raw.pinned ?? {}, order: raw.order ?? {} }
+    return { pinned: raw.pinned ?? {}, order: raw.order ?? {}, projects: raw.projects ?? [] }
   } catch {
-    return { pinned: {}, order: {} }
+    return { pinned: {}, order: {}, projects: [] }
   }
 }
 
@@ -53,6 +76,14 @@ function resolveOrder(prefs: SessionPrefs, path: string, sessions: SessionSummar
   const stored = (prefs.order[path] ?? []).filter((id) => ids.includes(id))
   const seen = new Set(stored)
   return [...stored, ...ids.filter((id) => !seen.has(id))]
+}
+
+// Same rule for projects: the stored drag order first, projects added since keep the server's order.
+function orderedProjects(prefs: SessionPrefs, projects: ProjectInfo[]): ProjectInfo[] {
+  const byPath = new Map(projects.map((project) => [project.path, project]))
+  const stored = prefs.projects.flatMap((path) => byPath.get(path) ?? [])
+  const seen = new Set(stored)
+  return [...stored, ...projects.filter((project) => !seen.has(project))]
 }
 
 function orderedSessions(prefs: SessionPrefs, path: string, sessions: SessionSummary[]): SessionSummary[] {
@@ -104,10 +135,14 @@ export function Sidebar({
   const [unfolded, setUnfolded] = useState<ReadonlySet<string>>(new Set())
   const [projectsOpen, setProjectsOpen] = useState(true)
   const [prefs, setPrefs] = useState<SessionPrefs>(loadSessionPrefs)
-  const dragRef = useRef<{ path: string; id: string; x: number; y: number; moved: boolean } | undefined>(undefined)
+  const [recentsPrefs, setRecentsPrefs] = useState<RecentsPrefs>(loadRecentsPrefs)
+  const [recentsUnfolded, setRecentsUnfolded] = useState(false)
+  const [recentsMenu, setRecentsMenu] = useState<{ anchor: PopupMenuAnchor; trigger: Element }>()
+  // A task drag carries its project in `path`; a project drag uses an empty `path` and the project path as `id`.
+  const dragRef = useRef<DragStart | undefined>(undefined)
   const suppressClickRef = useRef(false)
-  const [dragging, setDragging] = useState<{ path: string; id: string }>()
-  const [dropTarget, setDropTarget] = useState<{ path: string; id: string; edge: "before" | "after" }>()
+  const [dragging, setDragging] = useState<DragState>()
+  const [dropTarget, setDropTarget] = useState<{ kind: DragKind; path: string; id: string; edge: "before" | "after" }>()
   const q = query.trim().toLowerCase()
 
   useEffect(() => {
@@ -118,19 +153,39 @@ export function Sidebar({
     }
   }, [prefs])
 
+  useEffect(() => {
+    try {
+      localStorage.setItem(RECENTS_PREFS_KEY, JSON.stringify(recentsPrefs))
+    } catch {
+      // A view preference; losing it must not break the sidebar.
+    }
+  }, [recentsPrefs])
+
+  // A filter on a project that has since been removed falls back to all projects.
+  const recentsProject = projects.some((project) => project.path === recentsPrefs.project) ? recentsPrefs.project : null
+  const recents = useMemo(() => {
+    const key = recentsPrefs.sort === "created" ? "createdAt" : "updatedAt"
+    return projects
+      .filter((project) => recentsProject === null || project.path === recentsProject)
+      .flatMap((project) => (sessions[project.path] ?? []).map((session) => ({ project, session })))
+      .sort((a, b) => b.session[key] - a.session[key])
+  }, [projects, sessions, recentsProject, recentsPrefs.sort])
+
   // Drop the global drag cursor if the sidebar unmounts mid-drag.
   useEffect(() => () => document.body.classList.remove("noa-session-dragging"), [])
+
+  const sortedProjects = useMemo(() => orderedProjects(prefs, projects), [prefs, projects])
 
   // While searching, every project with a match opens so the hits are visible.
   const groups = useMemo(
     () =>
-      projects.map((project) => {
+      sortedProjects.map((project) => {
         const all = orderedSessions(prefs, project.path, sessions[project.path] ?? [])
         const matches = q ? all.filter((s) => s.title.toLowerCase().includes(q)) : all
         const nameMatches = q !== "" && project.name.toLowerCase().includes(q)
         return { project, visible: nameMatches ? all : matches }
       }),
-    [projects, sessions, q, prefs],
+    [sortedProjects, sessions, q, prefs],
   )
 
   const isPinned = (path: string, id: string) => !!prefs.pinned[path]?.[id]
@@ -184,11 +239,57 @@ export function Sidebar({
     saveOrder(path, order)
   }
 
+  function reorderProject(fromPath: string, toPath: string, edge: "before" | "after") {
+    if (fromPath === toPath) return
+    const order = orderedProjects(prefs, projects).map((project) => project.path)
+    order.splice(order.indexOf(fromPath), 1)
+    const to = order.indexOf(toPath)
+    if (to < 0) return
+    order.splice(edge === "before" ? to : to + 1, 0, fromPath)
+    setPrefs((current) => ({ ...current, projects: order }))
+  }
+
+  // Alt+↑/↓ moves a project one place.
+  function moveProjectBy(path: string, direction: -1 | 1) {
+    const order = sortedProjects.map((project) => project.path)
+    const target = order[order.indexOf(path) + direction]
+    if (target) reorderProject(path, target, direction < 0 ? "before" : "after")
+  }
+
   // 4px of travel before a press becomes a drag, so click-to-open stays reliable.
-  function startDrag(event: PointerEvent<HTMLElement>, path: string, id: string) {
+  function startDrag(event: PointerEvent<HTMLElement>, kind: DragKind, path: string, id: string, label: string) {
     if (event.button !== 0 || (event.target as HTMLElement).closest("[data-session-action]")) return
-    dragRef.current = { path, id, x: event.clientX, y: event.clientY, moved: false }
+    const rect = event.currentTarget.getBoundingClientRect()
+    dragRef.current = {
+      kind,
+      path,
+      id,
+      label,
+      x: event.clientX,
+      y: event.clientY,
+      offsetX: event.clientX - rect.left,
+      offsetY: event.clientY - rect.top,
+      moved: false,
+    }
     event.currentTarget.setPointerCapture(event.pointerId)
+  }
+
+  function findDropTarget(start: DragStart, x: number, y: number) {
+    const under = document.elementFromPoint(x, y) as HTMLElement | null
+    if (start.kind === "project") {
+      // The whole group (header and its open tasks) is the target, so a long open project still takes a drop.
+      const group = under?.closest<HTMLElement>("[data-project-group]")
+      const path = group?.dataset.projectGroup
+      if (!group || !path || path === start.id) return undefined
+      const rect = group.getBoundingClientRect()
+      return { kind: start.kind, path: "", id: path, edge: y < rect.top + rect.height / 2 ? "before" as const : "after" as const }
+    }
+    const row = under?.closest<HTMLElement>("[data-session-id]")
+    if (!row || row.dataset.sessionPath !== start.path || row.dataset.sessionId === start.id) return undefined
+    // Pinned and recent blocks stay separate; a cross-block drop would snap back.
+    if ((row.dataset.sessionPinned === "true") !== isPinned(start.path, start.id)) return undefined
+    const rect = row.getBoundingClientRect()
+    return { kind: start.kind, path: start.path, id: row.dataset.sessionId!, edge: y < rect.top + rect.height / 2 ? "before" as const : "after" as const }
   }
 
   function moveDrag(event: PointerEvent<HTMLElement>) {
@@ -197,25 +298,18 @@ export function Sidebar({
     if (!start.moved) {
       if (Math.hypot(event.clientX - start.x, event.clientY - start.y) <= 4) return
       start.moved = true
-      setDragging({ path: start.path, id: start.id })
       document.body.classList.add("noa-session-dragging")
     }
-    const row = (document.elementFromPoint(event.clientX, event.clientY) as HTMLElement | null)?.closest<HTMLElement>("[data-session-id]")
-    if (!row || row.dataset.sessionPath !== start.path || row.dataset.sessionId === start.id) {
-      setDropTarget(undefined)
-      return
-    }
-    // Pinned and recent blocks stay separate; a cross-block drop would snap back.
-    if ((row.dataset.sessionPinned === "true") !== isPinned(start.path, start.id)) {
-      setDropTarget(undefined)
-      return
-    }
-    const rect = row.getBoundingClientRect()
-    setDropTarget({
+    // The floating copy keeps the grab point under the pointer.
+    setDragging({
+      kind: start.kind,
       path: start.path,
-      id: row.dataset.sessionId!,
-      edge: event.clientY < rect.top + rect.height / 2 ? "before" : "after",
+      id: start.id,
+      label: start.label,
+      left: event.clientX - start.offsetX,
+      top: event.clientY - start.offsetY,
     })
+    setDropTarget(findDropTarget(start, event.clientX, event.clientY))
   }
 
   function endDrag(event: PointerEvent<HTMLElement>) {
@@ -234,7 +328,9 @@ export function Sidebar({
     const target = dropTarget
     setDragging(undefined)
     setDropTarget(undefined)
-    if (target && target.path === start.path) reorder(start.path, start.id, target.id, target.edge)
+    if (!target || target.kind !== start.kind) return
+    if (start.kind === "project") reorderProject(start.id, target.id, target.edge)
+    else if (target.path === start.path) reorder(start.path, start.id, target.id, target.edge)
   }
 
   function cancelDrag() {
@@ -262,6 +358,10 @@ export function Sidebar({
   }
 
   function toggle(path: string) {
+    if (suppressClickRef.current) {
+      suppressClickRef.current = false
+      return
+    }
     setExpanded((prev) => {
       const next = new Set(prev)
       if (next.has(path)) next.delete(path)
@@ -272,15 +372,16 @@ export function Sidebar({
 
   return (
     <div className="noa-sidebar-surface noa-sidebar-fade-scope w-full h-full min-h-0 flex flex-col shrink-0 relative">
-      {/* Titlebar band: the traffic lights and sidebar toggle sit over it, so it stays draggable. */}
-      <div className="h-11 shrink-0" style={dragRegion} />
+      {/* Titlebar band: the traffic lights and sidebar toggle sit over it, so it stays draggable. At 40px the
+          search field sits as far below the traffic lights as the first row's text sits below the field. */}
+      <div className="h-10 shrink-0" style={dragRegion} />
 
-      <div className="noa-sidebar-search mx-2 mt-[9px] mb-[9px] flex h-[26px] shrink-0 cursor-text items-center gap-0.5 rounded-[6px]">
+      <div className="noa-sidebar-search mx-2 mb-2 flex h-[26px] shrink-0 cursor-text items-center gap-px rounded-[6px]">
         <span
           aria-hidden="true"
           className="flex size-7 shrink-0 items-center justify-center text-[var(--sidebar-text-muted,#898781)]"
         >
-          <Search size={14} />
+          <Search size={16} />
         </span>
         <input
           type="text"
@@ -302,18 +403,18 @@ export function Sidebar({
       <button
         type="button"
         onClick={() => onNewSession()}
-        className="noa-sidebar-tree-item noa-sidebar-tree-row noa-sidebar-hover-surface-subtle mx-2 mb-1 flex min-h-8 shrink-0 items-center gap-2 rounded-lg px-2"
+        className="noa-sidebar-tree-item noa-sidebar-tree-row noa-sidebar-hover-surface-subtle mx-2 mb-1 flex min-h-[26px] shrink-0 items-center gap-2 rounded-lg pl-[7px] pr-2 text-body"
       >
-        <SquarePen size={16} className="shrink-0" />
+        <SquarePen size={14} className="shrink-0" />
         New task
       </button>
 
-      <div className="group/projects noa-sidebar-toolbar-mask h-8 flex items-center pl-1 pr-2 gap-0.5 shrink-0 z-10 overflow-visible">
+      <div className="group/projects noa-sidebar-toolbar-mask h-8 flex items-center pl-[10px] pr-2 gap-0.5 shrink-0 z-10 overflow-visible">
         <button
           type="button"
           aria-expanded={projectsOpen}
           onClick={() => setProjectsOpen((open) => !open)}
-          className="flex min-w-0 flex-1 items-center gap-1 pl-3 text-micro uppercase tracking-widest text-[var(--sidebar-text-muted,#898781)] font-ui"
+          className="flex min-w-0 flex-1 items-center gap-1 pl-[5px] text-micro uppercase tracking-widest text-[var(--sidebar-text-muted,#898781)] font-ui"
         >
           Projects
           <ChevronRight
@@ -321,7 +422,7 @@ export function Sidebar({
             className={`shrink-0 transition-transform duration-150 ${projectsOpen ? "rotate-90" : ""}`}
           />
         </button>
-        {/* Hidden until the header is hovered or focused, as Codex's Projects toolbar is. */}
+        {/* Hidden until the header is hovered or focused. */}
         <span className="flex opacity-0 transition-opacity group-hover/projects:opacity-100 focus-within:opacity-100">
           <IconButton title="Add project folder" label="Add project" onClick={onAddProject}>
             <FolderPlus size={14} />
@@ -345,11 +446,24 @@ export function Sidebar({
               const isOpen = q !== "" || expanded.has(project.path)
               const isActiveProject = active.cwd === project.path
               return (
-                <div key={project.path} className="font-ui mb-1">
+                <div
+                  key={project.path}
+                  data-project-group={project.path}
+                  className={`relative font-ui ${isOpen ? "mb-2" : "mb-px"}`}
+                >
+                  {dropTarget?.kind === "project" && dropTarget.id === project.path && (
+                    <DropIndicator edge={dropTarget.edge} className="left-2 right-2" />
+                  )}
                   <ProjectRow
                     project={project}
                     open={isOpen}
+                    dragging={dragging?.kind === "project" && dragging.id === project.path}
                     onToggle={() => toggle(project.path)}
+                    onMove={(direction) => moveProjectBy(project.path, direction)}
+                    onPointerDown={q === "" ? (event) => startDrag(event, "project", "", project.path, project.name) : undefined}
+                    onPointerMove={moveDrag}
+                    onPointerUp={endDrag}
+                    onPointerCancel={cancelDrag}
                     onNewSession={() => onNewSession(project.path)}
                     onEdit={() => onEditProject(project)}
                     onRemove={() => onRemoveProject(project.path)}
@@ -367,16 +481,16 @@ export function Sidebar({
                           active={isActiveProject && session.id === active.id}
                           indent
                           pinned={isPinned(project.path, session.id)}
-                          dragging={dragging?.path === project.path && dragging.id === session.id}
+                          dragging={dragging?.kind === "session" && dragging.path === project.path && dragging.id === session.id}
                           dropEdge={
-                            dropTarget?.path === project.path && dropTarget.id === session.id
+                            dropTarget?.kind === "session" && dropTarget.path === project.path && dropTarget.id === session.id
                               ? dropTarget.edge
                               : undefined
                           }
                           onClick={() => selectSession(project.path, session.id)}
                           onTogglePin={() => togglePin(project.path, session.id)}
                           onMove={(direction) => moveBy(project.path, session.id, direction)}
-                          onPointerDown={(event) => startDrag(event, project.path, session.id)}
+                          onPointerDown={(event) => startDrag(event, "session", project.path, session.id, session.title)}
                           onPointerMove={moveDrag}
                           onPointerUp={endDrag}
                           onPointerCancel={cancelDrag}
@@ -386,14 +500,14 @@ export function Sidebar({
                         <button
                           type="button"
                           onClick={() => toggleUnfolded(project.path)}
-                          className="mb-px block min-h-8 w-full cursor-pointer py-1 text-left text-body text-[var(--sidebar-text-muted,#898781)] hover:text-[var(--text-primary,#2D2D2B)]"
-                          style={{ paddingLeft: "32px" }}
+                          className="noa-sidebar-hover-surface-subtle mx-2 mb-px block min-h-[26px] w-[calc(100%-1rem)] cursor-pointer rounded-lg py-1 text-left text-body text-[var(--sidebar-text-muted,#898781)] hover:text-[var(--text-primary,#2D2D2B)]"
+                          style={{ paddingLeft: "29px" }}
                         >
                           {unfolded.has(project.path) ? "Show less" : "Show more"}
                         </button>
                       )}
                       {visible.length === 0 && q !== "" && (
-                        <div className="pl-9 py-1 text-caption text-[var(--sidebar-text-muted,#898781)]">
+                        <div className="pl-[37px] py-1 text-caption text-[var(--sidebar-text-muted,#898781)]">
                           No tasks match
                         </div>
                       )}
@@ -402,18 +516,141 @@ export function Sidebar({
                 </div>
               )
             })}
-          {projectsOpen && projects.length > 0 && q === "" && groups.every((g) => g.visible.length === 0) && (
-            <div className="px-4 py-2 text-caption text-[var(--sidebar-text-muted,#898781)]">No tasks yet</div>
+          {projects.length > 0 && q === "" && (
+            <section aria-label="Recents" className="mt-2">
+              <div className="group/recents h-8 flex items-center pl-[10px] pr-2 gap-0.5">
+                <button
+                  type="button"
+                  aria-expanded={!recentsPrefs.collapsed}
+                  onClick={() => setRecentsPrefs((current) => ({ ...current, collapsed: !current.collapsed }))}
+                  className="flex min-w-0 flex-1 items-center gap-1 pl-[5px] text-micro uppercase tracking-widest text-[var(--sidebar-text-muted,#898781)] font-ui"
+                >
+                  Recents
+                  <ChevronRight
+                    size={12}
+                    className={`shrink-0 transition-transform duration-150 ${recentsPrefs.collapsed ? "" : "rotate-90"}`}
+                  />
+                  {/* A collapsed list still shows that one of its tasks is working. */}
+                  {recentsPrefs.collapsed && recents.some(({ session }) => session.status) && (
+                    <span role="status" aria-label="Tasks running" className="ml-1 size-1.5 shrink-0 rounded-full bg-[var(--accent-color)]" />
+                  )}
+                </button>
+                {/* Shown on hover; an active filter keeps them visible. */}
+                <span
+                  className={`flex items-center gap-0.5 transition-opacity group-hover/recents:opacity-100 focus-within:opacity-100 has-[[aria-expanded=true]]:opacity-100 ${recentsProject ? "opacity-100" : "opacity-0"}`}
+                >
+                  <button
+                    type="button"
+                    aria-label="Recents options"
+                    title="Recents options"
+                    aria-haspopup="menu"
+                    aria-expanded={!!recentsMenu}
+                    onClick={(event) => {
+                      const trigger = event.currentTarget
+                      setRecentsMenu((current) => (current ? undefined : { anchor: anchorBelow(trigger), trigger }))
+                    }}
+                    className={`flex size-6 items-center justify-center rounded-md noa-sidebar-hover-surface transition-colors noa-press ${
+                      recentsMenu ? "text-[var(--text-primary,#2D2D2B)]" : "text-[var(--sidebar-text-muted,#898781)] hover:text-[var(--text-primary,#2D2D2B)]"
+                    }`}
+                  >
+                    <MoreHorizontal size={14} />
+                  </button>
+                  {recentsMenu && (
+                    <PopupMenu
+                      label="Recents options"
+                      anchor={recentsMenu.anchor}
+                      trigger={recentsMenu.trigger}
+                      onClose={() => setRecentsMenu(undefined)}
+                      entries={[
+                        {
+                          label: "Sort tasks by",
+                          icon: ArrowUpDown,
+                          submenu: (
+                            [
+                              ["updated", "Last updated"],
+                              ["created", "Created"],
+                            ] as const
+                          ).map(([sort, label]) => ({
+                            key: sort,
+                            label,
+                            checked: recentsPrefs.sort === sort,
+                            onSelect: () => setRecentsPrefs((current) => ({ ...current, sort })),
+                          })),
+                        },
+                        { kind: "separator" },
+                        { kind: "heading", label: "Show" },
+                        {
+                          key: "all",
+                          label: "All projects",
+                          checked: recentsProject === null,
+                          onSelect: () => setRecentsPrefs((current) => ({ ...current, project: null })),
+                        },
+                        {
+                          label: "Only one project",
+                          icon: Folder,
+                          submenu: projects.map((project) => ({
+                            key: project.path,
+                            label: project.name,
+                            checked: recentsProject === project.path,
+                            onSelect: () => setRecentsPrefs((current) => ({ ...current, project: project.path })),
+                          })),
+                        },
+                      ]}
+                    />
+                  )}
+                  <IconButton
+                    title={recentsProject ? "New task in this project" : "New task"}
+                    label="New task"
+                    onClick={() => onNewSession(recentsProject ?? undefined)}
+                  >
+                    <SquarePen size={14} />
+                  </IconButton>
+                </span>
+              </div>
+              {!recentsPrefs.collapsed && (
+                <div className="font-ui">
+                  {(recentsUnfolded ? recents : recents.slice(0, RECENTS_PREVIEW)).map(({ project, session }) => (
+                    <SessionRow
+                      key={`${project.path}\0${session.id}`}
+                      id={session.id}
+                      path={project.path}
+                      title={session.title}
+                      status={session.status}
+                      active={active.cwd === project.path && session.id === active.id}
+                      pinned={isPinned(project.path, session.id)}
+                      onClick={() => selectSession(project.path, session.id)}
+                      onTogglePin={() => togglePin(project.path, session.id)}
+                    />
+                  ))}
+                  {recents.length > RECENTS_PREVIEW && (
+                    <button
+                      type="button"
+                      onClick={() => setRecentsUnfolded((open) => !open)}
+                      className="noa-sidebar-hover-surface-subtle mx-2 mb-px block min-h-[26px] w-[calc(100%-1rem)] cursor-pointer rounded-lg py-1 text-left text-body text-[var(--sidebar-text-muted,#898781)] hover:text-[var(--text-primary,#2D2D2B)]"
+                      style={{ paddingLeft: "7px" }}
+                    >
+                      {recentsUnfolded ? "Show less" : "Show more"}
+                    </button>
+                  )}
+                  {recents.length === 0 && (
+                    <div className="pl-[15px] py-1 text-caption text-[var(--sidebar-text-muted,#898781)]">
+                      {recentsProject ? "No tasks in this project yet" : "No tasks yet"}
+                    </div>
+                  )}
+                </div>
+              )}
+            </section>
           )}
         </div>
       </div>
-      <div className="shrink-0 border-t border-[var(--divider-subtle)] px-2 py-1" style={noDragRegion}>
+      {dragging && <DragOverlay drag={dragging} />}
+      <div className="shrink-0 border-t-[0.5px] border-[var(--panel-divider)] px-2 py-1.5" style={noDragRegion}>
         <button
           type="button"
           onClick={onSettings}
-          className="noa-sidebar-tree-item noa-sidebar-hover-surface-subtle group flex h-8 w-full items-center gap-2 rounded-lg px-2 text-body"
+          className="noa-sidebar-tree-item noa-sidebar-hover-surface-subtle group flex h-[26px] w-full items-center gap-2 rounded-lg pl-[7px] pr-2 text-body text-[var(--sidebar-text-muted)] hover:text-[var(--text-primary,#2D2D2B)]"
         >
-          <Settings size={16} className="shrink-0 text-[var(--sidebar-text-muted)]" />
+          <Settings size={14} className="shrink-0" />
           <span className="min-w-0 flex-1 truncate text-left">Settings</span>
           <span
             aria-hidden="true"
@@ -453,23 +690,65 @@ function IconButton({
   )
 }
 
+type DragKind = "session" | "project"
+type DragStart = { kind: DragKind; path: string; id: string; label: string; x: number; y: number; offsetX: number; offsetY: number; moved: boolean }
+type DragState = { kind: DragKind; path: string; id: string; label: string; left: number; top: number }
+
+// The drop indicator: a 2px accent rule with a hollow ring at its start, on the edge being dropped onto.
+function DropIndicator({ edge, indented, className }: { edge: "before" | "after"; indented?: boolean; className: string }) {
+  return (
+    <div
+      aria-hidden="true"
+      role="presentation"
+      className={`noa-drop-indicator pointer-events-none absolute z-10 h-0 ${edge === "before" ? "top-0" : "bottom-0"} ${indented ? "is-indented" : ""} ${className}`}
+    />
+  )
+}
+
+// The floating copy that follows the pointer while a row is dragged.
+function DragOverlay({ drag }: { drag: DragState }) {
+  return createPortal(
+    <div
+      aria-hidden="true"
+      className="noa-drag-overlay pointer-events-none fixed z-[100] flex h-[26px] max-w-80 items-center gap-2 overflow-hidden rounded-lg font-ui text-body"
+      style={{ left: drag.left, top: drag.top, paddingLeft: drag.kind === "project" ? 7 : 8, paddingRight: 12 }}
+    >
+      {drag.kind === "project" && <Folder size={16} className="shrink-0" />}
+      <span className="min-w-0 truncate">{drag.label}</span>
+    </div>,
+    document.body,
+  )
+}
+
 // A project folder header; its actions appear on hover, as Noa's tree rows do.
 function ProjectRow({
   project,
   open,
+  dragging,
   onToggle,
+  onMove,
   onNewSession,
   onEdit,
   onRemove,
   onReveal,
+  onPointerDown,
+  onPointerMove,
+  onPointerUp,
+  onPointerCancel,
 }: {
   project: ProjectInfo
   open: boolean
+  dragging: boolean
   onToggle: () => void
+  onMove: (direction: -1 | 1) => void
   onNewSession: () => void
   onEdit: () => void
   onRemove: () => void
   onReveal: () => void
+  onPointerDown?: (event: PointerEvent<HTMLElement>) => void
+  onPointerMove: (event: PointerEvent<HTMLElement>) => void
+  onPointerUp: (event: PointerEvent<HTMLElement>) => void
+  onPointerCancel: () => void
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -500,16 +779,24 @@ function ProjectRow({
         aria-expanded={open}
         onClick={onToggle}
         onKeyDown={(e) => {
-          if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) {
+          if (e.target !== e.currentTarget) return
+          if (e.altKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
+            e.preventDefault()
+            onMove(e.key === "ArrowUp" ? -1 : 1)
+          } else if (e.key === "Enter" || e.key === " ") {
             e.preventDefault()
             onToggle()
           }
         }}
-        className={`noa-sidebar-tree-row noa-agent-sidebar-row group flex min-h-8 items-center gap-2 px-2 mx-2 rounded-lg cursor-pointer select-none ${menuOpen ? "is-active" : ""}`}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerCancel}
+        className={`noa-sidebar-tree-row noa-agent-sidebar-row group flex min-h-[26px] items-center gap-[7px] pl-[6px] pr-2 mx-2 rounded-lg cursor-pointer select-none text-[var(--sidebar-text,#52514E)] ${menuOpen ? "is-active" : ""} ${dragging ? "noa-session-row-dragging" : ""}`}
       >
-        <span className="shrink-0 text-[var(--sidebar-text-muted,#898781)]">
-          {open ? <FolderOpen size={16} /> : <Folder size={16} />}
-        </span>
+        {/* A 16px folder in the label's color, the same open or closed, centred on the New task icon's
+            column so names line up with the search and New task labels. */}
+        <Folder size={16} className="shrink-0" />
         <span
           className={`min-w-0 flex-1 truncate text-body text-[var(--sidebar-text,#52514E)] ${project.missing ? "text-[var(--sidebar-text-muted,#898781)] line-through" : ""}`}
         >
@@ -517,6 +804,7 @@ function ProjectRow({
         </span>
         {project.missing && <span className="shrink-0 text-caption text-[#C24444]">missing</span>}
         <span
+          data-session-action
           className={`flex shrink-0 items-center gap-2 transition-opacity group-hover:opacity-100 focus-within:opacity-100 ${menuOpen ? "opacity-100" : "opacity-0"}`}
           style={noDragRegion}
         >
@@ -653,9 +941,9 @@ function SessionRow({
   return (
     <div className="font-ui mb-px noa-sidebar-tree-item">
       <div
-        data-session-id={id}
-        data-session-path={path}
-        data-session-pinned={pinned ? "true" : "false"}
+        data-session-id={onPointerDown ? id : undefined}
+        data-session-path={onPointerDown ? path : undefined}
+        data-session-pinned={onPointerDown ? (pinned ? "true" : "false") : undefined}
         role="button"
         aria-current={active ? "page" : undefined}
         tabIndex={0}
@@ -666,13 +954,12 @@ function SessionRow({
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerCancel}
-        className={`noa-sidebar-tree-row relative flex min-h-8 items-center justify-between py-0 px-2 mx-2 rounded-lg cursor-pointer select-none group ${
+        className={`noa-sidebar-tree-row relative flex min-h-[26px] items-center justify-between py-0 px-2 mx-2 rounded-lg cursor-pointer select-none group ${
           active ? "noa-agent-sidebar-row is-active" : "noa-agent-sidebar-row"
-        } ${dragging ? "noa-session-row-dragging" : ""} ${
-          dropEdge === "before" ? "noa-session-drop-before" : dropEdge === "after" ? "noa-session-drop-after" : ""
-        }`}
-        style={{ paddingLeft: indent ? "32px" : "8px" }}
+        } ${dragging ? "noa-session-row-dragging" : ""}`}
+        style={{ paddingLeft: indent ? "29px" : "7px" }}
       >
+        {dropEdge && <DropIndicator edge={dropEdge} indented={indent} className="inset-x-0" />}
         <span className={`noa-fade-truncate transition-[margin-right] duration-150 ease-out ${pinned || status ? "" : "-mr-2 group-hover:mr-6 group-focus-within:mr-6"}`}>{title}</span>
         <span className={`${pinned || status ? "ml-2 flex shrink-0" : "absolute inset-y-0 right-2 flex"} items-center gap-1`}>
           {status && <span role="status" aria-label={status === "waiting" ? "Approval required" : status === "running" ? "Running" : "Queued"} title={status} className={`size-1.5 shrink-0 rounded-full ${status === "waiting" ? "bg-amber-500" : "animate-pulse bg-[var(--accent-color)]"}`} />}

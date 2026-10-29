@@ -38,6 +38,8 @@ const shortcuts: [string, string[]][] = [
 ]
 
 export function SettingsDialog({
+  navWidth,
+  navResizeHandle,
   settings,
   onChange,
   onClose,
@@ -48,6 +50,10 @@ export function SettingsDialog({
   onSubmitAuthenticationCode,
   onCloseAuthentication,
 }: {
+  // The main sidebar's width: the settings nav takes the sidebar's place.
+  navWidth: number
+  // The main sidebar's resize handle, so dragging here resizes the sidebar too.
+  navResizeHandle: ReactNode
   settings: AppSettings
   onChange: (settings: AppSettings) => void
   onClose: () => void
@@ -149,7 +155,7 @@ export function SettingsDialog({
       onKeyDown={onKeyDown}
       className="fixed inset-0 z-50 flex bg-[var(--bg-primary,#FCFCFB)] text-body text-[var(--text-primary)]"
     >
-      <nav className="flex w-[360px] shrink-0 flex-col bg-[var(--bg-sidebar,#F4F4F2)] px-2 pb-3">
+      <nav className="flex shrink-0 flex-col bg-[var(--bg-sidebar,#FBFBF9)] px-2 pb-3" style={{ width: navWidth }}>
         {/* Titlebar band: back arrow sits right of the traffic lights, same row. */}
         <div
           className="flex h-11 shrink-0 items-center"
@@ -170,9 +176,10 @@ export function SettingsDialog({
             <ArrowLeft size={16} />
           </button>
         </div>
-        <h2 className="mb-3 px-2 text-body font-medium">Settings</h2>
-        <label className="mb-4 flex h-9 items-center gap-2 rounded-lg bg-[var(--settings-fill-active)] px-2.5 text-[var(--sidebar-text-muted)]">
-          <Search size={14} />
+        {/* Settings nav: 16px semibold title, a pill search, sentence-case group label, 30px rows. */}
+        <h2 className="mt-[15px] px-2 text-[16px] leading-6 font-semibold">Settings</h2>
+        <label className="mt-[13px] flex h-9 items-center gap-2 rounded-full bg-[var(--settings-fill-hover)] px-3 text-[var(--sidebar-text-muted)]">
+          <Search size={16} />
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -181,26 +188,27 @@ export function SettingsDialog({
             className="min-w-0 flex-1 bg-transparent text-[var(--text-primary)] outline-none placeholder:text-[var(--sidebar-text-muted)]"
           />
         </label>
-        <div className="px-2 pb-2 text-caption text-[var(--sidebar-text-muted)]">Personal</div>
+        <div className="mt-2 mb-2 flex h-[30px] items-center px-2 text-[var(--sidebar-text-muted)]">Personal</div>
         {visiblePages.map((p) => (
           <button
             key={p.key}
             onClick={() => setPage(p.key)}
             aria-pressed={page === p.key}
-            className={`flex h-8 items-center gap-2.5 rounded-lg px-2 ${
+            className={`mb-px flex h-[30px] items-center gap-2.5 rounded-lg px-2 ${
               page === p.key ? "bg-[var(--settings-fill-hover)]" : "hover:bg-[var(--settings-fill-hover)]"
             }`}
           >
-            <span className="text-[var(--sidebar-text-muted)]">{p.icon}</span>
+            <span className="flex">{p.icon}</span>
             {p.label}
           </button>
         ))}
       </nav>
 
+      {navResizeHandle}
       <div aria-hidden="true" className="w-[0.5px] shrink-0 bg-[var(--divider-subtle,#E6E2DA)]" />
-      <main className="min-w-0 flex-1 overflow-y-auto pt-12 pb-16">
-        <div className="mx-auto flex max-w-3xl flex-col gap-16">
-          <h1 className="text-[length:var(--text-title)] font-normal">{current?.label}</h1>
+      <main className="min-w-0 flex-1 overflow-y-auto px-5 pt-[120px] pb-5">
+        <div className="mx-auto flex max-w-3xl flex-col gap-10">
+          <h1 className="text-[26px] leading-8 font-normal">{current?.label}</h1>
 
           {page === "general" && (
             <>
@@ -371,12 +379,13 @@ export function SettingsDialog({
 function Section({ title, children }: { title: string; children: ReactNode }) {
   const rows = Children.toArray(children)
   return (
-    <section className="flex flex-col gap-4">
-      <h3 className="text-balance text-[length:var(--text-heading-sm)] font-semibold leading-6">{title}</h3>
-      <div className="flex flex-col rounded-2xl border border-[var(--divider-subtle)] py-1">
+    // A settings group: a 40px header row above an outlined 16px-radius card whose dividers inset 16px.
+    <section className="flex flex-col">
+      <h3 className="flex min-h-10 items-center pb-1.5 text-balance text-body font-medium">{title}</h3>
+      <div className="flex flex-col overflow-hidden rounded-2xl border border-[var(--divider-subtle)] bg-[color-mix(in_srgb,var(--bg-card,#FFFFFF)_30%,transparent)]">
         {rows.map((row, i) => (
-          <div key={i}>
-            {i > 0 && <div className="mx-3 h-px bg-[var(--divider-subtle)]" />}
+          <div key={i} className="relative">
+            {i < rows.length - 1 && <div aria-hidden="true" className="pointer-events-none absolute inset-x-4 bottom-0 h-px bg-[var(--divider-subtle)]" />}
             {row}
           </div>
         ))}
@@ -387,10 +396,10 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 
 function Row({ label, description, children }: { label: string; description?: string; children?: ReactNode }) {
   return (
-    <div className="flex items-center justify-between gap-4 px-3 py-3">
-      <div className="flex min-w-0 flex-col gap-0.5">
-        <span className="text-body font-medium">{label}</span>
-        {description && <span className="text-caption leading-[1.4] text-[var(--sidebar-text-muted)]">{description}</span>}
+    <div className="flex items-center justify-between gap-6 px-4 py-3">
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <span className="text-[12px] leading-[18px] font-medium">{label}</span>
+        {description && <span className="text-[11px] leading-4 text-[var(--sidebar-text-muted)]">{description}</span>}
       </div>
       {children}
     </div>

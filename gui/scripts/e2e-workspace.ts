@@ -181,13 +181,39 @@ try {
   for (const count of perFile(hits).values()) assert(count <= 6)
   assert.deepEqual(await grep("   "), [])
   check("content search: smart case, 6 per file, cap finishes the current file, node_modules skipped")
+  const branchState = async () => (await (await request("branches")).json()) as { isGit: boolean; current: string; branches: string[]; uncommitted: number; hasCommits: boolean }
+  const branchAction = (action: string, branch: string, cwd = root) => request("branches", "", cwd, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ action, branch }),
+  })
+  const start = await branchState()
+  const home = (await git("branch", "--show-current")).trim()
+  assert(start.isGit && start.hasCommits && start.current === home && start.branches[0] === home)
+  assert(start.uncommitted > 0)
+  // Creating a branch carries the uncommitted work along, as `git switch -c` does.
+  assert.equal((await branchAction("create", "feature/menu")).status, 200)
+  assert.equal((await branchState()).current, "feature/menu")
+  assert.equal((await (await branchAction("create", "feature/menu")).json()).error, "Branch already exists.")
+  assert.equal((await (await branchAction("create", "feature/")).json()).error, "Branch name cannot end with “/”.")
+  assert.equal((await branchAction("create", "-x")).status, 400)
+  assert.equal((await branchAction("create", "two words")).status, 400)
+  // Switching away from uncommitted tracked changes is refused until they are committed.
+  assert.match((await (await branchAction("checkout", home)).json()).error, /^Commit changes in \d+ files? to check out /)
+  assert.equal((await branchState()).current, "feature/menu")
+  assert.equal((await branchAction("checkout", home, config)).status, 403)
+  assert.equal((await branchAction("checkout", "no-such-branch")).status, 400)
+  await git("-c", "user.name=GUI E2E", "-c", "user.email=gui@example.invalid", "commit", "-qam", "branch fixture")
+  assert.equal((await branchAction("checkout", home)).status, 200)
+  assert.equal((await git("branch", "--show-current")).trim(), home)
+  check("branch switcher: list, create, refuse invalid names, uncommitted guard, listed projects only")
   const sessionId = crypto.randomUUID()
   const sessions = projectDir(root)
   await mkdir(sessions, { recursive: true })
   await writeFile(
     join(sessions, `${sessionId}.jsonl`),
     [
-      { type: "user", message: { content: "Original task instruction with a long path" } },
+      { type: "user", timestamp: "2026-01-02T03:04:05.000Z", message: { content: "Original task instruction with a long path" } },
       { type: "custom-title", customTitle: "Existing task name", sessionId },
     ]
       .map((entry) => JSON.stringify(entry))
@@ -195,7 +221,9 @@ try {
   )
   body = await (await request("sessions")).json()
   assert.equal(body[0].title, "Existing task name")
-  check("existing task title metadata is used")
+  assert.equal(body[0].createdAt, Date.parse("2026-01-02T03:04:05.000Z"))
+  assert(body[0].updatedAt > body[0].createdAt)
+  check("existing task title and start time metadata are used")
   let response = await request(`sessions/${sessionId}`, "", root, {
     method: "PATCH",
     headers: { "content-type": "application/json" },
