@@ -275,12 +275,12 @@ export function Sidebar({
       {/* Titlebar band: the traffic lights and sidebar toggle sit over it, so it stays draggable. */}
       <div className="h-11 shrink-0" style={dragRegion} />
 
-      <div className="noa-sidebar-search mx-2 mb-2 flex h-8 shrink-0 cursor-text items-center gap-2 rounded-lg px-2">
+      <div className="noa-sidebar-search mx-2 mt-[9px] mb-[9px] flex h-[26px] shrink-0 cursor-text items-center gap-0.5 rounded-[6px]">
         <span
           aria-hidden="true"
-          className="flex shrink-0 items-center justify-center text-[var(--sidebar-text-muted,#898781)]"
+          className="flex size-7 shrink-0 items-center justify-center text-[var(--sidebar-text-muted,#898781)]"
         >
-          <Search size={16} />
+          <Search size={14} />
         </span>
         <input
           type="text"
@@ -313,7 +313,7 @@ export function Sidebar({
           type="button"
           aria-expanded={projectsOpen}
           onClick={() => setProjectsOpen((open) => !open)}
-          className="flex min-w-0 flex-1 items-center gap-1 pl-[11px] text-body text-[var(--sidebar-text-muted,#898781)] font-ui"
+          className="flex min-w-0 flex-1 items-center gap-1 pl-3 text-micro uppercase tracking-widest text-[var(--sidebar-text-muted,#898781)] font-ui"
         >
           Projects
           <ChevronRight
