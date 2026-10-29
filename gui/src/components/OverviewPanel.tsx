@@ -231,8 +231,8 @@ export function OverviewPanel({ state, cwd, open, workspaceRefreshKey, endInset,
     changes: changes?.isGit ? <RailCard id="changes" title="Changes" chrome={chromeFor("changes")} summary={<span><span className="text-[#3E8E57]">+{changes.additions}</span> <span className="text-[#C24444]">−{changes.deletions}</span></span>}>
       <div className={iconRow}>
         <PlusMinus size={16} className={`shrink-0 ${MUTED}`} aria-hidden="true" />
-        {changes.files.length ? <span><span className="text-[#3E8E57]">+{changes.additions}</span> <span className="text-[#C24444]">−{changes.deletions}</span></span> : <span className={MUTED}>Working tree clean</span>}
-        <button type="button" onClick={onOpenChanges} className="ms-auto h-6 rounded-lg bg-[color-mix(in_srgb,var(--text-primary)_5%,transparent)] px-2.5 text-[var(--text-primary)] hover:bg-[color-mix(in_srgb,var(--text-primary)_10%,transparent)]">Review changes</button>
+        {changes.files.length ? <span className="shrink-0 whitespace-nowrap"><span className="text-[#3E8E57]">+{changes.additions}</span> <span className="text-[#C24444]">−{changes.deletions}</span></span> : <span className={`min-w-0 truncate ${MUTED}`}>Working tree clean</span>}
+        <button type="button" onClick={onOpenChanges} className="ms-auto h-6 shrink-0 whitespace-nowrap rounded-lg bg-[color-mix(in_srgb,var(--text-primary)_5%,transparent)] px-2.5 text-[var(--text-primary)] hover:bg-[color-mix(in_srgb,var(--text-primary)_10%,transparent)]">Review changes</button>
       </div>
     </RailCard> : null,
     connectors: <ConnectorsCard state={state} chrome={chromeFor("connectors")} />,
