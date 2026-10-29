@@ -1999,7 +1999,8 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
 }
 .noa-model-picker-max-fill[data-reveal="true"] .noa-model-picker-max-mask { animation: 2s both noa-effort-reveal; }
 @keyframes noa-effort-reveal { from { --noa-effort-mask-pos: 100%; } to { --noa-effort-mask-pos: 0%; } }
-.noa-model-picker-max-mask canvas { display: block; width: 100%; height: 100%; mix-blend-mode: luminosity; }
+.noa-model-picker-max-canvas { position: absolute; inset: 0; }
+.noa-model-picker-max-canvas canvas { display: block; width: 100%; height: 100%; mix-blend-mode: luminosity; opacity: .65; }
 .noa-model-picker-particles { position: absolute; z-index: 3; inset-inline: 0; top: 50%; height: 24px; overflow: hidden; transform: translateY(-50%); }
 .noa-model-picker-particle {
   position: absolute;

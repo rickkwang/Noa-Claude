@@ -69,6 +69,10 @@ interface ComposerProps {
   branch?: string
   // Called after the environment menu checks out or creates a branch.
   onBranchChange: () => void
+  // The project checkout when the task runs in a worktree of it; `cwd` is then the worktree.
+  worktreeOf?: string
+  // Starts or discards the worktree (new tasks only); rejects with a message the menu shows.
+  onWorktree: (on: boolean) => Promise<void>
   onFiles: () => void
   newTask: boolean
   contextUsage?: ContextUsage
@@ -100,6 +104,8 @@ export function Composer({
   onProject,
   branch,
   onBranchChange,
+  worktreeOf,
+  onWorktree,
   onFiles,
   newTask,
   contextUsage,
@@ -532,7 +538,7 @@ export function Composer({
             label={
               <>
                 <ComposerFolderIcon />
-                <span className="min-w-0 truncate">{cwd.split("/").pop()}</span>
+                <span className="min-w-0 truncate">{(worktreeOf ?? cwd).split("/").pop()}</span>
               </>
             }
             items={projects
@@ -541,7 +547,7 @@ export function Composer({
                 key: p.path,
                 title: p.name,
                 description: p.path,
-                active: p.path === cwd,
+                active: p.path === (worktreeOf ?? cwd),
                 onSelect: () => onProject(p.path),
               }))}
           />
@@ -549,7 +555,7 @@ export function Composer({
             <ComposerComputerIcon />
             This computer
           </span>
-          <EnvironmentMenu cwd={cwd} branch={branch} onBranchChange={onBranchChange} />
+          <EnvironmentMenu cwd={cwd} branch={branch} onBranchChange={onBranchChange} worktree={!!worktreeOf} canToggleWorktree={newTask} onWorktree={onWorktree} />
         </div>
       )}
       {mentionPresence.mounted && (
@@ -1172,10 +1178,10 @@ function TrackParticle({ index, animate }: { index: number; animate: boolean }) 
 
 // Top effort level: drifting gradient fill plus sparkles inside the filled track.
 function EffortMaxEffects({ closing, reveal }: { closing: boolean; reveal: boolean }) {
-  const canvas = useRef<HTMLCanvasElement>(null)
+  const host = useRef<HTMLSpanElement>(null)
   const still = typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches
   useLayoutEffect(() => {
-    const el = canvas.current
+    const el = host.current
     const track = el?.closest<HTMLElement>(".noa-model-picker-track")
     const measure = () => track?.style.setProperty("--effort-track-w", `${track.offsetWidth}px`)
     measure()
@@ -1191,7 +1197,7 @@ function EffortMaxEffects({ closing, reveal }: { closing: boolean; reveal: boole
     <span aria-hidden="true" className="noa-model-picker-max" data-state={closing ? "closing" : "open"}>
       <span className="noa-model-picker-max-fill" data-reveal={reveal && !still}>
         <span className="noa-model-picker-max-mask">
-          <canvas ref={canvas} />
+          <span ref={host} className="noa-model-picker-max-canvas" />
         </span>
       </span>
       <span className="noa-model-picker-particles">

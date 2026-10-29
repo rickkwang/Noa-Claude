@@ -124,16 +124,20 @@ function link(gl: WebGLRenderingContext) {
   return program
 }
 
-/** Starts drawing into the canvas and returns a stop function. A still frame is drawn when `still` is set. */
-export function startEffortMaxFill(canvas: HTMLCanvasElement, still: boolean): (() => void) | undefined {
+/**
+ * Draws into a fresh canvas appended to `host` and returns a stop function that removes it. A new canvas per start
+ * keeps a released (lost) context from being handed back when the effect re-runs. A still frame is drawn when `still` is set.
+ */
+export function startEffortMaxFill(host: HTMLElement, still: boolean): (() => void) | undefined {
   if (typeof WebGLRenderingContext === "undefined" || typeof ResizeObserver === "undefined") return
+  const canvas = document.createElement("canvas")
+  host.append(canvas)
   const gl = canvas.getContext("webgl", { alpha: true, antialias: false, depth: false, powerPreference: "low-power", stencil: false })
-  if (!gl) return
-  const program = link(gl)
-  if (!program) return
-  const buffer = gl.createBuffer()
-  if (!buffer) {
-    gl.deleteProgram(program)
+  const program = gl && link(gl)
+  const buffer = program ? gl.createBuffer() : null
+  if (!gl || !program || !buffer) {
+    if (gl && program) gl.deleteProgram(program)
+    canvas.remove()
     return
   }
   const position = gl.getAttribLocation(program, "aPosition")
@@ -176,5 +180,6 @@ export function startEffortMaxFill(canvas: HTMLCanvasElement, still: boolean): (
     gl.deleteBuffer(buffer)
     gl.deleteProgram(program)
     gl.getExtension("WEBGL_lose_context")?.loseContext()
+    canvas.remove()
   }
 }
