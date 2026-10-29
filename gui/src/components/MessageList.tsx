@@ -128,6 +128,10 @@ export function MessageList({ turns, cwd, onOpenFile, busy, result, readingWidth
       observer.disconnect()
       if (scrollFrame.current !== undefined) cancelAnimationFrame(scrollFrame.current)
       if (measureFrame.current !== undefined) cancelAnimationFrame(measureFrame.current)
+      // StrictMode reruns this cleanup without unmounting; a stale frame id would make
+      // onScroll and the row measurer skip scheduling forever, freezing turns at estimates.
+      scrollFrame.current = undefined
+      measureFrame.current = undefined
       measureObserver.current?.disconnect()
       measureObserver.current = null
     }
