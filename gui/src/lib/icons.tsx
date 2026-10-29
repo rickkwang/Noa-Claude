@@ -1,39 +1,10 @@
-// Central icon mapping: Tabler Icons (plus a hand-drawn ChevronsDownUp) exported under the
-// legacy lucide-react names so call sites are unchanged. To swap a shape, change its mapping here only.
+// Central icon mapping: filled 16px glyphs where one exists, Tabler Icons (plus a hand-drawn
+// ChevronsDownUp) for the rest, exported under the legacy lucide-react names so call sites are unchanged.
+// To swap a shape, change its mapping here only.
 import {
-  IconAdjustmentsHorizontal,
-  IconAlertTriangle,
-  IconAlignLeft,
-  IconArrowBackUp,
-  IconArrowDown,
-  IconArrowLeft,
-  IconArrowRight,
-  IconArrowsDiagonal,
-  IconArrowsDiagonalMinimize2,
-  IconArrowsDownUp,
-  IconBook,
-  IconBookmark,
-  IconBookmarkFilled,
-  IconCalendar,
-  IconCheck,
-  IconChevronDown,
-  IconChevronLeft,
-  IconChevronRight,
-  IconChevronUp,
   IconCircleArrowUp,
-  IconCircleCheck,
-  IconClock,
-  IconCopy,
   IconDatabase,
-  IconDeviceDesktop,
   IconDice5,
-  IconDots,
-  IconDownload,
-  IconEdit,
-  IconExternalLink,
-  IconArrowUpRight,
-  IconEye,
-  IconFileText,
   IconBrandTypescript,
   IconBrandReact,
   IconBrandJavascript,
@@ -42,51 +13,15 @@ import {
   IconBrandCss3,
   IconBrandHtml5,
   IconBrandPython,
-  IconPhoto,
   IconListDetails,
-  IconFileZip,
-  IconFilter,
-  IconFolder,
-  IconFolderOpen,
-  IconFolderPlus,
-  IconGitBranch,
-  IconInfoCircle,
-  IconLayoutSidebar,
-  IconLayoutSidebarRight,
-  IconLink,
-  IconList,
-  IconLoader2,
   IconMoon,
-  IconPalette,
-  IconPencil,
-  IconPin,
-  IconPinned,
-  IconPlayerStop,
-  IconPlug,
-  IconPlus,
-  IconPlusMinus,
-  IconRefresh,
-  IconSearch,
   IconSelector,
   IconServer,
-  IconKeyboard,
-  IconSettings,
-  IconSquareCheck,
-  IconStack2,
-  IconSun,
-  IconTag,
-  IconTerminal2,
-  IconTool,
-  IconTopologyStar3,
-  IconTrash,
-  IconUnlink,
-  IconUpload,
-  IconUsers,
-  IconX,
   IconZoomIn,
   IconZoomOut,
 } from '@tabler/icons-react';
 import type { Icon, IconProps } from '@tabler/icons-react';
+import { GLYPHS } from './glyphs';
 
 // Default to 24px with a 1.5 stroke; call sites that need a heavier glyph pass their own stroke.
 function icon(Cmp: Icon) {
@@ -95,22 +30,42 @@ function icon(Cmp: Icon) {
   };
 }
 
-export const AlertTriangle = icon(IconAlertTriangle);
-export const AlignLeft = icon(IconAlignLeft);
-export const ArrowUpDown = icon(IconArrowsDownUp);
-export const ArrowDown = icon(IconArrowDown);
-export const ArrowLeft = icon(IconArrowLeft);
-export const ArrowRight = icon(IconArrowRight);
-export const BookOpen = icon(IconBook);
-export const Bookmark = icon(IconBookmark);
-export const BookmarkFilled = icon(IconBookmarkFilled);
-export const Calendar = icon(IconCalendar);
-export const Check = icon(IconCheck);
-export const CheckCircle2 = icon(IconCircleCheck);
-export const CheckSquare = icon(IconSquareCheck);
-export const ChevronDown = icon(IconChevronDown);
-export const ChevronLeft = icon(IconChevronLeft);
-export const ChevronRight = icon(IconChevronRight);
+// Glyphs are filled 16px artwork, so stroke props from Tabler-era call sites don't apply.
+function glyph(name: string, mirrored = false) {
+  const body = GLYPHS[name]!;
+  return function GlyphIcon({ size = 16, className, style }: IconProps) {
+    return (
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        width={size}
+        height={size}
+        viewBox="0 0 16 16"
+        fill="currentColor"
+        className={className}
+        style={mirrored ? { transform: "scaleX(-1)", ...style } : style}
+        aria-hidden="true"
+        dangerouslySetInnerHTML={{ __html: body }}
+      />
+    );
+  };
+}
+
+export const AlertTriangle = glyph("exclamation-mark-triangle");
+export const AlignLeft = glyph("text-alignleft");
+export const ArrowUpDown = glyph("arrow-down-arrow-up");
+export const ArrowDown = glyph("arrow-down-md");
+export const ArrowLeft = glyph("arrow-left-md");
+export const ArrowRight = glyph("arrow-right-md");
+export const BookOpen = glyph("book-open");
+export const Bookmark = glyph("bookmark");
+export const BookmarkFilled = glyph("bookmark-fill");
+export const Calendar = glyph("calendar");
+export const Check = glyph("checkmark-md");
+export const CheckCircle2 = glyph("checkmark-circle");
+export const CheckSquare = glyph("checkmark-square");
+export const ChevronDown = glyph("chevron-down-md");
+export const ChevronLeft = glyph("chevron-left-md");
+export const ChevronRight = glyph("chevron-right-md");
 export const ChevronsUpDown = icon(IconSelector);
 // Inward twin of ChevronsUpDown ("collapse all folders"), drawn by hand because
 // Tabler has no such glyph: same 256 grid, 16-unit stroke (1.5 at 24px), carets flipped.
@@ -135,21 +90,21 @@ export function ChevronsDownUp({ size = 24, className, style }: IconProps) {
     </svg>
   );
 }
-export const ChevronUp = icon(IconChevronUp);
+export const ChevronUp = glyph("chevron-up-md");
 export const CircleArrowUp = icon(IconCircleArrowUp);
 // The editor's outline and edit-mode toggles.
-export const Outline = icon(IconList);
-export const Edit2 = icon(IconPencil);
-export const Clock = icon(IconClock);
-export const Copy = icon(IconCopy);
+export const Outline = glyph("list-bullet");
+export const Edit2 = glyph("pencil");
+export const Clock = glyph("clock");
+export const Copy = glyph("square-on-square");
 export const Database = icon(IconDatabase);
 export const Dices = icon(IconDice5);
-export const Download = icon(IconDownload);
-export const ExternalLink = icon(IconExternalLink);
-export const ArrowUpRight = icon(IconArrowUpRight);
-export const Eye = icon(IconEye);
-export const FileArchive = icon(IconFileZip);
-export const FileText = icon(IconFileText);
+export const Download = glyph("arrow-down-line-horizontal");
+export const ExternalLink = glyph("open-link");
+export const ArrowUpRight = glyph("arrow-up-right-md");
+export const Eye = glyph("eye");
+export const FileArchive = glyph("document-zip");
+export const FileText = glyph("document-text");
 export const BrandTypescript = icon(IconBrandTypescript);
 export const BrandReact = icon(IconBrandReact);
 export const BrandJavascript = icon(IconBrandJavascript);
@@ -158,51 +113,51 @@ export const Markdown = icon(IconMarkdown);
 export const BrandCss3 = icon(IconBrandCss3);
 export const BrandHtml5 = icon(IconBrandHtml5);
 export const BrandPython = icon(IconBrandPython);
-export const Photo = icon(IconPhoto);
+export const Photo = glyph("photo");
 export const ListDetails = icon(IconListDetails);
-export const Filter = icon(IconFilter);
-export const Folder = icon(IconFolder);
-export const FolderOpen = icon(IconFolderOpen);
-export const FolderPlus = icon(IconFolderPlus);
-export const GitBranch = icon(IconGitBranch);
-export const Tag = icon(IconTag);
-export const Terminal = icon(IconTerminal2);
-export const Tool = icon(IconTool);
+export const Filter = glyph("filter");
+export const Folder = glyph("folder");
+export const FolderPlus = glyph("folder-badge-plus");
+export const GitBranch = glyph("branch");
+export const Tag = glyph("tag");
+export const Terminal = glyph("terminal");
+export const Tool = glyph("wrench");
 export const HardDrive = icon(IconServer);
-export const Info = icon(IconInfoCircle);
+export const Info = glyph("info-circle");
 // The note rail toggle: a stack of cards, since the rail holds more than the calendar.
-export const Layers = icon(IconStack2);
-export const List = icon(IconList);
-export const Loader2 = icon(IconLoader2);
-export const Maximize2 = icon(IconArrowsDiagonal);
-export const Minimize2 = icon(IconArrowsDiagonalMinimize2);
-export const Monitor = icon(IconDeviceDesktop);
+export const Layers = glyph("stack");
+export const List = glyph("list-bullet");
+export const Loader2 = glyph("spinner-quarter-graded");
+export const Maximize2 = glyph("arrow-up-right-arrow-down-left-md");
+export const Minimize2 = glyph("arrow-down-left-arrow-up-right-sm");
+export const Monitor = glyph("desktop");
 export const Moon = icon(IconMoon);
-export const MoreHorizontal = icon(IconDots);
+export const MoreHorizontal = glyph("ellipsis-horizontal");
 // The graph's "hide isolated nodes" toggle: linked nodes, not Tabler's globe-on-a-stand network.
-export const Network = icon(IconTopologyStar3);
-export const Palette = icon(IconPalette);
-export const Pin = icon(IconPin);
-export const PinFilled = icon(IconPinned);
-export const PanelLeft = icon(IconLayoutSidebar);
-export const PanelRight = icon(IconLayoutSidebarRight);
-export const Plug = icon(IconPlug);
-export const Plus = icon(IconPlus);
-export const PlusMinus = icon(IconPlusMinus);
-export const RefreshCcw = icon(IconRefresh);
-export const RotateCcw = icon(IconArrowBackUp);
-export const Search = icon(IconSearch);
-export const Keyboard = icon(IconKeyboard);
-export const Settings = icon(IconSettings);
-export const SlidersHorizontal = icon(IconAdjustmentsHorizontal);
-export const Sun = icon(IconSun);
-export const SquarePen = icon(IconEdit);
-export const Stop = icon(IconPlayerStop);
-export const Trash2 = icon(IconTrash);
-export const Link = icon(IconLink);
-export const Unlink = icon(IconUnlink);
-export const Upload = icon(IconUpload);
-export const Users = icon(IconUsers);
-export const X = icon(IconX);
+export const Network = glyph("node-to-node-path");
+export const Palette = glyph("paint-palette");
+export const Pin = glyph("pin");
+export const PinFilled = glyph("pin-fill");
+export const PanelLeft = glyph("sidebar");
+// Only a left sidebar glyph exists; the right panel toggle is its mirror.
+export const PanelRight = glyph("sidebar", true);
+export const Plug = glyph("plugin");
+export const Plus = glyph("plus-md");
+export const PlusMinus = glyph("plus-minus-square");
+export const RefreshCcw = glyph("arrows-clockwise-rotate-lg");
+export const RotateCcw = glyph("arrow-rotate-counterclockwise");
+export const Search = glyph("magnifying-glass-md");
+export const Keyboard = glyph("keyboard");
+export const Settings = glyph("gear");
+export const SlidersHorizontal = glyph("sliders");
+export const Sun = glyph("sun");
+export const SquarePen = glyph("square-and-pencil");
+export const Stop = glyph("stop-fill");
+export const Trash2 = glyph("trash");
+export const Link = glyph("link");
+export const Unlink = glyph("unlink");
+export const Upload = glyph("arrow-up-line-horizontal");
+export const Users = glyph("person-2");
+export const X = glyph("xmark-md");
 export const ZoomIn = icon(IconZoomIn);
 export const ZoomOut = icon(IconZoomOut);

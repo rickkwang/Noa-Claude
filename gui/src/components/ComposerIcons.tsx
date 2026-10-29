@@ -1,7 +1,5 @@
 import type { SVGProps } from "react"
 
-// Glyph geometry from the installed Codex desktop bundle (26.1021.22027).
-
 export function ComposerFolderIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <svg width={16} height={16} viewBox="0 0 16 16" fill="currentColor" className="shrink-0" aria-hidden="true" {...props}>
