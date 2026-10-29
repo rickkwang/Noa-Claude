@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import hljs from "highlight.js/lib/common"
 import { parsePatch, diffWordsWithSpace } from "diff"
+import { hideWhitespaceChanges } from "../lib/diffWhitespace"
 
 const languages: Record<string, string> = { ts: "typescript", tsx: "typescript", js: "javascript", jsx: "javascript", mjs: "javascript", cjs: "javascript", py: "python", sh: "bash", zsh: "bash", json: "json", css: "css", html: "xml", svg: "xml", xml: "xml", md: "markdown", yml: "yaml", yaml: "yaml", rs: "rust", go: "go", java: "java", c: "c", h: "c", cpp: "cpp", sql: "sql", swift: "swift" }
 
@@ -47,8 +48,11 @@ function emphasis(html: string, ranges: [number, number][]) {
   return container.innerHTML
 }
 
+// Claude Code's diff renderer skips changed-word emphasis on lines over 1,000 characters.
+const MAX_WORD_DIFF_LINE = 1000
+
 function wordChanges(before: Line, after: Line) {
-  if (before.text.length + after.text.length > 10000) return
+  if (before.text.length > MAX_WORD_DIFF_LINE || after.text.length > MAX_WORD_DIFF_LINE) return
   let old = 0, next = 0
   const removed: [number, number][] = [], added: [number, number][] = []
   for (const part of diffWordsWithSpace(before.text, after.text)) {
@@ -60,18 +64,21 @@ function wordChanges(before: Line, after: Line) {
   after.html = emphasis(after.html, added)
 }
 
-export default function CodeView({ path, content, diff = false, split = false, wrap = false, hunkScope, onHunkAction, findRequest = 0, onCloseFind, focusLine, focusEndLine, focusRequest }: {
-  path: string; content: string; diff?: boolean; split?: boolean; wrap?: boolean
-  focusLine?: number; focusEndLine?: number; focusRequest?: number; findRequest?: number; onCloseFind?: () => void
+export default function CodeView({ path, content, diff = false, split = false, wrap = false, wordDiff = true, hideWhitespace = false, hunkScope, onHunkAction, findRequest = 0, onCloseFind, gotoRequest = 0, focusLine, focusEndLine, focusRequest }: {
+  path: string; content: string; diff?: boolean; split?: boolean; wrap?: boolean; wordDiff?: boolean; hideWhitespace?: boolean
+  focusLine?: number; focusEndLine?: number; focusRequest?: number; findRequest?: number; onCloseFind?: () => void; gotoRequest?: number
   hunkScope?: string; onHunkAction?: (action: string, hunk: number) => void
 }) {
-  const hunks = useMemo(() => {
-    if (!diff) return []
+  const { hunks, whitespaceOnly } = useMemo(() => {
+    if (!diff) return { hunks: [], whitespaceOnly: false }
     try {
-      let remaining = 3000
-      return parsePatch(content).flatMap((file) => file.hunks.flatMap((hunk) => {
+      let remaining = 3000, hidden = 0
+      const hunks = parsePatch(content).flatMap((file) => file.hunks.flatMap((hunk, index) => {
         if (remaining <= 0) return []
-        const displayed = hunk.lines.slice(0, remaining)
+        // Hunk actions address the patch's own hunk numbers, so they stay correct when hunks are hidden.
+        const shown = hideWhitespace ? hideWhitespaceChanges(hunk.lines) : { lines: hunk.lines, changed: true, altered: false }
+        if (!shown.changed) { hidden++; return [] }
+        const displayed = shown.lines.slice(0, remaining)
         remaining -= displayed.length
         let old = hunk.oldStart, next = hunk.newStart
         const before = highlightedLines(displayed.filter((l) => l[0] === " " || l[0] === "-").map((l) => l.slice(1)).join("\n"), path)
@@ -92,22 +99,39 @@ export default function CodeView({ path, content, diff = false, split = false, w
           while (lines[i]?.kind === "remove") removed.push(lines[i++]!)
           while (lines[i]?.kind === "add") added.push(lines[i++]!)
           for (let j = 0; j < Math.max(removed.length, added.length); j++) {
-            if (removed[j] && added[j]) wordChanges(removed[j]!, added[j]!)
+            if (wordDiff && removed[j] && added[j]) wordChanges(removed[j]!, added[j]!)
             pairs.push([removed[j], added[j]])
           }
         }
-        return { label: `@@ -${hunk.oldStart},${hunk.oldLines} +${hunk.newStart},${hunk.newLines} @@`, lines, pairs, complete: displayed.length === hunk.lines.length }
+        // A hunk rewritten to hide whitespace no longer shows everything an action would apply.
+        return { index, label: `@@ -${hunk.oldStart},${hunk.oldLines} +${hunk.newStart},${hunk.newLines} @@`, lines, pairs, complete: displayed.length === hunk.lines.length && !shown.altered }
       }))
-    } catch { return [] }
-  }, [content, path, diff])
+      return { hunks, whitespaceOnly: hunks.length === 0 && hidden > 0 }
+    } catch { return { hunks: [], whitespaceOnly: false } }
+  }, [content, path, diff, wordDiff, hideWhitespace])
   const source = useMemo(() => diff ? [] : highlightedLines(content.split("\n").slice(0, 3000).join("\n"), path), [content, path, diff])
   const gutter = Math.max(4, ...hunks.flatMap((hunk) => hunk.lines.map((line) => String(Math.max(line.old ?? 0, line.next ?? 0)).length))) + 3
   const root = useRef<HTMLDivElement>(null)
+  // A "Go to line" jump outranks the last external focus until the next one arrives.
+  const [jump, setJump] = useState<{ line: number; at: number }>()
+  useEffect(() => { setJump(undefined) }, [focusRequest])
+  const referenceLine = jump?.line ?? focusLine
+  const referenceEnd = jump ? jump.line : focusEndLine ?? focusLine
   useEffect(() => {
-    if (!focusLine || diff) return
-    const row = root.current?.querySelectorAll<HTMLElement>(".noa-source-line")[focusLine - 1]
+    if (!referenceLine || diff) return
+    const row = root.current?.querySelectorAll<HTMLElement>(".noa-source-line")[referenceLine - 1]
     row?.scrollIntoView({ block: "center" })
-  }, [focusLine, focusEndLine, focusRequest, source, diff])
+  }, [referenceLine, referenceEnd, focusRequest, jump?.at, source, diff])
+  const gotoInput = useRef<HTMLInputElement>(null)
+  const gotoBar = useRef<HTMLDivElement>(null)
+  const [going, setGoing] = useState(false)
+  const [gotoValue, setGotoValue] = useState("")
+  // Claude Code's syntax: "line" or "line:column".
+  const gotoTarget = /^(\d+)\s*(?::\s*(\d*))?$/.exec(gotoValue.trim())
+  const gotoInvalid = gotoValue.trim().length > 0 && gotoTarget === null
+  const openGoto = () => { if (diff) return; setGoing(true); requestAnimationFrame(() => gotoInput.current?.select()) }
+  const closeGoto = () => { setGoing(false); setGotoValue("") }
+  useEffect(() => { if (gotoRequest) openGoto() }, [gotoRequest]) // eslint-disable-line react-hooks/exhaustive-deps
   const input = useRef<HTMLInputElement>(null)
   const [finding, setFinding] = useState(false)
   const [query, setQuery] = useState("")
@@ -119,11 +143,13 @@ export default function CodeView({ path, content, diff = false, split = false, w
     const find = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "f" && root.current?.offsetParent) {
         event.preventDefault(); setFinding(true)
+      } else if (event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey && event.code === "KeyG" && root.current?.offsetParent && !diff) {
+        event.preventDefault(); openGoto()
       }
     }
     document.addEventListener("keydown", find)
     return () => document.removeEventListener("keydown", find)
-  }, [])
+  }, [diff]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (finding) input.current?.focus() }, [finding])
   useEffect(() => {
     const rows = [...(root.current?.querySelectorAll<HTMLElement>(".noa-code-line, .noa-source-line") ?? [])]
@@ -144,10 +170,23 @@ export default function CodeView({ path, content, diff = false, split = false, w
   return (
     <div ref={root} className={`noa-code-view ${diff ? "is-diff" : ""} ${wrap ? "is-wrapped" : ""} ${split && diff ? "is-split" : ""}`} style={{ "--noa-diff-gutter": `${gutter}ch` } as React.CSSProperties} tabIndex={0} aria-label={diff ? "File diff" : "File content"}>
       {finding && <div className="noa-code-search"><input ref={input} aria-label="Find in file" value={query} onChange={(event) => { setQuery(event.target.value); setMatch(0) }} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); setMatch((n) => n + (event.shiftKey ? -1 : 1)) } else if (event.key === "Escape") { closeFind() } }} /><span>{matches ? (match % matches + matches) % matches + 1 : 0}/{matches}</span><button type="button" className="noa-panel-button" aria-label="Previous match" onClick={() => setMatch((n) => n - 1)}>↑</button><button type="button" className="noa-panel-button" aria-label="Next match" onClick={() => setMatch((n) => n + 1)}>↓</button><button type="button" className="noa-panel-button" aria-label="Close find" onClick={closeFind}>×</button></div>}
+      {going && <div ref={gotoBar} className="noa-code-search" role="search" onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) closeGoto() }}>
+        <input ref={gotoInput} aria-label="Go to line" placeholder="Line, or line:column" aria-invalid={gotoInvalid || undefined} spellCheck={false} autoComplete="off" value={gotoValue} onChange={(event) => setGotoValue(event.target.value)} onKeyDown={(event) => {
+          if (event.key === "Escape") { event.preventDefault(); closeGoto(); root.current?.focus() }
+          else if (event.key === "Enter" && !event.nativeEvent.isComposing) {
+            event.preventDefault()
+            if (!gotoTarget) return
+            setJump({ line: Math.min(Math.max(1, Number(gotoTarget[1])), source.length), at: Date.now() })
+            closeGoto(); root.current?.focus({ preventScroll: true })
+          }
+        }} />
+        <span aria-live="polite">{gotoInvalid ? `Type a line number from 1 to ${source.length}` : `Line ${referenceLine ?? 1} of ${source.length}`}</span>
+        <button type="button" className="noa-panel-button" aria-label="Close go to line bar" onMouseDown={(event) => event.preventDefault()} onClick={closeGoto}>×</button>
+      </div>}
       {content.split("\n").length > 3000 && <p className="noa-panel-notice">Large file: showing up to 3,000 lines. Open the file in your editor to read the remaining lines.</p>}
-      {!diff ? source.map((html, i) => <div className="noa-source-line" data-reference-line={focusLine && i + 1 >= focusLine && i + 1 <= (focusEndLine ?? focusLine) ? "true" : undefined} key={i}><span className="noa-code-number">{i + 1}</span><code dangerouslySetInnerHTML={{ __html: html || " " }} /></div>)
-        : hunks.length ? hunks.map((hunk, i) => <section key={i} className="noa-diff-hunk"><div className="noa-diff-hunk-header"><span>{hunk.label}</span>{hunkScope && hunk.complete && <span className="noa-hunk-actions"><button type="button" className="noa-panel-button" aria-label={`${hunkScope === "staged" ? "Unstage" : "Stage"} hunk ${i + 1}`} onClick={() => onHunkAction?.(hunkScope === "staged" ? "unstage-hunk" : "stage-hunk", i)}>{hunkScope === "staged" ? "Unstage hunk" : "Stage hunk"}</button><button type="button" className="noa-panel-button" aria-label={`Revert hunk ${i + 1}`} onClick={() => onHunkAction?.("revert-hunk", i)}>Revert hunk</button></span>}</div>{split ? hunk.pairs.map(([old, next], j) => <div className="noa-diff-pair" key={j}>{cell(old, "old")}{cell(next, "next")}</div>) : hunk.lines.map((line, j) => <div key={j}>{cell(line)}</div>)}</section>)
-        : <p className="noa-panel-empty">{content.includes("Binary") ? "Binary file changed" : content ? "File mode, rename or other metadata change. No text hunks." : "No changes in this view"}</p>}
+      {!diff ? source.map((html, i) => <div className="noa-source-line" data-reference-line={referenceLine && i + 1 >= referenceLine && i + 1 <= (referenceEnd ?? referenceLine) ? "true" : undefined} key={i}><span className="noa-code-number">{i + 1}</span><code dangerouslySetInnerHTML={{ __html: html || " " }} /></div>)
+        : hunks.length ? hunks.map((hunk) => <section key={hunk.index} className="noa-diff-hunk"><div className="noa-diff-hunk-header"><span>{hunk.label}</span>{hunkScope && hunk.complete && <span className="noa-hunk-actions"><button type="button" className="noa-panel-button" aria-label={`${hunkScope === "staged" ? "Unstage" : "Stage"} hunk ${hunk.index + 1}`} onClick={() => onHunkAction?.(hunkScope === "staged" ? "unstage-hunk" : "stage-hunk", hunk.index)}>{hunkScope === "staged" ? "Unstage hunk" : "Stage hunk"}</button><button type="button" className="noa-panel-button" aria-label={`Revert hunk ${hunk.index + 1}`} onClick={() => onHunkAction?.("revert-hunk", hunk.index)}>Revert hunk</button></span>}</div>{split ? hunk.pairs.map(([old, next], j) => <div className="noa-diff-pair" key={j}>{cell(old, "old")}{cell(next, "next")}</div>) : hunk.lines.map((line, j) => <div key={j}>{cell(line)}</div>)}</section>)
+        : <p className="noa-panel-empty">{whitespaceOnly ? "Whitespace only" : content.includes("Binary") ? "Binary file changed" : content ? "File mode, rename or other metadata change. No text hunks." : "No changes in this view"}</p>}
     </div>
   )
 }

@@ -31,6 +31,7 @@ import {
   IconDownload,
   IconEdit,
   IconExternalLink,
+  IconArrowUpRight,
   IconEye,
   IconFileText,
   IconBrandTypescript,
@@ -145,6 +146,7 @@ export const Database = icon(IconDatabase);
 export const Dices = icon(IconDice5);
 export const Download = icon(IconDownload);
 export const ExternalLink = icon(IconExternalLink);
+export const ArrowUpRight = icon(IconArrowUpRight);
 export const Eye = icon(IconEye);
 export const FileArchive = icon(IconFileZip);
 export const FileText = icon(IconFileText);

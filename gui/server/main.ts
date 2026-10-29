@@ -50,9 +50,9 @@ Bun.serve<SocketData>({
       catch (error) { return json({ error: (error as Error).message }, 400) }
     }
 
-    if (["/api/files", "/api/file", "/api/changes", "/api/diff", "/api/git-action"].includes(url.pathname)) {
-      if (req.method !== "GET" && !(req.method === "POST" && ["/api/file", "/api/git-action"].includes(url.pathname))) return json({ error: "Method not allowed" }, 405)
-      if (url.pathname === "/api/git-action" && req.method !== "POST") return json({ error: "Method not allowed" }, 405)
+    if (["/api/files", "/api/file", "/api/changes", "/api/diff", "/api/git-action", "/api/editors", "/api/open-in", "/api/grep"].includes(url.pathname)) {
+      if (req.method !== "GET" && !(req.method === "POST" && ["/api/file", "/api/git-action", "/api/open-in"].includes(url.pathname))) return json({ error: "Method not allowed" }, 405)
+      if (["/api/git-action", "/api/open-in"].includes(url.pathname) && req.method !== "POST") return json({ error: "Method not allowed" }, 405)
       if (!cwd) return json({ error: "cwd is not a directory" }, 400)
       // Writes are limited to listed projects (or folders inside them).
       if (req.method === "POST" && !listProjects(REPO_ROOT).some((project) =>
@@ -60,7 +60,7 @@ Bun.serve<SocketData>({
       ))
         return json({ error: "Writes are only allowed inside listed projects" }, 403)
       try {
-        return json(await workspaceRequest(url, cwd, req.method === "POST" ? await req.json() : undefined))
+        return json(await workspaceRequest(url, cwd, req.method === "POST" ? await req.json() : undefined, req.signal))
       } catch (error) {
         return json({ error: (error as Error).message }, 400)
       }

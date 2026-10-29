@@ -3,18 +3,21 @@ import { parsePatch } from "diff"
 import type { TurnDiff, TurnDiffFile } from "../agent/protocol"
 import { MiddlePath } from "./TurnDiffCard"
 import CodeView from "./CodeView"
+import { useDiffPref } from "../lib/diffPrefs"
 
-export function TurnReview({ diff, focusPath, focusKey }: {
+export function TurnReview({ diff, focusPath, focusKey, canSplit = true }: {
   diff: TurnDiff
   focusPath?: string
   focusKey?: number
+  canSplit?: boolean
 }) {
   const [selected, setSelected] = useState(focusPath && diff.files.some((file) => file.path === focusPath) ? focusPath : diff.files[0]?.path ?? "")
-  const [wrap, setWrap] = useState(() => localStorage.getItem("noa-turn-diff-wrap-v2") !== "false")
   const [findRequest, setFindRequest] = useState(0)
+  const [wordDiff] = useDiffPref("wordDiff")
+  const [hideWhitespace] = useDiffPref("hideWhitespace")
+  const [sideBySide] = useDiffPref("sideBySide")
+  const [wrap] = useDiffPref("wordWrap")
   const appliedFocus = useRef<string | undefined>(undefined)
-
-  useEffect(() => { localStorage.setItem("noa-turn-diff-wrap-v2", String(wrap)) }, [wrap])
 
   useEffect(() => {
     setSelected((current) => {
@@ -47,7 +50,6 @@ export function TurnReview({ diff, focusPath, focusKey }: {
           {diff.additions > 0 && <span className="noa-turn-diff-stats"><span className="is-added">+{diff.additions}</span></span>}{" "}
           {diff.deletions > 0 && <span className="noa-turn-diff-stats"><span className="is-removed">-{diff.deletions}</span></span>}
         </span>
-        <button type="button" className="noa-panel-button" aria-pressed={wrap} onClick={() => setWrap((value) => !value)}>Wrap</button>
         <button type="button" className="noa-panel-button" onClick={() => setFindRequest((value) => value + 1)}>Find</button>
       </div>
       {diff.files.length > 1 && (
@@ -71,7 +73,7 @@ export function TurnReview({ diff, focusPath, focusKey }: {
       )}
       <div className="noa-panel-body">
         {content
-          ? <CodeView path={selected} content={content} diff split={false} wrap={wrap} findRequest={findRequest} onCloseFind={() => setFindRequest(0)} />
+          ? <CodeView path={selected} content={content} diff split={sideBySide && canSplit} wrap={wrap} wordDiff={wordDiff} hideWhitespace={hideWhitespace} findRequest={findRequest} onCloseFind={() => setFindRequest(0)} />
           : <p className="noa-panel-empty">
               {file?.tooLarge || !diff.patch || diff.truncated
                 ? "Diff too large to preview"

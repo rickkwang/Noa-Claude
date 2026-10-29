@@ -1902,8 +1902,6 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
 .noa-panel-button:hover:not(:disabled), .noa-panel-button[aria-pressed="true"] { background: color-mix(in srgb, var(--text-primary) 7.5%, transparent); color: var(--text-primary); }
 .noa-panel-button:disabled { opacity: .4; }
 .noa-panel-button:focus-visible, .noa-file-row:focus-visible  { outline: 2px solid var(--accent-color); outline-offset: -2px; }
-.noa-panel-actions { flex-wrap: wrap; padding-block: 4px; border-bottom: 1px solid color-mix(in srgb, var(--text-primary) 5%, transparent); }
-.noa-panel-actions select { min-width: 0; max-width: 100%; padding: 3px 5px; border-radius: 6px; background: var(--bg-card); font: inherit; color: var(--sidebar-text); }
 .noa-panel-body { flex: 1; min-width: 0; min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
 .noa-file-root { padding: 8px 10px 0 16px; }
 .noa-file-root-chip { display: inline-flex; min-width: 0; max-width: 70%; align-items: center; gap: 6px; height: 26px; padding: 0; border-radius: 8px; color: var(--text-primary); }
@@ -1928,14 +1926,20 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
 .noa-file-row:hover { background-color: color-mix(in srgb, var(--text-primary) 5%, transparent); }
 .noa-file-row > svg, .noa-panel-button > svg { flex-shrink: 0; }
 .noa-file-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* File content search ("?query"): file rows show their folder, match rows a line number and a snippet. */
+.noa-grep-dir { margin-left: 6px; color: var(--sidebar-text-muted); font-size: var(--text-caption); }
+.noa-grep-match { padding-left: 29px; }
+.noa-grep-line { flex-shrink: 0; min-width: 2.5ch; color: var(--sidebar-text-muted); font-size: var(--text-caption); font-variant-numeric: tabular-nums; text-align: right; }
+.noa-grep-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono, ui-monospace, monospace); font-size: var(--text-caption); }
+.noa-grep-text mark { border-radius: 2px; background: color-mix(in srgb, var(--accent-color) 22%, transparent); color: inherit; }
+.noa-grep-more { display: flex; align-items: center; height: 28px; padding-left: 29px; color: var(--sidebar-text-muted); font-size: var(--text-caption); user-select: none; }
+.noa-code-search input[aria-invalid="true"] { border-color: #C24444; }
 .noa-file-status { flex-shrink: 0; color: var(--sidebar-text-muted); font-size: var(--text-caption); font-variant-numeric: tabular-nums; }
 .noa-change-count { display: inline-flex; flex-shrink: 0; gap: 6px; font-size: var(--text-caption); font-variant-numeric: tabular-nums; }
 .noa-change-count .is-added { color: #168447; }
 .noa-change-count .is-removed { color: #C24444; }
 [data-theme="dark"] .noa-change-count .is-added { color: #69C98B; }
 [data-theme="dark"] .noa-change-count .is-removed { color: #EE8A8A; }
-.noa-file-breadcrumb { padding: 0 12px 5px; color: var(--sidebar-text-muted); font-size: var(--text-caption); overflow-wrap: anywhere; }
-.noa-file-breadcrumb .noa-change-count { margin-left: 8px; }
 .noa-viewed-label { display: inline-flex; align-items: center; gap: 5px; color: var(--sidebar-text-muted); font-size: var(--text-caption); }
 .noa-viewed-label input { accent-color: var(--accent-color); }
 .noa-panel-empty { margin: 0; padding: 24px 16px; text-align: center; color: var(--sidebar-text-muted); font-size: var(--text-chat-sm); }
@@ -1976,7 +1980,34 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
 .noa-review-menu > summary::-webkit-details-marker { display: none; }
 .noa-review-menu-content { position: absolute; right: 0; top: calc(100% + 4px); z-index: 20; display: flex; flex-direction: column; gap: 2px; min-width: 156px; padding: 4px; border-radius: 10px; background: var(--bg-card); }
 .noa-review-menu-content > .noa-panel-button { justify-content: flex-start; }
-.noa-review-menu-content .noa-viewed-label { padding: 4px 6px; }
+/* Menu rows match the file context menu: 28px rows in body text. */
+.noa-review-menu-content { min-width: 200px; }
+.noa-review-menu-content > .noa-panel-button, .noa-review-menu-content > .noa-viewed-label { min-height: 28px; padding: 0 8px; font-size: var(--text-body); color: var(--text-primary); }
+.noa-review-menu-content > .noa-viewed-label:hover { border-radius: 6px; background: color-mix(in srgb, var(--text-primary) 6%, transparent); }
+.noa-review-menu-hint { margin-left: auto; padding-left: 12px; color: var(--sidebar-text-muted); font-size: var(--text-caption); }
+.noa-review-menu[open] > summary { background: color-mix(in srgb, var(--text-primary) 7.5%, transparent); color: var(--text-primary); }
+/* One header row per file, as Claude Code's diff file header: square icon buttons, text only for Cancel/Save. */
+.noa-file-header { gap: 2px; }
+.noa-file-header > .noa-panel-button:not(.is-text), .noa-file-header > .noa-review-menu > summary { width: 24px; height: 24px; padding: 0; }
+.noa-file-header > .noa-review-menu { margin-left: 0; }
+.noa-file-header > .noa-change-count, .noa-file-header > .noa-row-stats { margin-right: 4px; }
+.noa-panel-button.is-primary:not(:disabled) { background: color-mix(in srgb, var(--text-primary) 7.5%, transparent); color: var(--text-primary); }
+.noa-review-menu-content .noa-viewed-label { padding: 4px 6px; white-space: nowrap; }
+.noa-review-menu-label { padding: 6px 8px 2px; color: var(--sidebar-text-muted); font-size: var(--text-caption); }
+.noa-review-menu-separator { height: 1px; margin: 3px 4px; background: var(--divider-subtle); }
+
+/* File row context menu (Claude Code's Attach / Copy ▸ / Open in ▸ / reveal), fixed at the pointer. */
+.noa-context-menu-root { position: fixed; z-index: 90; }
+.noa-context-menu { display: flex; flex-direction: column; min-width: 180px; padding: 4px; border-radius: 10px; background: var(--bg-card); font-size: var(--text-body); outline: none; }
+.noa-context-menu-entry { position: relative; }
+.noa-context-menu-entry > [role="menuitem"] { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 12px; height: 28px; padding: 0 8px; border-radius: 6px; color: var(--text-primary); text-align: left; }
+.noa-context-menu-entry > [role="menuitem"] > svg { color: var(--sidebar-text-muted); }
+.noa-context-menu-entry > [role="menuitem"]:hover,
+.noa-context-menu-entry > [role="menuitem"]:focus-visible,
+.noa-context-menu-entry > [role="menuitem"][aria-expanded="true"] { background: color-mix(in srgb, var(--text-primary) 6%, transparent); outline: none; }
+.noa-context-menu-separator { height: 1px; margin: 4px; background: var(--divider-subtle); }
+.noa-context-menu.is-submenu { position: absolute; left: calc(100% + 2px); top: -4px; }
+.noa-context-menu.is-submenu[data-flip] { left: auto; right: calc(100% + 2px); }
 
 .noa-panel-details { display: flex; flex: 1; flex-direction: column; gap: 14px; min-height: 0; padding: 8px 16px 16px; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; font-size: var(--text-chat-sm); }
 .noa-panel-sections { display: flex; flex-direction: column; gap: 2px; margin: 0 -8px; }
@@ -1990,13 +2021,6 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
 .noa-panel-section[open] > summary .noa-panel-section-chevron { transform: rotate(90deg); }
 .noa-panel-section-count { margin-left: auto; font-size: var(--text-caption); color: var(--sidebar-text-muted); font-variant-numeric: tabular-nums; }
 .noa-panel-section-body { padding: 2px 8px 8px 26px; font-size: var(--text-caption); }
-.noa-segmented { display: inline-flex; align-self: flex-start; gap: 2px; font-size: var(--text-caption); }
-.noa-segmented > button { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 6px; border-radius: 6px; color: var(--sidebar-text-muted); transition: color 120ms, background 120ms; }
-.noa-segmented > button:hover { color: var(--text-primary); }
-.noa-segmented > button:hover { background: color-mix(in srgb, var(--text-primary) 5%, transparent); }
-.noa-segmented > button[aria-checked="true"] { background: color-mix(in srgb, var(--text-primary) 7.5%, transparent); color: var(--text-primary); }
-.noa-segmented > button:focus-visible { outline: 2px solid var(--accent-color); outline-offset: -2px; }
-.noa-segmented > button > span { font-variant-numeric: tabular-nums; opacity: .7; }
 .noa-branch { display: inline-flex; align-items: center; gap: 6px; color: var(--text-primary); }
 .noa-branch > svg { flex-shrink: 0; color: var(--sidebar-text-muted); }
 .noa-panel-empty > svg { margin: 0 auto 8px; color: var(--sidebar-text-muted); opacity: .7; }
@@ -2042,15 +2066,11 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
 .noa-code-line.is-remove mark { background: color-mix(in srgb, var(--diff-del-base) 15%, transparent); }
 .noa-diff-hunk-header { padding: 2px 12px; min-height: 28px; border-block: 0; background: color-mix(in srgb, var(--surface-page, #F9F9F7) 94%, #009FFF); color: color-mix(in srgb, var(--text-primary) 55%, transparent); font-family: var(--font-mono); font-size: 11.5px; }
 .noa-diff-pair .noa-code-line:first-child { border-right: 1px solid color-mix(in srgb, var(--text-primary) 8%, transparent); }
-.noa-panel-actions select { appearance: none; height: 24px; padding: 0 22px 0 8px; border: 0; background: transparent url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23898781' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") no-repeat right 6px center; cursor: pointer; }
-.noa-panel-actions select:hover { background-color: color-mix(in srgb, var(--text-primary) 5%, transparent); color: var(--text-primary); }
-.noa-panel-actions .noa-segmented { align-self: center; }
-.noa-panel-actions:has(.noa-review-menu) { flex-wrap: nowrap; gap: 2px; padding-inline: 8px; }
+.noa-turn-scope select { appearance: none; height: 24px; padding: 0 22px 0 8px; border: 0; background: transparent url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23898781' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") no-repeat right 6px center; cursor: pointer; }
+.noa-turn-scope select:hover { background-color: color-mix(in srgb, var(--text-primary) 5%, transparent); color: var(--text-primary); }
 /* Panel alignment grid: leading icons and text sit 16px from the panel edge in every tab. */
 .noa-panel-title { padding-left: 6px; }
 .noa-panel-toolbar > .noa-panel-button:first-child + .noa-panel-title { padding-left: 2px; }
-.noa-panel-toolbar > .noa-segmented, .noa-panel-details > .noa-segmented { margin-left: 0; }
-.noa-panel-details > .noa-segmented { margin-left: -6px; }
 .noa-activity-list > div > button { padding-inline: 16px; }
 /* Codex's vertical-scroll-fade-mask-top: the top edge fades over 40px once scrolled (scroll-driven); the bottom is covered by the floating composer. */
 @property --top-fade { syntax: "<length>"; inherits: false; initial-value: 0px; }
@@ -2103,7 +2123,10 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
 .noa-turn-review-row:hover { background: color-mix(in srgb, var(--text-primary) 4%, transparent); }
 .noa-turn-review-row[data-selected] { background: color-mix(in srgb, var(--text-primary) 7%, transparent); }
 .noa-turn-review-row .noa-middle-path { flex: 1; }
-.noa-turn-scope { justify-content: space-between; }
+.noa-turn-scope { position: relative; z-index: 30; justify-content: space-between; }
+/* The review source reads like the panel tabs: no focus ring, a soft fill on hover and keyboard focus. */
+.noa-turn-scope select { border-radius: 6px; font: inherit; font-size: var(--text-body); color: var(--text-primary); outline: none; }
+.noa-turn-scope select:focus-visible { background-color: color-mix(in srgb, var(--text-primary) 7.5%, transparent); }
 @media (prefers-reduced-motion: reduce) { .noa-scroll-bottom { transition: none; } }
 /* Floating composer: the page colour ramps in over 32px above the card so text dissolves instead of being cut. */
 .noa-conversation-footer { position: absolute; inset-inline: 0 calc(var(--noa-scrollbar-strip) + var(--noa-overview-dock, 0px)); bottom: 0; z-index: 20; display: flex; max-height: 100%; flex-direction: column; padding: 32px 21px 12px 29px; background: linear-gradient(to bottom, color-mix(in srgb, var(--surface-page, #F9F9F7) 0%, transparent), var(--surface-page, #F9F9F7) 32px); pointer-events: none; }

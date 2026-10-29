@@ -1,7 +1,8 @@
-import { useEffect, useState, type KeyboardEvent, type ReactNode } from "react"
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react"
 import type { AgentState } from "../agent/reducer"
 import type { TurnDiff } from "../agent/protocol"
-import { ChevronRight } from "../lib/icons"
+import { ChevronRight, MoreHorizontal } from "../lib/icons"
+import { SPLIT_MIN_WIDTH, useDiffPref } from "../lib/diffPrefs"
 import { ToolCard } from "./ToolCard"
 import { TurnReview } from "./TurnReview"
 import { WorkspaceFiles } from "./WorkspaceFiles"
@@ -37,6 +38,22 @@ export function RightPanel({ state, onStopTask, cwd, tab, onTab, onReference, on
     setSource(turnDiff ? "turn" : "all")
   }, [turnDiff?.key, turnDiff === undefined])
   const changeMode = source === "turn" && turnDiff ? "turn" : "working"
+  const [revealFile, setRevealFile] = useState<{ path: string; at: number }>()
+  const [foldAll, setFoldAll] = useState<{ collapsed: boolean; seq: number }>()
+  const [fileTree, setFileTree] = useDiffPref("fileTree")
+  const [wordDiff, setWordDiff] = useDiffPref("wordDiff")
+  const [hideWhitespace, setHideWhitespace] = useDiffPref("hideWhitespace")
+  const [sideBySide, setSideBySide] = useDiffPref("sideBySide")
+  const [wordWrap, setWordWrap] = useDiffPref("wordWrap")
+  const changesRef = useRef<HTMLDivElement>(null)
+  const [canSplit, setCanSplit] = useState(true)
+  useEffect(() => {
+    const element = changesRef.current
+    if (!element) return
+    const observer = new ResizeObserver(() => { if (element.offsetWidth > 0) setCanSplit(element.offsetWidth >= SPLIT_MIN_WIDTH) })
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [])
   // Arrow keys move between tabs, as in a WAI-ARIA tablist.
   const onTabKey = (e: KeyboardEvent<HTMLDivElement>) => {
     if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) return
@@ -85,9 +102,9 @@ export function RightPanel({ state, onStopTask, cwd, tab, onTab, onReference, on
         </div>
       </div>
       <div id="panel-files" role="tabpanel" aria-labelledby="panel-tab-files" className="min-h-0 flex-1 flex-col overflow-hidden" style={{ display: tab === "files" ? "flex" : "none" }}>
-        <WorkspaceFiles key={`files-${cwd}`} cwd={cwd} active={tab === "files"} focus={focusFile} refreshKey={workspaceRefreshKey} onReference={onReference} onUpdated={onWorkspaceChange} onOpenChanges={(path) => { if (path) setFileChange({ cwd, path, at: Date.now(), scope: "all" }); setSource("all"); onTab("changes") }} />
+        <WorkspaceFiles key={`files-${cwd}`} cwd={cwd} active={tab === "files"} focus={focusFile} reveal={revealFile} refreshKey={workspaceRefreshKey} onReference={onReference} onUpdated={onWorkspaceChange} onOpenChanges={(path) => { if (path) setFileChange({ cwd, path, at: Date.now(), scope: "all" }); setSource("all"); onTab("changes") }} />
       </div>
-      <div id="panel-changes" role="tabpanel" aria-labelledby="panel-tab-changes" className="min-h-0 flex-1 flex-col overflow-hidden" style={{ display: tab === "changes" ? "flex" : "none" }}>
+      <div ref={changesRef} id="panel-changes" role="tabpanel" aria-labelledby="panel-tab-changes" className="min-h-0 flex-1 flex-col overflow-hidden" style={{ display: tab === "changes" ? "flex" : "none" }}>
         <div className="noa-panel-toolbar noa-turn-scope">
           <select aria-label="Review source" value={changeMode === "turn" ? "turn" : source === "turn" ? "all" : source} onChange={(e) => setSource(e.target.value as typeof source)}>
             {turnDiff && <option value="turn">Last turn</option>}
@@ -100,13 +117,33 @@ export function RightPanel({ state, onStopTask, cwd, tab, onTab, onReference, on
               {turnDiff.diff.files.length} {turnDiff.diff.files.length === 1 ? "file" : "files"}
             </span>
           )}
+          {/* Claude Code's Changes pane menu: file list, fold, then display groups. */}
+          <details className="noa-review-menu" onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) event.currentTarget.open = false }} onKeyDown={(event) => { if (event.key === "Escape") event.currentTarget.open = false }}>
+            <summary role="button" className="noa-panel-button" aria-label="Diff options" title="Diff options"><MoreHorizontal size={16} /></summary>
+            <div className="noa-review-menu-content noa-floating-panel">
+              {changeMode === "working" && <>
+                <label className="noa-viewed-label"><input type="checkbox" checked={fileTree} onChange={(event) => setFileTree(event.target.checked)} />Group files by folder</label>
+                {fileTree && <>
+                  <div className="noa-review-menu-separator" role="separator" />
+                  <button type="button" className="noa-panel-button" onClick={(event) => { setFoldAll((fold) => ({ collapsed: true, seq: (fold?.seq ?? 0) + 1 })); event.currentTarget.closest("details")!.open = false }}>Collapse all files</button>
+                  <button type="button" className="noa-panel-button" onClick={(event) => { setFoldAll((fold) => ({ collapsed: false, seq: (fold?.seq ?? 0) + 1 })); event.currentTarget.closest("details")!.open = false }}>Expand all files</button>
+                </>}
+                <div className="noa-review-menu-separator" role="separator" />
+              </>}
+              <label className="noa-viewed-label" title={sideBySide && !canSplit ? "Needs a wider pane" : undefined}><input type="checkbox" checked={sideBySide} onChange={(event) => setSideBySide(event.target.checked)} />Side by side{sideBySide && !canSplit && <span className="noa-review-menu-hint">Needs a wider pane</span>}</label>
+              <label className="noa-viewed-label"><input type="checkbox" checked={wordWrap} onChange={(event) => setWordWrap(event.target.checked)} />Word wrap</label>
+              <div className="noa-review-menu-separator" role="separator" />
+              <label className="noa-viewed-label"><input type="checkbox" checked={wordDiff} onChange={(event) => setWordDiff(event.target.checked)} />Highlight changed words</label>
+              <label className="noa-viewed-label"><input type="checkbox" checked={hideWhitespace} onChange={(event) => setHideWhitespace(event.target.checked)} />Hide whitespace changes</label>
+            </div>
+          </details>
         </div>
         <div className="min-h-0 flex-1 flex-col" style={{ display: tab === "changes" && changeMode === "working" ? "flex" : "none" }}>
-          <WorkspaceFiles key={`changes-${cwd}`} cwd={cwd} changes scope={source === "turn" ? "all" : source} focus={fileChange?.cwd === cwd && (!focusChange || fileChange.at > focusChange.at) ? fileChange : focusChange} active={tab === "changes" && changeMode === "working"} refreshKey={workspaceRefreshKey} onReference={onReference} onUpdated={onWorkspaceChange} />
+          <WorkspaceFiles key={`changes-${cwd}`} cwd={cwd} changes scope={source === "turn" ? "all" : source} focus={fileChange?.cwd === cwd && (!focusChange || fileChange.at > focusChange.at) ? fileChange : focusChange} foldAll={foldAll} canSplit={canSplit} onRevealInTree={(path) => { setRevealFile({ path, at: Date.now() }); onTab("files") }} active={tab === "changes" && changeMode === "working"} refreshKey={workspaceRefreshKey} onReference={onReference} onUpdated={onWorkspaceChange} />
         </div>
         {turnDiff && (
           <div className="min-h-0 flex-1 flex-col" style={{ display: tab === "changes" && changeMode === "turn" ? "flex" : "none" }}>
-            <TurnReview diff={turnDiff.diff} focusPath={turnDiff.path} focusKey={turnDiff.key} />
+            <TurnReview diff={turnDiff.diff} focusPath={turnDiff.path} focusKey={turnDiff.key} canSplit={canSplit} />
           </div>
         )}
       </div>

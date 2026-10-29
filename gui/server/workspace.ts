@@ -153,8 +153,153 @@ async function diff(cwd: string, path: string, scope: string, context: string | 
   return { ...file, content: content.length > MAX_PREVIEW ? "" : content, snapshot, truncated: content.length > MAX_PREVIEW, binary: file.binary || content.startsWith("Binary file") }
 }
 
-export async function workspaceRequest(url: URL, cwd: string, body?: unknown): Promise<unknown> {
+// The editors Claude Code's "Open in" menu offers for files (Xcode is left out there), opened through
+// their URL schemes. An editor counts as installed when its app bundle (or, off macOS, its CLI) exists.
+const EDITORS = [
+  { type: "vscode", name: "VS Code", scheme: "vscode", apps: ["Visual Studio Code.app", "Visual Studio Code - Insiders.app"], cli: "code" },
+  { type: "cursor", name: "Cursor", scheme: "cursor", apps: ["Cursor.app"], cli: "cursor" },
+  { type: "windsurf", name: "Windsurf", scheme: "windsurf", apps: ["Windsurf.app"], cli: "windsurf" },
+  { type: "zed", name: "Zed", scheme: "zed", apps: ["Zed.app"], cli: "zed" },
+] as const
+
+async function installedEditors() {
+  const roots = ["/Applications", `${process.env.HOME ?? ""}/Applications`]
+  const found = await Promise.all(EDITORS.map(async (editor) => {
+    if (process.platform !== "darwin") return Bun.which(editor.cli) !== null
+    for (const root of roots) for (const app of editor.apps) if (await stat(`${root}/${app}`).catch(() => undefined)) return true
+    return false
+  }))
+  return EDITORS.filter((_, i) => found[i]).map(({ type, name }) => ({ type, name })).sort((a, b) => a.name.localeCompare(b.name))
+}
+
+function launch(args: string[]) {
+  Bun.spawn(args, { stdout: "ignore", stderr: "ignore", stdin: "ignore" }).unref()
+}
+
+async function openIn(cwd: string, request: { path?: unknown; target?: unknown }) {
+  if (typeof request?.path !== "string" || typeof request.target !== "string") throw new Error("Invalid open request")
+  const target = await inside(cwd, request.path)
+  const info = await stat(target)
+  const opener = process.platform === "darwin" ? "open" : process.platform === "win32" ? "explorer" : "xdg-open"
+  if (request.target === "finder") {
+    if (process.platform === "darwin") launch(["open", "-R", target])
+    else if (process.platform === "win32") launch(["explorer", `/select,${target}`])
+    else launch(["xdg-open", info.isDirectory() ? target : dirname(target)])
+    return { ok: true }
+  }
+  const editor = EDITORS.find((e) => e.type === request.target)
+  if (!editor || !(await installedEditors()).some((e) => e.type === editor.type)) throw new Error("That editor isn't installed")
+  // Same guard as Claude Code: characters that change a URI's meaning are refused rather than escaped.
+  if (/[%#?\\]/.test(target)) throw new Error("This path can't be opened in an editor")
+  launch([opener, `${editor.scheme}://file${encodeURIComponent(target).replace(/%2F/g, "/")}`])
+  return { ok: true }
+}
+
+// File content search, after Claude Code's: ripgrep (git grep when rg is missing), at most 6 matches per
+// file, stopping once `cap` matches are in but finishing the current file, with a 200-character preview
+// window that keeps 40 characters before the match. Smart case: an all-lowercase query ignores case.
+const GREP_PER_FILE = 6
+const GREP_PREVIEW = 200
+const GREP_LEAD = GREP_PREVIEW / 5
+const GREP_TIMEOUT = 8000
+type GrepMatch = { path: string; line: number; column: number; preview: string }
+
+function previewAround(text: string, index: number) {
+  if (text.length <= GREP_PREVIEW) return text
+  let start = Math.min(Math.max(0, index - GREP_LEAD), text.length - GREP_PREVIEW)
+  if (/[\uDC00-\uDFFF]/.test(text.charAt(start))) start++
+  let end = Math.min(start + GREP_PREVIEW, text.length)
+  if (end < text.length && /[\uD800-\uDBFF]/.test(text.charAt(end - 1))) end--
+  return `${start > 0 ? "…" : ""}${text.slice(start, end)}${end < text.length ? "…" : ""}`
+}
+
+function grepCollector(cap: number) {
+  const out: GrepMatch[] = [], perFile = new Map<string, number>()
+  let finishing: string | undefined
+  return {
+    out,
+    // "stop" ends the search: the cap is reached and the file it was reached in is complete.
+    add(match: GrepMatch): "stop" | undefined {
+      if (finishing !== undefined && match.path !== finishing) return "stop"
+      const count = perFile.get(match.path) ?? 0
+      if (count < GREP_PER_FILE) { perFile.set(match.path, count + 1); out.push(match) }
+      if (out.length >= cap) { if (count + 1 >= GREP_PER_FILE) return "stop"; finishing = match.path }
+    },
+  }
+}
+
+async function streamLines(args: string[], cwd: string, onLine: (line: string) => "stop" | undefined, signal?: AbortSignal) {
+  const proc = Bun.spawn(args, { cwd, stdout: "pipe", stderr: "ignore", stdin: "ignore" })
+  const timer = setTimeout(() => proc.kill(), GREP_TIMEOUT)
+  // A request the client abandoned (a newer query) stops its search.
+  const abandon = () => proc.kill()
+  signal?.addEventListener("abort", abandon)
+  const decoder = new TextDecoder()
+  let buffered = ""
+  try {
+    const reader = proc.stdout.getReader()
+    for (let chunk = await reader.read(); !chunk.done; chunk = await reader.read()) {
+      buffered += decoder.decode(chunk.value, { stream: true })
+      let newline
+      while ((newline = buffered.indexOf("\n")) >= 0) {
+        const line = buffered.slice(0, newline)
+        buffered = buffered.slice(newline + 1)
+        if (onLine(line) === "stop") { proc.kill(); return }
+      }
+    }
+    if (buffered) onLine(buffered)
+  } finally {
+    clearTimeout(timer)
+    signal?.removeEventListener("abort", abandon)
+    await proc.exited
+  }
+}
+
+// git grep accepts -m (matches per file) from 2.38, as Claude Code checks before passing it.
+let gitGrepMaxCount: Promise<boolean> | undefined
+function gitSupportsMaxCount() {
+  gitGrepMaxCount ??= git(".", ["--version"]).then((out) => {
+    const [, major, minor] = /git version (\d+)\.(\d+)/.exec(out) ?? []
+    return Number(major) > 2 || Number(major) === 2 && Number(minor) >= 38
+  }, () => false)
+  return gitGrepMaxCount
+}
+
+async function grep(cwd: string, query: string, cap: number, signal?: AbortSignal) {
+  const pattern = query.trim()
+  if (!pattern) return { matches: [] }
+  const root = await realpath(cwd)
+  const collector = grepCollector(cap)
+  const rg = Bun.which("rg", { PATH: `${process.env.PATH ?? ""}:/opt/homebrew/bin:/usr/local/bin` })
+  if (rg) {
+    await streamLines([rg, "--json", "--no-config", "-S", "--fixed-strings", "--crlf", "--max-count", String(GREP_PER_FILE), "-g", "!node_modules", "--", pattern], root, (line) => {
+      let event: { type?: string; data?: { path?: { text?: string }; lines?: { text?: string }; line_number?: number; submatches?: { start: number }[] } }
+      try { event = JSON.parse(line) } catch { return }
+      const data = event.data
+      if (event.type !== "match" || !data?.path?.text || data.lines?.text === undefined) return
+      const text = data.lines.text.replace(/\r?\n$/, "")
+      const byteStart = data.submatches?.[0]?.start ?? 0
+      const index = Buffer.from(text).subarray(0, byteStart).toString("utf8").length
+      return collector.add({ path: data.path.text.replaceAll("\\", "/"), line: data.line_number ?? 1, column: index + 1, preview: previewAround(text, index) })
+    }, signal)
+  } else {
+    const insensitive = pattern === pattern.toLowerCase()
+    await streamLines(["git", "--no-optional-locks", "-C", root, "grep", "--no-index", "--exclude-standard", "-nIz", "--fixed-strings", ...(insensitive ? ["-i"] : []), ...(await gitSupportsMaxCount() ? ["-m", String(GREP_PER_FILE)] : []), "-e", pattern, "--", ":(exclude,glob)**/node_modules/**", ":(exclude,glob)**/.*", ":(exclude,glob)**/.*/**"], root, (line) => {
+      const [path, lineNumber, ...rest] = line.split("\0")
+      const text = rest.join("\0")
+      if (!path || !lineNumber) return
+      const index = Math.max(0, (insensitive ? text.toLowerCase() : text).indexOf(insensitive ? pattern.toLowerCase() : pattern))
+      return collector.add({ path, line: Number(lineNumber), column: index + 1, preview: previewAround(text, index) })
+    }, signal).catch(() => {})
+  }
+  return { matches: collector.out.sort((a, b) => a.path.localeCompare(b.path, undefined, { numeric: true }) || a.line - b.line) }
+}
+
+export async function workspaceRequest(url: URL, cwd: string, body?: unknown, signal?: AbortSignal): Promise<unknown> {
   const path = url.searchParams.get("path") ?? ""
+  if (url.pathname === "/api/editors") return { editors: await installedEditors() }
+  if (url.pathname === "/api/grep") return grep(cwd, url.searchParams.get("q") ?? "", Math.min(1000, Math.max(1, Number(url.searchParams.get("max")) || 241)), signal)
+  if (url.pathname === "/api/open-in") return openIn(cwd, body as { path?: unknown; target?: unknown })
   const scope = url.searchParams.get("scope") ?? "all"
   if (!["all", "staged", "unstaged"].includes(scope)) throw new Error("Invalid changes scope")
   if (url.pathname === "/api/git-action") {

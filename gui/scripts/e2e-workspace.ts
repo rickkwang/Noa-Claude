@@ -146,6 +146,41 @@ try {
     403,
   )
   check("writes outside listed projects and cross-origin rejected")
+  body = await (await request("editors")).json()
+  assert(Array.isArray(body.editors))
+  for (const editor of body.editors) assert(["vscode", "cursor", "windsurf", "zed"].includes(editor.type) && typeof editor.name === "string")
+  assert.deepEqual(body.editors.map((e: { name: string }) => e.name), [...body.editors.map((e: { name: string }) => e.name)].sort((a, b) => a.localeCompare(b)))
+  const openIn = (target: string, path: string, cwd = root) => request("open-in", "", cwd, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ path, target }),
+  })
+  // Only refusals are exercised here: an accepted request would launch Finder or an editor.
+  assert.equal((await request("open-in")).status, 405)
+  assert.equal((await openIn("finder", "untracked.txt", config)).status, 403)
+  assert.equal((await openIn("finder", "../outside.txt")).status, 400)
+  assert.equal((await openIn("finder", ".git/config")).status, 400)
+  assert.equal((await openIn("not-an-editor", "untracked.txt")).status, 400)
+  check("editor list, and open-in refuses outside paths, Git metadata and unknown editors")
+  await mkdir(join(root, "grep"))
+  await mkdir(join(root, "node_modules"))
+  await writeFile(join(root, "grep", "many.txt"), Array.from({ length: 10 }, (_, i) => `needle ${i}`).join("\n") + "\n")
+  await writeFile(join(root, "grep", "upper.txt"), "a Needle here\n")
+  await writeFile(join(root, "node_modules", "dep.txt"), "needle in a dependency\n")
+  const grep = async (q: string, max = 241) => (await (await fetch(`${origin}/api/grep?${new URLSearchParams({ cwd: root, q, max: String(max) })}`)).json()).matches as { path: string; line: number; preview: string }[]
+  let hits = await grep("needle")
+  const perFile = (list: typeof hits) => list.reduce((counts, hit) => counts.set(hit.path, (counts.get(hit.path) ?? 0) + 1), new Map<string, number>())
+  assert.equal(perFile(hits).get("grep/many.txt"), 6)
+  assert.equal(perFile(hits).get("grep/upper.txt"), 1)
+  assert(!hits.some((hit) => hit.path.startsWith("node_modules/")))
+  assert.deepEqual(hits.filter((hit) => hit.path === "grep/many.txt").map((hit) => hit.line), [1, 2, 3, 4, 5, 6])
+  hits = await grep("Needle")
+  assert.deepEqual(hits.map((hit) => hit.path), ["grep/upper.txt"])
+  hits = await grep("needle", 3)
+  assert(hits.length >= 3 && hits.length <= 3 + 5)
+  for (const count of perFile(hits).values()) assert(count <= 6)
+  assert.deepEqual(await grep("   "), [])
+  check("content search: smart case, 6 per file, cap finishes the current file, node_modules skipped")
   const sessionId = crypto.randomUUID()
   const sessions = projectDir(root)
   await mkdir(sessions, { recursive: true })
