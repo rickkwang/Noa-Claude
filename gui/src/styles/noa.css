@@ -2249,13 +2249,13 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
 @keyframes noa-shimmer { from { background-position: -100% 0; } to { background-position: 250% 0; } }
 @media (prefers-reduced-motion: reduce) { .noa-shimmer { animation: none; color: var(--text-secondary, #5D5D5D); background: none; -webkit-text-fill-color: currentColor; } }
 
-/* New live text and block decorations fade in as they arrive over 0.7s. */
+/* New live text and block decorations fade in as they arrive over 0.4s. */
 .noa-stream-seg,
 .noa-stream-block {
-  animation: noa-stream-in 700ms cubic-bezier(.37, .55, .86, .88) both;
+  animation: noa-stream-in 400ms linear both;
 }
 .noa-stream-block::marker {
-  animation: noa-stream-in 700ms cubic-bezier(.37, .55, .86, .88) both;
+  animation: noa-stream-in 400ms linear both;
 }
 @keyframes noa-stream-in { from { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) {

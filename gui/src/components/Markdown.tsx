@@ -1,4 +1,4 @@
-import { Children, Fragment, cloneElement, isValidElement, createContext, useContext, useEffect, useMemo, useRef, useState, type AnimationEvent, type ReactNode } from "react"
+import { Children, Fragment, cloneElement, isValidElement, createContext, memo, useContext, useEffect, useMemo, useRef, useState, type AnimationEvent, type ReactNode } from "react"
 import { type Token, type Tokens } from "marked"
 import { parseBlocks, parseInline, parseStreaming, type MarkdownPrefix } from "./markdownGrammar"
 import { Diagram, MarkdownTable, MathText, PreviewDialog } from "./RichContent"
@@ -130,18 +130,24 @@ function inlineTokens(tokens: Token[] = []): ReactNode[] {
 
 const STREAM_SEGMENT = /([㐀-鿿]|[^\s㐀-鿿]+|\s+)/g
 const STREAM_SEGMENT_LIMIT = 240
+// A word's fade starts a little after the previous word's, in proportion to the text between them.
+const STREAM_DELAY_PER_CHAR_MS = 2.5
+const STREAM_SEGMENT_MAX_DELAY_MS = 150
 const settledStreamTokens = new Set<string>()
 
 // Keep the settled-token set bounded; evicting an old key only costs one
 // harmless re-fade if that block is ever mounted again.
 function settleStreamToken(key: string) {
   settledStreamTokens.add(key)
+  streamTokenDelays.delete(key)
   if (settledStreamTokens.size > 4000) {
     const oldest = settledStreamTokens.values().next().value
     if (oldest !== undefined) settledStreamTokens.delete(oldest)
   }
 }
 
+// Each word keeps the delay it first rendered with, so settling earlier words cannot shift it mid-fade.
+const streamTokenDelays = new Map<string, number>()
 const settledStreamBlocks = new Set<string>()
 
 function settleStreamBlock(key: string) {
@@ -170,6 +176,8 @@ function streamTokens(text: string, key: string, counter: { node: number }): Rea
   const start = Math.max(0, tokens.length - STREAM_SEGMENT_LIMIT)
   const node = counter.node++
   const nodes: ReactNode[] = []
+  // New words in one chunk fade in as a wave rather than all at once.
+  let freshChars = 0
   if (start > 0) nodes.push(tokens.slice(0, start).join(""))
   for (let i = start; i < tokens.length; i++) {
     const token = tokens[i]!
@@ -179,10 +187,20 @@ function streamTokens(text: string, key: string, counter: { node: number }): Rea
     }
     const tokenKey = `${key}-${node}-${i}`
     const settled = settledStreamTokens.has(tokenKey)
+    let delay = streamTokenDelays.get(tokenKey)
+    if (!settled) {
+      if (delay === undefined) {
+        delay = Math.min(freshChars * STREAM_DELAY_PER_CHAR_MS, STREAM_SEGMENT_MAX_DELAY_MS)
+        streamTokenDelays.set(tokenKey, delay)
+        if (streamTokenDelays.size > 4000) streamTokenDelays.delete(streamTokenDelays.keys().next().value!)
+      }
+      freshChars += token.length
+    }
     nodes.push(
       <span
         key={tokenKey}
         className={settled ? undefined : "noa-stream-seg"}
+        style={settled ? undefined : { animationDelay: `${delay}ms` }}
         onAnimationEnd={settled ? undefined : () => settleStreamToken(tokenKey)}
       >
         {token}
@@ -216,7 +234,13 @@ export function Markdown({ text, tone = "default", streaming = false, streamKey,
   )
 }
 
-function BlockView({ block, streaming, streamKey, preserveUserText }: { block: Token; streaming?: boolean; streamKey?: string; preserveUserText?: boolean }) {
+// A block whose source text is unchanged renders the same; the lexer hands back fresh
+// objects each parse, so compare by source rather than identity.
+const REFERENCE_LINK = /\[[^\]\n]+\](?!\()/
+const BlockView = memo(BlockViewImpl, (a, b) =>
+  // A reference definition that streams in later changes how an unchanged block renders.
+  !REFERENCE_LINK.test(a.block.raw) && a.block.type === b.block.type && a.block.raw === b.block.raw && a.streaming === b.streaming && a.streamKey === b.streamKey && a.preserveUserText === b.preserveUserText)
+function BlockViewImpl({ block, streaming, streamKey, preserveUserText }: { block: Token; streaming?: boolean; streamKey?: string; preserveUserText?: boolean }) {
   const children = (tokens: Token[] = []) => tokens.map((child, i) => <BlockView key={i} block={child} streaming={streaming} streamKey={streamKey ? `${streamKey}:${i}` : undefined} preserveUserText={preserveUserText} />)
   const inline = (tokens: Token[] = []) => {
     const nodes = inlineTokens(tokens)
@@ -291,9 +315,10 @@ export function CodeBlock({ lang, code, complete = true }: { lang: string; code:
       sh: "bash",
       yml: "yaml",
     } as Record<string, string>)[lang.toLowerCase()] ?? lang.toLowerCase()
-    if (name && hljs.getLanguage(name) && code.length <= MAX_HIGHLIGHT_SIZE && !code.split("\n").some(line => line.length > MAX_HIGHLIGHT_LINE)) return hljs.highlight(code, { language: name, ignoreIllegals: true }).value
+    // An open fence grows every frame; highlight once it closes.
+    if (complete && name && hljs.getLanguage(name) && code.length <= MAX_HIGHLIGHT_SIZE && !code.split("\n").some(line => line.length > MAX_HIGHLIGHT_LINE)) return hljs.highlight(code, { language: name, ignoreIllegals: true }).value
     return code.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-  }, [code, lang])
+  }, [code, lang, complete])
 
   async function copy() {
     try {

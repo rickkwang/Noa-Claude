@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react"
+import { flushSync } from "react-dom"
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import type { AgentState, AgentTask, Block, ToolBlock, Turn } from "../agent/reducer"
 import type { ImageBlock, TurnDiff } from "../agent/protocol"
 import { Lightbox, type LightboxItem } from "./Lightbox"
@@ -196,7 +197,20 @@ export function MessageList({ turns, cwd, onOpenFile, busy, result, readingWidth
     setShowJump(false)
   }
 
-  const segments = useMemo(() => groupTurns(turns), [turns])
+  // Rows are memoized, so handlers they receive must keep one identity across renders.
+  const handlers = useRef({ onStopTask, onOpenTask, onTurnDiff, onTurnDiffAction, onOpenFile })
+  handlers.current = { onStopTask, onOpenTask, onTurnDiff, onTurnDiffAction, onOpenFile }
+  const outputContext = useMemo(() => ({
+    cwd,
+    onOpenFile: (path: string, line?: number, endLine?: number) => handlers.current.onOpenFile?.(path, line, endLine),
+    onOpenImages: (items: LightboxItem[], index: number) => setPreview({ items, index }),
+  }), [cwd])
+  const stableStopTask = useCallback((id: string) => handlers.current.onStopTask?.(id), [])
+  const stableOpenTask = useCallback(() => handlers.current.onOpenTask?.(), [])
+  const stableTurnDiff = useCallback((diff: TurnDiff, path?: string) => handlers.current.onTurnDiff?.(diff, path), [])
+  const stableTurnDiffAction = useCallback((diff: TurnDiff, action: "undo" | "reapply") => handlers.current.onTurnDiffAction?.(diff, action), [])
+  const segmentCache = useRef<SegmentCache>(new Map())
+  const segments = useMemo(() => groupTurns(turns, segmentCache.current), [turns])
   const layout = useMemo(() => layoutTurns(segments, heightsRef.current), [segments, measured])
   const layoutHeight = layout.length ? layout[layout.length - 1]!.top + layout[layout.length - 1]!.height : 0
   const layoutOffset = layoutRef.current?.offsetTop ?? 32
@@ -208,35 +222,41 @@ export function MessageList({ turns, cwd, onOpenFile, busy, result, readingWidth
   )
   offsetsRef.current = new Map(layout.map((row) => [row.segment.id, row.top]))
   const observeTurn = useCallback((element: HTMLElement) => {
+    const commit = () => {
+      measureFrame.current = undefined
+      const changes = [...pendingHeights.current].filter(([key, height]) => heightsRef.current.get(key) !== height)
+      pendingHeights.current.clear()
+      if (!changes.length) return
+      const el = scrollRef.current
+      if (el && !pinnedRef.current) {
+        const bounds = el.getBoundingClientRect()
+        const rows = [...el.querySelectorAll<HTMLElement>("[data-virtual-turn-id]")]
+          .filter((item) => {
+            const rect = item.getBoundingClientRect()
+            return rect.bottom > bounds.top && rect.top < bounds.bottom
+          })
+          .sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top)
+        const row = (prependAnchor.current && rows.find((item) => item.getBoundingClientRect().top >= bounds.top)) || rows[0]
+        prependAnchor.current = false
+        if (row?.dataset.virtualTurnId) pendingAnchor.current = { id: row.dataset.virtualTurnId, top: row.getBoundingClientRect().top, scrollTop: el.scrollTop }
+      }
+      for (const [key, height] of changes) heightsRef.current.set(key, height)
+      setMeasured((value) => value + 1)
+    }
     const queue = (row: HTMLElement) => {
       const id = row.dataset.virtualTurnId
       if (!id) return
       pendingHeights.current.set(id, row.offsetHeight)
       if (measureFrame.current !== undefined) return
-      measureFrame.current = requestAnimationFrame(() => {
-        measureFrame.current = undefined
-        const changes = [...pendingHeights.current].filter(([key, height]) => heightsRef.current.get(key) !== height)
-        pendingHeights.current.clear()
-        if (!changes.length) return
-        const el = scrollRef.current
-        if (el && !pinnedRef.current) {
-          const bounds = el.getBoundingClientRect()
-          const rows = [...el.querySelectorAll<HTMLElement>("[data-virtual-turn-id]")]
-            .filter((item) => {
-              const rect = item.getBoundingClientRect()
-              return rect.bottom > bounds.top && rect.top < bounds.bottom
-            })
-            .sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top)
-          const row = (prependAnchor.current && rows.find((item) => item.getBoundingClientRect().top >= bounds.top)) || rows[0]
-          prependAnchor.current = false
-          if (row?.dataset.virtualTurnId) pendingAnchor.current = { id: row.dataset.virtualTurnId, top: row.getBoundingClientRect().top, scrollTop: el.scrollTop }
-        }
-        for (const [key, height] of changes) heightsRef.current.set(key, height)
-        setMeasured((value) => value + 1)
-      })
+      measureFrame.current = requestAnimationFrame(commit)
     }
     measureObserver.current ??= new ResizeObserver((entries) => {
       for (const entry of entries) queue(entry.target as HTMLElement)
+      // While following the bottom, apply growth before paint so the tail never trails the viewport.
+      if (pinnedRef.current && measureFrame.current !== undefined) {
+        cancelAnimationFrame(measureFrame.current)
+        flushSync(commit)
+      }
     })
     measureObserver.current.observe(element)
     queue(element)
@@ -256,6 +276,21 @@ export function MessageList({ turns, cwd, onOpenFile, busy, result, readingWidth
     visibleRows.push(anchorRow)
     visibleRows.sort((a, b) => a.index - b.index)
   }
+
+  // Between sending and the first token, and between model messages, nothing on screen
+  // is live; keep a Thinking row so the turn never looks stalled.
+  const tail = segments[segments.length - 1]
+  const awaitingModel = busy && !!tail && (tail.role === "user" || (
+    !tail.streaming && !tail.blocks.some(block =>
+      block.kind === "thinking" ? !block.done
+        : block.kind === "tool" ? block.status === "running"
+          : block.kind === "compaction" ? block.status === "running"
+            : block.kind === "retry" ? !block.done
+              : false)))
+  useLayoutEffect(() => {
+    const el = scrollRef.current
+    if (el && awaitingModel && pinnedRef.current) el.scrollTop = el.scrollHeight
+  }, [awaitingModel])
 
   const lastUserIndex = segments.reduce((last, segment, index) => segment.role === "user" ? index : last, -1)
 
@@ -405,19 +440,19 @@ export function MessageList({ turns, cwd, onOpenFile, busy, result, readingWidth
         busy={busy && index === segments.length - 1}
         durationMs={segment.durationMs ?? (index === segments.length - 1 && !busy ? result?.durationMs : undefined)}
         interrupted={segment.interrupted ?? (index === segments.length - 1 && !busy ? result?.interrupted : undefined)}
-        liveDiff={liveDiff}
+        liveDiff={index === segments.length - 1 ? liveDiff : undefined}
         tasks={tasks}
-        onStopTask={onStopTask}
-        onOpenTask={onOpenTask}
-        onTurnDiff={onTurnDiff}
-        onTurnDiffAction={onTurnDiffAction}
+        onStopTask={onStopTask ? stableStopTask : undefined}
+        onOpenTask={onOpenTask ? stableOpenTask : undefined}
+        onTurnDiff={onTurnDiff ? stableTurnDiff : undefined}
+        onTurnDiffAction={onTurnDiffAction ? stableTurnDiffAction : undefined}
         diffActionPending={diffActionPending}
       />
     )
   }
 
   return (
-    <OutputContext value={{ cwd, onOpenFile, onOpenImages: (items, index) => setPreview({ items, index }) }}><div className="relative flex min-h-0 flex-1 flex-col">
+    <OutputContext value={outputContext}><div className="relative flex min-h-0 flex-1 flex-col">
     <div
       ref={scrollRef}
       onScroll={onScroll}
@@ -444,6 +479,8 @@ export function MessageList({ turns, cwd, onOpenFile, busy, result, readingWidth
             </VirtualTurnRow>
           ))}
         </div>
+
+        {awaitingModel && <Working />}
 
         {!busy && result?.isError && !result.interrupted && onRetry && (
           <div className="flex min-w-0 flex-wrap items-center gap-2 text-[length:var(--text-chat-sm)] text-[var(--sidebar-text-muted,#898781)]">
@@ -612,45 +649,70 @@ function earliest(a: number | undefined, b: number | undefined): number | undefi
   return Math.min(a, b)
 }
 
-// Consecutive assistant turns after one user message form one reply.
-function groupTurns(turns: Turn[]): Segment[] {
-  const segments: Segment[] = []
+// Consecutive assistant turns after one user message form one reply. A segment
+// whose source turns are all unchanged is reused, so memoized rows skip rendering.
+type SegmentCache = Map<string, { sources: Turn[]; segment: AssistantSegmentData }>
+
+function groupTurns(turns: Turn[], cache: SegmentCache): Segment[] {
+  const groups: (Turn | Extract<Turn, { role: "assistant" }>[])[] = []
   for (const turn of turns) {
-    if (turn.role === "user") {
-      segments.push(turn)
-      continue
-    }
-    const last = segments[segments.length - 1]
-    if (last?.role === "assistant") {
-      segments[segments.length - 1] = {
-        ...last,
-        blocks: [...last.blocks, ...turn.blocks],
-        streaming: last.streaming || turn.streaming,
-        startedAt: earliest(last.startedAt, turn.startedAt),
-        durationMs: turn.durationMs ?? last.durationMs,
-        interrupted: turn.interrupted ?? last.interrupted,
-        error: turn.error ?? last.error,
-        incomplete: turn.incomplete ?? last.incomplete,
-        diff: turn.diff ?? last.diff,
-      }
-    } else segments.push({
-      role: "assistant",
-      id: turn.id,
-      blocks: turn.blocks,
-      streaming: turn.streaming,
-      startedAt: turn.startedAt,
-      durationMs: turn.durationMs,
-      interrupted: turn.interrupted,
-      error: turn.error,
-      incomplete: turn.incomplete,
-      diff: turn.diff,
-    })
+    if (turn.role === "user") { groups.push(turn); continue }
+    const last = groups[groups.length - 1]
+    if (Array.isArray(last)) last.push(turn)
+    else groups.push([turn])
   }
+  const next: SegmentCache = new Map()
+  const segments = groups.map((group): Segment => {
+    if (!Array.isArray(group)) return group as Segment
+    const id = group[0]!.id
+    const cached = cache.get(id)
+    if (cached && cached.sources.length === group.length && cached.sources.every((source, i) => source === group[i])) {
+      next.set(id, cached)
+      return cached.segment
+    }
+    const segment = mergeAssistantTurns(group)
+    next.set(id, { sources: group, segment })
+    return segment
+  })
+  cache.clear()
+  for (const [key, value] of next) cache.set(key, value)
   return segments
 }
 
+function mergeAssistantTurns(group: Extract<Turn, { role: "assistant" }>[]): AssistantSegmentData {
+  let segment: AssistantSegmentData | undefined
+  for (const turn of group) {
+    segment = segment
+      ? {
+          ...segment,
+          blocks: [...segment.blocks, ...turn.blocks],
+          streaming: segment.streaming || turn.streaming,
+          startedAt: earliest(segment.startedAt, turn.startedAt),
+          durationMs: turn.durationMs ?? segment.durationMs,
+          interrupted: turn.interrupted ?? segment.interrupted,
+          error: turn.error ?? segment.error,
+          incomplete: turn.incomplete ?? segment.incomplete,
+          diff: turn.diff ?? segment.diff,
+        }
+      : {
+          role: "assistant",
+          id: turn.id,
+          blocks: turn.blocks,
+          streaming: turn.streaming,
+          startedAt: turn.startedAt,
+          durationMs: turn.durationMs,
+          interrupted: turn.interrupted,
+          error: turn.error,
+          incomplete: turn.incomplete,
+          diff: turn.diff,
+        }
+  }
+  return segment!
+}
+
 // Tool calls and reasoning fold into one "Worked for" row; the final answer stays visible.
-function AssistantSegment({ segment, busy, durationMs, interrupted, liveDiff, tasks, onStopTask, onOpenTask, onTurnDiff, onTurnDiffAction, diffActionPending }: {
+const AssistantSegment = memo(AssistantSegmentView)
+function AssistantSegmentView({ segment, busy, durationMs, interrupted, liveDiff, tasks, onStopTask, onOpenTask, onTurnDiff, onTurnDiffAction, diffActionPending }: {
   segment: AssistantSegmentData
   busy: boolean
   durationMs?: number
@@ -1053,13 +1115,78 @@ function MessageActions({ text, kind = "assistant", onEdit, complete = true }: {
   )
 }
 
+// Some models deliver a whole answer in one burst. Reveal it in word-sized steps whose
+// pace follows the backlog (about 0.55s behind the stream), and keep draining after the
+// stream ends.
+const REVEAL_STEP_CHARS = 22
+const REVEAL_TARGET_LAG_MS = 550
+const REVEAL_MIN_STEP_MS = 25
+const REVEAL_MAX_STEP_MS = 150
+const REVEAL_CATCH_UP_WINDOW_MS = 75
+// A row that remounts later (virtual list) must not replay an answer it already revealed.
+const FRESH_TEXT_MS = 15_000
+const revealedTexts = new Set<string>()
+
+// End a step on a word boundary when one is close, so words are never split mid-reveal.
+function stepEnd(text: string, from: number, chars: number): number {
+  const target = Math.min(text.length, from + chars)
+  if (target >= text.length) return text.length
+  for (let i = target; i < Math.min(text.length, target + 12); i++) if (/\s/.test(text[i]!)) return i + 1
+  const code = text.charCodeAt(target - 1)
+  return code >= 0xd800 && code <= 0xdbff ? target + 1 : target
+}
+
+function PacedMarkdown({ text, streaming, fresh, streamKey }: { text: string; streaming?: boolean; fresh: boolean; streamKey?: string }) {
+  const reduceMotion = typeof document !== "undefined" && (document.documentElement.dataset.reduceMotion === "true" || window.matchMedia("(prefers-reduced-motion: reduce)").matches)
+  const replay = fresh && !(streamKey && revealedTexts.has(streamKey))
+  const [shown, setShown] = useState(streaming || replay ? 0 : text.length)
+  const shownRef = useRef(shown)
+  const textRef = useRef(text)
+  textRef.current = text
+  // Survives effect restarts, so a steady trickle of deltas cannot keep postponing the next step.
+  const lastStep = useRef(0)
+  useEffect(() => {
+    if (reduceMotion || (shownRef.current > text.length)) { shownRef.current = text.length; setShown(text.length); return }
+    if (shownRef.current >= text.length) return
+    // Text that was never streamed here (history, replay of finished messages) appears at once.
+    if (!streaming && !replay && shownRef.current === 0) { shownRef.current = text.length; setShown(text.length); return }
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const step = () => {
+      const target = textRef.current
+      if (document.hidden) { shownRef.current = target.length; setShown(target.length); return }
+      const backlog = target.length - shownRef.current
+      if (backlog <= 0) return
+      const now = performance.now()
+      const interval = Math.min(REVEAL_MAX_STEP_MS, Math.max(REVEAL_MIN_STEP_MS, REVEAL_TARGET_LAG_MS * REVEAL_STEP_CHARS / backlog))
+      const elapsed = now - lastStep.current
+      if (elapsed < interval) { timer = setTimeout(step, interval - elapsed); return }
+      lastStep.current = now
+      // A large backlog takes bigger steps so the lag stays near the target.
+      const extra = Math.max(0, backlog - REVEAL_TARGET_LAG_MS * REVEAL_STEP_CHARS / REVEAL_MIN_STEP_MS)
+      const next = stepEnd(target, shownRef.current, REVEAL_STEP_CHARS + Math.ceil(extra * Math.min(1, elapsed / REVEAL_CATCH_UP_WINDOW_MS)))
+      shownRef.current = next
+      setShown(next)
+      if (next < target.length) timer = setTimeout(step, REVEAL_MIN_STEP_MS)
+    }
+    timer = setTimeout(step, 0)
+    return () => clearTimeout(timer)
+  }, [text, streaming, replay, reduceMotion])
+  const caughtUp = shown >= text.length
+  useEffect(() => {
+    if (!caughtUp || streaming || !streamKey) return
+    revealedTexts.add(streamKey)
+    if (revealedTexts.size > 2000) revealedTexts.delete(revealedTexts.values().next().value!)
+  }, [caughtUp, streaming, streamKey])
+  return <Markdown text={caughtUp ? text : text.slice(0, shown)} streaming={streaming || !caughtUp} streamKey={streamKey} />
+}
+
 function BlockView({ block, streaming, streamKey }: { block: Block; streaming?: boolean; streamKey?: string }) {
   switch (block.kind) {
     case "compaction":
     case "retry":
       return <StatusBlock block={block} />
     case "text":
-      return contextCardFor(block.text) ?? <Markdown text={stripAnsi(block.text)} streaming={streaming} streamKey={streamKey} />
+      return contextCardFor(block.text) ?? <PacedMarkdown text={stripAnsi(block.text)} streaming={streaming} fresh={block.startedAt !== undefined && Date.now() - block.startedAt < FRESH_TEXT_MS} streamKey={streamKey} />
     case "thinking":
       return null
     case "tool":

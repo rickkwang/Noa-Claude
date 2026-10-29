@@ -92,6 +92,16 @@ function afterWorkspaceOperation<T>(cwd: string, operation: () => Promise<T>): P
 function queueEnvelope(run: AgentRun): Envelope {
   return { kind: "queue", messages: [...run.queue], paused: run.queuePaused }
 }
+// Reconnects replay the journal in full, so one huge tool result must not be kept verbatim.
+// Only prose is shortened: image payloads under `data` must stay intact to remain viewable.
+const MAX_REPLAY_TEXT = 100_000
+function boundedForReplay(envelope: Envelope, raw: string): Envelope {
+  if (envelope.kind !== "agent" || envelope.message.type !== "user" || raw.length <= MAX_REPLAY_TEXT * 2) return envelope
+  return JSON.parse(raw, (key, value) =>
+    key !== "data" && typeof value === "string" && value.length > MAX_REPLAY_TEXT
+      ? `${value.slice(0, MAX_REPLAY_TEXT)}\n… (${value.length - MAX_REPLAY_TEXT} characters not kept after reconnecting)`
+      : value) as Envelope
+}
 export function emit(run: AgentRun, envelope: Envelope) {
   let finishedTask = false
   if (envelope.kind === "agent" && envelope.message.type === "system") {
@@ -141,8 +151,9 @@ export function emit(run: AgentRun, envelope: Envelope) {
       if (starts > 0 && confirmed >= starts) run.journal = run.journal.filter((entry, index) => index < start || !(entry.kind === "agent" && entry.message.type === "stream_event" && entry.message.parent_tool_use_id === parent))
     }
   }
-  if (envelope.kind !== "turn-diff-action") run.journal.push(envelope)
-  for (const client of run.clients) client.send(JSON.stringify(envelope))
+  const raw = JSON.stringify(envelope)
+  if (envelope.kind !== "turn-diff-action") run.journal.push(boundedForReplay(envelope, raw))
+  for (const client of run.clients) client.send(raw)
   if (finishedTask) reclaimIfIdle(run)
 }
 function write(run: AgentRun, message: unknown) {

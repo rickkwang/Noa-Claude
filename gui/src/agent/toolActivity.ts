@@ -67,7 +67,68 @@ function firstText(input: Record<string, unknown>): string {
   return oneLine(Object.values(input).find((value) => typeof value === "string" && value.trim()))
 }
 
-export function toolActivityLabel(block: Pick<ToolBlock, "name" | "input" | "status" | "images">): ToolActivityLabel {
+const PARTIAL_KEYS = ["file_path", "command", "pattern", "query", "url"]
+
+// Arguments stream as JSON text; read the leading top-level string fields so the label can
+// name its target before the complete call arrives.
+function partialInput(json: string): Record<string, unknown> {
+  const input: Record<string, unknown> = {}
+  let i = json.indexOf("{") + 1
+  if (i === 0) return input
+  const skip = () => { while (i < json.length && /[\s,]/.test(json[i]!)) i++ }
+  const readString = (): { raw: string; closed: boolean } | undefined => {
+    if (json[i] !== '"') return undefined
+    let raw = ""
+    for (let j = i + 1; j < json.length; j++) {
+      const char = json[j]!
+      if (char === "\\") { raw += json.slice(j, j + 2); j++; continue }
+      if (char === '"') { i = j + 1; return { raw, closed: true } }
+      raw += char
+    }
+    i = json.length
+    return { raw, closed: false }
+  }
+  const decode = (raw: string) => {
+    // A prefix can end on a lone backslash or a cut unicode escape.
+    for (const candidate of [raw, raw.replace(/\\(?:u[0-9a-fA-F]{0,3})?$/, "")]) {
+      try { return JSON.parse(`"${candidate}"`) as string } catch {}
+    }
+    return undefined
+  }
+  for (;;) {
+    skip()
+    const key = readString()
+    if (!key?.closed) break
+    skip()
+    if (json[i] !== ":") break
+    i++
+    skip()
+    if (json[i] === '"') {
+      const value = readString()
+      if (!value) break
+      if (PARTIAL_KEYS.includes(key.raw)) { const text = decode(value.raw); if (text !== undefined) input[key.raw] = text }
+      if (!value.closed) break
+    } else {
+      // Skip a non-string value, including nested objects and arrays.
+      let depth = 0
+      while (i < json.length) {
+        const char = json[i]!
+        if (char === '"') { if (!readString()?.closed) return input; continue }
+        if (char === "{" || char === "[") depth++
+        else if (char === "}" || char === "]") { if (depth === 0) return input; depth-- }
+        else if (char === "," && depth === 0) break
+        i++
+      }
+      if (i >= json.length) break
+    }
+  }
+  return input
+}
+
+export function toolActivityLabel(source: Pick<ToolBlock, "name" | "input" | "status" | "images"> & { partialJson?: string }): ToolActivityLabel {
+  const block = source.status === "running" && source.partialJson && !Object.keys(source.input).length
+    ? { ...source, input: partialInput(source.partialJson) }
+    : source
   const running = block.status === "running"
   if (block.status === "unknown") return { action: "Connection lost during", detail: block.name === "Bash" ? oneLine(block.input.command) : block.name }
   const failed = block.status === "error"

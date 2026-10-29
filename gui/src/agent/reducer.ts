@@ -42,7 +42,8 @@ export type RetryBlock = { kind: "retry"; attempt: number; maxRetries: number; d
 export type Block =
   | CompactionBlock
   | RetryBlock
-  | { kind: "text"; text: string; done?: boolean; streamIndex?: number }
+  // startedAt marks text produced in this session; history and replays carry none.
+  | { kind: "text"; text: string; done?: boolean; streamIndex?: number; startedAt?: number }
   | { kind: "thinking"; text: string; done: boolean; startedAt?: number; streamIndex?: number }
   | ToolBlock
 
@@ -524,7 +525,7 @@ function applyStreamEvent(turns: Turn[], event: StreamEvent): Turn[] {
     const block = event.content_block
     const created: Block =
       block.type === "text"
-        ? { kind: "text", text: "", done: false }
+        ? { kind: "text", text: "", done: false, startedAt: Date.now() }
         : block.type === "thinking"
           ? { kind: "thinking", text: "", done: false, startedAt: Date.now() }
           : { kind: "tool", id: block.id, name: block.name, input: {}, partialJson: "", status: "running", startedAt: Date.now() }
@@ -573,6 +574,8 @@ function applyStreamEvent(turns: Turn[], event: StreamEvent): Turn[] {
 // stream accumulated, and keeps tool results that already arrived.
 function finalizeAssistant(turns: Turn[], content: ContentBlock[], messageId?: string): Turn[] {
   const index = streamingIndex(turns)
+  // A redelivered message must not append a second copy of blocks already shown.
+  if (index === -1 && messageId && content.length > 0 && content.every(block => hasDelivered(turns, messageId, block))) return turns
   const currentBlocks = index !== -1 ? (turns[index] as Extract<Turn, { role: "assistant" }>).blocks : []
   const currentTurn = index !== -1 ? turns[index] as Extract<Turn, { role: "assistant" }> : undefined
   const target = messageId && currentTurn?.messageId === messageId && content.length === 1 && currentTurn.stoppedStreamIndex !== undefined
@@ -581,7 +584,7 @@ function finalizeAssistant(turns: Turn[], content: ContentBlock[], messageId?: s
   let blockIndex = 0
   const blocks: Block[] = content.flatMap((block): Block[] => {
     const prior = streamedBlocks[blockIndex++]
-    if (block.type === "text") return [{ kind: "text", text: block.text, done: true, streamIndex: prior && "streamIndex" in prior ? prior.streamIndex : undefined }]
+    if (block.type === "text") return [{ kind: "text", text: block.text, done: true, streamIndex: prior && "streamIndex" in prior ? prior.streamIndex : undefined, startedAt: prior?.kind === "text" ? prior.startedAt : undefined }]
     if (block.type === "thinking") return [{
       kind: "thinking",
       text: block.thinking,
@@ -627,6 +630,7 @@ function finalizeAssistant(turns: Turn[], content: ContentBlock[], messageId?: s
     next[index] = {
       role: "assistant",
       id: current.id,
+      messageId: current.messageId ?? messageId,
       blocks: merged,
       streaming: false,
       startedAt: current.startedAt,
@@ -635,7 +639,15 @@ function finalizeAssistant(turns: Turn[], content: ContentBlock[], messageId?: s
     }
     return next
   }
-  return [...turns, { role: "assistant", id: crypto.randomUUID(), blocks, streaming: false }]
+  return [...turns, { role: "assistant", id: crypto.randomUUID(), messageId, blocks, streaming: false }]
+}
+
+function hasDelivered(turns: Turn[], messageId: string, block: ContentBlock): boolean {
+  return turns.some(turn => turn.role === "assistant" && turn.messageId === messageId && turn.blocks.some(prior =>
+    block.type === "tool_use" ? prior.kind === "tool" && prior.id === block.id
+      : block.type === "text" ? prior.kind === "text" && prior.text === block.text
+        : block.type === "thinking" ? prior.kind === "thinking" && prior.text === block.thinking
+          : false))
 }
 
 function applyToolResults(turns: Turn[], content: ContentBlock[], toolUseResult?: unknown): Turn[] {
