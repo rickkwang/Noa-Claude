@@ -110,7 +110,8 @@ function Workspace({ cwd }: { cwd: string }) {
   // is shown and fits; when it does not fit, the toggle opens a transient popover instead.
   const [overviewShown, setOverviewShown] = useState(() => { try { return localStorage.getItem("noa-overview-shown") !== "false" } catch { return true } })
   useEffect(() => { try { localStorage.setItem("noa-overview-shown", String(overviewShown)) } catch { /* Ignore unavailable storage. */ } }, [overviewShown])
-  const [overviewPopover, setOverviewPopover] = useState(false)
+  // The popover belongs to the session it was raised in, as Claude's rail overlay is keyed to its session id.
+  const [overviewPopover, setOverviewPopover] = useState<number | null>(null)
   const [addingProject, setAddingProject] = useState(false)
   const [editingProject, setEditingProject] = useState<ProjectInfo>()
   const [quote, setQuote] = useState<{ text: string; key: number }>()
@@ -497,17 +498,17 @@ function Workspace({ cwd }: { cwd: string }) {
   const chatWidth = measuredChatWidth ?? workspaceWidth - rightWidth
   const overviewDocked = chatWidth >= (rightOpen ? 771 : 611)
   const overviewDockedVisible = overviewShown && overviewDocked
-  const overviewPopoverOpen = overviewPopover && !overviewDockedVisible
+  const overviewPopoverOpen = overviewPopover === session.key && !overviewDockedVisible
   const overviewVisible = overviewDockedVisible || overviewPopoverOpen
-  useEffect(() => { if (overviewPopover && !overviewPopoverOpen) setOverviewPopover(false) }, [overviewPopover, overviewPopoverOpen])
+  useEffect(() => { if (overviewPopover !== null && !overviewPopoverOpen) setOverviewPopover(null) }, [overviewPopover, overviewPopoverOpen])
   const toggleOverview = () => {
     if (overviewVisible) {
-      setOverviewPopover(false)
+      setOverviewPopover(null)
       if (overviewDockedVisible) setOverviewShown(false)
       return
     }
     setOverviewShown(true)
-    if (!overviewDocked) setOverviewPopover(true)
+    if (!overviewDocked) setOverviewPopover(session.key)
   }
   const overviewDockInset = overviewDockedVisible ? 280 + 8 + 12 : 0
 
@@ -857,7 +858,7 @@ function Workspace({ cwd }: { cwd: string }) {
             // The popover stops above the composer card (the footer's 32px top padding is only a fade).
             bottomInset={Math.max(0, footerHeight - 32)}
             docked={overviewDocked}
-            onClose={() => setOverviewPopover(false)}
+            onClose={() => setOverviewPopover(null)}
             onRefreshContext={refreshContext}
             onRefreshMcp={refreshMcp}
             onReference={(path) => setReference({ path, key: Date.now() })}
