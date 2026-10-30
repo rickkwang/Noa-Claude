@@ -10,6 +10,8 @@ import {
 } from "react"
 import { createPortal } from "react-dom"
 import { PopupMenu, anchorBelow, type PopupMenuAnchor } from "./PopupMenu"
+import { MarqueeText } from "./MarqueeText"
+import { useSessionHoverCard } from "./SessionHoverCard"
 import type { ProjectInfo, SessionSummary } from "../api"
 import {
   Check,
@@ -512,6 +514,9 @@ export function Sidebar({
                           id={session.id}
                           path={project.path}
                           title={session.title}
+                          updatedAt={session.updatedAt}
+                          projectName={project.name}
+                          worktree={worktreeName(session, project)}
                           status={session.status}
                           active={active.cwd === (session.cwd ?? project.path) && session.id === active.id}
                           indent
@@ -650,6 +655,9 @@ export function Sidebar({
                       id={session.id}
                       path={project.path}
                       title={session.title}
+                      updatedAt={session.updatedAt}
+                      projectName={project.name}
+                      worktree={worktreeName(session, project)}
                       status={session.status}
                       active={active.cwd === (session.cwd ?? project.path) && session.id === active.id}
                       pinned={isPinned(project.path, session.id)}
@@ -925,11 +933,18 @@ function ProjectRow({
   )
 }
 
+function worktreeName(session: SessionSummary, project: ProjectInfo): string | undefined {
+  return session.cwd && session.cwd !== project.path ? session.cwd.split("/").filter(Boolean).pop() : undefined
+}
+
 // Same row shell as Noa's FileNode (noa-sidebar-tree-item / noa-sidebar-tree-row).
 function SessionRow({
   id,
   path,
   title,
+  updatedAt,
+  projectName,
+  worktree,
   status,
   active,
   indent,
@@ -947,6 +962,10 @@ function SessionRow({
   id: string
   path: string
   title: string
+  updatedAt?: number
+  projectName?: string
+  // Folder name of the worktree the task runs in, when it is not the project folder.
+  worktree?: string
   status?: "running" | "waiting" | "queued"
   active: boolean
   indent?: boolean
@@ -973,6 +992,7 @@ function SessionRow({
       onClick()
     }
   }
+  const hoverCard = useSessionHoverCard({ title, updatedAt, project: projectName, worktree }, !dragging)
   return (
     <div className="font-ui mb-0.5 noa-sidebar-tree-item">
       <div
@@ -982,10 +1002,13 @@ function SessionRow({
         role="button"
         aria-current={active ? "page" : undefined}
         tabIndex={0}
-        title={title}
         onClick={onClick}
         onKeyDown={onKeyDown}
-        onPointerDown={onPointerDown}
+        onPointerEnter={hoverCard.triggerProps.onPointerEnter}
+        onPointerLeave={hoverCard.triggerProps.onPointerLeave}
+        onFocus={hoverCard.triggerProps.onFocus}
+        onBlur={hoverCard.triggerProps.onBlur}
+        onPointerDown={(event) => { hoverCard.triggerProps.onPointerDown(); onPointerDown?.(event) }}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerCancel}
@@ -995,7 +1018,7 @@ function SessionRow({
         style={{ paddingLeft: indent ? "29px" : "7px" }}
       >
         {dropEdge && <DropIndicator edge={dropEdge} indented={indent} className="inset-x-0" />}
-        <span className={`noa-fade-truncate ${pinned || status ? "" : "-mr-2 group-hover:mr-6 group-focus-within:mr-6"}`}>{title}</span>
+        <MarqueeText className={pinned || status ? "" : "-mr-2 group-hover:mr-6 group-focus-within:mr-6"}>{title}</MarqueeText>
         <span className={`${pinned || status ? "ml-2 flex shrink-0" : "absolute inset-y-0 right-2 flex"} items-center gap-1`}>
           {status && <span role="status" aria-label={status === "waiting" ? "Approval required" : status === "running" ? "Running" : "Queued"} title={status} className={`size-1.5 shrink-0 rounded-full ${status === "waiting" ? "bg-amber-500" : "animate-pulse bg-[var(--accent-color)]"}`} />}
           <button
@@ -1016,6 +1039,7 @@ function SessionRow({
           </button>
         </span>
       </div>
+      {hoverCard.card}
     </div>
   )
 }

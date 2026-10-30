@@ -626,7 +626,7 @@ function Workspace({ cwd }: { cwd: string }) {
   }, [rightRatio, rightMax, defaultRatio])
   const rightTarget = Math.round(320 + (rightRatio ?? defaultRatio) * (rightMax - 320))
   const rightWidth = rightOpen ? rightTarget : 0
-  // Claude's rule: the overview docks as a column when the chat area is wide enough (more with a pane open),
+  // The overview docks as a column only with the right panel closed and a chat area wide enough;
   // otherwise it floats over the chat as a popover.
   // Measure the chat column itself: window-size state lags a live resize and the sidebar animates, so a
   // computed width can dock the overview while the real column is too narrow to hold it.
@@ -640,7 +640,7 @@ function Workspace({ cwd }: { cwd: string }) {
     return () => observer.disconnect()
   }, [])
   const chatWidth = measuredChatWidth ?? workspaceWidth - rightWidth
-  const overviewDocked = chatWidth >= (rightOpen ? 771 : 611)
+  const overviewDocked = !rightOpen && chatWidth >= 611
   const overviewDockedVisible = overviewShown && overviewDocked
   const overviewPopoverOpen = overviewPopover === session.key && !overviewDockedVisible
   const overviewVisible = overviewDockedVisible || overviewPopoverOpen
