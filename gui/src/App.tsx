@@ -592,7 +592,7 @@ function Workspace({ cwd }: { cwd: string }) {
     return () => { window.removeEventListener("resize", resize); clearTimeout(timer) }
   }, [])
   const moving = resizing || windowResizing
-  const animate = moving ? "" : "transition-[width,--noa-edge-fade] duration-500 ease-in-out"
+  const animate = moving ? "" : "transition-[width,--noa-edge-fade,border-radius,border-left-color] duration-500 ease-in-out"
   // Closed panes keep their content width while the outer edge slides away.
   const sidebarTarget = Math.round(Math.max(240, Math.min(sidebar.width, windowSize.width - (rightOpen ? 320 + 352 : 352))))
   const sidebarWidth = sidebarOpen ? sidebarTarget : 0
@@ -647,7 +647,7 @@ function Workspace({ cwd }: { cwd: string }) {
 
   return (
     <div
-      className="noa-app-shell h-screen w-screen flex flex-col bg-[var(--surface-page,#F9F9F7)] text-[var(--text-primary,#2D2D2B)] font-ui overflow-hidden relative selection:bg-[var(--accent-color,#CC7D5E)] selection:text-white"
+      className="noa-app-shell h-screen w-screen flex flex-col isolate bg-[var(--bg-sidebar,#FBFBF9)] text-[var(--text-primary,#2D2D2B)] font-ui overflow-hidden relative selection:bg-[var(--accent-color,#CC7D5E)] selection:text-white"
       style={
         {
           "--noa-sidebar-width": `${sidebar.width}px`,
@@ -665,7 +665,7 @@ function Workspace({ cwd }: { cwd: string }) {
         style={{ width: sidebarWidth, "--noa-edge-fade": sidebarOpen ? "0px" : "28px" } as React.CSSProperties}
       >
         <div
-          className="h-full transition-opacity duration-300 ease-out"
+          className="h-full transition-opacity duration-500 ease-in-out"
           style={{ width: sidebarOpen ? "100%" : sidebarTarget, opacity: sidebarOpen ? 1 : 0 }}
         >
           <Sidebar
@@ -689,11 +689,14 @@ function Workspace({ cwd }: { cwd: string }) {
           />
         </div>
       </div>
+      {/* The content surface rides over the sidebar floor, so its left edge is a rounded card edge instead of a
+          straight hairline; the sidebar colour shows through the corner notches. Behind the in-flow columns. */}
       <div
         aria-hidden="true"
-        data-sidebar-divider
-        className={`pointer-events-none absolute inset-y-0 z-30 w-[0.5px] bg-[var(--divider-subtle,#E6E2DA)] ${moving ? "" : "transition-[left,opacity] duration-500 ease-in-out"}`}
-        style={{ left: sidebarWidth, opacity: sidebarOpen ? 1 : 0 }}
+        data-content-surface
+        data-flush={sidebarOpen ? undefined : true}
+        className={`noa-content-surface ${moving ? "" : "transition-[left,border-radius,border-left-color] duration-500 ease-in-out"}`}
+        style={{ left: sidebarWidth }}
       />
       {/* One titlebar rule across both columns; above the right panel so it is not hidden behind it. */}
       <div
@@ -713,12 +716,6 @@ function Workspace({ cwd }: { cwd: string }) {
           style={{ right: rightWidth - 4, zIndex: 40 }}
         />
       )}
-      <div
-        aria-hidden="true"
-        data-right-divider
-        className={`pointer-events-none absolute inset-y-0 z-30 w-[0.5px] bg-[var(--divider-subtle,#E6E2DA)] ${moving ? "" : "transition-[right,opacity] duration-500 ease-in-out"}`}
-        style={{ right: rightWidth, opacity: rightOpen ? 1 : 0 }}
-      />
       {sidebarOpen && (
         <ResizeHandle
           label="Resize sidebar"
@@ -733,8 +730,9 @@ function Workspace({ cwd }: { cwd: string }) {
       {/* The right column runs the full height too, so its cards start at the top edge. */}
       <div
         data-right-panel-container
+        data-flush={rightOpen ? undefined : true}
         inert={!rightOpen ? true : undefined}
-        className={`noa-edge-fade-left absolute inset-y-0 right-0 z-30 overflow-hidden bg-[var(--surface-page,#F9F9F7)] ${animate}`}
+        className={`noa-right-surface absolute inset-y-0 right-0 z-30 overflow-hidden bg-[var(--surface-page,#F9F9F7)] ${animate}`}
         // No-drag and above the titlebar, so the tab row can sit level with the panel toggle.
         style={
           {
@@ -745,7 +743,7 @@ function Workspace({ cwd }: { cwd: string }) {
         }
       >
         <div
-          className="absolute inset-y-0 right-0 h-full transition-opacity duration-300 ease-out"
+          className="noa-edge-fade-left absolute inset-y-0 right-0 h-full transition-opacity duration-500 ease-in-out"
           style={{ width: rightOpen ? "100%" : rightTarget, opacity: rightOpen ? 1 : 0 }}
         >
           <RightPanel
@@ -765,7 +763,6 @@ function Workspace({ cwd }: { cwd: string }) {
       </div>
 
       <TopBar
-        settings={settings}
         resizing={moving}
         sidebarOpen={sidebarOpen}
         sidebarWidth={sidebarWidth}

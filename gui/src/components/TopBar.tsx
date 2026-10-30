@@ -1,14 +1,10 @@
 import type { CSSProperties, ReactNode } from "react"
-import { useIsDark } from "../hooks/useIsDark"
-import { themeSurfaces } from "../lib/themePalette"
 import { ArrowLeft, ArrowRight, PanelLeft } from "../lib/icons"
-import type { AppSettings } from "../types"
 
 const dragRegion = { WebkitAppRegion: "drag" } as CSSProperties
 const noDragRegion = { WebkitAppRegion: "no-drag" } as CSSProperties
 
 interface TopBarProps {
-  settings: AppSettings
   sidebarOpen: boolean
   /** Width the sidebar currently covers; the titlebar stays clear over it so the sidebar runs up behind the traffic lights. */
   sidebarWidth: number
@@ -30,7 +26,6 @@ interface TopBarProps {
 
 // Noa's TopBar: sidebar toggle at the left edge, panel toggle at the right edge.
 export default function TopBar({
-  settings,
   sidebarOpen,
   sidebarWidth,
   rightWidth,
@@ -44,8 +39,6 @@ export default function TopBar({
   panelMenu,
   resizing,
 }: TopBarProps) {
-  const isDark = useIsDark(settings.appearance.theme)
-  const titlebarBaseColor = themeSurfaces(isDark).primary
   const buttonClass =
     "flex h-6 w-6 cursor-pointer items-center justify-center rounded-md transition-colors text-[var(--icon-ink,#52514E)] hover:text-[var(--text-primary,#2D2D2B)] hover:bg-[color-mix(in_srgb,var(--text-primary,#2D2D2B)_7.5%,transparent)]"
   return (
@@ -55,12 +48,6 @@ export default function TopBar({
     >
       {/* Drag band stops at the right column, so the column's tabs and toggle get their clicks. */}
       <div aria-hidden="true" className="absolute inset-y-0 left-0 z-0" style={{ ...dragRegion, right: rightWidth }} />
-      {/* Paints the titlebar colour only right of the sidebar; behind the content (-z-10 inside this stacking context). */}
-      <div
-        aria-hidden="true"
-        className={`pointer-events-none absolute inset-y-0 -z-10 ${resizing ? "" : "transition-[left,right] duration-500 ease-in-out"}`}
-        style={{ left: sidebarWidth, right: rightWidth, backgroundColor: titlebarBaseColor }}
-      />
       <div className="flex min-w-0 items-center justify-start pl-[var(--noa-titlebar-inset)] pr-4">
         <div
           className="relative z-50 flex min-w-0 items-center gap-0.5"

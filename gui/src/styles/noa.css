@@ -7,6 +7,35 @@
   line-height: 20px;
   letter-spacing: 0;
 }
+/* The conversation surface's left edge: 16px corners over the sidebar floor, edged by a half-pixel ring in the
+   same token as other floating surfaces. The ring is a left border rather than a full ring so the window's right
+   edge never grows a stray hairline. Collapsed, the radius unwinds to 0 and the ring fades; the shell stays
+   sidebar-coloured throughout, so the corner notch never shows a blended colour mid-animation. */
+.noa-content-surface {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  z-index: -1;
+  pointer-events: none;
+  border-left: 0.5px solid var(--border-default, rgba(45,45,43,0.078));
+  border-radius: 16px 0 0 16px;
+  background-color: var(--surface-page, #F9F9F7);
+}
+.noa-content-surface[data-flush="true"] {
+  border-left-color: transparent;
+  border-radius: 0;
+}
+/* The right column's leading edge mirrors the content surface: the same 16px corners and hairline, revealed over the
+   content it sits on. Closed, the corner unwinds and the ring fades, exactly as the sidebar side does. */
+.noa-right-surface {
+  border-left: 0.5px solid var(--border-default, rgba(45,45,43,0.078));
+  border-radius: 16px 0 0 16px;
+}
+.noa-right-surface[data-flush="true"] {
+  border-left-color: transparent;
+  border-radius: 0;
+}
 .noa-agent-input {
   border-radius: 22px;
   background: #FAFAF9;
@@ -1707,6 +1736,7 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
   [data-sidebar-container],
   [data-sidebar-content-layer="true"],
   [data-sidebar-separator="true"],
+  [data-content-surface],
   [data-sidebar-column-surface="true"],
   [data-titlebar="true"]::after {
     transition: none !important;
@@ -2383,8 +2413,10 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
 .noa-turn-scope select { border-radius: 6px; font: inherit; font-size: var(--text-body); color: var(--text-primary); outline: none; }
 .noa-turn-scope select:focus-visible { background-color: color-mix(in srgb, var(--text-primary) 7.5%, transparent); }
 @media (prefers-reduced-motion: reduce) { .noa-scroll-bottom { transition: none; } }
-/* Floating composer: the page colour ramps in over 32px above the card so text dissolves instead of being cut. */
-.noa-conversation-footer { position: absolute; inset-inline: 0 calc(var(--noa-scrollbar-strip) + var(--noa-overview-dock, 0px)); bottom: 0; z-index: 20; display: flex; max-height: 100%; flex-direction: column; padding: 32px 21px 12px 29px; background: linear-gradient(to bottom, color-mix(in srgb, var(--surface-page, #F9F9F7) 0%, transparent), var(--surface-page, #F9F9F7) 32px); pointer-events: none; }
+/* Floating composer: the page colour ramps in over 32px above the card so text dissolves instead of being cut.
+   Its bottom-left corner is clipped to the surface's 16px radius so the sidebar corner notch stays visible, and it
+   starts half a pixel in so it does not paint over the surface's left hairline. */
+.noa-conversation-footer { position: absolute; inset-inline: 0 calc(var(--noa-scrollbar-strip) + var(--noa-overview-dock, 0px)); bottom: 0; z-index: 20; display: flex; max-height: 100%; flex-direction: column; margin-left: 0.5px; padding: 32px 21px 12px 29px; border-bottom-left-radius: 16px; background: linear-gradient(to bottom, color-mix(in srgb, var(--surface-page, #F9F9F7) 0%, transparent), var(--surface-page, #F9F9F7) 32px); pointer-events: none; }
 .noa-conversation-footer > * { min-height: 0; width: 100%; pointer-events: auto; }
 /* Loading shimmer: a stable base with a narrow highlight band. */
 .noa-shimmer {
