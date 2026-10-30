@@ -226,8 +226,8 @@ body {
      fade never washes out the scrollbar thumb. */
   --noa-scrollbar-strip: 8px;
   /* Shadows: ambient = in-flow cards, elevated = raised graph panels, floating = dropdowns/toasts, dialog = modal dialogs. Floating and dialog stack a tight contact layer over a soft spread. */
-  /* Floating surfaces draw their edge as a 1px ring in the shadow not a border. */
-  --shadow-floating: 0 0 0 1px rgba(11,11,11,0.10), 0 8px 24px 0 rgba(0,0,0,0.12), 0 2px 6px 0 rgba(0,0,0,0.08);
+  /* Floating surfaces draw their edge as a half-pixel ring in the shadow not a border. */
+  --shadow-floating: 0 0 0 0.5px var(--border-default), 0 8px 24px 0 rgba(0,0,0,0.12), 0 2px 6px 0 rgba(0,0,0,0.08);
   --shadow-dialog: 0 0 0 1px rgba(11,11,11,0.10), 0 4px 8px 0 rgba(45,45,43,0.08), 0 12px 28px -2px rgba(45,45,43,0.10);
   /* Keyboard focus ring, drawn inside the control: an outside ring is clipped by scroll containers that edge the control. */
   --focus-ring-color: var(--accent-color, #CC7D5E);
@@ -827,7 +827,7 @@ html[data-translucent-sidebar="enabled"]:where(:not([data-settings-open="true"])
   background-color: var(--bg-primary, #2D2D2B);
   color: #F9F9F7;
   --panel-divider: var(--divider-subtle, rgba(249,249,247,0.15));
-  --shadow-floating: 0 0 0 1px rgba(249,249,247,0.08), 0 8px 24px 0 rgba(0,0,0,0.45), 0 2px 6px 0 rgba(0,0,0,0.30);
+  --shadow-floating: 0 0 0 0.5px var(--border-default), 0 8px 24px 0 rgba(0,0,0,0.45), 0 2px 6px 0 rgba(0,0,0,0.30);
   --shadow-dialog: 0 0 0 1px rgba(249,249,247,0.08), 0 4px 8px 0 rgba(0,0,0,0.35), 0 12px 28px -2px rgba(0,0,0,0.50);
 }
 
@@ -1923,7 +1923,7 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
   height: 24px;
   border-radius: 12px;
   background: var(--effort-track);
-  box-shadow: inset 0 0 0 .5px var(--border-subtle, rgba(0, 0, 0, .08));
+  box-shadow: inset 0 0 0 .5px var(--divider-subtle);
 }
 .noa-model-picker-range {
   position: absolute;
@@ -2074,7 +2074,7 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
 }
 .noa-model-picker.rounded-panel { border-radius: 18px; }
 :root:not([data-theme="dark"]) .noa-model-picker.noa-floating-panel.rounded-panel { background-color: var(--effort-menu) !important;
-  box-shadow: 0 0 0 .5px rgba(0, 0, 0, .13), 0 8px 24px 0 rgba(0, 0, 0, .07);
+  box-shadow: 0 0 0 .5px var(--border-default), 0 8px 24px 0 rgba(0, 0, 0, .07);
 }
 .noa-model-picker-list { max-height: 316px; overflow-y: auto; padding: 0 0 4px; }
 .noa-model-picker-option {
@@ -2123,7 +2123,7 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
 .noa-file-root-chip > svg { color: var(--sidebar-text-muted); }
 .noa-file-root-chip > svg { flex-shrink: 0; }
 .noa-file-search { display: flex; flex-shrink: 0; align-items: center; gap: 4px; padding: 8px 8px 4px; }
-.noa-file-search-field { display: flex; min-width: 0; flex: 1; align-items: center; gap: 6px; height: 30px; padding: 0 7px; border: 1px solid color-mix(in srgb, var(--text-primary) 8%, transparent); border-radius: 8px; background: transparent; color: var(--sidebar-text-muted); transition: border-color 120ms; }
+.noa-file-search-field { display: flex; min-width: 0; flex: 1; align-items: center; gap: 6px; height: 30px; padding: 0 7px; border: 1px solid var(--border-default); border-radius: 8px; background: transparent; color: var(--sidebar-text-muted); transition: border-color 120ms; }
 .noa-file-search-field:focus-within { border-color: color-mix(in srgb, var(--text-primary) 22%, transparent); }
 .noa-file-search-field input { min-width: 0; flex: 1; border: 0; outline: 0; background: transparent; font: inherit; font-size: 13px; color: var(--text-primary); }
 .noa-file-search-field input::placeholder { color: var(--sidebar-text-muted); }
@@ -2133,7 +2133,7 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
 .noa-file-icon { display: flex; flex-shrink: 0; align-items: center; justify-content: center; width: 16px; color: var(--sidebar-text-muted); }
 .noa-file-icon > svg { transition: transform 120ms ease; }
 .noa-git-lane { display: flex; flex-shrink: 0; align-items: center; justify-content: center; width: 20px; }
-.noa-file-divider { height: 1px; margin: 4px 0; background: color-mix(in srgb, var(--text-primary) 8%, transparent); }
+.noa-file-divider { height: 1px; margin: 4px 0; background: var(--border-default); }
 .noa-file-dot { width: 5px; height: 5px; flex-shrink: 0; border-radius: 50%; background: var(--git-modified); opacity: .5; }
 .noa-git-mark { flex-shrink: 0; }
 .noa-file-row.is-sticky { background-color: var(--surface-page, #F9F9F7); }
@@ -2336,7 +2336,7 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
   .noa-scroll-fade { mask: linear-gradient(to bottom, transparent, #000 var(--top-fade)), linear-gradient(#000, #000) right / var(--noa-scrollbar-strip) 100% no-repeat; animation: noa-edge-fade linear both; animation-timeline: scroll(self y); }
 }
 /* Scroll-to-bottom: a 32px round bordered button, 24px above the composer card (the overlay includes its 32px gradient), no shadow. */
-.noa-scroll-bottom { position: absolute; bottom: calc(var(--composer-overlay, 0px) - 8px); left: 50%; z-index: 30; display: flex; width: 32px; height: 32px; translate: -50% 0; align-items: center; justify-content: center; border: 1px solid color-mix(in srgb, var(--text-primary) 8%, transparent); border-radius: 999px; background: var(--surface-page, #F9F9F7) padding-box; color: var(--sidebar-text-muted); transition: opacity 200ms ease, color 120ms; }
+.noa-scroll-bottom { position: absolute; bottom: calc(var(--composer-overlay, 0px) - 8px); left: 50%; z-index: 30; display: flex; width: 32px; height: 32px; translate: -50% 0; align-items: center; justify-content: center; border: 1px solid var(--border-default); border-radius: 999px; background: var(--surface-page, #F9F9F7) padding-box; color: var(--sidebar-text-muted); transition: opacity 200ms ease, color 120ms; }
 .noa-scroll-bottom:hover { color: var(--text-primary); }
 .noa-scroll-bottom[data-show="false"] { opacity: 0; pointer-events: none; }
 /* Per-turn diff card: header + up to three file rows. */
