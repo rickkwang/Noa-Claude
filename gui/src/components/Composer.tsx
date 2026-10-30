@@ -4,13 +4,14 @@ import { loadImageDraft, saveImageDraft } from "../agent/imageDrafts"
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from "react"
 import { startEffortMaxFill } from "./effortMaxFill"
 import type { ContextUsage, ImageAttachment, UserContent, ModelInfo, PermissionMode, SlashCommand } from "../agent/protocol"
-import { Check, Edit2, FileText, RotateCcw, X } from "../lib/icons"
+import { Check, Edit2, FileText, List, RotateCcw, X } from "../lib/icons"
 import { Lightbox } from "./Lightbox"
 import { useConfirm } from "./ConfirmDialog"
 import { EnvironmentMenu } from "./EnvironmentMenu"
-import { IconAlertCircle, IconHandStop, IconListCheck, IconPencil, IconShieldCheck } from "@tabler/icons-react"
 import {
   ComposerApprovalIcon,
+  ComposerShieldCodeIcon,
+  ComposerShieldWarningIcon,
   ComposerChevronIcon,
   ComposerComputerIcon,
   ComposerFolderIcon,
@@ -772,7 +773,7 @@ export function Composer({
               hideChevron
               label={
                 <>
-                  {mode === "default" || !mode ? <ComposerApprovalIcon /> : <IconShieldCheck size={16} stroke={1.5} />}
+                  {MODE_ICONS[mode ?? "default"]}
                   <span className="noa-agent-mode-label">{currentMode?.label ?? "Permissions"}</span>
                 </>
               }
@@ -847,7 +848,7 @@ export function Composer({
                     {currentModel?.displayName ?? model ?? "Model"}
                   </span>
                   {currentModel?.supportsEffort && effort && currentModel.supportedEffortLevels?.includes(effort) && (
-                    <span className="noa-agent-effort-label capitalize text-[var(--sidebar-text-muted)]">{effort}</span>
+                    <span className="noa-agent-effort-label capitalize text-[var(--text-tertiary)]">{effort}</span>
                   )}
                 </>
               }
@@ -871,10 +872,10 @@ export function Composer({
               aria-label={editDraft?.queued ? "Save queued message" : busy && !text.trim() && !images.length ? "Stop (Esc)" : busy ? "Queue message" : "Run task"}
               title={editDraft?.queued ? "Save queued message; queue stays paused" : busy && !text.trim() && !images.length ? "Stop (Esc)" : busy ? "Queue after the current turn" : "Run task"}
               data-action={busy && !text.trim() && !images.length ? "stop" : busy ? "queue" : "send"}
-              className="noa-primary-action ml-1 flex size-7 shrink-0 items-center justify-center rounded-full bg-[var(--text-primary,#2D2D2B)] text-[var(--surface-page,#FFFFFF)] transition-[opacity,transform] hover:opacity-90 disabled:opacity-40 noa-press"
+              className="noa-primary-action ml-1 flex size-7 shrink-0 items-center justify-center rounded-full bg-[var(--text-primary,#2D2D2B)] text-[var(--surface-page,#FFFFFF)] transition-[opacity,transform] hover:opacity-90 disabled:opacity-50 noa-press"
             >
               {busy && !editDraft?.queued && !text.trim() && !images.length
-                ? <span aria-hidden="true" className="block size-2.5 rounded-[2px] bg-current" />
+                ? <span aria-hidden="true" className="block size-[11px] rounded-[1.25px] bg-current" />
                 : <ComposerSendIcon />}
             </button>
           </div>
@@ -921,11 +922,11 @@ interface PickerItem {
 }
 
 const MODE_ICONS: Partial<Record<PermissionMode, ReactNode>> = {
-  default: <IconHandStop size={16} stroke={1.5} />,
-  auto: <IconShieldCheck size={16} stroke={1.5} />,
-  acceptEdits: <IconPencil size={16} stroke={1.5} />,
-  plan: <IconListCheck size={16} stroke={1.5} />,
-  bypassPermissions: <IconAlertCircle size={16} stroke={1.5} />,
+  default: <ComposerApprovalIcon />,
+  auto: <ComposerShieldCodeIcon />,
+  acceptEdits: <Edit2 size={16} />,
+  plan: <List size={16} />,
+  bypassPermissions: <ComposerShieldWarningIcon />,
 }
 
 // Spring presets for the effort slider: thumb travel, and the thumb's grow/shrink under hover or press.
@@ -1341,12 +1342,12 @@ function Picker({
           setShowingModels(false)
           setOpen((o) => !o)
         }}
-        className={`flex h-7 min-w-0 items-center gap-1 whitespace-nowrap rounded-full ${iconOnly ? "w-7 justify-center p-0" : compactPadding ? "px-1.5" : "px-2"} text-chat-sm font-normal leading-[18px] transition-colors hover:bg-[color-mix(in_srgb,var(--text-primary,#2D2D2B)_7.5%,transparent)] disabled:opacity-40 ${
+        className={`flex h-7 min-w-0 items-center gap-1 whitespace-nowrap rounded-full ${iconOnly ? "w-7 justify-center p-0" : compactPadding ? "px-1.5" : "px-2"} text-[13px] font-normal leading-[18px] transition-colors hover:bg-[color-mix(in_srgb,var(--text-primary,#2D2D2B)_7.5%,transparent)] disabled:opacity-40 ${
           tone === "danger" ? "text-[#C24444]" : "text-[var(--sidebar-text,#52514E)]"
         }`}
       >
         {label}
-        {!hideChevron && <ComposerChevronIcon className="shrink-0 text-[var(--sidebar-text-muted)]" />}
+        {!hideChevron && <ComposerChevronIcon className="size-3 shrink-0 text-[var(--text-tertiary)]" />}
       </button>
       {presence.mounted && (
         <div

@@ -1026,7 +1026,7 @@ function UserBubble({ text }: { text: string }) {
       <div
         ref={ref}
         data-user-message-bubble=""
-        className={`noa-selectable max-w-[70%] whitespace-pre-wrap break-words rounded-[22px] bg-[color-mix(in_srgb,var(--accent-color)_8%,transparent)] px-4 py-2.5 text-[length:var(--font-text-md-size)] leading-[var(--font-text-md-line-height)] ${
+        className={`noa-selectable max-w-[70%] whitespace-pre-wrap break-words rounded-[22px] bg-[color-mix(in_oklab,var(--text-primary)_5%,transparent)] px-4 py-2.5 text-[length:var(--font-text-md-size)] leading-[var(--font-text-md-line-height)] ${
           expanded
             ? ""
             : `relative max-h-[20lh] overflow-hidden ${folded ? "[mask-image:linear-gradient(to_bottom,black_calc(100%_-_3rem),transparent)] after:pointer-events-none after:absolute after:bottom-1 after:right-3 after:content-['…'] after:text-[var(--sidebar-text-muted,#898781)]" : ""}`
