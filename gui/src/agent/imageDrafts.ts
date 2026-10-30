@@ -36,3 +36,18 @@ export async function saveImageDraft(key: string, images: ImageAttachment[]): Pr
     db.close()
   }
 }
+
+export async function deleteImageDraft(key: string): Promise<void> {
+  const db = await database()
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const transaction = db.transaction("images", "readwrite")
+      transaction.objectStore("images").delete(key)
+      transaction.oncomplete = () => resolve()
+      transaction.onerror = () => reject(transaction.error)
+      transaction.onabort = () => reject(transaction.error)
+    })
+  } finally {
+    db.close()
+  }
+}

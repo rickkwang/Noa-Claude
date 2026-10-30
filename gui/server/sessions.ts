@@ -135,6 +135,7 @@ interface Entry {
   toolUseResult?: unknown
   mcpMeta?: Record<string, unknown>
   customTitle?: string
+  aiTitle?: string
 }
 
 function* scanEntries(file: string, offset = 0): Generator<Entry> {
@@ -255,7 +256,8 @@ export function listSessions(cwd: string): SessionSummary[] {
           [...entries]
             .reverse()
             .find((entry) => entry.type === "custom-title")
-            ?.customTitle?.trim() || first?.replace(/\s+/g, " ").trim().slice(0, 80),
+            ?.customTitle?.trim() || [...entries].reverse().find((entry) => entry.type === "ai-title")
+            ?.aiTitle?.trim() || first?.replace(/\s+/g, " ").trim().slice(0, 80),
       }
       cache.set(file.path, cached)
     }

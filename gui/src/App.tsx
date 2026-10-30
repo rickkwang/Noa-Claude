@@ -1,6 +1,7 @@
 import { ElicitationCard } from "./components/ElicitationCard"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useAgent } from "./agent/useAgent"
+import { deleteImageDraft } from "./agent/imageDrafts"
 import type { ImageAttachment, ImageBlock, TurnDiff, UserContent } from "./agent/protocol"
 import {
   addProject,
@@ -35,6 +36,19 @@ import { ListDetails, PanelRight } from "./lib/icons"
 
 // Noa's default layout widths.
 const SIDEBAR_DEFAULT_WIDTH = 340
+const SESSION_LIST_LIMIT = 200
+
+function sessionUpdateKey(cwd: string, id: string): string {
+  return `${cwd}\0${id}`
+}
+
+function removeSessionBrowserState(cwd: string, id: string): void {
+  const draftKey = `noa-agent.draft:${cwd}:${id}`
+  localStorage.removeItem(draftKey)
+  localStorage.removeItem(`${draftKey}:references`)
+  localStorage.removeItem(`noa-agent.bookmarks.v2.${id}`)
+  void deleteImageDraft(draftKey).catch(() => {})
+}
 
 export function App() {
   // Optional workspace: /?cwd=/absolute/path. The bridge resolves the default when absent.
@@ -99,6 +113,7 @@ function Workspace({ cwd }: { cwd: string }) {
   })
   const [projects, setProjects] = useState<ProjectInfo[]>([])
   const [sessionsByProject, setSessionsByProject] = useState<Record<string, SessionSummary[]>>({})
+  const [loadedProjects, setLoadedProjects] = useState<ReadonlySet<string>>(() => new Set())
   const [refreshTick, setRefreshTick] = useState(0)
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [rightOpen, setRightOpen] = useState(true)
@@ -131,6 +146,28 @@ function Workspace({ cwd }: { cwd: string }) {
       runtimeId: session.runtimeId,
       defaultPermissionMode: settings.agent.permissionDefault === "inherit" ? undefined : settings.agent.permissionDefault,
     })
+  const activeId = state.sessionId ?? session.resume
+  const activeSessionKey = activeId ? sessionUpdateKey(session.cwd, activeId) : undefined
+  const activeSessionRef = useRef({ cwd: session.cwd, id: activeId, runtimeId: session.runtimeId })
+  activeSessionRef.current = { cwd: session.cwd, id: activeId, runtimeId: session.runtimeId }
+  const busyRef = useRef(state.busy)
+  busyRef.current = state.busy
+  const connectionRef = useRef(state.connection)
+  connectionRef.current = state.connection
+  const seenSessionUpdatesRef = useRef(new Map<string, number>())
+  const pendingSessionReloadRef = useRef<string | undefined>(undefined)
+  const localBusySessionRef = useRef<string | undefined>(undefined)
+  const expectedSessionUpdatesRef = useRef(new Set(session.resume ? [sessionUpdateKey(session.cwd, session.resume)] : []))
+  const seedSessionUpdate = (dir: string, id: string) => {
+    const key = sessionUpdateKey(dir, id)
+    const summary = Object.values(sessionsByProject).flat().find((item) => item.id === id)
+    if (summary) {
+      seenSessionUpdatesRef.current.set(key, summary.updatedAt)
+      expectedSessionUpdatesRef.current.delete(key)
+    } else {
+      expectedSessionUpdatesRef.current.add(key)
+    }
+  }
 
   useEffect(() => {
     fetchProjects().then(setProjects)
@@ -138,73 +175,120 @@ function Workspace({ cwd }: { cwd: string }) {
 
   useEffect(() => {
     let cancelled = false
+    let refreshing = false
     const refresh = async () => {
+      if (refreshing) return
+      refreshing = true
       try {
         const runsResponse = await fetch("/api/runs")
         const runs = await runsResponse.json() as { cwd: string; sessionId?: string; title?: string; busy: boolean; waiting: boolean; queued: number }[]
-        const entries = await Promise.all(projects.map(async (p) => {
-          const sessions = await fetchSessions(p.path)
-          for (const run of runs.filter((r) => r.cwd === p.path && r.sessionId)) {
-            let summary = sessions.find((s) => s.id === run.sessionId)
-            if (!summary) { summary = { id: run.sessionId!, title: run.title ?? "New task", updatedAt: Date.now(), createdAt: Date.now() }; sessions.unshift(summary) }
-            summary.status = run.waiting ? "waiting" : run.busy ? "running" : run.queued ? "queued" : undefined
-          }
-          return [p.path, sessions] as const
-        }))
-        if (!cancelled) setSessionsByProject(Object.fromEntries(entries))
-      } catch {}
-    }
-    void refresh()
-    return () => {
-      cancelled = true
-    }
-  }, [projects, refreshTick])
-
-  useEffect(() => {
-    let cancelled = false
-    const refresh = async () => {
-      try {
-        const runs = await (await fetch("/api/runs")).json() as { cwd: string; sessionId?: string; title?: string; busy: boolean; waiting: boolean; queued: number }[]
-        if (cancelled) return
-        setSessionsByProject((current) => {
-          const next = { ...current }
-          for (const project of projects) {
-            const sessions = current[project.path] ?? []
-            const updated: SessionSummary[] = sessions.map((session) => {
-              const run = runs.find((candidate) => candidate.cwd === project.path && candidate.sessionId === session.id)
-              return {
-                ...session,
-                status: run?.waiting ? "waiting" : run?.busy ? "running" : run?.queued ? "queued" : undefined,
-              }
-            })
-            for (const run of runs) {
-              if (run.cwd !== project.path || !run.sessionId || updated.some((session) => session.id === run.sessionId)) continue
-              updated.unshift({
-                id: run.sessionId,
-                title: run.title ?? "New task",
-                updatedAt: Date.now(),
-                createdAt: Date.now(),
-                status: run.waiting ? "waiting" : run.busy ? "running" : run.queued ? "queued" : undefined,
-              })
+        const results = await Promise.allSettled(projects.map((project) => fetchSessions(project.path)))
+        const completeResults = results.map((result) => result.status === "fulfilled" && result.value.length < SESSION_LIST_LIMIT)
+        const active = activeSessionRef.current
+        const activeKey = active.id ? sessionUpdateKey(active.cwd, active.id) : undefined
+        let activeSummary: SessionSummary | undefined
+        for (let index = 0; index < projects.length; index++) {
+          const project = projects[index]!
+          const result = results[index]!
+          if (result.status !== "fulfilled") continue
+          activeSummary = result.value.find((item) => (item.cwd ?? project.path) === active.cwd && item.id === active.id)
+          if (activeSummary) break
+        }
+        let reloadActive = false
+        let deletedActive = false
+        if (activeKey && activeSummary) {
+          const previous = seenSessionUpdatesRef.current.get(activeKey)
+          if (previous === undefined) {
+            seenSessionUpdatesRef.current.set(activeKey, activeSummary.updatedAt)
+            expectedSessionUpdatesRef.current.delete(activeKey)
+          } else if (previous !== activeSummary.updatedAt) {
+            const expected = expectedSessionUpdatesRef.current.delete(activeKey)
+            if (!expected && localBusySessionRef.current !== activeKey) {
+              if (connectionRef.current === "ready" && !busyRef.current) reloadActive = true
+              else if (!busyRef.current) pendingSessionReloadRef.current = activeKey
             }
-            next[project.path] = updated
+            seenSessionUpdatesRef.current.set(activeKey, activeSummary.updatedAt)
+          } else {
+            expectedSessionUpdatesRef.current.delete(activeKey)
           }
-          return next
-        })
-      } catch {}
+        } else if (
+          activeKey &&
+          (projects.length > 0 && completeResults.every(Boolean) ||
+            projects.some((project, index) => project.path === active.cwd && completeResults[index])) &&
+          seenSessionUpdatesRef.current.has(activeKey)
+        ) {
+          deletedActive = true
+          seenSessionUpdatesRef.current.delete(activeKey)
+        }
+        if (!cancelled) {
+          setLoadedProjects((current) => {
+            const next = new Set(current)
+            for (let index = 0; index < projects.length; index++) {
+              const path = projects[index]!.path
+              if (completeResults[index]) next.add(path)
+              else next.delete(path)
+            }
+            return next.size === current.size && [...next].every((path) => current.has(path)) ? current : next
+          })
+          setSessionsByProject((current) => Object.fromEntries(projects.map((project, index) => {
+            const result = results[index]!
+            const sessions = (result.status === "fulfilled" ? result.value : current[project.path] ?? []).map((session): SessionSummary => {
+              const run = runs.find((r) => r.cwd === (session.cwd ?? project.path) && r.sessionId === session.id)
+              return { ...session, status: run?.waiting ? "waiting" : run?.busy ? "running" : run?.queued ? "queued" : undefined }
+            })
+            for (const run of runs.filter((r) => r.cwd === project.path && r.sessionId)) {
+              if (!sessions.some((s) => s.id === run.sessionId)) sessions.unshift({ id: run.sessionId!, title: run.title ?? "New task", updatedAt: Date.now(), createdAt: Date.now(), status: run.waiting ? "waiting" : run.busy ? "running" : run.queued ? "queued" : undefined })
+            }
+            return [project.path, sessions]
+          })))
+          if (reloadActive && activeKey) {
+            pendingSessionReloadRef.current = undefined
+            expectedSessionUpdatesRef.current.add(activeKey)
+            setSession((current) => ({ ...current, key: current.key + 1 }))
+          } else if (deletedActive && active.id) {
+            pendingSessionReloadRef.current = undefined
+            removeSessionBrowserState(active.cwd, active.id)
+            setSession((current) => ({ cwd: current.cwd, runtimeId: crypto.randomUUID(), key: current.key + 1 }))
+          }
+        }
+      } catch {} finally { refreshing = false }
     }
+    const refreshVisible = () => { if (document.visibilityState === "visible") void refresh() }
     void refresh()
-    const timer = setInterval(refresh, 2000)
+    const timer = setInterval(refreshVisible, 2000)
+    window.addEventListener("focus", refreshVisible)
+    document.addEventListener("visibilitychange", refreshVisible)
     return () => {
       cancelled = true
       clearInterval(timer)
+      window.removeEventListener("focus", refreshVisible)
+      document.removeEventListener("visibilitychange", refreshVisible)
     }
-  }, [projects])
+  }, [projects, refreshTick])
 
   // A finished turn may have created or renamed the current session.
   useEffect(() => {
-    if (state.result) setRefreshTick((n) => n + 1)
+    if (!state.result) return
+    const active = activeSessionRef.current
+    if (active.id) {
+      const key = sessionUpdateKey(active.cwd, active.id)
+      localBusySessionRef.current = undefined
+      expectedSessionUpdatesRef.current.add(key)
+    }
+    setRefreshTick((n) => n + 1)
   }, [state.result])
+
+  useEffect(() => {
+    if (activeSessionKey && state.busy) localBusySessionRef.current = activeSessionKey
+  }, [activeSessionKey, state.busy])
+
+  useEffect(() => {
+    const key = pendingSessionReloadRef.current
+    if (!key || key !== activeSessionKey || state.connection !== "ready" || state.busy) return
+    pendingSessionReloadRef.current = undefined
+    expectedSessionUpdatesRef.current.add(key)
+    setSession((current) => ({ ...current, key: current.key + 1 }))
+  }, [activeSessionKey, state.busy, state.connection])
 
   useEffect(() => {
     if (!state.diffAction) return
@@ -270,7 +354,6 @@ function Workspace({ cwd }: { cwd: string }) {
     })
   }, [state.liveDiff, currentTurnDiff, rightOpen, rightTab])
 
-  const activeId = state.sessionId ?? session.resume
   const requestDraftPrefix = `${session.cwd}:${activeId ?? session.runtimeId}:`
   const questionDrafts = useRef(new Map<string, QuestionDraft>())
   const elicitationDrafts = useRef(new Map<string, Record<string, string[]>>())
@@ -315,6 +398,9 @@ function Workspace({ cwd }: { cwd: string }) {
     const index = history.index + step
     const target = history.entries[index]
     if (!target) return
+    pendingSessionReloadRef.current = undefined
+    localBusySessionRef.current = undefined
+    if (target.resume) seedSessionUpdate(target.cwd, target.resume)
     setHistory({ ...history, index })
     setQuote(undefined)
     setReference(undefined)
@@ -355,6 +441,8 @@ function Workspace({ cwd }: { cwd: string }) {
     setReference(undefined)
     setEditDraft(undefined)
     setQueueEditId(undefined)
+    pendingSessionReloadRef.current = undefined
+    localBusySessionRef.current = undefined
     const runtimeId = crypto.randomUUID()
     pushHistory({ cwd: dir ?? session.cwd, runtimeId })
     setSession((s) => ({ cwd: dir ?? s.cwd, resume: undefined, runtimeId, key: s.key + 1 }))
@@ -365,6 +453,9 @@ function Workspace({ cwd }: { cwd: string }) {
     setReference(undefined)
     setEditDraft(undefined)
     setQueueEditId(undefined)
+    pendingSessionReloadRef.current = undefined
+    localBusySessionRef.current = undefined
+    seedSessionUpdate(dir, id)
     const runtimeId = crypto.randomUUID()
     pushHistory({ cwd: dir, resume: id, runtimeId })
     setSession((s) => ({ cwd: dir, resume: id, runtimeId, key: s.key + 1 }))
@@ -427,7 +518,10 @@ function Workspace({ cwd }: { cwd: string }) {
     const content = last.images?.length
       ? [...last.images, ...(last.text ? [{ type: "text" as const, text: last.text }] : [])]
       : last.text
-    if (content) sendMessage(content)
+    if (content) {
+      if (activeId) localBusySessionRef.current = sessionUpdateKey(session.cwd, activeId)
+      sendMessage(content)
+    }
   }
 
   // Edit loads the message back into the composer; sending it again adds a new turn rather than rewriting history.
@@ -462,6 +556,7 @@ function Workspace({ cwd }: { cwd: string }) {
   function sendComposer(content: UserContent) {
     const sent = queueEditId ? updateQueued(queueEditId, content) : sendMessage(content)
     if (!sent) return false
+    if (!queueEditId && activeId) localBusySessionRef.current = sessionUpdateKey(session.cwd, activeId)
     setQueueEditId(undefined)
     setEditDraft(undefined)
     return true
@@ -576,6 +671,7 @@ function Workspace({ cwd }: { cwd: string }) {
           <Sidebar
             projects={projects}
             sessions={sessionsByProject}
+            loadedProjects={loadedProjects}
             active={{ cwd: session.cwd, id: activeId }}
             onNewSession={newSession}
             onSelect={selectSession}
@@ -687,6 +783,7 @@ function Workspace({ cwd }: { cwd: string }) {
             onRename={
               activeId && !state.busy
                 ? async (name) => {
+                    expectedSessionUpdatesRef.current.add(sessionUpdateKey(session.cwd, activeId))
                     const updated = await renameSession(session.cwd, activeId, name)
                     setSessionsByProject((all) => ({ ...all, [session.cwd]: updated }))
                   }

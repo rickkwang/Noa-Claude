@@ -3,29 +3,26 @@
 // reads them here.
 export const THEME_SURFACES = {
   light: {
+    // Codex's Absolutely Light derives these from #F9F9F7 surface + #2D2D2B ink.
     primary: '#F9F9F7',
-    // Neutral floor; was a beige that tinted the settings hairlines mixed from it.
-    secondary: '#F9F9F7',
-    // Absolutely (light) sidebar.
-    sidebar: '#F4F4F2',
+    secondary: '#F2F2F0',
+    sidebar: '#F7F7F5',
     sidebarMaterial: '#FAFAF8',
-    // Row highlight; moves with the floor so it stays distinct from it.
-    sidebarRaised: '#ECEBE8',
-    // Right-column cards and the graph canvas.
-    card: '#FFFFFF',
+    sidebarControl: 'rgba(250,250,248,0.96)',
+    sidebarRaised: '#F2F2F0',
+    sidebarActive: '#ECECEA',
+    card: '#FAFAF9',
   },
   dark: {
-    // Absolutely (dark) background.
+    // Codex's Absolutely Dark derives these from #2D2D2B surface + #F9F9F7 ink.
     primary: '#2D2D2B',
-    secondary: '#1E1E1C',
-    // Dark sidebar; solid, not translucent.
+    secondary: '#262624',
     sidebar: '#30302F',
-    // Translucent-sidebar tint over the native `menu` material.
-    sidebarMaterial: '#343432',
-    sidebarRaised: 'rgba(249,249,247,0.08)',
-    // One step above primary, as primary is one above secondary (30 → 38 → 46): the dark ramp lightens
-    // evenly with elevation, and stays well clear of near-black.
-    card: '#2E2E2C',
+    sidebarMaterial: '#3B3B39',
+    sidebarControl: 'rgba(63,63,61,0.96)',
+    sidebarRaised: '#353533',
+    sidebarActive: '#3A3A38',
+    card: '#474745',
   },
 } as const;
 

@@ -104,6 +104,8 @@ interface SidebarProps {
   projects: ProjectInfo[]
   // Sessions per project path, newest first.
   sessions: Record<string, SessionSummary[]>
+  // Projects whose latest session read succeeded; stale preferences are only pruned after a successful read.
+  loadedProjects: ReadonlySet<string>
   active: ActiveSession
   // Without a path the active project is used.
   onNewSession: (cwd?: string) => void
@@ -121,6 +123,7 @@ const isMac = navigator.platform.includes("Mac")
 export function Sidebar({
   projects,
   sessions,
+  loadedProjects,
   active,
   onNewSession,
   onSelect,
@@ -152,6 +155,39 @@ export function Sidebar({
       // Ordering is a convenience; a full storage quota must not break the sidebar.
     }
   }, [prefs])
+
+  useEffect(() => {
+    if (!loadedProjects.size) return
+    setPrefs((current) => {
+      let changed = false
+      const pinned = { ...current.pinned }
+      const order = { ...current.order }
+      const currentProjects = new Set(projects.map((project) => project.path))
+      for (const path of loadedProjects) {
+        if (!currentProjects.has(path)) continue
+        const ids = new Set((sessions[path] ?? []).map((session) => session.id))
+        const currentPinned = current.pinned[path]
+        if (currentPinned) {
+          const nextPinned = Object.fromEntries(Object.entries(currentPinned).filter(([id]) => ids.has(id)))
+          if (Object.keys(nextPinned).length !== Object.keys(currentPinned).length) {
+            changed = true
+            if (Object.keys(nextPinned).length) pinned[path] = nextPinned
+            else delete pinned[path]
+          }
+        }
+        const currentOrder = current.order[path]
+        if (currentOrder) {
+          const nextOrder = currentOrder.filter((id) => ids.has(id))
+          if (nextOrder.length !== currentOrder.length) {
+            changed = true
+            if (nextOrder.length) order[path] = nextOrder
+            else delete order[path]
+          }
+        }
+      }
+      return changed ? { ...current, pinned, order } : current
+    })
+  }, [loadedProjects, projects, sessions])
 
   useEffect(() => {
     try {
@@ -414,7 +450,7 @@ export function Sidebar({
           type="button"
           aria-expanded={projectsOpen}
           onClick={() => setProjectsOpen((open) => !open)}
-          className="flex min-w-0 flex-1 items-center gap-1 pl-[5px] text-micro uppercase tracking-widest text-[var(--sidebar-text-muted,#898781)] font-ui"
+          className="flex min-w-0 flex-1 items-center gap-1 pl-[5px] text-chat-sm text-[var(--text-tertiary,#898781)] font-ui"
         >
           Projects
           <ChevronRight
@@ -522,7 +558,7 @@ export function Sidebar({
                   type="button"
                   aria-expanded={!recentsPrefs.collapsed}
                   onClick={() => setRecentsPrefs((current) => ({ ...current, collapsed: !current.collapsed }))}
-                  className="flex min-w-0 flex-1 items-center gap-1 pl-[5px] text-micro uppercase tracking-widest text-[var(--sidebar-text-muted,#898781)] font-ui"
+                  className="flex min-w-0 flex-1 items-center gap-1 pl-[5px] text-chat-sm text-[var(--text-tertiary,#898781)] font-ui"
                 >
                   Recents
                   <ChevronRight
@@ -793,7 +829,7 @@ function ProjectRow({
         onPointerCancel={onPointerCancel}
         className={`noa-sidebar-tree-row noa-agent-sidebar-row group flex h-[30px] items-center gap-[7px] pl-[6px] pr-2 mx-2 rounded-lg cursor-pointer select-none ${menuOpen ? "is-active" : ""} ${dragging ? "noa-session-row-dragging" : ""}`}
       >
-        {/* A 16px folder in the label's color, the same open or closed, centred on the New task icon's
+        {/* A 16px folder icon in the row ink, the same open or closed, centred on the New task icon's
             column so names line up with the search and New task labels. */}
         <Folder size={16} className="shrink-0" />
         <span

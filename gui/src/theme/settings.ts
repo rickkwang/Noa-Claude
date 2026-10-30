@@ -10,7 +10,7 @@ export const defaultSettings: AppSettings = {
     usePointerCursors: true,
     translucentSidebar: false,
     reduceMotion: false,
-    uiFontSize: 13,
+    uiFontSize: 14,
     codeFontSize: 12,
     codeFontFamily: SYSTEM_DEFAULT_FONT,
     fontSmoothing: true,

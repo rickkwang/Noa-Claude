@@ -217,6 +217,54 @@ describe('recently-modified protection', () => {
 })
 
 describe('sidecar handling', () => {
+  test('GUI sidecar files are deleted only with their own transcript', async () => {
+    const name = randomUUID()
+    const session = await writeSession(name, 'ping')
+    const kept = randomUUID()
+    const keptSession = await writeSession(kept, 'Keep this useful session')
+    const suffixes = ['turn-diffs', 'turn-results', 'gui-events']
+    for (const id of [name, kept]) {
+      for (const suffix of suffixes) {
+        const sidecar = join(projectDir, `${id}.${suffix}.jsonl`)
+        await writeFile(sidecar, '{}\n')
+        const past = new Date(Date.now() - ONE_DAY_MS)
+        await utimes(sidecar, past, past)
+      }
+    }
+    const result = await run('delete --confirm --trivial-only')
+    expect(result).toContain('Deleted: 1/1')
+    expect(existsSync(session)).toBe(false)
+    expect(existsSync(keptSession)).toBe(true)
+    for (const suffix of suffixes) {
+      expect(existsSync(join(projectDir, `${name}.${suffix}.jsonl`))).toBe(false)
+      expect(existsSync(join(projectDir, `${kept}.${suffix}.jsonl`))).toBe(true)
+    }
+  })
+
+  test('GUI sidecar files count toward the cleanup size bucket', async () => {
+    const name = randomUUID()
+    const session = await writeSession(name, 'ping')
+    const sidecar = join(projectDir, `${name}.turn-diffs.jsonl`)
+    await writeFile(sidecar, 'x'.repeat(300 * 1024))
+    const past = new Date(Date.now() - ONE_DAY_MS)
+    await utimes(sidecar, past, past)
+    const result = await run('delete --confirm --trivial-only')
+    expect(result).toContain('Deleted: 0/0')
+    expect(existsSync(session)).toBe(true)
+    expect(existsSync(sidecar)).toBe(true)
+  })
+
+  test('a recently written GUI sidecar protects its transcript', async () => {
+    const name = randomUUID()
+    const session = await writeSession(name, 'ping')
+    const sidecar = join(projectDir, `${name}.turn-diffs.jsonl`)
+    await writeFile(sidecar, '{}\n')
+    const result = await run('delete --confirm --trivial-only')
+    expect(result).toContain('Deleted: 0/0')
+    expect(existsSync(session)).toBe(true)
+    expect(existsSync(sidecar)).toBe(true)
+  })
+
   test('sidecar dir is deleted together with its transcript', async () => {
     const name = randomUUID()
     const session = await writeSession(name, 'ping')

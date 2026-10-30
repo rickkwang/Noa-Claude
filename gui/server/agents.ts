@@ -156,9 +156,15 @@ export function emit(run: AgentRun, envelope: Envelope) {
   for (const client of run.clients) client.send(raw)
   if (finishedTask) reclaimIfIdle(run)
 }
-function write(run: AgentRun, message: unknown) {
-  run.proc.stdin.write(`${JSON.stringify(message)}\n`)
-  run.proc.stdin.flush()
+function write(run: AgentRun, message: unknown): boolean {
+  try {
+    run.proc.stdin.write(`${JSON.stringify(message)}\n`)
+    run.proc.stdin.flush()
+    return true
+  } catch (error) {
+    emit(run, { kind: "log", text: `Could not send to agent: ${error instanceof Error ? error.message : String(error)}` })
+    return false
+  }
 }
 async function lines(stream: ReadableStream<Uint8Array>, onLine: (line: string) => void) {
   const reader = stream.getReader()
@@ -212,9 +218,17 @@ async function startNextSerialized(run: AgentRun) {
   run.pendingTimeline = []
   run.lastTranscriptUuid = undefined
   run.turn = { index, transcriptOffset, startedAt: Date.now(), before, changes: createChangeCollector() }
+  if (!write(run, { type: "user", message: { role: "user", content: next.content }, parent_tool_use_id: null, uuid: next.id })) {
+    run.queue.unshift(next)
+    run.busy = false
+    run.turnCounter--
+    run.turn = undefined
+    await disposeSnapshot(before)
+    emit(run, queueEnvelope(run))
+    return
+  }
   emit(run, queueEnvelope(run))
   emit(run, { kind: "user", id: next.id, content: next.content })
-  write(run, { type: "user", message: { role: "user", content: next.content }, parent_tool_use_id: null, uuid: next.id })
 }
 
 function trackTurnResult(run: AgentRun, message: AgentMessage) {

@@ -58,6 +58,7 @@ type Candidate = {
 }
 
 const DEFAULT_MAX_BYTES = 256 * 1024
+const GUI_SIDECAR_SUFFIXES = ['turn-diffs', 'turn-results', 'gui-events']
 const COLLAPSED_VISIBLE_CANDIDATES = 12
 const MODAL_VISIBLE_CANDIDATES = 8
 const TRIVIAL_RE = /^(?:ping|test|hello|hi|ok|clear|\/clear|\/usage|usage)$/i
@@ -281,8 +282,22 @@ async function inspectFile(
   if (!args.includeLarge && info.size > args.maxBytes) return null
   // Footprint includes the session's sidecar dir (<uuid>/, tool results
   // etc.) — the .jsonl alone understates what cleanup reclaims.
-  const sidecarSize = await dirSize(path.slice(0, -'.jsonl'.length))
-  const size = info.size + sidecarSize
+  const sidecarBase = path.slice(0, -'.jsonl'.length)
+  const sidecarSize = await dirSize(sidecarBase)
+  let size = info.size + sidecarSize
+  let latestModified = info.mtime.getTime()
+  for (const suffix of GUI_SIDECAR_SUFFIXES) {
+    try {
+      const sidecar = await stat(`${sidecarBase}.${suffix}.jsonl`)
+      size += sidecar.size
+      latestModified = Math.max(latestModified, sidecar.mtime.getTime())
+    } catch {
+      // A broken sidecar must not abort the whole cleanup scan.
+    }
+  }
+  if (Date.now() - latestModified < RECENTLY_MODIFIED_WINDOW_MS) {
+    return 'recent'
+  }
   if (!args.includeLarge && size > args.maxBytes) return null
 
   const { head, tail } = await readHeadAndTail(path, info.size, buf)
@@ -353,14 +368,16 @@ async function deleteCandidates(candidates: Candidate[]): Promise<DeleteOutcome>
     deleted.push(candidate.path)
     // Sidecar dir (<uuid>/, tool results etc.) goes with its transcript. A
     // sidecar failure must not misreport the already-deleted transcript.
-    const sidecar = candidate.path.slice(0, -'.jsonl'.length)
-    try {
-      await rm(sidecar, { recursive: true, force: true })
-    } catch (err) {
-      failed.push({
-        path: sidecar,
-        error: err instanceof Error ? err.message : String(err),
-      })
+    const base = candidate.path.slice(0, -'.jsonl'.length)
+    for (const sidecar of [base, ...GUI_SIDECAR_SUFFIXES.map(suffix => `${base}.${suffix}.jsonl`)]) {
+      try {
+        await rm(sidecar, { recursive: sidecar === base, force: true })
+      } catch (err) {
+        failed.push({
+          path: sidecar,
+          error: err instanceof Error ? err.message : String(err),
+        })
+      }
     }
   }
   return { deleted, failed }

@@ -19,7 +19,8 @@ export interface ProjectInfo {
 
 export async function fetchSessions(cwd: string | undefined): Promise<SessionSummary[]> {
   const response = await fetch(`/api/sessions${query(cwd)}`)
-  return response.ok ? ((await response.json()) as SessionSummary[]) : []
+  if (!response.ok) throw new Error(`Could not list tasks (HTTP ${response.status})`)
+  return (await response.json()) as SessionSummary[]
 }
 
 export async function fetchProjects(): Promise<ProjectInfo[]> {

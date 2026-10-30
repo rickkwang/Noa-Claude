@@ -6,8 +6,6 @@
   font-size: var(--text-body);
   line-height: 20px;
   letter-spacing: 0;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
 }
 .noa-agent-input {
   border-radius: 22px;
@@ -36,13 +34,11 @@
 /* The sidebar follows the Appearance font settings (family, style, size); only its leading is its own, scaled with the size. */
 .noa-sidebar-surface {
   font-size: var(--text-body);
-  line-height: calc(var(--text-body) * 18 / 13);
+  line-height: 1.5;
 }
 .noa-agent-sidebar-row { min-height: 30px; transition: background-color 120ms ease; }
-.noa-agent-sidebar-row:hover,
-.noa-agent-sidebar-row.is-active { background: #EAEAE8; }
-[data-theme="dark"] .noa-agent-sidebar-row:hover,
-[data-theme="dark"] .noa-agent-sidebar-row.is-active { background: color-mix(in srgb, var(--text-primary) 7.8%, transparent); }
+.noa-agent-sidebar-row:hover { background: var(--bg-sidebar-raised); }
+.noa-agent-sidebar-row.is-active { background: var(--bg-sidebar-active); }
 .noa-resize-indicator {
   position: absolute;
   inset-block: 0;
@@ -85,9 +81,8 @@ body[data-pane-dragging="true"] * { cursor: col-resize !important; user-select: 
   --font-weight-bold: 700;
   --font-weight-medium: 500;
 
-  /* Off-grid sizes fold into the 12px (text-xs) and 13px (text-body) tiers. text-micro and text-caption cover the small labels
-     that were previously 10px and 11px. Tiers differ by 1px, so text-caption is never a substitute for text-body. */
-  --text-body: 13px;
+  /* Codex Electron's first-paint token ramp; ThemeInjector scales it with the UI size. */
+  --text-body: 14px;
   --text-micro: calc(var(--text-body) - 3px);
   --text-caption: calc(var(--text-body) - 2px);
   --text-title: calc(var(--text-body) * 2);
@@ -210,12 +205,15 @@ button {
   color: var(--text-secondary, rgba(45,45,43,0.55));
 }
 
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
 body {
   /* Pre-hydration fallback only; ThemeInjector overrides this with the
      resolved user font once settings load. See --font-ui above. */
   font-family: var(--font-ui);
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
   background-color: #FCFCFB;
   color: #2D2D2B;
   margin: 0;
@@ -733,14 +731,13 @@ html[data-translucent-sidebar="enabled"]:where(:not([data-settings-open="true"])
   background-color: transparent;
 }
 
-/* Semantic sidebar states, opted into explicitly. The shared ink scale: 10% for the active row, 7.5% on hover;
-   text-primary flips with the theme, so one rule serves both. Hover rules stay !important to beat base-surface utilities. */
+/* Semantic sidebar states, opted into explicitly. Codex surface tokens flip with the theme. */
 .noa-sidebar-active-surface {
-  background-color: color-mix(in srgb, var(--text-primary, #2D2D2B) 10%, transparent) !important;
+  background-color: var(--bg-sidebar-active) !important;
 }
 .noa-sidebar-hover-surface:hover,
 .noa-sidebar-hover-surface-subtle:hover {
-  background-color: color-mix(in srgb, var(--text-primary, #2D2D2B) 7.5%, transparent) !important;
+  background-color: var(--bg-sidebar-raised) !important;
 }
 
 .noa-floating-panel {
@@ -1775,19 +1772,15 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
   .noa-range::-webkit-slider-thumb { transition: none; }
 }
 
-/* Sidebar search field: half-white well (5% ink in dark), 0.5px inset ring plus a 1px
-   drop at rest; hover deepens the well and firms the ring to a full pixel. */
+/* Codex Absolutely control surface: 96% opaque, with the theme's 4% / 8% border tiers. */
 .noa-sidebar-search {
-  background-color: rgb(255 255 255 / 0.5);
-  box-shadow: inset 0 0 0 0.5px color-mix(in srgb, var(--text-primary, #2D2D2B) 10%, transparent), 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  background-color: var(--bg-sidebar-control);
+  box-shadow: inset 0 0 0 0.5px var(--divider-subtle), 0 1px 2px 0 rgb(0 0 0 / 0.05);
   transition: background-color var(--dur-fast) var(--ease-out);
 }
-[data-theme="dark"] .noa-sidebar-search {
-  background-color: color-mix(in srgb, var(--text-primary, #F9F9F7) 5%, transparent);
-}
 .noa-sidebar-search:hover {
-  background-color: color-mix(in srgb, var(--text-primary, #2D2D2B) 5%, transparent);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text-primary, #2D2D2B) 10%, transparent), 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  background-color: var(--bg-sidebar-raised);
+  box-shadow: inset 0 0 0 1px var(--border-default), 0 1px 2px 0 rgb(0 0 0 / 0.05);
 }
 .noa-sidebar-search-input {
   appearance: none;
@@ -1796,9 +1789,6 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
 }
 .noa-sidebar-search-input::placeholder {
   color: var(--sidebar-text-muted, #898781);
-}
-[data-theme="dark"] .noa-sidebar-search:hover {
-  background-color: color-mix(in srgb, var(--text-primary, #F9F9F7) 9%, transparent);
 }
 
 /* Moving-edge fade for the sidebar and right panel, after Noa's 28px scroll-edge ramp: the content nearest the edge
