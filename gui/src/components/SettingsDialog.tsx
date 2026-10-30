@@ -164,7 +164,7 @@ export function SettingsDialog({
           </button>
         </div>
         {/* Settings nav: 16px semibold title, a pill search, sentence-case group label, 30px rows. */}
-        <h2 className="mt-[15px] px-2 text-[16px] leading-6 font-semibold">Settings</h2>
+        <h2 className="mt-[15px] px-2 text-[16px] leading-6 font-medium">Settings</h2>
         <label className="mt-[13px] flex h-9 items-center gap-2 rounded-full bg-[var(--settings-fill-hover)] px-3 text-[var(--sidebar-text-muted)]">
           <Search size={16} />
           <input
@@ -378,8 +378,8 @@ function Row({ label, description, children }: { label: string; description?: st
   return (
     <div className="flex items-center justify-between gap-6 px-4 py-3">
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <span className="text-[12px] leading-[18px] font-medium">{label}</span>
-        {description && <span className="text-[11px] leading-4 text-[var(--sidebar-text-muted)]">{description}</span>}
+        <span className="text-chat-sm leading-[18px] font-medium">{label}</span>
+        {description && <span className="text-caption leading-4 text-[var(--sidebar-text-muted)]">{description}</span>}
       </div>
       {children}
     </div>
@@ -448,7 +448,7 @@ function Select({
         value={value}
         disabled={disabled}
         onChange={(e) => onChange(e.target.value)}
-        className="h-8 appearance-none rounded-lg border border-[var(--divider-subtle)] bg-[var(--bg-card)] pr-8 pl-3 text-body text-[var(--text-primary)] outline-none disabled:opacity-50"
+        className="h-8 appearance-none rounded-lg border border-[var(--divider-subtle)] bg-[var(--bg-card)] pr-8 pl-3 text-body text-[var(--text-primary)] outline-none disabled:opacity-40"
       >
         {options.map(([v, label]) => (
           <option key={v} value={v}>

@@ -105,7 +105,7 @@ function ConfirmDialog({
         onKeyDown={onKeyDown}
         className="noa-confirm-dialog w-full max-w-[440px] rounded-2xl bg-[var(--bg-card)] p-5 font-ui"
       >
-        <h2 id={titleId} className="m-0 text-balance text-[length:var(--font-text-md-size)] font-semibold text-[var(--text-primary)]">
+        <h2 id={titleId} className="m-0 text-balance text-[length:var(--font-text-md-size)] font-medium text-[var(--text-primary)]">
           {title}
         </h2>
         {description && (

@@ -793,7 +793,7 @@ html[data-translucent-sidebar="enabled"]:where(:not([data-settings-open="true"])
   align-items: center;
   min-height: 24px;
   padding: 4px 8px;
-  font-size: 12.2px;
+  font-size: 12px;
   line-height: 16px;
   color: color-mix(in srgb, var(--text-primary, #1A1C1F) 50%, transparent);
 }
@@ -805,7 +805,7 @@ html[data-translucent-sidebar="enabled"]:where(:not([data-settings-open="true"])
   padding: 4px 8px;
   border-radius: 12px;
   text-align: left;
-  font-size: 12.2px;
+  font-size: 12px;
   line-height: calc(1.25 / .875);
 }
 .noa-approval-item:hover,
@@ -821,7 +821,7 @@ html[data-translucent-sidebar="enabled"]:where(:not([data-settings-open="true"])
   color: color-mix(in srgb, var(--text-primary, #1A1C1F) 50%, transparent);
 }
 .noa-approval-check { flex: none; }
-.noa-approval-item:disabled { cursor: default; opacity: .5; }
+.noa-approval-item:disabled { cursor: default; opacity: .4; }
 .noa-approval-item:disabled:hover { background-color: transparent; }
 .noa-approval-item.is-danger,
 .noa-approval-item.is-danger .noa-approval-desc { color: #D9622B; }
@@ -1916,7 +1916,7 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
   border-radius: 7px;
   color: color-mix(in srgb, var(--text-primary) 48%, transparent);
 }
-.noa-model-picker-reset:disabled { opacity: .3; }
+.noa-model-picker-reset:disabled { opacity: .4; }
 .noa-model-picker-slider { padding: 5px 8px 6px; }
 .noa-model-picker-track {
   --effort-pos: 0;
@@ -2253,17 +2253,17 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
 .noa-popup-menu .noa-context-menu-entry > button:hover,
 .noa-popup-menu .noa-context-menu-entry > button:focus-visible,
 .noa-popup-menu .noa-context-menu-entry > button[aria-expanded="true"] { background: color-mix(in srgb, var(--text-primary) 5%, transparent); outline: none; }
-.noa-popup-menu .noa-context-menu-entry > button:disabled { color: color-mix(in srgb, var(--text-primary) 50%, transparent); pointer-events: none; }
+.noa-popup-menu .noa-context-menu-entry > button:disabled { opacity: 0.4; pointer-events: none; }
+/* A disabled menu row dims as a whole; a switch row dims only its switch. */
+.noa-popup-menu .noa-context-menu-entry > button[role="switch"]:disabled { opacity: 1; pointer-events: auto; cursor: not-allowed; }
+.noa-popup-menu .noa-context-menu-entry > button[role="switch"]:disabled:hover { background: none; }
 .noa-popup-menu-icon { flex-shrink: 0; color: var(--text-primary); }
 .noa-popup-menu-label { min-width: 0; flex: 1; margin-inline-end: 12px; overflow: hidden; text-overflow: ellipsis; }
 .noa-popup-menu-value { color: #5D5D5D; }
 [data-theme="dark"] .noa-popup-menu-value { color: #CDCDCD; }
-.noa-popup-menu button:disabled .noa-popup-menu-value { color: inherit; }
 .noa-popup-menu-trailing { flex-shrink: 0; color: var(--text-primary); }
 .noa-popup-menu-chevron { color: #8F8F8F; }
 [data-theme="dark"] .noa-popup-menu-chevron { color: #AFAFAF; }
-.noa-popup-menu button:disabled .noa-popup-menu-icon,
-.noa-popup-menu button:disabled .noa-popup-menu-chevron { color: inherit; }
 .noa-popup-menu-heading { padding: 4px 8px; color: #8F8F8F; font-size: 12px; line-height: 16px; }
 [data-theme="dark"] .noa-popup-menu-heading { color: #AFAFAF; }
 .noa-popup-menu > .noa-context-menu-separator { margin: 0; height: auto; padding: 4px 8px; background: none; }
@@ -2331,7 +2331,7 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
 .noa-code-line.is-remove .noa-code-sign { color: var(--diff-del-base); }
 .noa-code-line mark { background: color-mix(in srgb, var(--diff-add-base) 15%, transparent); }
 .noa-code-line.is-remove mark { background: color-mix(in srgb, var(--diff-del-base) 15%, transparent); }
-.noa-diff-hunk-header { padding: 2px 12px; min-height: 28px; border-block: 0; background: color-mix(in srgb, var(--surface-page, #F9F9F7) 94%, #009FFF); color: color-mix(in srgb, var(--text-primary) 55%, transparent); font-family: var(--font-mono); font-size: 11.5px; }
+.noa-diff-hunk-header { padding: 2px 12px; min-height: 28px; border-block: 0; background: color-mix(in srgb, var(--surface-page, #F9F9F7) 94%, #009FFF); color: color-mix(in srgb, var(--text-primary) 55%, transparent); font-family: var(--font-mono); font-size: var(--text-caption); }
 .noa-diff-pair .noa-code-line:first-child { border-right: 1px solid color-mix(in srgb, var(--text-primary) 8%, transparent); }
 .noa-turn-scope select { appearance: none; height: 24px; padding: 0 22px 0 8px; border: 0; background: transparent url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23898781' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") no-repeat right 6px center; cursor: pointer; }
 .noa-turn-scope select:hover { background-color: color-mix(in srgb, var(--text-primary) 5%, transparent); color: var(--text-primary); }
@@ -2364,7 +2364,7 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
 .noa-turn-diff-header { display: flex; min-width: 0; flex: 1; min-height: 64px; align-items: center; gap: 10px; padding: 12px; text-align: left; }
 .noa-turn-diff-action { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; height: 26px; padding: 0 8px; border-radius: 6px; font-size: var(--text-caption); color: var(--text-secondary); white-space: nowrap; }
 .noa-turn-diff-action:hover:not(:disabled) { background: color-mix(in srgb, var(--text-primary) 7%, transparent); color: var(--text-primary); }
-.noa-turn-diff-action:disabled { opacity: .55; cursor: default; }
+.noa-turn-diff-action:disabled { opacity: .4; cursor: default; }
 @container (max-width: 440px) {
   .noa-turn-diff-headrow { flex-wrap: wrap; gap: 0 8px; padding-bottom: 12px; }
   .noa-turn-diff-header { flex-basis: 100%; }
@@ -2711,7 +2711,7 @@ body.noa-session-dragging * { cursor: grabbing !important; }
   background: rgb(0 0 0 / 13.3%);
   color: var(--project-text);
   font-family: var(--font-ui);
-  font-weight: 430;
+  font-weight: 400;
 }
 
 [data-theme="dark"] .noa-project-dialog {
@@ -2749,7 +2749,7 @@ body.noa-session-dragging * { cursor: grabbing !important; }
   margin: 0;
   padding-inline-end: 40px;
   font-size: calc(var(--text-body) * 1.384615);
-  font-weight: 600;
+  font-weight: 500;
   line-height: calc(var(--text-body) * 2.153846);
   letter-spacing: normal;
 }
@@ -3006,7 +3006,7 @@ body.noa-session-dragging * { cursor: grabbing !important; }
   color: var(--project-tertiary);
   font: inherit;
   font-size: 14px;
-  font-weight: 430;
+  font-weight: 400;
   line-height: 18px;
   white-space: nowrap;
 }

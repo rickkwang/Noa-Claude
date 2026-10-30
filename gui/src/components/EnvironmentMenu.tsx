@@ -137,7 +137,7 @@ export function EnvironmentMenu({ cwd, branch, onBranchChange, worktree, canTogg
         <div
           role="dialog"
           aria-label="Configure local environment"
-          className={`noa-context-menu noa-popup-menu noa-floating-panel absolute bottom-full right-0 z-30 mb-2 text-left ${view === "main" ? "w-64" : "w-72"}`}
+          className={`noa-context-menu noa-popup-menu noa-floating-panel absolute bottom-full right-0 z-30 mb-2 text-left ${view === "main" ? "w-[260px]" : "w-72"}`}
         >
           {view === "main" && (
             <>
@@ -188,7 +188,7 @@ export function EnvironmentMenu({ cwd, branch, onBranchChange, worktree, canTogg
                   onChange={(event) => setSearch(event.target.value)}
                   placeholder="Search branches"
                   aria-label="Search branches"
-                  className="min-w-0 flex-1 bg-transparent text-[13px] text-[var(--text-primary)] outline-none placeholder:text-[color-mix(in_srgb,var(--text-primary)_50%,transparent)]"
+                  className="min-w-0 flex-1 bg-transparent text-body text-[var(--text-primary)] outline-none placeholder:text-[color-mix(in_srgb,var(--text-primary)_50%,transparent)]"
                 />
               </label>
               <div role="menu" aria-label="Branches" className="max-h-60 overflow-y-auto">

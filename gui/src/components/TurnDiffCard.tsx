@@ -142,7 +142,7 @@ export function DiffActionDialog({ action, result, onClose }: {
         className="w-full max-w-md rounded-xl bg-[var(--surface-page,#F9F9F7)] p-4 text-[var(--text-primary)] shadow-[var(--shadow-dialog)]"
         onClick={(event) => event.stopPropagation()}
       >
-        <h2 className="m-0 text-balance text-[length:var(--font-text-md-size)] font-semibold tabular-nums">{title}</h2>
+        <h2 className="m-0 text-balance text-[length:var(--font-text-md-size)] font-medium tabular-nums">{title}</h2>
         {result.errorCode === "no-patch" && (
           <p className="mt-2 text-caption text-[var(--sidebar-text-muted)]">This turn has no stored patch to apply.</p>
         )}

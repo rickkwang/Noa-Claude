@@ -591,7 +591,7 @@ export function Composer({
               )
             })}
           </div>
-          <div className="flex gap-3 border-t border-[var(--divider-subtle)] px-3 py-1.5 text-[11px] text-[var(--sidebar-text-muted)]">
+          <div className="flex gap-3 border-t border-[var(--divider-subtle)] px-3 py-1.5 text-caption text-[var(--sidebar-text-muted)]">
             <span>↑↓ Navigate</span>
             <span>↵ Reference</span>
             <span className="ml-auto">Esc Close</span>
@@ -871,7 +871,7 @@ export function Composer({
               aria-label={editDraft?.queued ? "Save queued message" : busy && !text.trim() && !images.length ? "Stop (Esc)" : busy ? "Queue message" : "Run task"}
               title={editDraft?.queued ? "Save queued message; queue stays paused" : busy && !text.trim() && !images.length ? "Stop (Esc)" : busy ? "Queue after the current turn" : "Run task"}
               data-action={busy && !text.trim() && !images.length ? "stop" : busy ? "queue" : "send"}
-              className="noa-primary-action ml-1 flex size-7 shrink-0 items-center justify-center rounded-full bg-[var(--text-primary,#2D2D2B)] text-[var(--surface-page,#FFFFFF)] transition-[opacity,transform] hover:opacity-90 disabled:opacity-25 noa-press"
+              className="noa-primary-action ml-1 flex size-7 shrink-0 items-center justify-center rounded-full bg-[var(--text-primary,#2D2D2B)] text-[var(--surface-page,#FFFFFF)] transition-[opacity,transform] hover:opacity-90 disabled:opacity-40 noa-press"
             >
               {busy && !editDraft?.queued && !text.trim() && !images.length
                 ? <span aria-hidden="true" className="block size-2.5 rounded-[2px] bg-current" />
@@ -1042,7 +1042,7 @@ function EffortSlider({
         <button type="button" onClick={onToggleModels} aria-label="Select model" className="noa-model-picker-view">
           <span className="noa-model-picker-labels">
             <span
-              className={`text-[13px] font-medium ${selected >= 0 ? "text-[var(--accent-color)]" : "text-[var(--sidebar-text-muted)]"}`}
+              className={`text-body font-medium ${selected >= 0 ? "text-[var(--accent-color)]" : "text-[var(--sidebar-text-muted)]"}`}
             >
               {label}
             </span>
@@ -1341,7 +1341,7 @@ function Picker({
           setShowingModels(false)
           setOpen((o) => !o)
         }}
-        className={`flex h-7 min-w-0 items-center gap-1 whitespace-nowrap rounded-full ${iconOnly ? "w-7 justify-center p-0" : compactPadding ? "px-1.5" : "px-2"} text-chat-sm font-normal leading-[18px] transition-colors hover:bg-[color-mix(in_srgb,var(--text-primary,#2D2D2B)_7.5%,transparent)] disabled:opacity-50 ${
+        className={`flex h-7 min-w-0 items-center gap-1 whitespace-nowrap rounded-full ${iconOnly ? "w-7 justify-center p-0" : compactPadding ? "px-1.5" : "px-2"} text-chat-sm font-normal leading-[18px] transition-colors hover:bg-[color-mix(in_srgb,var(--text-primary,#2D2D2B)_7.5%,transparent)] disabled:opacity-40 ${
           tone === "danger" ? "text-[#C24444]" : "text-[var(--sidebar-text,#52514E)]"
         }`}
       >

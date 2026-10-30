@@ -205,7 +205,7 @@ export function Lightbox({ items, index, onIndex, onClose }: {
         )}
       </div>
 
-      <div className="flex h-9 shrink-0 items-center justify-center px-3 text-[11px] text-white/45">
+      <div className="flex h-9 shrink-0 items-center justify-center px-3 text-caption text-white/45">
         Scroll to zoom · Drag to pan · Esc to close
       </div>
     </dialog>,

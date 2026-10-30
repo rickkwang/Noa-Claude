@@ -179,7 +179,7 @@ function ToolPermissionCard({ permission, onAnswer }: PermissionCardProps) {
                     if (optionsRef.current) optionsRef.current.open = false
                     answer(true, false)
                   }}
-                  className="block w-full rounded px-2 py-1.5 text-left hover:bg-[color-mix(in_srgb,var(--text-primary)_7%,transparent)] disabled:opacity-50"
+                  className="block w-full rounded px-2 py-1.5 text-left hover:bg-[color-mix(in_srgb,var(--text-primary)_7%,transparent)] disabled:opacity-40"
                 >
                   Allow once
                 </button>
@@ -191,7 +191,7 @@ function ToolPermissionCard({ permission, onAnswer }: PermissionCardProps) {
                     if (optionsRef.current) optionsRef.current.open = false
                     answer(true, true)
                   }}
-                  className="block w-full rounded px-2 py-1.5 text-left hover:bg-[color-mix(in_srgb,var(--text-primary)_7%,transparent)] disabled:opacity-50"
+                  className="block w-full rounded px-2 py-1.5 text-left hover:bg-[color-mix(in_srgb,var(--text-primary)_7%,transparent)] disabled:opacity-40"
                 >
                   {submitting === "remember" ? "Allowing…" : rememberLabel}
                 </button>
