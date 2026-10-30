@@ -141,13 +141,10 @@ function Workspace({ cwd }: { cwd: string }) {
     return () => clearTimeout(timer)
   }, [dockMotion, sidebarOpen])
   const [rightOpen, setRightOpen] = useState(true)
-  // Claude's session-rail model. `shown` is the remembered preference. The docked column is visible when it
-  // is shown and fits; when it does not fit, the toggle opens a transient popover instead. The popover
-  // closes by itself once the column becomes visible, and a hidden column never morphs into a popover.
-  // Claude's session-rail model: `shown` is the remembered preference. The docked column is visible when it
-  // is shown and fits; when it does not fit, the toggle opens a transient popover instead.
-  const [overviewShown, setOverviewShown] = useState(() => { try { return localStorage.getItem("noa-overview-shown") !== "false" } catch { return true } })
-  useEffect(() => { try { localStorage.setItem("noa-overview-shown", String(overviewShown)) } catch { /* Ignore unavailable storage. */ } }, [overviewShown])
+  // The docked column is visible while it is shown and fits; when it does not fit, the toggle opens a transient
+  // popover instead. Both open only from the toggle: never persisted, and a column that stops fitting becomes
+  // the popover, so widening the window again cannot re-dock it on its own.
+  const [overviewShown, setOverviewShown] = useState(false)
   // The popover belongs to the session it was raised in, as Claude's rail overlay is keyed to its session id.
   const [overviewPopover, setOverviewPopover] = useState<number | null>(null)
   const [addingProject, setAddingProject] = useState(false)
@@ -648,14 +645,16 @@ function Workspace({ cwd }: { cwd: string }) {
   const overviewPopoverOpen = overviewPopover === session.key && !overviewDockedVisible
   const overviewVisible = overviewDockedVisible || overviewPopoverOpen
   useEffect(() => { if (overviewPopover !== null && !overviewPopoverOpen) setOverviewPopover(null) }, [overviewPopover, overviewPopoverOpen])
+  // A docked column that stops fitting turns into the popover instead of vanishing.
+  useEffect(() => { if (overviewShown && !overviewDocked) { setOverviewShown(false); setOverviewPopover(session.key) } }, [overviewShown, overviewDocked, session.key])
   const toggleOverview = () => {
     if (overviewVisible) {
       setOverviewPopover(null)
       if (overviewDockedVisible) setOverviewShown(false)
       return
     }
-    setOverviewShown(true)
-    if (!overviewDocked) setOverviewPopover(session.key)
+    if (overviewDocked) setOverviewShown(true)
+    else setOverviewPopover(session.key)
   }
   const overviewDockInset = overviewDockedVisible ? 280 + 8 + 12 : 0
 
@@ -1010,7 +1009,7 @@ function Workspace({ cwd }: { cwd: string }) {
             endInset={8}
             // The popover stops above the composer card (the footer's 32px top padding is only a fade).
             bottomInset={Math.max(0, footerHeight - 32)}
-            docked={overviewDocked}
+            docked={overviewDockedVisible}
             onClose={() => setOverviewPopover(null)}
             onRefreshContext={refreshContext}
             onRefreshMcp={refreshMcp}
