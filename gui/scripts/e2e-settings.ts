@@ -99,6 +99,7 @@ app.whenReady().then(async () => {
     check(true, 'MCP disable, enable, and reconnect work from settings')
     await capture('mcp')
     await nav('Appearance')
+    await run("[...document.querySelectorAll('[data-settings-surface] main button')].find(e=>e.textContent.trim()==='Advanced').click()")
     await run("(() => {const e=[...document.querySelectorAll('[data-settings-label]')].find(e=>e.dataset.settingsLabel==='UI font size').querySelector('input');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,'16');e.dispatchEvent(new Event('input',{bubbles:true}));})()")
     await wait("JSON.parse(localStorage.getItem('noa-agent.appearance')).uiFontSize === 16", 'font preference changed')
     await run("[...document.querySelectorAll('[data-settings-surface] main button')].find(e=>e.textContent.trim()==='Reset to default').click()")

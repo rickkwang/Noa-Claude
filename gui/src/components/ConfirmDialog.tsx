@@ -118,7 +118,7 @@ function ConfirmDialog({
             ref={cancelRef}
             type="button"
             onClick={onCancel}
-            className="noa-confirm-btn h-7 rounded-md border border-[var(--divider-subtle)] px-3 text-body noa-press"
+            className="noa-confirm-btn h-7 rounded-md border border-[var(--border-default)] px-3 text-body noa-press"
           >
             {cancelLabel}
           </button>

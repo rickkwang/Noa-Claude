@@ -28,6 +28,7 @@ import { usePanelWidth } from "./hooks/usePanelWidth"
 import { Sidebar } from "./components/Sidebar"
 import TopBar from "./components/TopBar"
 import ThemeInjector from "./theme/ThemeInjector"
+import { migrateAppearance } from "./lib/appearanceMigration"
 import { defaultSettings } from "./theme/settings"
 import { SettingsDialog } from "./components/SettingsDialog"
 import { SessionTitle } from "./components/SessionTitle"
@@ -89,7 +90,7 @@ function Workspace({ cwd }: { cwd: string }) {
         ...defaultSettings,
         appearance: {
           ...defaultSettings.appearance,
-          ...appearance,
+          ...migrateAppearance(appearance),
         },
         agent,
         composer: { ...defaultSettings.composer, ...JSON.parse(localStorage.getItem("noa-agent.composer") ?? "{}") },
@@ -99,6 +100,13 @@ function Workspace({ cwd }: { cwd: string }) {
     }
   })
   const [settingsOpen, setSettingsOpen] = useState(false)
+  // The settings page overlays the whole window, so CSS hides the app shell while it is open.
+  // The attribute hides the shell, so it is cleared on unmount too: a stuck flag would leave a blank window.
+  useEffect(() => {
+    if (settingsOpen) document.documentElement.dataset.settingsOpen = "true"
+    else delete document.documentElement.dataset.settingsOpen
+    return () => { delete document.documentElement.dataset.settingsOpen }
+  }, [settingsOpen])
   useEffect(() => {
     localStorage.setItem("noa-agent.appearance", JSON.stringify(settings.appearance))
     localStorage.setItem("noa-agent.agent", JSON.stringify(settings.agent))
@@ -118,6 +126,20 @@ function Workspace({ cwd }: { cwd: string }) {
   const [loadedProjects, setLoadedProjects] = useState<ReadonlySet<string>>(() => new Set())
   const [refreshTick, setRefreshTick] = useState(0)
   const [sidebarOpen, setSidebarOpen] = useState(true)
+  // The translucent veil animates only for the sidebar's own dock motion (never on first paint, when the flag is still off). The flag is derived
+  // while rendering, so it lands in the same commit as the new material width; set from an effect it would arrive a
+  // frame late and the veil would snap to its destination instead of transitioning.
+  const [dockMotion, setDockMotion] = useState(false)
+  const [dockedOpen, setDockedOpen] = useState(sidebarOpen)
+  if (dockedOpen !== sidebarOpen) {
+    setDockedOpen(sidebarOpen)
+    setDockMotion(true)
+  }
+  useEffect(() => {
+    if (!dockMotion) return
+    const timer = setTimeout(() => setDockMotion(false), 520)
+    return () => clearTimeout(timer)
+  }, [dockMotion, sidebarOpen])
   const [rightOpen, setRightOpen] = useState(true)
   // Claude's session-rail model. `shown` is the remembered preference. The docked column is visible when it
   // is shown and fits; when it does not fit, the toggle opens a transient popover instead. The popover
@@ -375,7 +397,7 @@ function Workspace({ cwd }: { cwd: string }) {
     <button
       type="button"
       onClick={() => setRightOpen((o) => !o)}
-      className="flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-[var(--icon-ink,#52514E)] transition-colors hover:bg-[color-mix(in_srgb,var(--text-primary,#2D2D2B)_7.5%,transparent)] hover:text-[var(--text-primary,#2D2D2B)]"
+      className="flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-[var(--icon-ink,#52514E)] transition-colors hover:bg-[var(--fill-hover)] hover:text-[var(--text-primary,#2D2D2B)]"
       title="Right panel"
       aria-label="Right panel"
       aria-pressed={rightOpen}
@@ -649,10 +671,12 @@ function Workspace({ cwd }: { cwd: string }) {
 
   return (
     <div
+      data-sidebar-dock-motion={dockMotion ? "true" : undefined}
       className="noa-app-shell h-screen w-screen flex flex-col isolate bg-[var(--bg-sidebar,#FBFBF9)] text-[var(--text-primary,#2D2D2B)] font-ui overflow-hidden relative selection:bg-[var(--accent-color,#CC7D5E)] selection:text-white"
       style={
         {
           "--noa-sidebar-width": `${sidebar.width}px`,
+          "--noa-sidebar-material-width": `${sidebarWidth}px`,
           "--noa-right-panel-width": `${rightWidth}px`,
         } as React.CSSProperties
       }
@@ -662,6 +686,8 @@ function Workspace({ cwd }: { cwd: string }) {
       {/* The sidebar runs the full height behind the titlebar, as in Noa; the TopBar paints only beside it. */}
       <div
         data-sidebar-container
+        data-sidebar-column-surface="true"
+        data-sidebar-expanded={sidebarOpen ? "true" : undefined}
         inert={!sidebarOpen ? true : undefined}
         className={`noa-edge-fade-right absolute inset-y-0 left-0 z-10 overflow-hidden bg-[var(--bg-sidebar,#FBFBF9)] ${animate}`}
         style={{ width: sidebarWidth, "--noa-edge-fade": sidebarOpen ? "0px" : "28px" } as React.CSSProperties}
@@ -800,7 +826,7 @@ function Workspace({ cwd }: { cwd: string }) {
           <button
             type="button"
             onClick={toggleOverview}
-            className="flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-[var(--icon-ink,#52514E)] transition-colors hover:bg-[color-mix(in_srgb,var(--text-primary,#2D2D2B)_7.5%,transparent)] hover:text-[var(--text-primary,#2D2D2B)] aria-pressed:bg-[color-mix(in_srgb,var(--text-primary,#2D2D2B)_7.5%,transparent)]"
+            className="flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-[var(--icon-ink,#52514E)] transition-colors hover:bg-[var(--fill-hover)] hover:text-[var(--text-primary,#2D2D2B)] aria-pressed:bg-[var(--fill-active)]"
             title="Overview"
             aria-label="Overview"
             data-overview-toggle=""

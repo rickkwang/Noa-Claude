@@ -459,14 +459,14 @@ export function Sidebar({
           />
         </button>
         {/* Hidden until the header is hovered or focused. */}
-        <span className="flex opacity-0 transition-opacity group-hover/projects:opacity-100 focus-within:opacity-100">
+        <span className="flex opacity-0 group-hover/projects:opacity-100 focus-within:opacity-100">
           <IconButton title="Add project folder" label="Add project" onClick={onAddProject}>
             <FolderPlus size={14} />
           </IconButton>
         </span>
       </div>
 
-      <div className="noa-sidebar-scroll noa-sidebar-scroll-fade group/tree flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
+      <div className="noa-sidebar-scroll scrollbar-on-hover noa-sidebar-scroll-fade group/tree flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
         <div className="pt-1 pb-2">
           {projects.length === 0 && (
             <button
@@ -572,7 +572,7 @@ export function Sidebar({
                 </button>
                 {/* Shown on hover; an active filter keeps them visible. */}
                 <span
-                  className={`flex items-center gap-0.5 transition-opacity group-hover/recents:opacity-100 focus-within:opacity-100 has-[[aria-expanded=true]]:opacity-100 ${recentsProject ? "opacity-100" : "opacity-0"}`}
+                  className={`flex items-center gap-0.5 group-hover/recents:opacity-100 focus-within:opacity-100 has-[[aria-expanded=true]]:opacity-100 ${recentsProject ? "opacity-100" : "opacity-0"}`}
                 >
                   <button
                     type="button"
@@ -584,7 +584,7 @@ export function Sidebar({
                       const trigger = event.currentTarget
                       setRecentsMenu((current) => (current ? undefined : { anchor: anchorBelow(trigger), trigger }))
                     }}
-                    className={`flex size-6 items-center justify-center rounded-md noa-sidebar-hover-surface transition-colors noa-press ${
+                    className={`flex size-6 items-center justify-center rounded-md noa-sidebar-hover-surface noa-press ${
                       recentsMenu ? "text-[var(--text-primary,#2D2D2B)]" : "text-[var(--sidebar-text-muted,#898781)] hover:text-[var(--text-primary,#2D2D2B)]"
                     }`}
                   >
@@ -689,7 +689,7 @@ export function Sidebar({
           <span className="min-w-0 flex-1 truncate text-left">Settings</span>
           <span
             aria-hidden="true"
-            className="shrink-0 text-caption text-[var(--sidebar-text-muted)] opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100"
+            className="shrink-0 text-caption text-[var(--sidebar-text-muted)] opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100"
           >
             {isMac ? "⌘," : "Ctrl+,"}
           </span>
@@ -716,7 +716,7 @@ function IconButton({
         event.stopPropagation()
         onClick()
       }}
-      className="flex size-6 items-center justify-center rounded-md noa-sidebar-hover-surface text-[var(--sidebar-text-muted,#898781)] hover:text-[var(--text-primary,#2D2D2B)] transition-colors noa-press"
+      className="flex size-6 items-center justify-center rounded-md noa-sidebar-hover-surface text-[var(--sidebar-text-muted,#898781)] hover:text-[var(--text-primary,#2D2D2B)] noa-press"
       title={title}
       aria-label={label}
     >
@@ -840,7 +840,7 @@ function ProjectRow({
         {project.missing && <span className="shrink-0 text-caption text-[#C24444]">missing</span>}
         <span
           data-session-action
-          className={`flex shrink-0 items-center gap-2 transition-opacity group-hover:opacity-100 focus-within:opacity-100 ${menuOpen ? "opacity-100" : "opacity-0"}`}
+          className={`flex shrink-0 items-center gap-2 group-hover:opacity-100 focus-within:opacity-100 ${menuOpen ? "opacity-100" : "opacity-0"}`}
           style={noDragRegion}
         >
           <div className="relative" ref={menuRef}>
@@ -871,7 +871,7 @@ function ProjectRow({
                     setMenuOpen(false)
                     onEdit()
                   }}
-                  className="w-full rounded-md px-2.5 py-1.5 text-left text-body hover:bg-[color-mix(in_srgb,var(--text-primary)_5%,transparent)]"
+                  className="w-full rounded-md px-2.5 py-1.5 text-left text-body hover:bg-[var(--fill-hover)]"
                 >
                   Edit project
                 </button>
@@ -884,7 +884,7 @@ function ProjectRow({
                         setMenuOpen(false)
                         onReveal()
                       }}
-                      className="w-full rounded-md px-2.5 py-1.5 text-left text-body hover:bg-[color-mix(in_srgb,var(--text-primary)_5%,transparent)]"
+                      className="w-full rounded-md px-2.5 py-1.5 text-left text-body hover:bg-[var(--fill-hover)]"
                     >
                       Reveal in Finder
                     </button>
@@ -898,7 +898,7 @@ function ProjectRow({
                     setMenuOpen(false)
                     onRemove()
                   }}
-                  className="w-full rounded-md px-2.5 py-1.5 text-left text-body hover:bg-[color-mix(in_srgb,var(--text-primary)_5%,transparent)]"
+                  className="w-full rounded-md px-2.5 py-1.5 text-left text-body hover:bg-[var(--fill-hover)]"
                 >
                   Remove project
                 </button>
@@ -914,7 +914,7 @@ function ProjectRow({
                 event.stopPropagation()
                 onNewSession()
               }}
-              className="flex size-6 items-center justify-center rounded-md text-[var(--sidebar-text-muted,#898781)] hover:text-[var(--text-primary,#2D2D2B)] transition-colors noa-press"
+              className="flex size-6 items-center justify-center rounded-md text-[var(--sidebar-text-muted,#898781)] hover:text-[var(--text-primary,#2D2D2B)] noa-press"
             >
               <SquarePen size={14} />
             </button>
@@ -995,7 +995,7 @@ function SessionRow({
         style={{ paddingLeft: indent ? "29px" : "7px" }}
       >
         {dropEdge && <DropIndicator edge={dropEdge} indented={indent} className="inset-x-0" />}
-        <span className={`noa-fade-truncate transition-[margin-right] duration-150 ease-out ${pinned || status ? "" : "-mr-2 group-hover:mr-6 group-focus-within:mr-6"}`}>{title}</span>
+        <span className={`noa-fade-truncate ${pinned || status ? "" : "-mr-2 group-hover:mr-6 group-focus-within:mr-6"}`}>{title}</span>
         <span className={`${pinned || status ? "ml-2 flex shrink-0" : "absolute inset-y-0 right-2 flex"} items-center gap-1`}>
           {status && <span role="status" aria-label={status === "waiting" ? "Approval required" : status === "running" ? "Running" : "Queued"} title={status} className={`size-1.5 shrink-0 rounded-full ${status === "waiting" ? "bg-amber-500" : "animate-pulse bg-[var(--accent-color)]"}`} />}
           <button
@@ -1008,7 +1008,7 @@ function SessionRow({
               event.stopPropagation()
               onTogglePin?.()
             }}
-            className={`flex size-6 items-center justify-center rounded-md text-[var(--sidebar-text-muted,#898781)] transition-opacity duration-150 ease-out hover:text-[var(--text-primary,#2D2D2B)] noa-press ${
+            className={`flex size-6 items-center justify-center rounded-md text-[var(--sidebar-text-muted,#898781)] hover:text-[var(--text-primary,#2D2D2B)] noa-press ${
               pinned ? "" : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
             }`}
           >

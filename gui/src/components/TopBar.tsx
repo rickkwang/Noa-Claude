@@ -40,7 +40,7 @@ export default function TopBar({
   resizing,
 }: TopBarProps) {
   const buttonClass =
-    "flex h-6 w-6 cursor-pointer items-center justify-center rounded-md transition-colors text-[var(--icon-ink,#52514E)] hover:text-[var(--text-primary,#2D2D2B)] hover:bg-[color-mix(in_srgb,var(--text-primary,#2D2D2B)_7.5%,transparent)]"
+    "flex h-6 w-6 cursor-pointer items-center justify-center rounded-md transition-colors text-[var(--icon-ink,#52514E)] hover:text-[var(--text-primary,#2D2D2B)] hover:bg-[var(--fill-hover)]"
   return (
     <div
       data-titlebar="true"

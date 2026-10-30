@@ -33,7 +33,7 @@ const ROW = "flex h-7 w-full min-w-0 items-center gap-[5px] px-2 text-start text
 
 function SectionList({ section, open, onToggle }: { section: Section; open: boolean; onToggle: () => void }) {
   return <div>
-    <button type="button" aria-expanded={open} onClick={onToggle} className={`${ROW} rounded-md hover:bg-[color-mix(in_srgb,var(--text-primary)_5%,transparent)]`}>
+    <button type="button" aria-expanded={open} onClick={onToggle} className={`${ROW} rounded-md hover:bg-[var(--fill-hover)]`}>
       <span className="flex w-4 shrink-0 items-center justify-center"><ChevronRight size={12} className={`text-[var(--sidebar-text-muted)] transition-transform duration-[60ms] ease-out ${open ? "rotate-90" : ""}`} aria-hidden="true" /></span>
       <span className="min-w-0 flex-1 truncate text-[var(--sidebar-text-muted)]">{section.label}</span>
       <span className="w-11 shrink-0 text-end text-[var(--sidebar-text-muted)]">{section.rows.length.toLocaleString()}</span>

@@ -232,7 +232,7 @@ export function OverviewPanel({ state, cwd, open, workspaceRefreshKey, endInset,
       <div className={iconRow}>
         <PlusMinus size={16} className={`shrink-0 ${MUTED}`} aria-hidden="true" />
         {changes.files.length ? <span className="shrink-0 whitespace-nowrap"><span className="text-[#3E8E57]">+{changes.additions}</span> <span className="text-[#C24444]">−{changes.deletions}</span></span> : <span className={`min-w-0 truncate ${MUTED}`}>Working tree clean</span>}
-        <button type="button" onClick={onOpenChanges} className="ms-auto h-6 shrink-0 whitespace-nowrap rounded-lg bg-[color-mix(in_srgb,var(--text-primary)_5%,transparent)] px-2.5 text-[var(--text-primary)] hover:bg-[color-mix(in_srgb,var(--text-primary)_10%,transparent)]">Review changes</button>
+        <button type="button" onClick={onOpenChanges} className="ms-auto h-6 shrink-0 whitespace-nowrap rounded-lg bg-[var(--fill-hover)] px-2.5 text-[var(--text-primary)] hover:bg-[var(--fill-hover)]">Review changes</button>
       </div>
     </RailCard> : null,
     connectors: <ConnectorsCard state={state} chrome={chromeFor("connectors")} />,
@@ -256,7 +256,7 @@ export function OverviewPanel({ state, cwd, open, workspaceRefreshKey, endInset,
     </RailCard>,
   }
   const cardClass = (index: number) => docked
-    ? "rounded-lg shadow-[0_0_0_0.5px_var(--panel-divider)] empty:hidden"
+    ? "rounded-lg shadow-[0_0_0_1px_var(--border-default)] empty:hidden"
     : `${index > 0 ? "border-t border-[var(--divider-subtle)] " : ""}empty:hidden`
   const cardEls = visible.map((id, index) => <div key={id} ref={(node) => { if (node) cardRefs.current.set(id, node); else cardRefs.current.delete(id) }}
     className={cardClass(index)}
@@ -267,13 +267,13 @@ export function OverviewPanel({ state, cwd, open, workspaceRefreshKey, endInset,
     {docked
       ? <aside ref={panelRef} aria-label="Overview" className="flex flex-col gap-2 p-px font-ui">{cardEls}</aside>
       : <aside ref={panelRef} aria-label="Overview" className="noa-overview font-ui">{cardEls}</aside>}
-    {menu && <div role="menu" aria-label="Overview cards" style={{ position: "fixed", left: menu.x, top: menu.y }} onPointerDown={(event) => event.stopPropagation()} className="pointer-events-auto z-50 min-w-40 rounded-xl border border-[var(--divider-subtle)] bg-[var(--bg-card)] p-1 font-ui text-body shadow-lg">
+    {menu && <div role="menu" aria-label="Overview cards" style={{ position: "fixed", left: menu.x, top: menu.y }} onPointerDown={(event) => event.stopPropagation()} className="pointer-events-auto z-50 min-w-40 rounded-xl border border-[var(--border-default)] bg-[var(--bg-card)] p-1 font-ui text-body shadow-lg">
       <div className={`px-2 py-1 ${MUTED}`}>Show</div>
-      {CARDS.map((card) => <button key={card.id} type="button" role="menuitemcheckbox" aria-checked={!layout.hidden.includes(card.id)} onClick={() => update({ ...layout, hidden: layout.hidden.includes(card.id) ? layout.hidden.filter((id) => id !== card.id) : [...layout.hidden, card.id] })} className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-start hover:bg-[color-mix(in_srgb,var(--text-primary)_7%,transparent)]">
+      {CARDS.map((card) => <button key={card.id} type="button" role="menuitemcheckbox" aria-checked={!layout.hidden.includes(card.id)} onClick={() => update({ ...layout, hidden: layout.hidden.includes(card.id) ? layout.hidden.filter((id) => id !== card.id) : [...layout.hidden, card.id] })} className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-start hover:bg-[var(--fill-hover)]">
         <span className="w-3 text-center">{layout.hidden.includes(card.id) ? "" : "✓"}</span>{card.title}
       </button>)}
       <div className="my-1 h-px bg-[var(--divider-subtle)]" />
-      <button type="button" role="menuitem" disabled={layout.hidden.length === 0 && layout.order.every((id, i) => id === DEFAULT_LAYOUT.order[i])} onClick={() => { update(DEFAULT_LAYOUT); setMenu(undefined) }} className="flex w-full items-center rounded-lg px-2 py-1.5 text-start hover:bg-[color-mix(in_srgb,var(--text-primary)_7%,transparent)] disabled:opacity-40">Reset to defaults</button>
+      <button type="button" role="menuitem" disabled={layout.hidden.length === 0 && layout.order.every((id, i) => id === DEFAULT_LAYOUT.order[i])} onClick={() => { update(DEFAULT_LAYOUT); setMenu(undefined) }} className="flex w-full items-center rounded-lg px-2 py-1.5 text-start hover:bg-[var(--fill-hover)] disabled:opacity-40">Reset to defaults</button>
     </div>}
   </div>
 }

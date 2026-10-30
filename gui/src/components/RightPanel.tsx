@@ -96,7 +96,7 @@ export function RightPanel({ state, onStopTask, cwd, tab, onTab, onReference, on
                 style={noDragRegion}
                 className={`h-6 shrink-0 rounded-md px-2 text-body transition-colors ${
                   active
-                    ? "bg-[color-mix(in_srgb,var(--text-primary,#2D2D2B)_7.5%,transparent)] text-[var(--text-primary,#2D2D2B)]"
+                    ? "bg-[var(--fill-hover)] text-[var(--text-primary,#2D2D2B)]"
                     : "noa-sidebar-hover-surface-subtle text-[var(--sidebar-text-muted,#898781)] hover:text-[var(--text-primary,#2D2D2B)]"
                 }`}
               >
@@ -168,7 +168,7 @@ function Section({ title, count, open, children }: { title: string; count?: stri
 
 function ActivityTab({ state, onStopTask }: { state: AgentState; onStopTask: (id: string) => void }) {
   const statusKind = state.connection === "closed" ? "closed" : state.connection === "connecting" ? "connecting" : state.permissions.length || state.elicitations.length ? "waiting" : state.busy ? "running" : "ready"
-  return <div className="noa-panel-details">
+  return <div className="noa-panel-details scrollbar-on-hover">
     <section className="noa-activity-status" data-kind={statusKind}>
       <span className="noa-activity-dot" />
       <div className="min-w-0 flex-1">
@@ -180,7 +180,7 @@ function ActivityTab({ state, onStopTask }: { state: AgentState; onStopTask: (id
       <div className="noa-panel-sections">
         <Section title="Background tasks" count={state.tasks.length} open>
           {state.tasks.map((task) => (
-            <details key={task.id} className="rounded-lg border border-[var(--divider-subtle)] p-2 text-body">
+            <details key={task.id} className="rounded-lg border border-[var(--border-default)] p-2 text-body">
               <summary className="cursor-pointer">
                 <span className={task.status === "running" ? "noa-shimmer" : ""}>{task.description}</span>
                 <span className="ml-2 text-caption text-[var(--sidebar-text-muted)]">{task.status}</span>
@@ -207,7 +207,7 @@ function ActivityTab({ state, onStopTask }: { state: AgentState; onStopTask: (id
               )}
               {task.status === "running" && task.id !== task.toolUseId && (
                 <button
-                  className="noa-confirm-btn mt-2 rounded-md border border-[var(--divider-subtle)] px-2 py-1 text-caption"
+                  className="noa-confirm-btn mt-2 rounded-md border border-[var(--border-default)] px-2 py-1 text-caption"
                   onClick={() => onStopTask(task.id)}
                 >
                   Stop task

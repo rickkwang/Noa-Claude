@@ -53,7 +53,7 @@ export function TurnReview({ diff, focusPath, focusKey, canSplit = true }: {
         <button type="button" className="noa-panel-button" onClick={() => setFindRequest((value) => value + 1)}>Find</button>
       </div>
       {diff.files.length > 1 && (
-        <div className="noa-turn-review-files" role="listbox" aria-label="Changed files">
+        <div className="noa-turn-review-files scrollbar-on-hover" role="listbox" aria-label="Changed files">
           {diff.files.map((item) => (
             <button
               key={item.path}
@@ -71,7 +71,7 @@ export function TurnReview({ diff, focusPath, focusKey, canSplit = true }: {
           ))}
         </div>
       )}
-      <div className="noa-panel-body">
+      <div className="noa-panel-body scrollbar-on-hover">
         {content
           ? <CodeView path={selected} content={content} diff split={sideBySide && canSplit} wrap={wrap} wordDiff={wordDiff} hideWhitespace={hideWhitespace} findRequest={findRequest} onCloseFind={() => setFindRequest(0)} />
           : <p className="noa-panel-empty">

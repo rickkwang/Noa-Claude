@@ -20,7 +20,7 @@ interface PermissionCardProps {
 }
 
 const button =
-  "noa-approval-button noa-press min-w-16 text-center border border-[var(--divider-subtle)]"
+  "noa-approval-button noa-press min-w-16 text-center border border-[var(--border-default)]"
 
 export function permissionRememberLabel(suggestions: unknown[]): string {
   const destinations = suggestions.flatMap((suggestion) =>
@@ -97,7 +97,7 @@ function ToolPermissionCard({ permission, onAnswer }: PermissionCardProps) {
           answer(false, false)
         }
       }}
-      className="noa-approval-card flex min-w-0 flex-col overflow-hidden shrink-0 rounded-3xl border border-[var(--divider-subtle)] font-ui text-[var(--text-primary)]"
+      className="noa-approval-card flex min-w-0 flex-col overflow-hidden shrink-0 rounded-3xl border border-[var(--border-default)] font-ui text-[var(--text-primary)]"
     >
       <div className="flex min-h-0 min-w-0 shrink-0 flex-col gap-2 px-4 pt-4 pb-3">
         <div className="min-w-0" role="alert" aria-atomic="true">
@@ -124,12 +124,12 @@ function ToolPermissionCard({ permission, onAnswer }: PermissionCardProps) {
         )}
       </div>
       {command && (
-        <div className="mx-3 overflow-hidden rounded-md bg-[color-mix(in_srgb,var(--text-primary)_4%,transparent)]">
+        <div className="mx-3 overflow-hidden rounded-md bg-[var(--fill-hover)]">
           <pre className="m-0 max-h-80 overflow-auto p-2 font-mono text-[length:var(--code-font-size)] font-medium leading-[max(1.5em,20px)] whitespace-pre-wrap break-words text-[var(--text-secondary)]">{command}</pre>
         </div>
       )}
       {file && !edit && (
-        <div className="mx-3 flex items-center gap-2 rounded-md border border-[var(--divider-subtle)] bg-[var(--surface-page)] px-2.5 py-2 text-caption">
+        <div className="mx-3 flex items-center gap-2 rounded-md border border-[var(--border-default)] bg-[var(--surface-page)] px-2.5 py-2 text-caption">
           <span className="text-[var(--sidebar-text-muted)]">File</span>
           <span className="min-w-0 truncate text-right text-[var(--text-secondary)]" title={file}>{file}</span>
         </div>
@@ -146,7 +146,7 @@ function ToolPermissionCard({ permission, onAnswer }: PermissionCardProps) {
           type="button"
           disabled={!!submitting}
           onClick={() => answer(false, false)}
-          className={`noa-approval-button noa-press border border-[var(--divider-subtle)] bg-transparent text-[var(--text-primary)] hover:bg-[color-mix(in_srgb,var(--text-primary)_7.5%,transparent)] disabled:opacity-40`}
+          className={`noa-approval-button noa-press border border-[var(--border-default)] bg-transparent text-[var(--text-primary)] hover:bg-[var(--fill-hover)] disabled:opacity-40`}
         >
           {submitting === "deny" ? "Denying…" : "Deny"}
         </button>
@@ -179,7 +179,7 @@ function ToolPermissionCard({ permission, onAnswer }: PermissionCardProps) {
                     if (optionsRef.current) optionsRef.current.open = false
                     answer(true, false)
                   }}
-                  className="block w-full rounded px-2 py-1.5 text-left hover:bg-[color-mix(in_srgb,var(--text-primary)_7%,transparent)] disabled:opacity-40"
+                  className="block w-full rounded px-2 py-1.5 text-left hover:bg-[var(--fill-hover)] disabled:opacity-40"
                 >
                   Allow once
                 </button>
@@ -191,7 +191,7 @@ function ToolPermissionCard({ permission, onAnswer }: PermissionCardProps) {
                     if (optionsRef.current) optionsRef.current.open = false
                     answer(true, true)
                   }}
-                  className="block w-full rounded px-2 py-1.5 text-left hover:bg-[color-mix(in_srgb,var(--text-primary)_7%,transparent)] disabled:opacity-40"
+                  className="block w-full rounded px-2 py-1.5 text-left hover:bg-[var(--fill-hover)] disabled:opacity-40"
                 >
                   {submitting === "remember" ? "Allowing…" : rememberLabel}
                 </button>
@@ -257,7 +257,7 @@ function EditApprovalPreview({ file, oldText, newText }: { file: string; oldText
   const counts = stats && <span className="noa-turn-diff-stats"><span className="is-added">+{stats.additions}</span><span className="is-removed">-{stats.deletions}</span></span>
   return <div className="px-4 py-2">
     <div className="noa-turn-diff-card">
-      <button ref={trigger} type="button" className="flex w-full min-w-0 items-center gap-2 p-1.5 text-left text-body hover:bg-[color-mix(in_srgb,var(--text-primary)_4%,transparent)]"
+      <button ref={trigger} type="button" className="flex w-full min-w-0 items-center gap-2 p-1.5 text-left text-body hover:bg-[var(--fill-hover)]"
         aria-label={`Preview proposed changes to ${file}`} aria-expanded={open} aria-controls={open ? id : undefined} disabled={!stats}
         onMouseEnter={() => { window.clearTimeout(timer.current); if (stats) timer.current = window.setTimeout(() => setOpen(true), 800) }}
         onMouseLeave={event => { window.clearTimeout(timer.current); if (document.activeElement !== trigger.current && !preview.current?.contains(document.activeElement) && !(event.relatedTarget instanceof Node && preview.current?.contains(event.relatedTarget))) setOpen(false) }}
@@ -274,7 +274,7 @@ function EditApprovalPreview({ file, oldText, newText }: { file: string; oldText
       onMouseLeave={event => { if (document.activeElement !== trigger.current && !preview.current?.contains(document.activeElement) && !(event.relatedTarget instanceof Node && trigger.current?.contains(event.relatedTarget))) setOpen(false) }}
       onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); close() } }}>
       <div className="flex min-w-0 shrink-0 items-center gap-2 border-b border-[var(--divider-subtle)] px-3 py-2 text-body"><span className="min-w-0 flex-1"><MiddlePath path={file} /></span>{counts}<button type="button" aria-label="Close diff preview" onClick={close}><X size={14} /></button></div>
-      <div className="noa-panel-body"><CodeView path={file} content={patch} diff /></div>
+      <div className="noa-panel-body scrollbar-on-hover"><CodeView path={file} content={patch} diff /></div>
     </div>}
   </div>
 }
@@ -308,7 +308,7 @@ function QuestionCard({ permission, onAnswer, draft, onDraftChange }: Permission
         e.preventDefault()
         onAnswer(permission, true, false, { ...permission.input, answers })
       }}
-      className="noa-approval-card flex max-h-[50vh] shrink-0 flex-col gap-3 overflow-auto rounded-3xl border border-[var(--divider-subtle)] p-4"
+      className="noa-approval-card flex max-h-[50vh] shrink-0 flex-col gap-3 overflow-auto rounded-3xl border border-[var(--border-default)] p-4"
     >
       {questions.map((q) => (
         <fieldset key={q.question} className="flex min-w-0 flex-col gap-1.5">
@@ -349,7 +349,7 @@ function QuestionCard({ permission, onAnswer, draft, onDraftChange }: Permission
               setCustom((prev) => ({ ...prev, [q.question]: e.target.value }))
               if (!q.multiSelect) setSelected((prev) => ({ ...prev, [q.question]: [] }))
             }}
-            className="min-h-8 rounded-md border border-[var(--divider-subtle)] bg-transparent px-2 text-body outline-none focus:border-[var(--accent-color)]"
+            className="min-h-8 rounded-md border border-[var(--border-default)] bg-transparent px-2 text-body outline-none focus:border-[var(--accent-color)]"
           />
         </fieldset>
       ))}

@@ -7,7 +7,11 @@
   line-height: 20px;
   letter-spacing: 0;
 }
-/* The conversation surface's left edge: 16px corners over the sidebar floor, edged by a half-pixel ring in the
+/* Corner radius of the conversation surface, the settings page card and the veil. Matches the native window's corner,
+   so a card corner reads as concentric with the window instead of a smaller arc beside it. The right panel is a straight edge. */
+:root { --noa-surface-radius: 20px; --text-danger: #911E1B; }
+[data-theme="dark"] { --text-danger: #E02E2A; }
+/* The conversation surface's left edge: window-radius corners over the sidebar floor, edged by a half-pixel ring in the
    same token as other floating surfaces. The ring is a left border rather than a full ring so the window's right
    edge never grows a stray hairline. Collapsed, the radius unwinds to 0 and the ring fades; the shell stays
    sidebar-coloured throughout, so the corner notch never shows a blended colour mid-animation. */
@@ -19,27 +23,25 @@
   z-index: -1;
   pointer-events: none;
   border-left: 0.5px solid var(--border-default, rgba(45,45,43,0.078));
-  border-radius: 16px 0 0 16px;
+  border-radius: var(--noa-surface-radius) 0 0 var(--noa-surface-radius);
   background-color: var(--surface-page, #F9F9F7);
 }
 .noa-content-surface[data-flush="true"] {
   border-left-color: transparent;
   border-radius: 0;
 }
-/* The right column's leading edge mirrors the content surface: the same 16px corners and hairline, revealed over the
-   content it sits on. Closed, the corner unwinds and the ring fades, exactly as the sidebar side does. */
+/* The right column's leading edge is a straight hairline, no corner: it is the same ring as the conversation
+   surface's edge, but square. */
 .noa-right-surface {
   border-left: 0.5px solid var(--border-default, rgba(45,45,43,0.078));
-  border-radius: 16px 0 0 16px;
 }
 .noa-right-surface[data-flush="true"] {
   border-left-color: transparent;
-  border-radius: 0;
 }
 .noa-agent-input {
   border-radius: 22px;
   background: #FAFAF9;
-  box-shadow: 0 0 0 1px #0000000a, 0 2px 8px #0000000a, 0 4px 80px 8px #00000006;
+  box-shadow: 0 0 0 1px var(--border-light), 0 2px 8px #0000000a, 0 4px 80px 8px #00000006;
 }
 [data-theme="dark"] .noa-agent-input { background: color-mix(in srgb, var(--bg-primary) 87.2%, var(--text-primary)); box-shadow: inset 0 0 1px #fff3; }
 /* The home composer's environment rail: 13px inline inset, 16px top corners, 5px
@@ -57,7 +59,7 @@
 .noa-agent-environment > span { gap: 6px; font-size: 12px; line-height: 16px; }
 [data-theme="dark"] .noa-agent-environment { background: #3B3B39; }
 @media (width < 640px) {
-  .noa-agent-input { box-shadow: 0 0 0 1px #0000000a, 0 2px 8px #0000000a, 0 4px 40px 8px #00000006; }
+  .noa-agent-input { box-shadow: 0 0 0 1px var(--border-light), 0 2px 8px #0000000a, 0 4px 40px 8px #00000006; }
 }
 .noa-agent-footer { container: noa-agent-footer / inline-size; }
 /* The sidebar follows the Appearance font settings (family, style, size); only its leading is its own, scaled with the size. */
@@ -65,9 +67,11 @@
   font-size: var(--text-body);
   line-height: 1.5;
 }
-.noa-agent-sidebar-row { min-height: 30px; transition: background-color 120ms ease; }
-.noa-agent-sidebar-row:hover { background: var(--bg-sidebar-raised); }
-.noa-agent-sidebar-row.is-active { background: var(--bg-sidebar-active); }
+/* Row states are translucent ink washes (the hover and pressed tiers) so they ride on the sidebar material, and they
+   switch instantly: a background fade overlaps itself as the pointer sweeps down the list and reads as flicker. */
+.noa-agent-sidebar-row { min-height: 30px; }
+.noa-agent-sidebar-row:hover { background: var(--fill-hover); }
+.noa-agent-sidebar-row.is-active { background: var(--fill-active); }
 .noa-resize-indicator {
   position: absolute;
   inset-block: 0;
@@ -127,7 +131,9 @@ body[data-pane-dragging="true"] * { cursor: col-resize !important; user-select: 
   --font-text-md-line-height: calc(var(--font-text-md-size) * 1.625);
 }
 
-/* Motion: feedback (hover, menus, reveals) eases out; layout moves keep their own 500ms ease-in-out clocks.
+/* Motion: feedback (hover, menus, reveals) eases out; layout moves keep their own 500ms clocks. The sidebar dock edges
+   (column width, content surface, veil, titlebar hairline) all use Tailwind's ease-in-out, cubic-bezier(0.4, 0, 0.2, 1),
+   or they drift apart mid-move.
    Bare `transition-*` utilities pick up the defaults. `static` emits every token even when no utility uses it,
    since inline styles read var(--ease-out) and var(--dur-*) directly. */
 @theme static {
@@ -158,6 +164,10 @@ body[data-pane-dragging="true"] * { cursor: col-resize !important; user-select: 
 @media (prefers-reduced-motion: reduce) {
   .noa-press, .noa-press:not(:disabled):active { transform: none; transition: none; }
 }
+/* Controls inside a sidebar row keep the press spring but not the colour/opacity fades: their hover and reveal
+   states switch instantly with the row's own wash, since a fade that lags the row reads as flicker. */
+.noa-sidebar-tree-row .noa-press { transition: transform var(--dur-slow) var(--spring-press); }
+.noa-sidebar-tree-row .noa-press:not(:disabled):active { transition: transform var(--dur-fast) ease-out; }
 
 /* Content bold (`**strong**`, table headers, callout titles) in preview and CodeMirror. Kept off @theme so chrome gets no
    `font-*` utility. This is the first-paint value for a Regular body; ThemeInjector resets it on body to the UI font
@@ -293,7 +303,7 @@ body {
   transition: none;
 }
 .noa-app-shell[data-sidebar-dock-motion="true"] [data-titlebar="true"]::after {
-  transition: left 500ms ease-in-out;
+  transition: left 500ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 /* Carries the editor header's floor across its left traffic-light margin so the band reads as one surface under a
@@ -308,7 +318,7 @@ body {
   right: 100%;
   background-color: inherit;
   pointer-events: none;
-  transition: left 500ms ease-in-out;
+  transition: left 500ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 .noa-editor-header-floor-reserved::before {
   left: calc(-1 * var(--noa-titlebar-reserve));
@@ -501,49 +511,59 @@ body {
   --noa-fade-top: 0 !important;
 }
 
-/* Inside the settings dialog the shared 8% divider is too faint to read: its
-   rules and card borders sit on a panel the eye is scanning for structure, not
-   on a document surface where a hairline is meant to disappear. Redefining the
-   token on the dialog keeps every consumer in there on one value — nothing
-   opts in per-border. */
+/* Settings dialog tokens ride the global contrast-driven tiers: fills are the hover/pressed washes, rows are split by
+   the light border tier, secondary and muted text are the text tiers; fields are a half-white well (a dark well in
+   dark) with a 1px inset ring in the border tier. */
 [data-settings-surface="true"] {
-  /* Opaque, so every hairline in the dialog resolves to the same colour whatever
-     surface it sits on (cards, nav column, content pane). Light matches the global 10% ink. */
-  --divider-subtle: color-mix(in srgb, #0b0b0b 10%, var(--bg-secondary));
-}
-[data-theme="dark"] [data-settings-surface="true"] {
-  --divider-subtle: color-mix(in srgb, var(--text-primary) 9%, var(--bg-secondary));
-}
-
-/* Settings dialog: fills are ink washes (5% hover, 10% selected), rows are split by a 5%
-   rule, secondary text is #52514E and descriptions #898782; fields are a half-white well with a 1px inset ring. */
-[data-settings-surface="true"] {
-  --settings-fill-hover: rgba(11,11,11,0.05);
-  --settings-fill-active: rgba(11,11,11,0.10);
-  --settings-row-rule: rgba(11,11,11,0.05);
-  --settings-text-secondary: #52514E;
-  --settings-text-muted: #898781;
+  --settings-fill-hover: var(--fill-hover);
+  --settings-fill-active: var(--fill-active);
+  --settings-row-rule: var(--border-light);
+  --settings-text-secondary: var(--text-secondary);
+  --settings-text-muted: var(--text-tertiary);
   --settings-field-bg: rgba(255,255,255,0.5);
-  --settings-field-ring: rgba(11,11,11,0.10);
+  --settings-field-ring: var(--border-default);
   --settings-switch-off: rgba(11,11,11,0.15);
 }
 [data-theme="dark"] [data-settings-surface="true"] {
-  --settings-fill-hover: color-mix(in srgb, var(--text-primary) 6%, transparent);
-  --settings-fill-active: color-mix(in srgb, var(--text-primary) 11%, transparent);
-  --settings-row-rule: color-mix(in srgb, var(--text-primary) 6%, transparent);
-  --settings-text-secondary: #C3C2B7;
-  --settings-text-muted: #898781;
   --settings-field-bg: rgba(0,0,0,0.12);
-  --settings-field-ring: color-mix(in srgb, var(--text-primary) 10%, transparent);
   --settings-switch-off: color-mix(in srgb, var(--text-primary) 18%, transparent);
 }
 
+/* Theme slider: the input itself is a 2px track painted as one gradient (a pale accent ramping to full accent by a
+   third of the way across), so it reads as a ramp rather than a filled/unfilled split. The thumb is a white 20px
+   disc with a heavy-tier ring. Only the settings dialog uses it. */
+.noa-theme-slider {
+  appearance: none;
+  flex: 1;
+  min-width: 0;
+  height: 2px;
+  border-radius: 9999px;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--accent-color) 35%, var(--bg-primary)) 0%, var(--accent-color) 32%, var(--accent-color) 100%);
+  cursor: pointer;
+}
+.noa-theme-slider::-webkit-slider-runnable-track {
+  height: 2px;
+  border-radius: 9999px;
+}
+.noa-theme-slider::-webkit-slider-thumb {
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  margin-top: -9px;
+  border: 1px solid var(--border-strong);
+  border-radius: 9999px;
+  background: #fff;
+  box-shadow: 0 1px 2px -1px rgb(0 0 0 / 0.13);
+}
+.noa-theme-slider:focus-visible { outline: none; }
+.noa-theme-slider:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 2px var(--accent-color); }
+
 /* Dialog: a 12px card with a 1px ring and two soft layers. */
 .noa-settings-dialog {
-  box-shadow: 0 0 0 1px rgba(11,11,11,0.10), 0 1px 2px 0 rgba(11,11,11,0.06), 0 2px 8px 0 rgba(11,11,11,0.08);
+  box-shadow: 0 0 0 1px var(--border-default), 0 1px 2px 0 rgba(11,11,11,0.06), 0 2px 8px 0 rgba(11,11,11,0.08);
 }
 [data-theme="dark"] .noa-settings-dialog {
-  box-shadow: 0 0 0 1px rgba(249,249,247,0.08), 0 8px 24px 0 rgba(0,0,0,0.45), 0 2px 6px 0 rgba(0,0,0,0.30);
+  box-shadow: 0 0 0 1px var(--border-default), 0 8px 24px 0 rgba(0,0,0,0.45), 0 2px 6px 0 rgba(0,0,0,0.30);
 }
 
 .noa-settings-field {
@@ -660,14 +680,14 @@ html.noa-vt-image-closing::view-transition-new(root) {
 
 /* Only the pill moves; transform/width are cheap here (no layout of its own). */
 .noa-segmented-pill {
-  box-shadow: inset 0 0 0 1px rgba(11, 11, 11, 0.10), 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  box-shadow: inset 0 0 0 1px var(--border-default), 0 1px 2px 0 rgba(0, 0, 0, 0.05);
   transition:
     transform 220ms cubic-bezier(0.22, 1, 0.36, 1),
     width 220ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 [data-theme="dark"] .noa-segmented-pill {
-  box-shadow: inset 0 0 0 1px rgba(249, 249, 247, 0.08), 0 1px 2px 0 rgba(0, 0, 0, 0.30);
+  box-shadow: inset 0 0 0 1px var(--border-default), 0 1px 2px 0 rgba(0, 0, 0, 0.30);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -676,27 +696,28 @@ html.noa-vt-image-closing::view-transition-new(root) {
   }
 }
 
-/* Translucent docked-sidebar glass (Electron supplies the native material; this adds the tint).
-   Gated on :where(:not([data-settings-open])) because the settings scrim's backdrop-filter blurs transparent
-   pixels in premultiplied alpha, haloing sidebar text. :where() adds no specificity. */
-html[data-translucent-sidebar="enabled"]:where(:not([data-settings-open="true"])) [data-sidebar-expanded="true"][data-sidebar-column-surface="true"] {
-  background-color: color-mix(in srgb, var(--sidebar-material-color, #FAFAF8) var(--sidebar-material-tint, 70%), transparent) !important;
+/* Translucent docked-sidebar glass (Electron supplies the native material; the shell adds the tint).
+   None of these rules depend on the sidebar being expanded: the column, its surfaces and the veil below all
+   keep their translucent paint while the width animates to 0, so collapse does not flash an opaque column. */
+html[data-translucent-sidebar="enabled"] [data-sidebar-column-surface="true"] {
+  background-color: transparent !important;
 }
 
-html[data-translucent-sidebar="enabled"]:where(:not([data-settings-open="true"])) body {
+html[data-translucent-sidebar="enabled"] body {
   background-color: transparent;
 }
 
-/* Opaque plane is a translated layer, not a gradient whose stop animates (translateX rides the compositor). */
-html[data-translucent-sidebar="enabled"]:where(:not([data-settings-open="true"])) .noa-app-shell:has([data-sidebar-expanded="true"]) {
-  background: transparent !important;
+/* The shell is transparent; the veil is the opaque page plane to the right of the sidebar. It is a translated layer,
+   not a gradient whose stop animates (translateX rides the compositor), and it carries the content surface's
+   rounded left corners so the notch shows the native material rather than a page-coloured square. */
+html[data-translucent-sidebar="enabled"] .noa-app-shell {
+  /* The sidebar tint lives on the shell, under the veil, so the veil's corner notches match the column. */
+  background: color-mix(in srgb, var(--sidebar-material-color, #FAFAF8) var(--sidebar-material-tint, 70%), transparent) !important;
   /* Contains the veil's negative z-index (no containing block, so fixed toasts still use the viewport). */
   isolation: isolate;
 }
 
-/* Exempt from the settings gate: gating destroys the element, and @starting-style would replay the expansion
-   when the dialog closes. Existence tracks the sidebar alone; the dialog hides it below. */
-html[data-translucent-sidebar="enabled"] .noa-app-shell:has([data-sidebar-expanded="true"])::before {
+html[data-translucent-sidebar="enabled"] .noa-app-shell::before {
   content: '';
   position: absolute;
   inset: 0;
@@ -706,44 +727,51 @@ html[data-translucent-sidebar="enabled"] .noa-app-shell:has([data-sidebar-expand
   transform: translateX(var(--noa-sidebar-material-width));
   /* Parked; only the dock-motion rule below arms a transition. */
   transition: none;
-
-  /* Opening starts at 0 so the translucent region grows with the edge (otherwise it flashes at full width).
-     Inert unless armed, since the hover preview also brings this element into existence. */
-  @starting-style {
-    transform: translateX(0);
-  }
+}
+/* Docked: the radius matches .noa-content-surface; collapsed it unwinds to flush with the window edge. */
+html[data-translucent-sidebar="enabled"] .noa-app-shell:has([data-sidebar-expanded="true"])::before {
+  border-radius: var(--noa-surface-radius) 0 0 var(--noa-surface-radius);
 }
 
 /* Veil animates only on the sidebar's own dock motion (data-sidebar-dock-motion from App.tsx), not for
-   preview, resize drag, or settle frames. The painted flag excludes first paint (no entry animation on restart). */
-html[data-translucent-sidebar="enabled"]:where(:not([data-settings-open="true"])) .noa-app-shell[data-sidebar-dock-motion="true"][data-sidebar-material-painted="true"]:has([data-sidebar-expanded="true"])::before {
-  transition: transform 500ms ease-in-out;
+   preview, resize drag, or settle frames. The flag is off at first paint, so a restart has no entry animation.
+   Same duration and curve as the column width and content surface, so the three edges move as one. */
+html[data-translucent-sidebar="enabled"] .noa-app-shell[data-sidebar-dock-motion="true"]::before {
+  transition: transform 500ms cubic-bezier(0.4, 0, 0.2, 1), border-radius 500ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* Dialog hides the veil rather than destroying it (keeps @starting-style sidebar-only). transition: none
-   covers enabling translucency from inside the dialog. */
-html[data-translucent-sidebar="enabled"][data-settings-open="true"] .noa-app-shell:has([data-sidebar-expanded="true"])::before {
-  opacity: 0;
-  transition: none;
+/* The settings page is a full-window overlay with its own floor and card, so the app beneath is hidden rather than
+   unmounted (its state and scroll survive); otherwise it would show through the translucent nav. */
+html[data-settings-open="true"] .noa-app-shell {
+  visibility: hidden;
+}
+/* Settings reads as the app's sidebar plus a content card: the nav sits on the sidebar floor (the tint over the native
+   material when translucent) and the page is a rounded card with the same ring as the conversation surface. */
+html[data-translucent-sidebar="enabled"] [data-settings-surface="true"] {
+  background-color: color-mix(in srgb, var(--sidebar-material-color, #FAFAF8) var(--sidebar-material-tint, 70%), transparent) !important;
+}
+.noa-settings-main {
+  border-left: 0.5px solid var(--border-default, rgba(45,45,43,0.078));
+  border-radius: var(--noa-surface-radius) 0 0 var(--noa-surface-radius);
 }
 
 /* Titlebar goes transparent so the shell veil shows through; no veil of its own (it would re-rasterize icon strokes). */
-html[data-translucent-sidebar="enabled"]:where(:not([data-settings-open="true"])) [data-translucent-sidebar-titlebar="true"] {
+html[data-translucent-sidebar="enabled"] [data-translucent-sidebar-titlebar="true"] {
   background: transparent !important;
 }
 
-html[data-translucent-sidebar="enabled"]:where(:not([data-settings-open="true"])) [data-sidebar-expanded="true"][data-sidebar-container] .noa-sidebar-surface,
-html[data-translucent-sidebar="enabled"]:where(:not([data-settings-open="true"])) [data-sidebar-expanded="true"][data-sidebar-container] .noa-sidebar-section-surface {
+html[data-translucent-sidebar="enabled"] [data-sidebar-container] .noa-sidebar-surface,
+html[data-translucent-sidebar="enabled"] [data-sidebar-container] .noa-sidebar-section-surface {
   background-color: transparent;
 }
 
 /* Toolbar mask must go transparent in a translucent column, or it shows as a horizontal band. */
-html[data-translucent-sidebar="enabled"]:where(:not([data-settings-open="true"])) [data-sidebar-expanded="true"][data-sidebar-container] .noa-sidebar-toolbar-mask,
+html[data-translucent-sidebar="enabled"] [data-sidebar-container] .noa-sidebar-toolbar-mask,
 [data-sidebar-preview="true"] .noa-sidebar-toolbar-mask,
 [data-sidebar-promoting="true"][data-sidebar-container] .noa-sidebar-toolbar-mask {
   background-color: transparent;
 }
-html[data-translucent-sidebar="enabled"]:where(:not([data-settings-open="true"])) [data-sidebar-expanded="true"][data-sidebar-container] .noa-sidebar-toolbar-mask::after,
+html[data-translucent-sidebar="enabled"] [data-sidebar-container] .noa-sidebar-toolbar-mask::after,
 [data-sidebar-preview="true"] .noa-sidebar-toolbar-mask::after,
 [data-sidebar-promoting="true"][data-sidebar-container] .noa-sidebar-toolbar-mask::after {
   display: none;
@@ -760,11 +788,11 @@ html[data-translucent-sidebar="enabled"]:where(:not([data-settings-open="true"])
 
 /* Semantic sidebar states, opted into explicitly. Codex surface tokens flip with the theme. */
 .noa-sidebar-active-surface {
-  background-color: var(--bg-sidebar-active) !important;
+  background-color: var(--fill-active) !important;
 }
 .noa-sidebar-hover-surface:hover,
 .noa-sidebar-hover-surface-subtle:hover {
-  background-color: var(--bg-sidebar-raised) !important;
+  background-color: var(--fill-hover) !important;
 }
 
 .noa-floating-panel {
@@ -803,7 +831,7 @@ html[data-translucent-sidebar="enabled"]:where(:not([data-settings-open="true"])
   border-radius: 16px;
   background-color: #F9F9F9;
   color: var(--text-primary, #1A1C1F);
-  box-shadow: 0 0 0 .5px color-mix(in srgb, var(--text-primary, #1A1C1F) 8%, transparent), 0 8px 16px -4px rgba(0, 0, 0, .12);
+  box-shadow: 0 0 0 .5px var(--border-default), 0 8px 16px -4px rgba(0, 0, 0, .12);
   animation: noa-floating-in 120ms cubic-bezier(.19,1,.22,1);
 }
 [data-theme="dark"] .noa-approval-menu { background-color: color-mix(in srgb, var(--bg-primary) 91%, var(--text-primary)); }
@@ -912,38 +940,9 @@ html[data-translucent-sidebar="enabled"]:where(:not([data-settings-open="true"])
 [data-theme="dark"] .hover\:text-\[\#CC7D5E\]:hover     { color: #CC7D5E !important; }
 [data-theme="dark"] .group:hover .group-hover\:text-\[\#CC7D5E\] { color: #CC7D5E !important; }
 
-/* ── Borders ── */
-[data-theme="dark"] .border-\[\#2D2D2B\]      { border-color: var(--border-default) !important; }
-[data-theme="dark"] .border-\[\#2D2D2B\]\/10  { border-color: var(--divider-subtle) !important; }
-[data-theme="dark"] .border-\[\#2D2D2B\]\/15  { border-color: var(--divider-subtle) !important; }
-[data-theme="dark"] .border-\[\#2D2D2B\]\/20  { border-color: var(--divider-subtle) !important; }
-[data-theme="dark"] .border-\[\#2D2D2B\]\/30  { border-color: var(--divider-subtle) !important; }
-[data-theme="dark"] .border-\[\#2D2D2B\]\/40  { border-color: rgba(249,249,247,0.30) !important; }
-[data-theme="dark"] .border-\[\#2D2D2B\]\/90  { border-color: rgba(249,249,247,0.12) !important; }
-[data-theme="dark"] .border-\[\#CC7D5E\]       { border-color: #CC7D5E !important; }
-[data-theme="dark"] .hover\:border-\[\#2D2D2B\]:hover { border-color: #3A3A37 !important; }
-[data-theme="dark"] .hover\:border-\[\#2D2D2B\]\/30:hover { border-color: rgba(249,249,247,0.22) !important; }
-[data-theme="dark"] .hover\:border-\[\#2D2D2B\]\/40:hover { border-color: rgba(249,249,247,0.30) !important; }
-[data-theme="dark"] .hover\:border-\[\#2D2D2B\]\/50:hover { border-color: rgba(249,249,247,0.38) !important; }
-[data-theme="dark"] .hover\:border-\[\#2D2D2B\]\/60:hover { border-color: rgba(249,249,247,0.45) !important; }
-[data-theme="dark"] .hover\:border-\[\#CC7D5E\]:hover { border-color: #CC7D5E !important; }
-[data-theme="dark"] .divide-\[\#2D2D2B\] > :not(:last-child) { border-color: var(--divider-subtle) !important; }
-
 /* Restore a visible border on sidebar confirm buttons (the remap makes it near-invisible). */
 [data-theme="dark"] .noa-confirm-btn { border-color: var(--border-strong, rgba(249,249,247,0.30)) !important; }
 
-/* Settings: ordinary ink borders follow the divider token; semantic accent/warning/error borders keep theirs. */
-[data-settings-surface="true"] .border-\[\#2D2D2B\],
-[data-settings-surface="true"] .border-\[\#2D2D2B\]\/10,
-[data-settings-surface="true"] .border-\[\#2D2D2B\]\/15,
-[data-settings-surface="true"] .border-\[\#2D2D2B\]\/20,
-[data-settings-surface="true"] .border-\[\#2D2D2B\]\/30,
-[data-settings-surface="true"] .border-\[\#2D2D2B\]\/40,
-[data-settings-surface="true"] .border-\[\#2D2D2B\]\/50,
-[data-settings-surface="true"] .border-\[\#2D2D2B\]\/60,
-[data-settings-surface="true"] .border-\[\#2D2D2B\]\/90 {
-  border-color: var(--divider-subtle) !important;
-}
 [data-settings-surface="true"] .border-t-transparent {
   border-top-color: transparent !important;
 }
@@ -977,7 +976,7 @@ html[data-translucent-sidebar="enabled"]:where(:not([data-settings-open="true"])
   color: var(--tag-fg);
   transition: background-color 120ms ease, color 120ms ease;
 }
-.noa-tag-row:hover { background-color: color-mix(in srgb, var(--text-primary, #2D2D2B) 5%, transparent); color: var(--text-primary, #2D2D2B); }
+.noa-tag-row:hover { background-color: var(--fill-hover); color: var(--text-primary, #2D2D2B); }
 .noa-tag-group { font-weight: 500; }
 .noa-tag-bar { background: rgba(137, 135, 129, 0.15); }
 .noa-tag-count { color: var(--text-secondary, #7B7974); }
@@ -1014,15 +1013,15 @@ html[data-translucent-sidebar="enabled"]:where(:not([data-settings-open="true"])
 /* Dark: lift with a lighter top edge and a real shadow; text-primary-based shadows would glow. */
 [data-theme="dark"] .noa-tag-filter {
   background: color-mix(in srgb, #F9F9F7 5%, transparent);
-  box-shadow: inset 0 0 0 1px rgba(249,249,247,0.08), inset 0 1px 0 rgba(249,249,247,0.05), 0 1px 2px rgba(0,0,0,0.35);
+  box-shadow: inset 0 0 0 1px var(--border-default), inset 0 1px 0 rgba(249,249,247,0.05), 0 1px 2px rgba(0,0,0,0.35);
 }
 [data-theme="dark"] .noa-tag-filter:hover,
 [data-theme="dark"] .noa-tag-filter:focus-within {
-  box-shadow: inset 0 0 0 1px rgba(249,249,247,0.16), inset 0 1px 0 rgba(249,249,247,0.06), 0 1px 3px rgba(0,0,0,0.4);
+  box-shadow: inset 0 0 0 1px var(--border-strong), inset 0 1px 0 rgba(249,249,247,0.06), 0 1px 3px rgba(0,0,0,0.4);
 }
 .noa-tag-filter input::placeholder { color: color-mix(in srgb, var(--text-primary, #2D2D2B) 40%, transparent); }
 .noa-tag-icon-button { color: color-mix(in srgb, var(--text-primary, #2D2D2B) 45%, transparent); transition: background-color 120ms ease, color 120ms ease; }
-.noa-tag-icon-button:hover { background: color-mix(in srgb, var(--text-primary, #2D2D2B) 5%, transparent); color: var(--text-primary, #2D2D2B); }
+.noa-tag-icon-button:hover { background: var(--fill-hover); color: var(--text-primary, #2D2D2B); }
 [data-theme="dark"] .noa-tag-row { --tag-fg: #C3C2B7; }
 
 /* Active (filtering on this tag): accent wash; theme-qualified so it wins over the dark base rule. */
@@ -1043,7 +1042,7 @@ html[data-translucent-sidebar="enabled"]:where(:not([data-settings-open="true"])
 .noa-segment[aria-pressed="true"] { color: var(--text-primary, #2D2D2B); }
 .noa-segment-indicator {
   background: var(--bg-primary, #FCFCFB);
-  box-shadow: inset 0 0 0 1px rgba(11, 11, 11, 0.10), 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  box-shadow: inset 0 0 0 1px var(--border-default), 0 1px 2px 0 rgba(0, 0, 0, 0.05);
   opacity: 0;
   transition: opacity 160ms ease;
 }
@@ -1051,7 +1050,7 @@ html[data-translucent-sidebar="enabled"]:where(:not([data-settings-open="true"])
 .noa-segment-indicator[data-slide="true"] { transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1), opacity 160ms ease; }
 @media (prefers-reduced-motion: reduce) { .noa-segment-indicator[data-slide="true"] { transition: opacity 160ms ease; } }
 [data-theme="dark"] .noa-segment-indicator {
-  box-shadow: inset 0 0 0 1px rgba(249, 249, 247, 0.08), 0 1px 2px 0 rgba(0, 0, 0, 0.30);
+  box-shadow: inset 0 0 0 1px var(--border-default), 0 1px 2px 0 rgba(0, 0, 0, 0.30);
 }
 
 /* ── Prose (Markdown preview) ── */
@@ -1286,7 +1285,7 @@ html[data-translucent-sidebar="enabled"]:where(:not([data-settings-open="true"])
   pointer-events: none;
 }
 [data-theme='dark'] .noa-tree-drag-ghost {
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5), inset 0 0 0 1px rgba(249, 249, 247, 0.14);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5), inset 0 0 0 1px var(--border-strong);
 }
 
 /* Keep a stable gutter where scrollbars are classic (Windows/Linux); overlay
@@ -1388,11 +1387,44 @@ html[data-capture-redact="true"] [data-capture-redact]::after {
 }
 
 
-/* Thin overlay scrollbars. They never reserve layout space, so panels
-   don't reflow when content crosses the overflow threshold. */
-* {
-  scrollbar-width: thin;
-  scrollbar-color: color-mix(in srgb, var(--text-primary) 30%, transparent) transparent;
+/* Scrollbars are invisible until the container is hovered or holds keyboard focus, then an 8px round thumb on the heavy border
+   tier (so it follows Contrast). The standard properties go transparent first and hand over to the WebKit pseudo
+   elements where those exist (:has(:focus-visible) rather than :focus-within, so a row clicked with the mouse does not pin the bar open), which is what lets the thumb be styled and hidden. Containers opt in with this class;
+   everything else keeps the platform's own overlay scrollbar. The 8px matches --noa-scrollbar-strip. */
+.scrollbar-on-hover {
+  scrollbar-color: transparent transparent !important;
+}
+.scrollbar-on-hover:hover,
+.scrollbar-on-hover:has(:focus-visible) {
+  scrollbar-color: var(--border-strong) transparent !important;
+}
+@supports selector(::-webkit-scrollbar) {
+  .scrollbar-on-hover {
+    scrollbar-width: auto;
+  }
+  .scrollbar-on-hover,
+  .scrollbar-on-hover:hover,
+  .scrollbar-on-hover:has(:focus-visible) {
+    scrollbar-color: auto !important;
+  }
+  .scrollbar-on-hover::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+}
+/* The track stays the reference's 8px; a 1px transparent border leaves a 6px round thumb. */
+.scrollbar-on-hover::-webkit-scrollbar-thumb {
+  border: 1px solid transparent;
+  border-radius: 9999px;
+  background-color: transparent;
+  background-clip: padding-box;
+}
+.scrollbar-on-hover:hover::-webkit-scrollbar-thumb,
+.scrollbar-on-hover:has(:focus-visible)::-webkit-scrollbar-thumb {
+  background-color: var(--border-strong);
+}
+.scrollbar-on-hover::-webkit-scrollbar-track {
+  background-color: transparent;
 }
 .hide-scrollbar {
   scrollbar-width: none;
@@ -1446,12 +1478,12 @@ html[data-capture-redact="true"] [data-capture-redact]::after {
 /* The close button sits 2px inside the tab's right edge, whatever the tab's inset. */
 .editor-tab .noa-tab-close { margin-right: calc(2px - var(--noa-tab-pad)); }
 .noa-tab-close { color: var(--text-secondary, #7B7974); transition: color 60ms var(--ease-out), background-color 60ms var(--ease-out); }
-.noa-tab-close:hover { color: var(--text-primary, #2D2D2B); background-color: color-mix(in srgb, var(--text-primary, #2D2D2B) 10%, transparent); }
+.noa-tab-close:hover { color: var(--text-primary, #2D2D2B); background-color: var(--fill-hover); }
 /* Dragged tab takes an opaque surface so neighbours' titles don't show through; the extra attribute outranks the hover rule. */
 .editor-tab[data-dragging-tab="true"][data-active-tab],
 .editor-tab[data-active-tab]:active:not(:has(button:active)) {
   background-color: #FFFFFF;
-  box-shadow: 0 0 0 0.5px rgba(45, 45, 43, 0.06), 0 2px 6px -1px rgba(45, 45, 43, 0.14);
+  box-shadow: 0 0 0 0.5px var(--border-default), 0 2px 6px -1px rgba(45, 45, 43, 0.14);
 }
 /* Picked-up feel from press, not the drag threshold, so the grab answers at once (the close button opts out): a slight scale and a slightly deeper shadow ease in on grab. Kept tight — a wide blur halos on dark
    and gets clipped by the strip's scroll mask. `scale` is its own property, so it
@@ -1468,7 +1500,7 @@ html[data-capture-redact="true"] [data-capture-redact]::after {
 [data-theme="dark"] .editor-tab[data-dragging-tab="true"][data-active-tab],
 [data-theme="dark"] .editor-tab[data-active-tab]:active:not(:has(button:active)) {
   background-color: color-mix(in srgb, var(--text-primary, #F9F9F7) 12%, var(--bg-primary, #262624));
-  box-shadow: inset 0 0.5px 0 0 rgba(249, 249, 247, 0.12), 0 0 0 0.5px rgba(249, 249, 247, 0.10), 0 2px 5px -1px rgba(0, 0, 0, 0.3);
+  box-shadow: inset 0 0.5px 0 0 rgba(249, 249, 247, 0.12), 0 0 0 0.5px var(--border-default), 0 2px 5px -1px rgba(0, 0, 0, 0.3);
 }
 
 /* Both animations drive `width` against --noa-tab-w and take the tab out of flex
@@ -1572,7 +1604,7 @@ html[data-capture-redact="true"] [data-capture-redact]::after {
 [data-note-rail][data-dragging="true"] .noa-rail-card * { pointer-events: none; }
 [data-rail-grabbing="true"], [data-rail-grabbing="true"] * { cursor: grabbing !important; }
 .noa-backlink-row { transition: background-color 60ms var(--ease-out); }
-.noa-backlink-row:hover { background-color: color-mix(in srgb, var(--text-primary, #2D2D2B) 5%, transparent); }
+.noa-backlink-row:hover { background-color: var(--fill-hover); }
 /* The rail over the editor while the right panel is open: one floating panel, its cards flat and ruled apart. */
 .noa-rail-overlay {
   background-color: var(--bg-primary, #FCFCFB);
@@ -1590,13 +1622,13 @@ html[data-capture-redact="true"] [data-capture-redact]::after {
 .noa-cal-month { color: var(--text-primary, #2D2D2B); transition: background-color 60ms var(--ease-out); }
 .noa-cal-month[data-today="false"] { text-decoration: underline; text-decoration-color: var(--border-strong); text-underline-offset: 3px; }
 .noa-cal-month:hover,
-.noa-cal-nav:hover { background-color: color-mix(in srgb, var(--text-primary, #2D2D2B) 5%, transparent); }
+.noa-cal-nav:hover { background-color: var(--fill-hover); }
 .noa-cal-nav:hover { color: var(--text-primary, #2D2D2B); }
 .noa-cal-day {
   color: color-mix(in srgb, var(--text-primary, #2D2D2B) 85%, transparent);
   transition: background-color 60ms var(--ease-out);
 }
-.noa-cal-day:hover { background-color: color-mix(in srgb, var(--text-primary, #2D2D2B) 5%, transparent); }
+.noa-cal-day:hover { background-color: var(--fill-hover); }
 .noa-cal-day[data-outside] { color: color-mix(in srgb, var(--text-primary, #2D2D2B) 30%, transparent); }
 .noa-cal-day[data-range="mid"] { background-color: color-mix(in srgb, var(--text-primary, #2D2D2B) 5%, transparent); border-radius: 0; }
 .noa-cal-day[data-range="edge"] { background-color: color-mix(in srgb, var(--text-primary, #2D2D2B) 10%, transparent); color: var(--text-primary, #2D2D2B); }
@@ -1789,7 +1821,7 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
   margin-top: -5px;
   border-radius: 999px;
   background: var(--bg-card, #FFFFFF);
-  box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--text-primary, #2D2D2B) 22%, transparent), 0 1px 3px rgba(0, 0, 0, 0.18);
+  box-shadow: 0 0 0 0.5px var(--border-strong), 0 1px 3px rgba(0, 0, 0, 0.18);
   transition: transform var(--dur-snap) var(--ease-out);
 }
 .noa-range:active::-webkit-slider-thumb { transform: scale(1.15); }
@@ -1800,15 +1832,22 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
   .noa-range::-webkit-slider-thumb { transition: none; }
 }
 
-/* Codex Absolutely control surface: 96% opaque, with the theme's 4% / 8% border tiers. */
+/* The field is a translucent wash, not an opaque fill: over a translucent sidebar an opaque well reads as a slab that
+   hides the material and does not fade with the content while the column collapses. */
 .noa-sidebar-search {
-  background-color: var(--bg-sidebar-control);
-  box-shadow: inset 0 0 0 0.5px var(--divider-subtle), 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  background-color: rgb(255 255 255 / 0.5);
+  box-shadow: inset 0 0 0 0.5px var(--border-default), 0 1px 2px 0 rgb(0 0 0 / 0.05);
   transition: background-color var(--dur-fast) var(--ease-out);
 }
+[data-theme="dark"] .noa-sidebar-search {
+  background-color: color-mix(in srgb, var(--text-primary, #F9F9F7) 5%, transparent);
+}
 .noa-sidebar-search:hover {
-  background-color: var(--bg-sidebar-raised);
+  background-color: color-mix(in srgb, var(--text-primary, #2D2D2B) 5%, transparent);
   box-shadow: inset 0 0 0 1px var(--border-default), 0 1px 2px 0 rgb(0 0 0 / 0.05);
+}
+[data-theme="dark"] .noa-sidebar-search:hover {
+  background-color: color-mix(in srgb, var(--text-primary, #F9F9F7) 9%, transparent);
 }
 .noa-sidebar-search-input {
   appearance: none;
@@ -1987,7 +2026,7 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
   border-radius: 50%;
   background: var(--effort-thumb);
   z-index: 3;
-  border: .5px solid color-mix(in srgb, var(--text-primary) 10%, transparent);
+  border: .5px solid var(--border-default);
   box-shadow: 0 0 2px rgba(0, 0, 0, .1);
   transform: translate(-50%, -50%) scale(var(--effort-scale));
   pointer-events: none;
@@ -2142,7 +2181,8 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
 .noa-panel-toolbar { display: flex; align-items: center; gap: 4px; min-height: 32px; padding: 2px 10px; flex-shrink: 0; }
 .noa-panel-title { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--sidebar-text); }
 .noa-panel-button { display: inline-flex; flex-shrink: 0; align-items: center; justify-content: center; gap: 4px; min-height: 24px; padding: 2px 6px; border-radius: 6px; font-size: var(--text-caption); line-height: 18px; color: var(--sidebar-text); }
-.noa-panel-button:hover:not(:disabled), .noa-panel-button[aria-pressed="true"] { background: color-mix(in srgb, var(--text-primary) 7.5%, transparent); color: var(--text-primary); }
+.noa-panel-button:hover:not(:disabled) { background: var(--fill-hover); color: var(--text-primary); }
+.noa-panel-button[aria-pressed="true"] { background: var(--fill-active); color: var(--text-primary); }
 .noa-panel-button:disabled { opacity: .4; }
 .noa-panel-button:focus-visible, .noa-file-row:focus-visible  { outline: 2px solid var(--accent-color); outline-offset: -2px; }
 .noa-panel-body { flex: 1; min-width: 0; min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
@@ -2152,7 +2192,7 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
 .noa-file-root-chip > svg { flex-shrink: 0; }
 .noa-file-search { display: flex; flex-shrink: 0; align-items: center; gap: 4px; padding: 8px 8px 4px; }
 .noa-file-search-field { display: flex; min-width: 0; flex: 1; align-items: center; gap: 6px; height: 30px; padding: 0 7px; border: 1px solid var(--border-default); border-radius: 8px; background: transparent; color: var(--sidebar-text-muted); transition: border-color 120ms; }
-.noa-file-search-field:focus-within { border-color: color-mix(in srgb, var(--text-primary) 22%, transparent); }
+.noa-file-search-field:focus-within { border-color: var(--border-strong); }
 .noa-file-search-field input { min-width: 0; flex: 1; border: 0; outline: 0; background: transparent; font: inherit; font-size: 13px; color: var(--text-primary); }
 .noa-file-search-field input::placeholder { color: var(--sidebar-text-muted); }
 .noa-file-search-field svg { flex-shrink: 0; }
@@ -2165,8 +2205,8 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
 .noa-file-dot { width: 5px; height: 5px; flex-shrink: 0; border-radius: 50%; background: var(--git-modified); opacity: .5; }
 .noa-git-mark { flex-shrink: 0; }
 .noa-file-row.is-sticky { background-color: var(--surface-page, #F9F9F7); }
-.noa-file-row.is-sticky:hover { background-color: color-mix(in srgb, var(--text-primary) 6%, var(--surface-page, #F9F9F7)); }
-.noa-file-row:hover { background-color: color-mix(in srgb, var(--text-primary) 5%, transparent); }
+.noa-file-row.is-sticky:hover { background-color: var(--fill-hover); }
+.noa-file-row:hover { background-color: var(--fill-hover); }
 .noa-file-row > svg, .noa-panel-button > svg { flex-shrink: 0; }
 .noa-file-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* File content search ("?query"): file rows show their folder, match rows a line number and a snippet. */
@@ -2187,8 +2227,10 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
 .noa-viewed-label input { accent-color: var(--accent-color); }
 .noa-panel-empty { margin: 0; padding: 24px 16px; text-align: center; color: var(--sidebar-text-muted); font-size: var(--text-chat-sm); }
 .noa-panel-empty p { margin-bottom: 8px; }
-.noa-panel-error, .noa-panel-notice { margin: 0; padding: 8px 16px; flex-shrink: 0; font-size: var(--text-caption); overflow-wrap: anywhere; }
-.noa-panel-error { color: #C24444; background: color-mix(in srgb, #C24444 6%, transparent); }
+/* Inline errors are danger-coloured text on the panel surface, not a tinted band: the reference's `text-sm text-danger`
+   paragraph, set on the same 16px text column as the icons and rows around it. */
+.noa-panel-error, .noa-panel-notice { margin: 0; padding: 8px 16px; flex-shrink: 0; font-size: var(--text-chat-sm); line-height: 18px; overflow-wrap: anywhere; }
+.noa-panel-error { color: var(--text-danger); }
 .noa-panel-notice { color: var(--sidebar-text-muted); }
 .noa-image-preview { display: flex; align-items: center; justify-content: center; padding: 16px; min-height: 160px; }
 .noa-image-preview img { max-width: 100%; max-height: 70vh; object-fit: contain; }
@@ -2226,7 +2268,7 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
 /* Menu rows match the file context menu: 28px rows in body text. */
 .noa-review-menu-content { min-width: 200px; }
 .noa-review-menu-content > .noa-panel-button, .noa-review-menu-content > .noa-viewed-label { min-height: 28px; padding: 0 8px; font-size: var(--text-body); color: var(--text-primary); }
-.noa-review-menu-content > .noa-viewed-label:hover { border-radius: 6px; background: color-mix(in srgb, var(--text-primary) 6%, transparent); }
+.noa-review-menu-content > .noa-viewed-label:hover { border-radius: 6px; background: var(--fill-hover); }
 .noa-review-menu-hint { margin-left: auto; padding-left: 12px; color: var(--sidebar-text-muted); font-size: var(--text-caption); }
 .noa-review-menu[open] > summary { background: color-mix(in srgb, var(--text-primary) 7.5%, transparent); color: var(--text-primary); }
 /* One header row per file, as Claude Code's diff file header: square icon buttons, text only for Cancel/Save. */
@@ -2261,7 +2303,7 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
   background: color-mix(in srgb, var(--surface-page, #F9F9F7) 90%, transparent);
   -webkit-backdrop-filter: blur(8px);
   backdrop-filter: blur(8px);
-  box-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.1), 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+  box-shadow: 0 0 0 0.5px var(--border-default), 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
   font-size: 13px;
   line-height: calc(1.25 / 0.875);
 }
@@ -2283,7 +2325,7 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
 .noa-popup-menu-heading { padding: 4px 8px; color: #8F8F8F; font-size: 12px; line-height: 16px; }
 [data-theme="dark"] .noa-popup-menu-heading { color: #AFAFAF; }
 .noa-popup-menu > .noa-context-menu-separator { margin: 0; height: auto; padding: 4px 8px; background: none; }
-.noa-popup-menu > .noa-context-menu-separator::before { content: ""; display: block; height: 1px; background: rgb(0 0 0 / 0.1); }
+.noa-popup-menu > .noa-context-menu-separator::before { content: ""; display: block; height: 1px; background: var(--border-default); }
 [data-theme="dark"] .noa-popup-menu > .noa-context-menu-separator::before { background: rgb(255 255 255 / 0.15); }
 .noa-popup-menu.is-submenu { top: -4px; }
 .noa-popup-switch { position: relative; display: inline-block; width: 28px; height: 16px; flex-shrink: 0; border-radius: 9999px; background: color-mix(in srgb, var(--text-primary) 10%, transparent); transition: background-color 150ms ease-out; }
@@ -2296,7 +2338,7 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
 .noa-panel-sections { display: flex; flex-direction: column; gap: 2px; margin: 0 -8px; }
 .noa-panel-section { border-radius: 8px; }
 .noa-panel-section > summary { display: flex; gap: 6px; align-items: center; min-height: 30px; padding: 0 8px; border-radius: 8px; cursor: pointer; list-style: none; user-select: none; color: var(--sidebar-text); }
-.noa-panel-section > summary:hover { background: color-mix(in srgb, var(--text-primary) 5%, transparent); color: var(--text-primary); }
+.noa-panel-section > summary:hover { background: var(--fill-hover); color: var(--text-primary); }
 .noa-panel-section > summary:focus-visible { outline: 2px solid var(--accent-color); outline-offset: -2px; }
 .noa-panel-section > summary::-webkit-details-marker { display: none; }
 .noa-panel-section > summary:hover .noa-panel-section-chevron { color: var(--text-primary); }
@@ -2319,7 +2361,7 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
 @media (prefers-reduced-motion: reduce) { .noa-activity-status .noa-activity-dot { animation: none; } }
 .noa-file-guides { display: flex; flex-shrink: 0; align-items: center; height: 100%; padding-left: 7.5px; pointer-events: none; }
 .noa-file-guides.is-folder { margin-right: -3.75px; }
-.noa-file-guides > span { height: 100%; border-left: 1px solid color-mix(in srgb, var(--sidebar-text-muted) 25%, transparent); margin-right: -1px; transform: translateX(-.25px); opacity: 0; transition: opacity 150ms; }
+.noa-file-guides > span { height: 100%; border-left: 1px solid var(--border-light); margin-right: -1px; transform: translateX(-.25px); opacity: 0; transition: opacity 150ms; }
 .noa-file-guides > span + span { margin-left: 8.75px; }
 .noa-file-tree:hover .noa-file-guides > span { opacity: .75; }
 .noa-glyph-blue { color: #1a85d4; } .noa-glyph-cyan { color: #1ca1c7; } .noa-glyph-green { color: #199f43; }
@@ -2348,9 +2390,9 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
 .noa-code-line mark { background: color-mix(in srgb, var(--diff-add-base) 15%, transparent); }
 .noa-code-line.is-remove mark { background: color-mix(in srgb, var(--diff-del-base) 15%, transparent); }
 .noa-diff-hunk-header { padding: 2px 12px; min-height: 28px; border-block: 0; background: color-mix(in srgb, var(--surface-page, #F9F9F7) 94%, #009FFF); color: color-mix(in srgb, var(--text-primary) 55%, transparent); font-family: var(--font-mono); font-size: var(--text-caption); }
-.noa-diff-pair .noa-code-line:first-child { border-right: 1px solid color-mix(in srgb, var(--text-primary) 8%, transparent); }
+.noa-diff-pair .noa-code-line:first-child { border-right: 1px solid var(--border-default); }
 .noa-turn-scope select { appearance: none; height: 24px; padding: 0 22px 0 8px; border: 0; background: transparent url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23898781' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") no-repeat right 6px center; cursor: pointer; }
-.noa-turn-scope select:hover { background-color: color-mix(in srgb, var(--text-primary) 5%, transparent); color: var(--text-primary); }
+.noa-turn-scope select:hover { background-color: var(--fill-hover); color: var(--text-primary); }
 /* Panel alignment grid: leading icons and text sit 16px from the panel edge in every tab. */
 .noa-panel-title { padding-left: 6px; }
 .noa-panel-toolbar > .noa-panel-button:first-child + .noa-panel-title { padding-left: 2px; }
@@ -2368,25 +2410,24 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
 .noa-scroll-bottom:hover { color: var(--text-primary); }
 .noa-scroll-bottom[data-show="false"] { opacity: 0; pointer-events: none; }
 /* Per-turn diff card: header + up to three file rows. */
-.noa-turn-diff-card { container-type: inline-size; margin-top: 2px; overflow: hidden; border-radius: 10px; background: color-mix(in srgb, var(--bg-card) 70%, transparent); box-shadow: 0 0 0 .5px rgba(13, 13, 13, .15); }
-[data-theme="dark"] .noa-turn-diff-card { box-shadow: 0 0 0 .5px rgba(255, 255, 255, .20); }
+.noa-turn-diff-card { container-type: inline-size; margin-top: 2px; overflow: hidden; border-radius: 10px; background: color-mix(in srgb, var(--bg-card) 70%, transparent); box-shadow: 0 0 0 .5px var(--border-strong); }
 .noa-live-diff { display: inline-flex; max-width: 100%; align-items: center; gap: 6px; align-self: center; padding: 2px 6px; border-radius: 6px; color: var(--sidebar-text-muted); font-size: var(--text-caption); }
-.noa-live-diff:hover { color: var(--text-primary); background: color-mix(in srgb, var(--text-primary) 5%, transparent); }
+.noa-live-diff:hover { color: var(--text-primary); background: var(--fill-hover); }
 .noa-turn-diff-headrow { display: flex; align-items: center; gap: 8px; padding-right: 12px; }
 .noa-turn-diff-icon { display: flex; width: 40px; height: 40px; align-items: center; justify-content: center; flex-shrink: 0; border-radius: 10px; background: color-mix(in srgb, var(--text-primary) 3%, transparent); color: var(--text-secondary); }
 .noa-turn-diff-heading { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 2px; }
 .noa-turn-diff-view { flex-shrink: 0; padding: 5px 9px; border: 1px solid var(--divider-subtle); border-radius: 10px; font-size: var(--text-caption); color: var(--text-primary); white-space: nowrap; }
-.noa-turn-diff-view:hover { background: color-mix(in srgb, var(--text-primary) 4%, transparent); }
+.noa-turn-diff-view:hover { background: var(--fill-hover); }
 .noa-turn-diff-header { display: flex; min-width: 0; flex: 1; min-height: 64px; align-items: center; gap: 10px; padding: 12px; text-align: left; }
 .noa-turn-diff-action { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; height: 26px; padding: 0 8px; border-radius: 6px; font-size: var(--text-caption); color: var(--text-secondary); white-space: nowrap; }
-.noa-turn-diff-action:hover:not(:disabled) { background: color-mix(in srgb, var(--text-primary) 7%, transparent); color: var(--text-primary); }
+.noa-turn-diff-action:hover:not(:disabled) { background: var(--fill-hover); color: var(--text-primary); }
 .noa-turn-diff-action:disabled { opacity: .4; cursor: default; }
 @container (max-width: 440px) {
   .noa-turn-diff-headrow { flex-wrap: wrap; gap: 0 8px; padding-bottom: 12px; }
   .noa-turn-diff-header { flex-basis: 100%; }
   .noa-turn-diff-action, .noa-turn-diff-header + .noa-turn-diff-view { margin-left: auto; }
 }
-.noa-turn-diff-header:hover { background: color-mix(in srgb, var(--text-primary) 4%, transparent); }
+.noa-turn-diff-header:hover { background: var(--fill-hover); }
 .noa-turn-diff-default { display: inline-flex; flex-shrink: 0; font-size: var(--text-chat-sm); }
 .noa-turn-diff-hover { display: none; flex-shrink: 0; font-size: var(--text-chat-sm); align-items: center; gap: 2px; color: var(--text-secondary); }
 .noa-turn-diff-header:hover .noa-turn-diff-default,
@@ -2395,26 +2436,26 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
 .noa-turn-diff-header:focus-visible .noa-turn-diff-hover { display: inline-flex; }
 .noa-turn-diff-list { display: flex; flex-direction: column; border-top: 1px solid var(--divider-subtle); }
 .noa-turn-diff-row { display: flex; width: 100%; min-width: 0; min-height: 36px; align-items: center; gap: 8px; padding: 4px 12px; text-align: left; color: var(--text-primary); }
-.noa-turn-diff-row:hover { background: color-mix(in srgb, var(--text-primary) 4%, transparent); }
+.noa-turn-diff-row:hover { background: var(--fill-hover); }
 .noa-turn-diff-row .noa-middle-path { flex: 1; }
 .noa-turn-diff-more { display: flex; width: 100%; min-height: 32px; align-items: center; justify-content: center; gap: 4px; border-top: 1px solid var(--divider-subtle); color: var(--sidebar-text-muted); font-size: var(--text-caption); }
-.noa-turn-diff-more:hover { color: var(--text-primary); background: color-mix(in srgb, var(--text-primary) 4%, transparent); }
+.noa-turn-diff-more:hover { color: var(--text-primary); background: var(--fill-hover); }
 .noa-turn-diff-note { font-size: var(--text-caption); color: var(--sidebar-text-muted); }
 .noa-turn-diff-card > .noa-turn-diff-note { margin: 0; padding: 4px 10px 6px; border-top: 1px solid var(--divider-subtle); }
 .noa-turn-review-files { max-height: 40%; overflow-y: auto; scrollbar-gutter: stable; border-bottom: 1px solid var(--divider-subtle); }
 .noa-turn-review-row { display: flex; width: 100%; min-width: 0; min-height: 30px; align-items: center; gap: 8px; padding: 3px 10px; text-align: left; color: var(--text-primary); }
-.noa-turn-review-row:hover { background: color-mix(in srgb, var(--text-primary) 4%, transparent); }
+.noa-turn-review-row:hover { background: var(--fill-hover); }
 .noa-turn-review-row[data-selected] { background: color-mix(in srgb, var(--text-primary) 7%, transparent); }
 .noa-turn-review-row .noa-middle-path { flex: 1; }
 .noa-turn-scope { position: relative; z-index: 30; justify-content: space-between; }
 /* The review source reads like the panel tabs: no focus ring, a soft fill on hover and keyboard focus. */
 .noa-turn-scope select { border-radius: 6px; font: inherit; font-size: var(--text-body); color: var(--text-primary); outline: none; }
-.noa-turn-scope select:focus-visible { background-color: color-mix(in srgb, var(--text-primary) 7.5%, transparent); }
+.noa-turn-scope select:focus-visible { background-color: var(--fill-hover); }
 @media (prefers-reduced-motion: reduce) { .noa-scroll-bottom { transition: none; } }
 /* Floating composer: the page colour ramps in over 32px above the card so text dissolves instead of being cut.
-   Its bottom-left corner is clipped to the surface's 16px radius so the sidebar corner notch stays visible, and it
+   Its bottom-left corner is clipped to the surface's radius so the sidebar corner notch stays visible, and it
    starts half a pixel in so it does not paint over the surface's left hairline. */
-.noa-conversation-footer { position: absolute; inset-inline: 0 calc(var(--noa-scrollbar-strip) + var(--noa-overview-dock, 0px)); bottom: 0; z-index: 20; display: flex; max-height: 100%; flex-direction: column; margin-left: 0.5px; padding: 32px 21px 12px 29px; border-bottom-left-radius: 16px; background: linear-gradient(to bottom, color-mix(in srgb, var(--surface-page, #F9F9F7) 0%, transparent), var(--surface-page, #F9F9F7) 32px); pointer-events: none; }
+.noa-conversation-footer { position: absolute; inset-inline: 0 calc(var(--noa-scrollbar-strip) + var(--noa-overview-dock, 0px)); bottom: 0; z-index: 20; display: flex; max-height: 100%; flex-direction: column; margin-left: 0.5px; padding: 32px 21px 12px 29px; border-bottom-left-radius: var(--noa-surface-radius); background: linear-gradient(to bottom, color-mix(in srgb, var(--surface-page, #F9F9F7) 0%, transparent), var(--surface-page, #F9F9F7) 32px); pointer-events: none; }
 .noa-conversation-footer > * { min-height: 0; width: 100%; pointer-events: auto; }
 /* Loading shimmer: a stable base with a narrow highlight band. */
 .noa-shimmer {
@@ -2523,7 +2564,6 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
   outline-offset: -2px;
 }
 .noa-slash-list {
-  scrollbar-width: thin;
   overscroll-behavior: contain;
 }
 
@@ -2579,6 +2619,10 @@ body.noa-session-dragging * { cursor: grabbing !important; }
 .noa-turn-item {
   content-visibility: auto;
   contain-intrinsic-block-size: 160px;
+  /* Conversation typeface. Turn items carry it instead of the shell so the composer keeps the UI font. */
+  font-family: var(--font-content, var(--font-ui));
+  font-weight: var(--content-font-weight, 400);
+  font-style: var(--content-font-style, normal);
   animation: noa-turn-in 180ms cubic-bezier(.19,1,.22,1);
 }
 .noa-virtual-turn {
@@ -2615,8 +2659,7 @@ body.noa-session-dragging * { cursor: grabbing !important; }
 [data-approval-diff-preview] .noa-code-sign { display: block !important; }
 [data-approval-diff-preview] .noa-code-view.is-diff .noa-code-line code { padding-left: 0; }
 .noa-approval-button { height: 28px; padding: 0 8px; border-radius: 999px; font-size: var(--text-chat-sm); line-height: 18px; white-space: nowrap; }
-.noa-code-block { border-color: rgba(13, 13, 13, .05); background: color-mix(in srgb, var(--text-primary) 3%, var(--surface-page)); }
-[data-theme="dark"] .noa-code-block { border-color: rgba(255, 255, 255, .06); }
+.noa-code-block { border-color: var(--border-light); background: color-mix(in srgb, var(--text-primary) 3%, var(--surface-page)); }
 @supports (corner-shape: superellipse(1.1)) {
   .noa-code-block { corner-shape: superellipse(1.1); }
 }
@@ -2715,7 +2758,7 @@ body.noa-session-dragging * { cursor: grabbing !important; }
   --project-text: #1a1c1f;
   --project-secondary: color-mix(in srgb, #1a1c1f 65%, transparent);
   --project-tertiary: color-mix(in oklab, #1a1c1f 50%, transparent);
-  --project-border: color-mix(in oklab, #1a1c1f 8%, transparent);
+  --project-border: var(--border-default);
   --project-hover: color-mix(in oklab, #1a1c1f 5%, transparent);
   --project-focus: var(--accent-color, #cc7d5e);
   --project-primary: #1a1c1f;
@@ -2738,7 +2781,6 @@ body.noa-session-dragging * { cursor: grabbing !important; }
   --project-text: #dfdfdf;
   --project-secondary: color-mix(in srgb, #dfdfdf 65%, transparent);
   --project-tertiary: color-mix(in oklab, #dfdfdf 50%, transparent);
-  --project-border: color-mix(in oklab, #fff 8%, transparent);
   --project-hover: color-mix(in oklab, #fff 8%, transparent);
   --project-primary: #dfdfdf;
   --project-primary-ink: #181818;
@@ -3258,7 +3300,7 @@ body.noa-session-dragging * { cursor: grabbing !important; }
 }
 .noa-message-rail-bookmark:hover,
 .noa-message-rail-bookmark[aria-pressed="true"] { color: var(--text-primary); }
-.noa-message-rail-bookmark:hover { background: color-mix(in srgb, var(--text-primary) 6%, transparent); }
+.noa-message-rail-bookmark:hover { background: var(--fill-hover); }
 .noa-message-rail-preview {
   display: -webkit-box;
   margin-top: 4px;

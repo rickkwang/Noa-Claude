@@ -635,7 +635,7 @@ export function Composer({
                 setReferences([])
                 onCancelEdit?.()
               }}
-              className="rounded p-0.5 hover:bg-[color-mix(in_srgb,var(--text-primary)_7%,transparent)] hover:text-[var(--text-primary)]"
+              className="rounded p-0.5 hover:bg-[var(--fill-hover)] hover:text-[var(--text-primary)]"
               aria-label="Cancel edit"
             >
               <X size={12} />
@@ -654,7 +654,7 @@ export function Composer({
                     const index = images.findIndex((item) => item.id === image.id)
                     if (index >= 0) setImagePreview(index)
                   }}
-                  className="block cursor-zoom-in overflow-hidden rounded-lg border border-[var(--divider-subtle)] noa-press"
+                  className="block cursor-zoom-in overflow-hidden rounded-lg border border-[var(--border-default)] noa-press"
                 >
                   <img src={image.dataUrl} alt={image.name} className="size-16 object-cover" />
                 </button>
@@ -673,7 +673,7 @@ export function Composer({
         {pendingImages > 0 && (
           <div className="flex flex-wrap gap-2 px-3 pt-3" aria-label="Adding images">
             {Array.from({ length: pendingImages }, (_, index) => (
-              <div key={index} className="noa-attachment-pending size-16 rounded-lg border border-[var(--divider-subtle)]" />
+              <div key={index} className="noa-attachment-pending size-16 rounded-lg border border-[var(--border-default)]" />
             ))}
           </div>
         )}
@@ -1301,8 +1301,8 @@ function Picker({
           aria-pressed={item.active}
           className={modelPicker ? "noa-model-picker-option" : item.icon ? `noa-approval-item${item.danger ? " is-danger" : ""}` : `flex w-full flex-col gap-0.5 rounded-md px-2.5 py-1.5 text-left ${
             item.active
-              ? "bg-[color-mix(in_srgb,var(--text-primary,#2D2D2B)_8%,transparent)]"
-              : "hover:bg-[color-mix(in_srgb,var(--text-primary,#2D2D2B)_5%,transparent)]"
+              ? "bg-[var(--fill-hover)]"
+              : "hover:bg-[var(--fill-hover)]"
           }`}
         >
           {item.icon && <span className="noa-approval-icon">{item.icon}</span>}
@@ -1335,7 +1335,7 @@ function Picker({
           setShowingModels(false)
           setOpen((o) => !o)
         }}
-        className={`flex h-7 min-w-0 items-center gap-1 whitespace-nowrap rounded-full ${iconOnly ? "w-7 justify-center p-0" : compactPadding ? "px-1.5" : "px-2"} text-[13px] font-normal leading-[18px] transition-colors hover:bg-[color-mix(in_srgb,var(--text-primary,#2D2D2B)_7.5%,transparent)] disabled:opacity-40 ${
+        className={`flex h-7 min-w-0 items-center gap-1 whitespace-nowrap rounded-full ${iconOnly ? "w-7 justify-center p-0" : compactPadding ? "px-1.5" : "px-2"} text-[13px] font-normal leading-[18px] transition-colors hover:bg-[var(--fill-hover)] disabled:opacity-40 ${
           tone === "danger" ? "text-[#C24444]" : "text-[var(--sidebar-text,#52514E)]"
         }`}
       >

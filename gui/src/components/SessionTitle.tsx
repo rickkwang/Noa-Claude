@@ -57,7 +57,7 @@ export function SessionTitle({
                 setEditing(false)
               }
             }}
-            className="h-7 w-56 min-w-0 rounded-md border border-[var(--divider-subtle)] bg-[var(--bg-card)] px-2 text-body outline-none focus:border-[var(--accent-color)]"
+            className="h-7 w-56 min-w-0 rounded-md border border-[var(--border-default)] bg-[var(--bg-card)] px-2 text-body outline-none focus:border-[var(--accent-color)]"
           />
           <button
             type="submit"
@@ -82,7 +82,7 @@ export function SessionTitle({
             setError(undefined)
             setEditing(true)
           }}
-          className="h-7 max-w-[min(28vw,320px)] truncate rounded-md px-1.5 text-body text-[var(--sidebar-text)] enabled:hover:bg-[color-mix(in_srgb,var(--text-primary)_5%,transparent)]"
+          className="h-7 max-w-[min(28vw,320px)] truncate rounded-md px-1.5 text-body text-[var(--sidebar-text)] enabled:hover:bg-[var(--fill-hover)]"
         >
           {name}
         </button>

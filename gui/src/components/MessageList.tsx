@@ -464,7 +464,7 @@ export function MessageList({ turns, cwd, onOpenFile, busy, result, readingWidth
         const turn = event.target instanceof Element ? event.target.closest<HTMLElement>("[data-virtual-turn-id]") : null
         if (turn?.dataset.virtualTurnId) focusedTurn.current = turn.dataset.virtualTurnId
       }}
-      className="noa-agent-scroll noa-scroll-fade relative flex-1 min-h-0 overflow-y-auto overscroll-contain"
+      className="noa-agent-scroll scrollbar-on-hover noa-scroll-fade relative flex-1 min-h-0 overflow-y-auto overscroll-contain"
     >
       {/* 48px around the transcript column is reserved so the rail lives in the
           gutter and its expanded tick never crosses the text on narrow windows. */}
@@ -488,7 +488,7 @@ export function MessageList({ turns, cwd, onOpenFile, busy, result, readingWidth
             <button
               type="button"
               onClick={onRetry}
-              className="noa-press flex h-6 items-center rounded-md px-1.5 text-caption text-[var(--accent-color)] hover:bg-[color-mix(in_srgb,var(--text-primary)_7.5%,transparent)]"
+              className="noa-press flex h-6 items-center rounded-md px-1.5 text-caption text-[var(--accent-color)] hover:bg-[var(--fill-hover)]"
               title="Send the last message again"
             >
               Retry
@@ -513,7 +513,7 @@ export function MessageList({ turns, cwd, onOpenFile, busy, result, readingWidth
         {busy && <span className="noa-scroll-bottom-dots" aria-hidden="true"><span /><span /><span /></span>}
         <ArrowDown size={14} className={busy ? "noa-scroll-bottom-arrow" : undefined} />
       </button>
-      {selection && <button type="button" className="fixed z-50 rounded-lg border border-[var(--divider-subtle)] bg-[var(--bg-card)] px-3 py-2 text-caption shadow-lg" style={{ left: selection.left, top: selection.top }} onMouseDown={event => event.preventDefault()} onClick={() => { onQuote?.(selection.text); window.getSelection()?.removeAllRanges(); setSelection(undefined) }}>Quote selection</button>}
+      {selection && <button type="button" className="fixed z-50 rounded-lg border border-[var(--border-default)] bg-[var(--bg-card)] px-3 py-2 text-caption shadow-lg" style={{ left: selection.left, top: selection.top }} onMouseDown={event => event.preventDefault()} onClick={() => { onQuote?.(selection.text); window.getSelection()?.removeAllRanges(); setSelection(undefined) }}>Quote selection</button>}
       {preview && <Lightbox items={preview.items} index={preview.index} onIndex={(index) => setPreview({ ...preview, index })} onClose={() => setPreview(undefined)} />}
     </div></OutputContext>
   )
@@ -529,7 +529,7 @@ function MessageReferences({ paths, onOpen }: { paths: string[]; onOpen?: (path:
           title={path}
           disabled={!onOpen}
           onClick={() => onOpen?.(path)}
-          className="noa-press flex max-w-full items-center gap-1 rounded-md bg-[color-mix(in_srgb,var(--text-primary)_6%,transparent)] px-2 py-1 text-caption text-[var(--text-secondary)] enabled:hover:text-[var(--text-primary)]"
+          className="noa-press flex max-w-full items-center gap-1 rounded-md bg-[var(--fill-hover)] px-2 py-1 text-caption text-[var(--text-secondary)] enabled:hover:text-[var(--text-primary)]"
         >
           <FileText size={12} className="shrink-0" aria-hidden="true" />
           <span className="truncate">{path}</span>
@@ -555,7 +555,7 @@ function MessageImages({ images, onOpen }: {
           type="button"
           aria-label={`Open ${item.alt}`}
           onClick={() => onOpen(items, index)}
-          className="cursor-zoom-in overflow-hidden rounded-xl border border-[var(--divider-subtle)] noa-press"
+          className="cursor-zoom-in overflow-hidden rounded-xl border border-[var(--border-default)] noa-press"
         >
           <img src={item.src} alt={item.alt} className="max-h-56 max-w-64 object-contain" />
         </button>
@@ -941,7 +941,7 @@ function ActivityGroup({ blocks, tasks, onStopTask, onOpenTask }: {
         <ChevronRight size={14} className={`shrink-0 opacity-0 transition-[transform,opacity] duration-300 group-hover/activity:opacity-100 group-focus-visible/activity:opacity-100 ${open ? "rotate-90" : ""}`} />
       </button>
       <Collapsible open={open}>
-        <div ref={activityRef} onScroll={(event) => { const e = event.currentTarget; following.current = e.scrollHeight - e.clientHeight - e.scrollTop <= 24 }} className="noa-activity-scroll mt-2 flex max-h-56 flex-col gap-1 overflow-x-hidden overflow-y-auto overscroll-contain focus-visible:outline-auto" role="region" aria-label="Tool activity" tabIndex={open ? 0 : -1}>
+        <div ref={activityRef} onScroll={(event) => { const e = event.currentTarget; following.current = e.scrollHeight - e.clientHeight - e.scrollTop <= 24 }} className="noa-activity-scroll scrollbar-on-hover mt-2 flex max-h-56 flex-col gap-1 overflow-x-hidden overflow-y-auto overscroll-contain focus-visible:outline-auto" role="region" aria-label="Tool activity" tabIndex={open ? 0 : -1}>
           {tools.map((block, i) => (
               <ToolCard
                 key={`tool-${block.id}-${i}`}
@@ -1093,7 +1093,7 @@ function MessageActions({ text, kind = "assistant", onEdit, complete = true }: {
           setCopied(true)
           setTimeout(() => setCopied(false), 2000)
         }}
-        className={`${kind === "assistant" ? "size-5" : "size-6"} flex items-center justify-center rounded-md text-[var(--text-secondary,#5D5D5D)] hover:bg-[color-mix(in_srgb,var(--text-primary,#2D2D2B)_7.5%,transparent)] hover:text-[var(--text-primary,#2D2D2B)] noa-press`}
+        className={`${kind === "assistant" ? "size-5" : "size-6"} flex items-center justify-center rounded-md text-[var(--text-secondary,#5D5D5D)] hover:bg-[var(--fill-hover)] hover:text-[var(--text-primary,#2D2D2B)] noa-press`}
         aria-label={copied ? "Copied" : copyLabel}
         title={copied ? "Copied" : copyLabel}
       >
@@ -1104,7 +1104,7 @@ function MessageActions({ text, kind = "assistant", onEdit, complete = true }: {
         <button
           type="button"
           onClick={onEdit}
-          className="flex size-6 items-center justify-center rounded-md text-[var(--text-secondary,#5D5D5D)] hover:bg-[color-mix(in_srgb,var(--text-primary,#2D2D2B)_7.5%,transparent)] hover:text-[var(--text-primary,#2D2D2B)] noa-press"
+          className="flex size-6 items-center justify-center rounded-md text-[var(--text-secondary,#5D5D5D)] hover:bg-[var(--fill-hover)] hover:text-[var(--text-primary,#2D2D2B)] noa-press"
           aria-label="Edit message"
           title="Edit and resend"
         >

@@ -16,7 +16,7 @@ type Field = {
   maxLength?: number
   format?: string
 }
-const button = "noa-approval-button noa-press border border-[var(--divider-subtle)]"
+const button = "noa-approval-button noa-press border border-[var(--border-default)]"
 export function ElicitationCard({
   request,
   onAnswer,
@@ -40,7 +40,7 @@ export function ElicitationCard({
   return (
     <form
       aria-label={`Input requested by ${request.mcp_server_name}`}
-      className="noa-approval-card flex max-h-[50vh] shrink-0 flex-col gap-3 overflow-y-auto rounded-3xl border border-[var(--divider-subtle)] p-4"
+      className="noa-approval-card flex max-h-[50vh] shrink-0 flex-col gap-3 overflow-y-auto rounded-3xl border border-[var(--border-default)] p-4"
       onChange={(event) => {
         const data = new FormData(event.currentTarget)
         onDraftChange?.(Object.fromEntries(fields.map(([name]) => [name, data.getAll(name).map(String)])))
@@ -100,7 +100,7 @@ export function ElicitationCard({
                 required={required.includes(name)}
                 defaultValue={draft?.[name] ?? (Array.isArray(field.default) ? field.default.map(String) : [])}
                 onChange={(event) => event.currentTarget.setCustomValidity("")}
-                className="rounded-md border border-[var(--divider-subtle)] bg-[var(--surface-page)] px-2 py-1"
+                className="rounded-md border border-[var(--border-default)] bg-[var(--surface-page)] px-2 py-1"
               >
                 {field.items?.enum?.map((value, i) => (
                   <option key={value} value={value}>
@@ -113,7 +113,7 @@ export function ElicitationCard({
                 name={name}
                 required={required.includes(name)}
                 defaultValue={draft?.[name]?.[0] ?? String(field.default ?? "")}
-                className="h-8 rounded-md border border-[var(--divider-subtle)] bg-[var(--surface-page)] px-2"
+                className="h-8 rounded-md border border-[var(--border-default)] bg-[var(--surface-page)] px-2"
               >
                 <option value="">Choose…</option>
                 {field.enum.map((value, i) => (
@@ -148,7 +148,7 @@ export function ElicitationCard({
                 maxLength={field.maxLength}
                 required={required.includes(name)}
                 defaultValue={draft?.[name]?.[0] ?? (field.default === undefined ? "" : String(field.default))}
-                className="h-8 rounded-md border border-[var(--divider-subtle)] bg-transparent px-2 outline-none focus:border-[var(--accent-color)]"
+                className="h-8 rounded-md border border-[var(--border-default)] bg-transparent px-2 outline-none focus:border-[var(--accent-color)]"
               />
             )}
           </label>

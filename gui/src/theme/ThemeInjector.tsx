@@ -1,8 +1,11 @@
 import { useLayoutEffect } from 'react';
 import { useIsDark } from '../hooks/useIsDark';
-import { SYSTEM_DEFAULT_FONT, UI_FONT_STYLES, MONO_FONT_STACK, resolveFontFamily } from '../lib/fontFamily';
+import { SYSTEM_DEFAULT_FONT, CONTENT_SAME_AS_UI, MONO_FONT_STACK, resolveFontFamily } from '../lib/fontFamily';
+import { faceFamilyName, faceFontFaceRule, quoteFamily } from '../lib/localFonts';
+import { CONTRAST_DEFAULTS, activeContrast, effectiveContrast, inkAlpha, mixRgb } from '../lib/contrast';
+import { activeTranslucency, supportsSidebarTranslucency } from '../lib/translucency';
 import { themeSurfaces } from '../lib/themePalette';
-import type { AppSettings } from '../types';
+import type { AppSettings, ThemeFontFace } from '../types';
 
 interface ThemeInjectorProps {
   settings: AppSettings;
@@ -14,6 +17,28 @@ export default function ThemeInjector({ settings }: ThemeInjectorProps) {
   useLayoutEffect(() => {
     const root = document.documentElement;
     const surfaces = themeSurfaces(isDark);
+    // One value drives every tier below, as in the reference theme: borders and dividers, the ghost hover wash, the
+    // secondary/tertiary text and icon inks, and the floor behind the content card. `raw` (0-100) is what the slider
+    // stores and scales the floor; `contrast` is the remapped value the alpha tiers use.
+    const variant = isDark ? 'dark' : 'light';
+    const raw = activeContrast(settings.appearance, isDark);
+    const contrast = effectiveContrast(raw, variant);
+    const ink = isDark ? '249,249,247' : '45,45,43';
+    const alpha = (value: number) => `rgba(${ink},${value})`;
+    // Structural rules (titlebar, panel edges, separators) sit on the default border tier, as the reference's
+    // `border-default` separators do; the lighter tier is kept for rules inside a card or list.
+    const divider = alpha(isDark ? inkAlpha(0.03, 0.02, contrast) : inkAlpha(0.04, 0.02, contrast));
+    const border = alpha(inkAlpha(0.06, 0.04, contrast));
+    const textSecondary = alpha(inkAlpha(0.65, 0.1, contrast));
+    const textTertiary = alpha(isDark ? inkAlpha(0.42, 0.13, contrast) : inkAlpha(0.45, 0.1, contrast));
+    const borderStrong = alpha(isDark ? inkAlpha(0.12, 0.06, contrast) : inkAlpha(0.09, 0.06, contrast));
+    // Ghost hover is the control surface's hover tier, which moves with contrast; the pressed tier is a
+    // fixed 12%/16% wash, so it does not.
+    const fillHover = alpha(isDark ? 0.06 + contrast * 0.03 : 0.04 + contrast * 0.03);
+    const surfaceRgb = isDark ? '45,45,43' : '249,249,247';
+    // Floor behind the content card: in light the surface mixes toward the ink, in dark toward black, so the
+    // card's rounded edge reads in both variants.
+    const surfaceUnder = `rgb(${mixRgb(surfaceRgb, isDark ? '0,0,0' : ink, isDark ? 0.16 + (raw - CONTRAST_DEFAULTS.dark) * 0.0015 : 0.04 + (raw - CONTRAST_DEFAULTS.light) * 0.0012)})`;
     // theme-bootstrap.js paints <html> opaque for the pre-React frame; once body and the shell
     // take over it must go, or it covers the native material under the translucent sidebar.
     root.style.removeProperty('background-color');
@@ -24,11 +49,8 @@ export default function ThemeInjector({ settings }: ThemeInjectorProps) {
     root.style.setProperty('--ink-on-dark', '#F9F9F7');
     root.style.setProperty('--bg-secondary', surfaces.secondary);
     // Opaque sidebar floor; --sidebar-material-color is the separate translucent tint.
-    root.style.setProperty('--bg-sidebar', surfaces.sidebar);
+    root.style.setProperty('--bg-sidebar', surfaceUnder);
     root.style.setProperty('--sidebar-material-color', surfaces.sidebarMaterial);
-    root.style.setProperty('--bg-sidebar-control', surfaces.sidebarControl);
-    root.style.setProperty('--bg-sidebar-raised', surfaces.sidebarRaised);
-    root.style.setProperty('--bg-sidebar-active', surfaces.sidebarActive);
     root.style.setProperty('--bg-card', surfaces.card);
 
     if (isDark) {
@@ -38,15 +60,16 @@ export default function ThemeInjector({ settings }: ThemeInjectorProps) {
       root.style.setProperty('--sidebar-preview-shadow', '0 0 0 1px rgba(0,0,0,0.07), 3px 0 6px -2px rgba(0,0,0,0.09), 10px 0 22px -6px rgba(0,0,0,0.11), 26px 0 54px -16px rgba(0,0,0,0.12)');
       // Codex Absolutely Dark: #2D2D2B surface + #F9F9F7 ink.
       root.style.setProperty('--text-primary', '#F9F9F7');
-      root.style.setProperty('--text-secondary', 'rgba(249,249,247,0.71)');
-      root.style.setProperty('--text-tertiary', 'rgba(249,249,247,0.498)');
+      root.style.setProperty('--text-secondary', textSecondary);
+      root.style.setProperty('--text-tertiary', textTertiary);
       root.style.setProperty('--sidebar-text', 'rgba(249,249,247,0.85)');
-      root.style.setProperty('--sidebar-text-muted', 'rgba(249,249,247,0.65)');
-      root.style.setProperty('--icon-ink', 'rgba(249,249,247,0.65)');
-      root.style.setProperty('--divider-subtle', 'rgba(249,249,247,0.042)');
-      root.style.setProperty('--border-default', 'rgba(249,249,247,0.084)');
-      root.style.setProperty('--border-strong', 'rgba(249,249,247,0.156)');
-      root.style.setProperty('--border-primary', 'var(--divider-subtle)');
+      root.style.setProperty('--sidebar-text-muted', textSecondary);
+      root.style.setProperty('--icon-ink', textSecondary);
+      root.style.setProperty('--divider-subtle', border);
+      root.style.setProperty('--border-default', border);
+      root.style.setProperty('--border-light', divider);
+      root.style.setProperty('--border-strong', borderStrong);
+      root.style.setProperty('--border-primary', 'var(--border-default)');
       root.style.setProperty('--panel-divider', 'var(--divider-subtle)');
       root.style.setProperty('--control-shadow-ink', '#000000');
       // Model/effort popover (dark).
@@ -62,14 +85,15 @@ export default function ThemeInjector({ settings }: ThemeInjectorProps) {
       root.style.setProperty('--sidebar-preview-shadow', '0 0 0 1px rgba(45,45,43,0.03), 3px 0 6px -2px rgba(45,45,43,0.035), 10px 0 22px -6px rgba(45,45,43,0.04), 26px 0 54px -16px rgba(45,45,43,0.05)');
       // Codex Absolutely Light: #F9F9F7 surface + #2D2D2B ink.
       root.style.setProperty('--text-primary', '#2D2D2B');
-      root.style.setProperty('--text-secondary', 'rgba(45,45,43,0.695)');
-      root.style.setProperty('--text-tertiary', 'rgba(45,45,43,0.495)');
+      root.style.setProperty('--text-secondary', textSecondary);
+      root.style.setProperty('--text-tertiary', textTertiary);
       root.style.setProperty('--sidebar-text', 'rgba(45,45,43,0.85)');
-      root.style.setProperty('--sidebar-text-muted', 'rgba(45,45,43,0.65)');
-      root.style.setProperty('--icon-ink', 'rgba(45,45,43,0.65)');
-      root.style.setProperty('--divider-subtle', 'rgba(45,45,43,0.049)');
-      root.style.setProperty('--border-default', 'rgba(45,45,43,0.078)');
-      root.style.setProperty('--border-strong', 'rgba(45,45,43,0.117)');
+      root.style.setProperty('--sidebar-text-muted', textSecondary);
+      root.style.setProperty('--icon-ink', textSecondary);
+      root.style.setProperty('--divider-subtle', border);
+      root.style.setProperty('--border-default', border);
+      root.style.setProperty('--border-light', divider);
+      root.style.setProperty('--border-strong', borderStrong);
       root.style.setProperty('--border-primary', 'var(--border-default)');
       root.style.setProperty('--panel-divider', 'var(--divider-subtle)');
       root.style.setProperty('--control-shadow-ink', '#000000');
@@ -82,27 +106,43 @@ export default function ThemeInjector({ settings }: ThemeInjectorProps) {
 
     // Accent is a fixed theme token (coral in both themes), not user-configurable.
     root.style.setProperty('--accent-color', '#CC7D5E');
+    // Interactive fills follow the same contrast-driven control tiers as the reference palette.
+    root.style.setProperty('--fill-hover', fillHover);
+    root.style.setProperty('--fill-active', alpha(isDark ? 0.16 : 0.12));
+    // A stored preference stays inert where the shell has no window material to show through.
+    const translucent = activeTranslucency(settings.appearance.translucentSidebar, isDark) && supportsSidebarTranslucency();
     root.dataset.pointerCursors = settings.appearance.usePointerCursors ? 'enabled' : 'disabled';
-    root.dataset.translucentSidebar = settings.appearance.translucentSidebar ? 'enabled' : 'disabled';
+    root.dataset.translucentSidebar = translucent ? 'enabled' : 'disabled';
     root.dataset.reduceMotion = settings.appearance.reduceMotion ? 'true' : 'false';
 
-    // Main owns the exact alpha and vibrancy values; the renderer sends only
-    // the preference plus the opaque theme fallback used when translucency is
-    // disabled or the platform does not support native sidebar material.
-    // Desktop-only bridge: the Electron shell does not expose it yet, so this is a no-op here.
-    void (window as unknown as { noaDesktop?: { appearance?: { setSidebarTranslucency?: (...a: unknown[]) => Promise<unknown> } } }).noaDesktop?.appearance?.setSidebarTranslucency?.(
-      settings.appearance.translucentSidebar,
-      surfaces.primary,
-      settings.appearance.theme,
-    )
+    // The shell owns the native material; the renderer sends only the preference plus the opaque
+    // fallback colour used when translucency is off or the platform has no backdrop support.
+    void window.noaDesktop?.appearance?.setSidebarTranslucency?.(translucent, surfaces.primary, settings.appearance.theme)
       ?.catch(() => { /* desktop-only; ignore if the bridge is unavailable */ });
-  }, [isDark, settings.appearance.theme, settings.appearance.translucentSidebar, settings.appearance.usePointerCursors, settings.appearance.reduceMotion]);
+  }, [isDark, settings.appearance.theme, settings.appearance.contrast, settings.appearance.translucentSidebar, settings.appearance.usePointerCursors, settings.appearance.reduceMotion]);
 
-  const fontFamilyStyle = resolveFontFamily(settings.appearance.fontFamily);
-  const codeFontFamilyStyle = resolveFontFamily(settings.appearance.codeFontFamily, MONO_FONT_STACK);
-  const uiFont = UI_FONT_STYLES[settings.appearance.uiFontStyle];
-  const codexDefaultWeight = settings.appearance.fontFamily === SYSTEM_DEFAULT_FONT && settings.appearance.uiFontStyle.startsWith('regular');
-  const uiFontWeight = codexDefaultWeight ? 430 : uiFont.weight;
+  const variant = isDark ? 'dark' : 'light';
+  const themeFonts = settings.appearance.fonts?.[variant];
+  const uiFamily = themeFonts?.ui ?? SYSTEM_DEFAULT_FONT;
+  const contentChoice = themeFonts?.content ?? CONTENT_SAME_AS_UI;
+  const contentFamily = contentChoice === CONTENT_SAME_AS_UI ? uiFamily : contentChoice;
+  const uiFace = themeFonts?.uiFace;
+  const contentFace = contentChoice === CONTENT_SAME_AS_UI ? uiFace : themeFonts?.contentFace;
+  const codeFamily = themeFonts?.code ?? SYSTEM_DEFAULT_FONT;
+  const codeFace = themeFonts?.codeFace;
+
+  // A selected face is declared through local() under its own family, so the exact face renders; the
+  // family stack follows as the fallback, and the platform defaults have no face at all.
+  const faceRules = [...new Map(
+    [uiFace, contentFace, codeFace]
+      .filter((face): face is ThemeFontFace => Boolean(face))
+      .map((face) => [face.postscriptName, face]),
+  ).values()].map(faceFontFaceRule).join('\n      ');
+  const withFace = (face: ThemeFontFace | undefined, stack: string) =>
+    face ? `${quoteFamily(faceFamilyName(face))}, ${stack}` : stack;
+  const fontFamilyStyle = withFace(uiFace, resolveFontFamily(uiFamily));
+  const contentFontFamilyStyle = withFace(contentFace, resolveFontFamily(contentFamily));
+  const codeFontFamilyStyle = withFace(codeFace, resolveFontFamily(codeFamily, MONO_FONT_STACK));
   const uiFontSize = settings.appearance.uiFontSize;
   const textScale = uiFontSize / 14;
 
@@ -110,6 +150,7 @@ export default function ThemeInjector({ settings }: ThemeInjectorProps) {
   // document order and wins any overlap; keep the two in sync.
   return (
     <style>{`
+      ${faceRules}
       /* CSS variable-based overrides — work in both light and dark */
       .bg-\\[\\#EFEAE3\\]     { background-color: var(--bg-secondary) !important; }
       .bg-\\[\\#CC7D5E\\]     { background-color: var(--accent-color) !important; }
@@ -158,11 +199,11 @@ export default function ThemeInjector({ settings }: ThemeInjectorProps) {
         background-color: var(--bg-primary);
         color: var(--text-primary);
         font-family: ${fontFamilyStyle} !important;
-        font-weight: ${uiFontWeight};
-        font-style: ${uiFont.italic ? 'italic' : 'normal'};
-        /* Content bold sits a fixed step above the body, as Obsidian's --bold-modifier does, so a Semibold or Bold
-           body doesn't leave **strong** level with (or lighter than) the text around it. */
-        --font-weight-content-bold: ${codexDefaultWeight ? 600 : Math.min(uiFont.weight + 200, 900)};
+        /* The selected face carries its own weight and slant; the body itself stays upright. */
+        font-weight: 400;
+        font-style: normal;
+        /* Content bold sits a fixed step above the body so **strong** never flattens into the text around it. */
+        --font-weight-content-bold: 600;
       }
       /* Code keeps its upright face; the UI font style is for prose and chrome. */
       code, pre, kbd, samp { font-style: normal; }
@@ -177,6 +218,10 @@ export default function ThemeInjector({ settings }: ThemeInjectorProps) {
         --text-heading-sm: ${Math.round(18 * textScale)}px;
         --code-font-size: ${settings.appearance.codeFontSize}px;
         --font-mono: ${codeFontFamilyStyle};
+        /* Conversation typeface: turn items read these so the composer and chrome stay on the UI font. */
+        --font-content: ${contentFontFamilyStyle};
+        --content-font-weight: 400;
+        --content-font-style: normal;
       }
       code, pre { font-size: var(--code-font-size); }
 

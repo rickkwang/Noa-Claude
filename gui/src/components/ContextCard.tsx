@@ -16,7 +16,7 @@ export function ContextCard({ data }: { data: ContextOutput }) {
   const colorOf = (category: ContextOutput["categories"][number], index: number) =>
     category.kind !== "used" ? "color-mix(in srgb, var(--text-primary, #2d2d2b) 22%, transparent)" : category.color ?? PALETTE[index % PALETTE.length]!
   return (
-    <section data-context-card className="not-prose w-full max-w-[560px] rounded-2xl border border-[var(--divider-subtle)] bg-[var(--bg-card)] px-4 py-3.5 text-[length:var(--text-chat-sm)]">
+    <section data-context-card className="not-prose w-full max-w-[560px] rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] px-4 py-3.5 text-[length:var(--text-chat-sm)]">
       <button type="button" aria-expanded={open} onClick={() => setOpen((value) => !value)} className="flex w-full items-center justify-between gap-3 text-left text-[var(--text-primary)]">
         <span className="font-medium">Context window{data.model ? <span className="ms-2 font-normal text-[var(--sidebar-text-muted)]">{data.model}</span> : null}</span>
         <span className="flex items-center gap-1.5 text-[var(--sidebar-text-muted)]">

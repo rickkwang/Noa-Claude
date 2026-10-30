@@ -32,12 +32,12 @@ export class ErrorBoundary extends Component<Props, State> {
   render() {
     if (this.state.error) {
       return (
-        <div role="alert" className="my-2 rounded-lg border border-[var(--divider-subtle)] bg-[var(--bg-card)] px-4 py-3 text-[length:var(--text-chat-sm)] text-[var(--text-secondary)]">
+        <div role="alert" className="my-2 rounded-lg border border-[var(--border-default)] bg-[var(--bg-card)] px-4 py-3 text-[length:var(--text-chat-sm)] text-[var(--text-secondary)]">
           <p className="m-0 mb-2 font-medium text-[var(--text-primary)]">This turn couldn't render</p>
           <button
             type="button"
             onClick={this.retry}
-            className="noa-confirm-btn h-7 rounded-md border border-[var(--divider-subtle)] px-3 text-caption"
+            className="noa-confirm-btn h-7 rounded-md border border-[var(--border-default)] px-3 text-caption"
           >
             Try again
           </button>

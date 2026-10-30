@@ -129,7 +129,7 @@ export function EnvironmentMenu({ cwd, branch, onBranchChange, worktree, canTogg
         onClick={() => (open ? close() : setOpen(true))}
         aria-label="Configure local environment"
         aria-expanded={open}
-        className={`flex size-7 items-center justify-center rounded-full noa-sidebar-hover-surface-subtle ${open ? "bg-[color-mix(in_srgb,var(--text-primary)_6%,transparent)]" : ""}`}
+        className={`flex size-7 items-center justify-center rounded-full noa-sidebar-hover-surface-subtle ${open ? "bg-[var(--fill-hover)]" : ""}`}
       >
         <ComposerSettingsIcon />
       </button>
@@ -256,7 +256,7 @@ export function EnvironmentMenu({ cwd, branch, onBranchChange, worktree, canTogg
                 }}
                 placeholder="new-branch"
                 aria-label="Branch name"
-                className="h-8 rounded-lg border border-[var(--divider-subtle)] bg-transparent px-2 text-body outline-none focus:border-[var(--sidebar-text-muted)]"
+                className="h-8 rounded-lg border border-[var(--border-default)] bg-transparent px-2 text-body outline-none focus:border-[var(--sidebar-text-muted)]"
               />
               {(createError || error) && <span role="alert" className="text-caption text-[#C24444]">{createError ?? error}</span>}
               <div className="flex justify-end gap-2">

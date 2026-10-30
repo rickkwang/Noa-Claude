@@ -1,7 +1,7 @@
 // Desktop shell: starts the Bun bridge (server/main.ts), serves the
 // built UI from it, and shows it in a native window. The bridge is the only
 // process that talks to the agent; the window is a plain client of it.
-const { app, BrowserWindow, Menu, dialog, ipcMain, nativeImage, shell } = require('electron')
+const { app, BrowserWindow, Menu, dialog, ipcMain, nativeImage, nativeTheme, shell } = require('electron')
 const { spawn } = require('child_process')
 const fs = require('fs')
 const http = require('http')
@@ -149,6 +149,8 @@ function createWindow(port) {
     minHeight: 600,
     title: 'Noa Agent',
     backgroundColor: '#FCFCFB',
+    // Creation-only: pins the material active so a focus change does not swap it for the pale inactive one.
+    ...(process.platform === 'darwin' ? { visualEffectState: 'active' } : {}),
     // Same titlebar as the Noa note app: hidden title with the traffic lights centred in a 44px bar.
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 15, y: 15 },
@@ -205,6 +207,30 @@ async function selectProjectDirectories(event, multiple) {
   return result.canceled ? [] : result.filePaths
 }
 
+// The renderer paints the sidebar translucent itself; the shell only decides whether the window has a
+// native material behind it. macOS is the only platform this shell targets, so that is the support line.
+// The material renders in the native appearance, so that follows the app theme: otherwise a dark app on a light
+// system tints a light material and the sidebar goes grey.
+const THEME_SOURCES = new Set(['system', 'light', 'dark'])
+
+let lastWindowAppearance = ''
+
+function applySidebarTranslucency(enabled, surfaceColor, theme) {
+  if (!win || win.isDestroyed()) return
+  if (process.platform !== 'darwin') return
+  // The renderer re-sends this on every theme or contrast tweak; only a real change should touch the native window.
+  const next = `${enabled}|${surfaceColor}|${theme}`
+  if (next === lastWindowAppearance) return
+  lastWindowAppearance = next
+  nativeTheme.themeSource = theme
+  win.setVibrancy(enabled ? 'menu' : null, { animationDuration: 160 })
+  win.setBackgroundColor(enabled ? '#00000000' : surfaceColor)
+}
+
+ipcMain.handle('noa:set-sidebar-translucency', (event, enabled, surfaceColor, theme) => {
+  if (!win || event.sender !== win.webContents || !THEME_SOURCES.has(theme)) return
+  applySidebarTranslucency(enabled === true, typeof surfaceColor === 'string' ? surfaceColor : '#FCFCFB', theme)
+})
 ipcMain.handle('noa:select-project-directories', (event) => selectProjectDirectories(event, true))
 ipcMain.handle('noa:select-project-directory', async (event) =>
   (await selectProjectDirectories(event, false))[0],

@@ -32,7 +32,7 @@ export function PreviewDialog({ title, onClose, children }: { title: string; onC
     dialog.showModal()
     return () => dialog.close()
   }, [])
-  return <dialog ref={ref} aria-label={title} onCancel={event => { event.preventDefault(); onClose() }} onClick={event => { if (event.target === event.currentTarget) onClose() }} className="noa-content-preview m-auto h-[min(85vh,900px)] w-[min(90vw,1200px)] max-w-none rounded-2xl border border-[var(--divider-subtle)] bg-[var(--bg-card)] p-0 text-[var(--text-primary)] backdrop:bg-black/40">
+  return <dialog ref={ref} aria-label={title} onCancel={event => { event.preventDefault(); onClose() }} onClick={event => { if (event.target === event.currentTarget) onClose() }} className="noa-content-preview m-auto h-[min(85vh,900px)] w-[min(90vw,1200px)] max-w-none rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-0 text-[var(--text-primary)] backdrop:bg-black/40">
     <div className="flex h-12 items-center justify-between border-b border-[var(--divider-subtle)] px-4"><span>{title}</span><button type="button" aria-label="Close preview" onClick={onClose}><X size={18} /></button></div>
     <div className="h-[calc(100%_-_3rem)] overflow-auto p-5">{children}</div>
   </dialog>
@@ -72,7 +72,7 @@ export function Diagram({ code }: { code: string }) {
     }).catch(error => { if (!cancelled) setError(String(error.message ?? error)) })
     return () => { cancelled = true }
   }, [code, id, dark])
-  return <div className="not-prose my-4 overflow-hidden rounded-xl border border-[var(--divider-subtle)]">
+  return <div className="not-prose my-4 overflow-hidden rounded-xl border border-[var(--border-default)]">
     <div data-copy-exclude className="flex flex-wrap items-center gap-3 border-b border-[var(--divider-subtle)] px-4 py-2 text-caption"><span className="flex-1">Mermaid</span><button type="button" onClick={async () => { try { await navigator.clipboard.writeText(code); setCopyError(false); setCopied(true); setTimeout(() => setCopied(false), 2000) } catch { setCopyError(true) } }}>{copied ? "Copied" : "Copy source"}</button><button type="button" disabled={!svg} onClick={() => { const url = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" })); const link = document.createElement("a"); link.href = url; link.download = "diagram.svg"; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000) }}>Save SVG</button><button type="button" onClick={() => setSource(value => !value)}>{source ? "Diagram" : "Source"}</button><button type="button" disabled={!svg} onClick={() => setExpanded(true)}>Expand diagram</button></div>
     {copyError && <p role="status" className="px-4 text-caption">Could not copy diagram source.</p>}
     {source || error ? <><pre className="noa-selectable overflow-auto p-4 text-[length:var(--code-font-size)]">{code}</pre>{error && <p role="status" className="px-4 pb-3 text-caption text-[var(--text-secondary)]">Diagram unavailable: {error}</p>}</> : svg ? <div className="noa-diagram overflow-auto p-4" dangerouslySetInnerHTML={{ __html: svg }} /> : <p role="status" className="p-4 text-caption">Rendering diagram…</p>}

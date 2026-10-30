@@ -76,7 +76,7 @@ function OutputImage({ href, alt }: { href: string; alt: string }) {
     const Player = mediaType
     return <span className="not-prose my-3 inline-flex max-w-full flex-col gap-2"><Player src={src} controls preload="metadata" aria-label={alt || mediaType} onError={() => setError(true)} className="max-h-[480px] max-w-full rounded-lg" /><a href={src + (src.startsWith("/api/media?") ? "&download=1" : "")} download className="self-start text-caption text-[var(--accent-color)]">Save copy</a></span>
   }
-  return <>{src ? <button type="button" className="my-3 inline-block max-w-full cursor-zoom-in align-top" aria-label={`Open ${alt || "image"}`} onClick={() => onOpenImages ? onOpenImages([{ src, alt }], 0) : setOpen(true)}><img src={src} alt={alt} loading="lazy" referrerPolicy="no-referrer" onError={() => setError(true)} className="max-h-[420px] max-w-full rounded-lg border border-[var(--divider-subtle)] object-contain" /></button> : <span className="text-[var(--sidebar-text-muted)]">Loading image…</span>}{open && src && <Lightbox items={[{ src, alt }]} index={0} onIndex={() => {}} onClose={() => setOpen(false)} />}</>
+  return <>{src ? <button type="button" className="my-3 inline-block max-w-full cursor-zoom-in align-top" aria-label={`Open ${alt || "image"}`} onClick={() => onOpenImages ? onOpenImages([{ src, alt }], 0) : setOpen(true)}><img src={src} alt={alt} loading="lazy" referrerPolicy="no-referrer" onError={() => setError(true)} className="max-h-[420px] max-w-full rounded-lg border border-[var(--border-default)] object-contain" /></button> : <span className="text-[var(--sidebar-text-muted)]">Loading image…</span>}{open && src && <Lightbox items={[{ src, alt }]} index={0} onIndex={() => {}} onClose={() => setOpen(false)} />}</>
 }
 
 function positiveLine(value: string | undefined): number | undefined {
@@ -100,7 +100,7 @@ function ReviewComment({ attributes }: { attributes: Record<string, string> }) {
   const { title, body, file, priority } = attributes
   const start = positiveLine(attributes.start), end = positiveLine(attributes.end)
   if (!title || !body || !file) return <span>{"::code-comment"}</span>
-  return <section className="not-prose my-3 rounded-xl border border-[var(--divider-subtle)] p-4" aria-label="Code review comment">
+  return <section className="not-prose my-3 rounded-xl border border-[var(--border-default)] p-4" aria-label="Code review comment">
     <div className="flex items-start gap-2 font-medium">{priority && <span className="text-caption">P{priority}</span>}<span>{title}</span></div>
     <Markdown text={body} />
     <div className="mt-2 text-caption"><OutputLink href={lineTarget(file, start, end)}>{file}{start ? `:${start}${end && end >= start ? `-${end}` : ""}` : ""}</OutputLink></div>
@@ -249,7 +249,7 @@ function BlockViewImpl({ block, streaming, streamKey, preserveUserText }: { bloc
   const props = streaming && streamKey ? streamBlock(streamKey) : {}
   switch (block.type) {
     case "mathBlock": return <MathText text={block.text} display pending={streaming && !block.closed} />
-    case "detailsBlock": return <details className="my-3 rounded-xl border border-[var(--divider-subtle)] px-4 py-3" open={block.open}><summary className="cursor-pointer font-medium">{renderInline(block.summary)}</summary><Markdown text={block.text} streaming={streaming} streamKey={streamKey} preserveUserText={preserveUserText} /></details>
+    case "detailsBlock": return <details className="my-3 rounded-xl border border-[var(--border-default)] px-4 py-3" open={block.open}><summary className="cursor-pointer font-medium">{renderInline(block.summary)}</summary><Markdown text={block.text} streaming={streaming} streamKey={streamKey} preserveUserText={preserveUserText} /></details>
     case "reviewComment": return <ReviewComment attributes={block.attributes} />
     case "space": {
       const extraLines = (block.raw.match(/\n/g)?.length ?? 0) - 2
@@ -336,7 +336,7 @@ export function CodeBlock({ lang, code, complete = true }: { lang: string; code:
         <span className="min-w-0 flex-1 truncate">{lang || "text"}</span>
         <button type="button" aria-label="Toggle code wrapping" aria-pressed={wrap} onClick={() => setWrap(value => !value)} className="px-2 text-caption">Wrap</button>
         {complete && ["html", "svg"].includes(lang.toLowerCase()) && <button type="button" onClick={() => setPreview(true)} className="px-2 text-caption">Preview</button>}
-        {complete && <button type="button" onClick={copy} aria-label={copied ? "Copied" : "Copy code"} title={copyError ? "Copy failed. Try again." : copied ? "Copied" : "Copy code"} className="flex size-8 shrink-0 items-center justify-center rounded-lg text-[var(--text-secondary)] hover:bg-[color-mix(in_srgb,var(--text-primary)_7.5%,transparent)] hover:text-[var(--text-primary)]">
+        {complete && <button type="button" onClick={copy} aria-label={copied ? "Copied" : "Copy code"} title={copyError ? "Copy failed. Try again." : copied ? "Copied" : "Copy code"} className="flex size-8 shrink-0 items-center justify-center rounded-lg text-[var(--text-secondary)] hover:bg-[var(--fill-hover)] hover:text-[var(--text-primary)]">
           {copied ? <Check size={16} /> : <Copy size={16} />}
         </button>}
       </div>

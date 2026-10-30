@@ -1,10 +1,14 @@
 import { Children, useEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react"
 import { createPortal } from "react-dom"
-import type { AppSettings } from "../types"
+import type { AppSettings, ThemeFontFace, ThemeFonts } from "../types"
 import type { AgentState } from "../agent/reducer"
 import type { PermissionMode, AccountInfo } from "../agent/protocol"
 import { ArrowLeft, ChevronDown, Keyboard, Palette, Search, Settings, Plug, SlidersHorizontal, List, RefreshCcw } from "../lib/icons"
-import { SYSTEM_DEFAULT_FONT, UI_FONT_STYLES } from "../lib/fontFamily"
+import { SYSTEM_DEFAULT_FONT, CONTENT_SAME_AS_UI } from "../lib/fontFamily"
+import { faceStyle, isRegularFace, loadFontFamilies, type LocalFontFamily } from "../lib/localFonts"
+import { clampContrast } from "../lib/contrast"
+import { activeTranslucency, supportsSidebarTranslucency } from "../lib/translucency"
+import { useIsDark } from "../hooks/useIsDark"
 import { findModel } from "../lib/models"
 import { defaultSettings } from "../theme/settings"
 import { AuthDialog } from "./AuthDialog"
@@ -31,8 +35,11 @@ const pages: { key: Page; label: string; group: string; icon: ReactNode; rows: s
     icon: <Palette size={16} />,
     rows: [
       "Mode",
+      "Contrast",
+      "Translucent sidebar",
       "Font",
-      "Font style",
+      "UI font style",
+      "Content font",
       "Code font",
       "UI font size",
       "Code font size",
@@ -80,7 +87,7 @@ const sourceLabels: Record<string, string> = {
   policySettings: "Managed",
 }
 const actionButton =
-  "h-8 shrink-0 rounded-lg border border-[var(--divider-subtle)] px-3 text-body hover:bg-[var(--settings-fill-hover)] disabled:opacity-40"
+  "h-8 shrink-0 rounded-lg border border-[var(--border-default)] px-3 text-body hover:bg-[var(--settings-fill-hover)] disabled:opacity-40"
 
 const permissionOptions: [DefaultMode, string][] = [
   ["inherit", "Follow Noa settings"],
@@ -150,13 +157,21 @@ export function SettingsDialog({
   const dialogRef = useRef<HTMLDivElement>(null)
   const backRef = useRef<HTMLButtonElement>(null)
   const appearance = settings.appearance
+  const isDark = useIsDark(appearance.theme)
+  const variant = isDark ? "dark" : "light"
+  const contrast = clampContrast(appearance.contrast?.[variant], variant)
+  const translucency = {
+    light: activeTranslucency(appearance.translucentSidebar, false),
+    dark: activeTranslucency(appearance.translucentSidebar, true),
+  }
   const permissionMode = settings.agent.permissionDefault
   const providerLabel = account?.apiProvider ? providerDisplayName(account.apiProvider) : undefined
   const change = (patch: Partial<AppSettings["appearance"]>) =>
     onChange({ ...settings, appearance: { ...appearance, ...patch } })
   const setPermission = (permissionDefault: DefaultMode) =>
     onChange({ ...settings, agent: { ...settings.agent, permissionDefault } })
-  const [localFonts, setLocalFonts] = useState<string[]>([])
+  const [advancedOpen, setAdvancedOpen] = useState(false)
+  const [fontFamilies, setFontFamilies] = useState<LocalFontFamily[]>([])
   const searchTerms = query.trim().toLowerCase().split(/\s+/).filter(Boolean)
   const searchResults = pages.flatMap((p) => p.rows.map((label) => ({ page: p, label })))
     .filter(({ page, label }) => searchTerms.every((term) => `${page.label} ${label}`.toLowerCase().includes(term)))
@@ -187,19 +202,72 @@ export function SettingsDialog({
     row?.scrollIntoView({ block: "center" })
     if (!appearance.reduceMotion) row?.animate([{ backgroundColor: "var(--settings-fill-active)" }, { backgroundColor: "transparent" }], { duration: 1200 })
   }, [page, searchTarget, appearance.reduceMotion])
+  // A search jump may land on a row inside Advanced, so it opens the group.
+  const showAdvanced = advancedOpen || searchTarget !== undefined
   const current = pages.find((p) => p.key === page)
-  const fontOptions: [string, string][] = [
-    [SYSTEM_DEFAULT_FONT, "System default"],
-    ...localFonts.map((f) => [f, f] as [string, string]),
-  ]
-  if (appearance.fontFamily !== SYSTEM_DEFAULT_FONT && !localFonts.includes(appearance.fontFamily))
-    fontOptions.push([appearance.fontFamily, appearance.fontFamily])
-  const codeFontOptions: [string, string][] = [
-    [SYSTEM_DEFAULT_FONT, "System monospace"],
-    ...localFonts.map((font) => [font, font] as [string, string]),
-  ]
-  if (appearance.codeFontFamily !== SYSTEM_DEFAULT_FONT && !localFonts.includes(appearance.codeFontFamily))
-    codeFontOptions.push([appearance.codeFontFamily, appearance.codeFontFamily])
+  const activeFonts = appearance.fonts?.[variant] ?? defaultSettings.appearance.fonts[variant]
+  const updateFonts = (patch: Partial<ThemeFonts>) =>
+    change({ fonts: { ...appearance.fonts, [variant]: { ...activeFonts, ...patch } } })
+  const facesFor = (family: string) => fontFamilies.find((f) => f.family === family)?.faces ?? []
+  const faceLabel = (face: ThemeFontFace) => faceStyle(face).replace(/([a-z])([A-Z])/g, "$1 $2")
+  // Prefer the family's Regular face: the platform lists faces in an arbitrary order.
+  const defaultFace = (faces: ThemeFontFace[]) => faces.find(isRegularFace) ?? faces[0]
+  const familyOption = (family: string): [string, string] => [family, family]
+  const withStoredFamily = (options: [string, string][], family: string) => {
+    if (family && family !== SYSTEM_DEFAULT_FONT && family !== CONTENT_SAME_AS_UI && !options.some(([value]) => value === family))
+      options.push(familyOption(family))
+    return options
+  }
+  const uiFamilyOptions = withStoredFamily(
+    [[SYSTEM_DEFAULT_FONT, "System default"], ...fontFamilies.map((f) => familyOption(f.family))],
+    activeFonts.ui,
+  )
+  const contentFamilyOptions = withStoredFamily(
+    [[CONTENT_SAME_AS_UI, "Same as UI font"], [SYSTEM_DEFAULT_FONT, "System default"], ...fontFamilies.map((f) => familyOption(f.family))],
+    activeFonts.content,
+  )
+  const codeFamilyOptions = withStoredFamily(
+    [[SYSTEM_DEFAULT_FONT, "System monospace"], ...fontFamilies.filter((f) => f.monospaced).map((f) => familyOption(f.family))],
+    activeFonts.code,
+  )
+  const faceOptions = (family: string, face: ThemeFontFace | undefined, fallbackLabel: string): [string, string][] => {
+    const faces = facesFor(family)
+    if (!faces.length) return [["", fallbackLabel]]
+    const options = faces.map((item): [string, string] => [item.postscriptName, faceLabel(item)])
+    if (face && !faces.some((item) => item.postscriptName === face.postscriptName)) options.unshift([face.postscriptName, faceLabel(face)])
+    return options
+  }
+  const faceValue = (family: string, face: ThemeFontFace | undefined) => {
+    if (family === SYSTEM_DEFAULT_FONT || family === CONTENT_SAME_AS_UI) return ""
+    return face?.postscriptName ?? defaultFace(facesFor(family))?.postscriptName ?? ""
+  }
+  const chooseFamily = (role: "ui" | "content" | "code", family: string) => {
+    const face = family === SYSTEM_DEFAULT_FONT || family === CONTENT_SAME_AS_UI ? undefined : defaultFace(facesFor(family))
+    if (role === "ui") updateFonts({ ui: family, uiFace: face })
+    else if (role === "content") updateFonts({ content: family, contentFace: face })
+    else updateFonts({ code: family, codeFace: face })
+  }
+  const faceSelect = ({ role, family, face }: { role: "ui" | "content" | "code"; family: string; face?: ThemeFontFace }) => (
+    <Select
+      value={faceValue(family, face)}
+      options={faceOptions(family, face, "Regular")}
+      disabled={family === SYSTEM_DEFAULT_FONT || family === CONTENT_SAME_AS_UI}
+      onChange={(postscriptName) => chooseFace(role, postscriptName)}
+    />
+  )
+  const fontPair = ({ role, family, face, options }: { role: "content" | "code"; family: string; face?: ThemeFontFace; options: [string, string][] }) => (
+    <div className="flex shrink-0 items-center gap-2">
+      <Select value={family} options={options} onChange={(next) => chooseFamily(role, next)} />
+      {faceSelect({ role, family, face })}
+    </div>
+  )
+  const chooseFace = (role: "ui" | "content" | "code", postscriptName: string) => {
+    const face = facesFor(role === "ui" ? activeFonts.ui : role === "content" ? activeFonts.content : activeFonts.code)
+      .find((item) => item.postscriptName === postscriptName)
+    if (role === "ui") updateFonts({ uiFace: face })
+    else if (role === "content") updateFonts({ contentFace: face })
+    else updateFonts({ codeFace: face })
+  }
 
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null
@@ -209,10 +277,11 @@ export function SettingsDialog({
 
   useEffect(() => {
     if (page !== "appearance") return
-    const query = (window as { queryLocalFonts?: () => Promise<{ family: string }[]> }).queryLocalFonts
-    query?.()
-      .then((fonts) => setLocalFonts([...new Set(fonts.map((f) => f.family))].sort()))
-      .catch(() => setLocalFonts([]))
+    let cancelled = false
+    loadFontFamilies()
+      .then((families) => { if (!cancelled) setFontFamilies(families) })
+      .catch(() => { if (!cancelled) setFontFamilies([]) })
+    return () => { cancelled = true }
   }, [page])
 
   useEffect(() => {
@@ -248,9 +317,9 @@ export function SettingsDialog({
       aria-modal="true"
       aria-label="Settings"
       onKeyDown={onKeyDown}
-      className="fixed inset-0 z-50 flex bg-[var(--bg-primary,#FCFCFB)] text-body text-[var(--text-primary)]"
+      className="fixed inset-0 z-50 flex bg-[var(--bg-sidebar,#FBFBF9)] text-body text-[var(--text-primary)]"
     >
-      <nav className="flex shrink-0 flex-col bg-[var(--bg-sidebar,#FBFBF9)] px-2 pb-3" style={{ width: navWidth }}>
+      <nav className="flex shrink-0 flex-col px-2 pb-3" style={{ width: navWidth }}>
         {/* Titlebar band: back arrow sits right of the traffic lights, same row. */}
         <div
           className="flex h-11 shrink-0 items-center"
@@ -283,7 +352,7 @@ export function SettingsDialog({
             className="min-w-0 flex-1 bg-transparent text-[var(--text-primary)] outline-none placeholder:text-[var(--sidebar-text-muted)]"
           />
         </label>
-        <div className="mt-2 min-h-0 flex-1 overflow-y-auto">
+        <div className="scrollbar-on-hover mt-2 min-h-0 flex-1 overflow-y-auto">
           {query.trim() ? (
             <>
               <button
@@ -340,8 +409,7 @@ export function SettingsDialog({
       </nav>
 
       {navResizeHandle}
-      <div aria-hidden="true" className="w-[0.5px] shrink-0 bg-[var(--divider-subtle,#E6E2DA)]" />
-      <main className="min-w-0 flex-1 overflow-y-auto px-5 pt-[120px] pb-5">
+      <main className="noa-settings-main scrollbar-on-hover min-w-0 flex-1 overflow-y-auto bg-[var(--bg-primary,#FCFCFB)] px-5 pt-[120px] pb-5">
         <div key={page} className="mx-auto flex max-w-3xl flex-col gap-10">
           <h1 className="text-[26px] leading-8 font-normal">{current?.label}</h1>
 
@@ -364,7 +432,7 @@ export function SettingsDialog({
                       setAuthOpen(true)
                       onStartAuthentication()
                     }}
-                    className="h-8 rounded-lg border border-[var(--divider-subtle)] bg-[var(--bg-card)] px-3 text-body text-[var(--text-primary)] hover:bg-[var(--settings-fill-hover)]"
+                    className="h-8 rounded-lg border border-[var(--border-default)] bg-[var(--bg-card)] px-3 text-body text-[var(--text-primary)] hover:bg-[var(--settings-fill-hover)]"
                   >
                     {account?.email ? "Sign in again" : "Sign in"}
                   </button>
@@ -425,50 +493,63 @@ export function SettingsDialog({
                     onChange={(theme) => change({ theme: theme as Theme })}
                   />
                 </Row>
-                <Row label="Font" description="Typeface for the interface.">
-                  <Select
-                    value={appearance.fontFamily}
-                    options={fontOptions}
-                    onChange={(fontFamily) => change({ fontFamily })}
-                  />
-                </Row>
-                <Row label="Font style" description="Weight and italic for the interface font.">
-                  <Select
-                    value={appearance.uiFontStyle}
-                    options={Object.entries(UI_FONT_STYLES).map(([v, s]) => [v, s.label] as [string, string])}
-                    onChange={(uiFontStyle) => change({ uiFontStyle: uiFontStyle as AppSettings["appearance"]["uiFontStyle"] })}
-                  />
+                <Row label="Font" description="Family for the interface.">
+                  <Select value={activeFonts.ui} options={uiFamilyOptions} onChange={(family) => chooseFamily("ui", family)} />
                 </Row>
               </Section>
 
-              <Section title="Fonts">
-                <Row label="Code font" description="Typeface for code blocks and diffs, separate from the interface font.">
-                  <Select
-                    value={appearance.codeFontFamily}
-                    options={codeFontOptions}
-                    onChange={(codeFontFamily) => change({ codeFontFamily })}
-                  />
-                </Row>
-                <Row label="UI font size" description="Base size for interface text (11–16 px).">
-                  <NumberField
-                    value={appearance.uiFontSize}
-                    min={11}
-                    max={16}
-                    onChange={(uiFontSize) => change({ uiFontSize })}
-                  />
-                </Row>
-                <Row label="Code font size" description="Size for code blocks (8–24 px).">
-                  <NumberField
-                    value={appearance.codeFontSize}
-                    min={8}
-                    max={24}
-                    onChange={(codeFontSize) => change({ codeFontSize })}
-                  />
-                </Row>
-                <Row label="Font smoothing" description="Smooth edges of text on screen.">
-                  <Toggle checked={appearance.fontSmoothing} onChange={(fontSmoothing) => change({ fontSmoothing })} />
-                </Row>
-              </Section>
+              <div className="flex flex-col">
+                <button
+                  type="button"
+                  aria-expanded={showAdvanced}
+                  onClick={() => setAdvancedOpen((open) => !open)}
+                  className="flex min-h-10 w-fit cursor-pointer items-center gap-1 pb-1.5 text-body font-medium text-[var(--sidebar-text-muted)] hover:text-[var(--text-primary)]"
+                >
+                  Advanced
+                  <ChevronDown size={14} className={`transition-transform ${showAdvanced ? "rotate-180" : ""}`} />
+                </button>
+                {showAdvanced && (
+                  <div className="flex flex-col gap-6">
+                    <Section title={`${isDark ? "Dark" : "Light"} theme`}>
+                      <Row label="UI font style" description="Face of the selected family.">
+                        {faceSelect({ role: "ui", family: activeFonts.ui, face: activeFonts.uiFace })}
+                      </Row>
+                      <Row label="Content font" description="Typeface for messages and page content.">
+                        {fontPair({ role: "content", family: activeFonts.content, face: activeFonts.contentFace, options: contentFamilyOptions })}
+                      </Row>
+                      <Row label="Code font" description="Typeface for code blocks and diffs, separate from the interface font.">
+                        {fontPair({ role: "code", family: activeFonts.code, face: activeFonts.codeFace, options: codeFamilyOptions })}
+                      </Row>
+                      {supportsSidebarTranslucency() && (
+                        <Row label="Translucent sidebar" description="Let the desktop material show behind the sidebar, per theme.">
+                          <Toggle
+                            checked={translucency[variant]}
+                            onChange={(enabled) => change({ translucentSidebar: { ...translucency, [variant]: enabled } })}
+                          />
+                        </Row>
+                      )}
+                      <Row label="Contrast" description="Divider and border contrast for the active theme; light and dark keep separate values.">
+                        <Slider
+                          label="Contrast"
+                          value={contrast}
+                          onChange={(value) => change({ contrast: { ...appearance.contrast, [variant]: value } })}
+                        />
+                      </Row>
+                    </Section>
+                    <Section title="Text">
+                      <Row label="UI font size" description="Base size for interface text (11–16 px).">
+                        <NumberField value={appearance.uiFontSize} min={11} max={16} onChange={(uiFontSize) => change({ uiFontSize })} />
+                      </Row>
+                      <Row label="Code font size" description="Size for code blocks (8–24 px).">
+                        <NumberField value={appearance.codeFontSize} min={8} max={24} onChange={(codeFontSize) => change({ codeFontSize })} />
+                      </Row>
+                      <Row label="Font smoothing" description="Smooth edges of text on screen.">
+                        <Toggle checked={appearance.fontSmoothing} onChange={(fontSmoothing) => change({ fontSmoothing })} />
+                      </Row>
+                    </Section>
+                  </div>
+                )}
+              </div>
 
               <Section title="Layout">
                 <Row label="Output width" description="Maximum width of the conversation column.">
@@ -739,7 +820,7 @@ export function SettingsDialog({
                     {(label === "Run instruction" && settings.composer.sendShortcut === "modifier-enter" ? [navigator.platform.includes("Mac") ? "⌘" : "Ctrl", "Enter"] : keys).map((key) => (
                       <kbd
                         key={key}
-                        className="flex h-5 min-w-5 items-center justify-center rounded-md border border-[var(--divider-subtle)] bg-[var(--bg-card)] px-1.5 text-caption text-[var(--sidebar-text-muted)]"
+                        className="flex h-5 min-w-5 items-center justify-center rounded-md border border-[var(--border-default)] bg-[var(--bg-card)] px-1.5 text-caption text-[var(--sidebar-text-muted)]"
                       >
                         {key}
                       </kbd>
@@ -775,7 +856,7 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
     // A settings group: a 40px header row above an outlined 16px-radius card whose dividers inset 16px.
     <section data-settings-label={title} className="flex flex-col">
       <h3 className="flex min-h-10 items-center pb-1.5 text-balance text-body font-medium">{title}</h3>
-      <div className="flex flex-col overflow-hidden rounded-2xl border border-[var(--divider-subtle)] bg-[color-mix(in_srgb,var(--bg-card,#FFFFFF)_30%,transparent)]">
+      <div className="flex flex-col overflow-hidden rounded-2xl border border-[var(--border-default)] bg-[color-mix(in_srgb,var(--bg-card,#FFFFFF)_30%,transparent)]">
         {rows.map((row, i) => (
           <div key={i} className="relative">
             {i < rows.length - 1 && <div aria-hidden="true" className="pointer-events-none absolute inset-x-4 bottom-0 h-px bg-[var(--divider-subtle)]" />}
@@ -837,9 +918,27 @@ function NumberField({
       }}
       onBlur={commit}
       onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
-      className="h-8 w-16 rounded-lg border border-[var(--divider-subtle)] bg-[var(--bg-card)] px-2 text-body text-[var(--text-primary)] outline-none"
+      className="h-8 w-16 rounded-lg border border-[var(--border-default)] bg-[var(--bg-card)] px-2 text-body text-[var(--text-primary)] outline-none"
     />
     <span className="text-caption text-[var(--sidebar-text-muted)]">px</span>
+    </div>
+  )
+}
+
+function Slider({ value, label, onChange }: { value: number; label: string; onChange: (value: number) => void }) {
+  return (
+    <div className="flex h-9 min-w-[12rem] shrink-0 items-center gap-2.5">
+      <input
+        type="range"
+        min={0}
+        max={100}
+        step={1}
+        value={value}
+        aria-label={label}
+        onChange={(e) => onChange(Number(e.target.value))}
+        className="noa-theme-slider"
+      />
+      <span className="w-9 text-end text-body tabular-nums">{value}</span>
     </div>
   )
 }
@@ -861,7 +960,7 @@ function Select({
         value={value}
         disabled={disabled}
         onChange={(e) => onChange(e.target.value)}
-        className="h-8 appearance-none rounded-lg border border-[var(--divider-subtle)] bg-[var(--bg-card)] pr-8 pl-3 text-body text-[var(--text-primary)] outline-none disabled:opacity-40"
+        className="h-8 appearance-none rounded-lg border border-[var(--border-default)] bg-[var(--bg-card)] pr-8 pl-3 text-body text-[var(--text-primary)] outline-none disabled:opacity-40"
       >
         {options.map(([v, label]) => (
           <option key={v} value={v}>

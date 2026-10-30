@@ -63,7 +63,7 @@ export function ToolCard({ block, defaultOpen = false, active = block.status ===
           userToggled.current = true
           setOpen((value) => !value)
         }}
-        className="flex min-h-7 w-full min-w-0 cursor-pointer items-center gap-1.5 overflow-hidden whitespace-nowrap rounded-sm px-3 py-1.5 text-left text-[length:var(--text-chat-sm)] leading-5 select-none text-[color-mix(in_srgb,var(--text-primary)_45%,transparent)] hover:bg-[color-mix(in_srgb,var(--text-primary)_6%,transparent)] hover:text-[var(--text-primary,#2D2D2B)]">
+        className="flex min-h-7 w-full min-w-0 cursor-pointer items-center gap-1.5 overflow-hidden whitespace-nowrap rounded-sm px-3 py-1.5 text-left text-[length:var(--text-chat-sm)] leading-5 select-none text-[color-mix(in_srgb,var(--text-primary)_45%,transparent)] hover:bg-[var(--fill-hover)] hover:text-[var(--text-primary,#2D2D2B)]">
         <Icon size={14} className="shrink-0" aria-hidden="true" />
         <span className={`min-w-0 flex-1 truncate ${live ? "noa-shimmer" : ""}`}>
           <span>{label.action}</span>
@@ -105,7 +105,7 @@ function TaskDetail({ task, tasks, onStopTask, onOpenTask }: {
   onOpenTask?: () => void
 }) {
   return (
-    <div className="flex flex-col gap-1 rounded-lg border border-[var(--divider-subtle)] bg-[var(--bg-secondary)] px-2.5 py-2 text-caption">
+    <div className="flex flex-col gap-1 rounded-lg border border-[var(--border-default)] bg-[var(--bg-secondary)] px-2.5 py-2 text-caption">
       <div className="flex items-center gap-2">
         <span className={`size-1.5 rounded-full ${task.status === "failed" ? "bg-[#C24444]" : task.status === "running" ? "bg-[var(--accent-color)] noa-status-running" : task.status === "completed" ? "bg-[#168447]" : "bg-[var(--sidebar-text-muted)]"}`} />
         <span className="font-medium capitalize text-[var(--text-secondary)]">{task.status}</span>
@@ -121,12 +121,12 @@ function TaskDetail({ task, tasks, onStopTask, onOpenTask }: {
       {(onOpenTask || (onStopTask && task.status === "running" && task.id !== task.toolUseId)) && (
         <div className="mt-1 flex gap-2 border-t border-[var(--divider-subtle)] pt-2">
           {onOpenTask && (
-            <button type="button" onClick={onOpenTask} className="rounded-md border border-[var(--divider-subtle)] px-2 py-1 text-caption">
+            <button type="button" onClick={onOpenTask} className="rounded-md border border-[var(--border-default)] px-2 py-1 text-caption">
               Open in Activity
             </button>
           )}
           {onStopTask && task.status === "running" && task.id !== task.toolUseId && (
-            <button type="button" onClick={() => onStopTask(task.id)} className="rounded-md border border-[var(--divider-subtle)] px-2 py-1 text-caption text-[#C24444]">
+            <button type="button" onClick={() => onStopTask(task.id)} className="rounded-md border border-[var(--border-default)] px-2 py-1 text-caption text-[#C24444]">
               Stop task
             </button>
           )}
@@ -205,7 +205,7 @@ function ToolBody({ block, active, onRaw, onCollapse }: { block: ToolBlock; acti
     }
     case "ExitPlanMode": {
       const plan = str(i.plan) || str((block.rawResult as { plan?: unknown } | undefined)?.plan)
-      return plan ? <div data-plan-card className="rounded-lg border border-[var(--divider-subtle)] bg-[var(--bg-secondary)] px-4 py-3"><Markdown text={plan} /></div> : output ?? <EmptyToolBody label="No plan content" />
+      return plan ? <div data-plan-card className="rounded-lg border border-[var(--border-default)] bg-[var(--bg-secondary)] px-4 py-3"><Markdown text={plan} /></div> : output ?? <EmptyToolBody label="No plan content" />
     }
     case "AskUserQuestion": {
       const questions = Array.isArray(i.questions) ? i.questions.filter((q): q is Record<string, unknown> => typeof q === "object" && q !== null) : []
@@ -265,7 +265,7 @@ function ToolBody({ block, active, onRaw, onCollapse }: { block: ToolBlock; acti
       return output ? (
         <div className="flex min-w-0 flex-col gap-1">
           <div className="max-h-48 overflow-auto">{output}</div>
-          <button type="button" onClick={onRaw} className="self-start rounded-md px-2 py-1 text-caption text-[var(--accent-color)] hover:bg-[color-mix(in_srgb,var(--text-primary)_7%,transparent)]">
+          <button type="button" onClick={onRaw} className="self-start rounded-md px-2 py-1 text-caption text-[var(--accent-color)] hover:bg-[var(--fill-hover)]">
             Raw output
           </button>
         </div>
@@ -345,7 +345,7 @@ function RawOutputDialog({ title, language, code, onClose }: {
       >
         <div className="flex h-10 shrink-0 items-center justify-between border-b border-[var(--divider-subtle)] px-3 text-body">
           <span className="truncate">{title}</span>
-          <button ref={closeRef} type="button" onClick={onClose} aria-label="Close raw output" className="rounded p-1 text-[var(--sidebar-text-muted)] hover:bg-[color-mix(in_srgb,var(--text-primary)_7%,transparent)]">
+          <button ref={closeRef} type="button" onClick={onClose} aria-label="Close raw output" className="rounded p-1 text-[var(--sidebar-text-muted)] hover:bg-[var(--fill-hover)]">
             <X size={14} />
           </button>
         </div>
@@ -381,7 +381,7 @@ function ToolImages({ images, onOpen, preview, onPreview }: {
             type="button"
             aria-label={`Open ${item.alt}`}
             onClick={() => onOpen(items, index)}
-            className="noa-press size-32 shrink-0 cursor-zoom-in overflow-hidden rounded-lg border border-[var(--divider-subtle)] bg-[var(--bg-secondary)]"
+            className="noa-press size-32 shrink-0 cursor-zoom-in overflow-hidden rounded-lg border border-[var(--border-default)] bg-[var(--bg-secondary)]"
           >
             <img src={item.src} alt={item.alt} className="size-full object-cover" />
           </button>
@@ -424,14 +424,14 @@ function ShellOutput({ block, onCollapse }: { block: ToolBlock; onCollapse: () =
   }
 
   return (
-    <div className="overflow-hidden rounded-lg border border-[var(--divider-subtle)] bg-[var(--bg-secondary,#F9F9F7)]">
+    <div className="overflow-hidden rounded-lg border border-[var(--border-default)] bg-[var(--bg-secondary,#F9F9F7)]">
       <div className="flex h-8 items-center justify-between border-b border-[var(--divider-subtle)] px-3 text-caption text-[var(--sidebar-text-muted,#898781)]">
         <span>Shell</span>
         <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover/tool:opacity-100 focus-within:opacity-100">
           <button
             type="button"
             onClick={() => copy("all", [`$ ${command}`, output].filter(Boolean).join("\n"))}
-            className="flex size-5 items-center justify-center rounded hover:bg-[color-mix(in_srgb,var(--text-primary)_7%,transparent)]"
+            className="flex size-5 items-center justify-center rounded hover:bg-[var(--fill-hover)]"
             aria-label={copied === "all" ? "Copied shell contents" : "Copy shell contents"}
             title={copied === "all" ? "Copied shell contents" : "Copy shell contents"}
           >
@@ -440,7 +440,7 @@ function ShellOutput({ block, onCollapse }: { block: ToolBlock; onCollapse: () =
           <button
             type="button"
             onClick={onCollapse}
-            className="flex size-5 items-center justify-center rounded hover:bg-[color-mix(in_srgb,var(--text-primary)_7%,transparent)]"
+            className="flex size-5 items-center justify-center rounded hover:bg-[var(--fill-hover)]"
             aria-label="Collapse shell"
             title="Collapse shell"
           >
@@ -466,7 +466,7 @@ function ShellOutput({ block, onCollapse }: { block: ToolBlock; onCollapse: () =
         <button
           type="button"
           onClick={() => copy("command", command)}
-          className="absolute end-1 top-1 flex size-5 items-center justify-center rounded text-[var(--sidebar-text-muted,#898781)] opacity-0 transition-opacity hover:bg-[color-mix(in_srgb,var(--text-primary)_7%,transparent)] focus-visible:opacity-100 group-hover/command:opacity-100"
+          className="absolute end-1 top-1 flex size-5 items-center justify-center rounded text-[var(--sidebar-text-muted,#898781)] opacity-0 transition-opacity hover:bg-[var(--fill-hover)] focus-visible:opacity-100 group-hover/command:opacity-100"
           aria-label={copied === "command" ? "Copied command" : "Copy command"}
           title={copied === "command" ? "Copied command" : "Copy command"}
         >
@@ -481,7 +481,7 @@ function ShellOutput({ block, onCollapse }: { block: ToolBlock; onCollapse: () =
           <button
             type="button"
             onClick={() => copy("output", output)}
-            className="absolute end-1 top-1 flex size-5 items-center justify-center rounded text-[var(--sidebar-text-muted,#898781)] opacity-0 transition-opacity hover:bg-[color-mix(in_srgb,var(--text-primary)_7%,transparent)] focus-visible:opacity-100 group-hover/output:opacity-100"
+            className="absolute end-1 top-1 flex size-5 items-center justify-center rounded text-[var(--sidebar-text-muted,#898781)] opacity-0 transition-opacity hover:bg-[var(--fill-hover)] focus-visible:opacity-100 group-hover/output:opacity-100"
             aria-label={copied === "output" ? "Copied output" : "Copy output"}
             title={copied === "output" ? "Copied output" : "Copy output"}
           >

@@ -68,8 +68,8 @@ export function ProjectPicker({
           onClick={() => onSelect(project.path)}
           aria-current={activeCwd === project.path ? "true" : undefined}
           title={duplicateNames.has(project.name) ? project.path : undefined}
-          className={`flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-body hover:bg-[color-mix(in_srgb,var(--text-primary)_6%,transparent)] ${
-            activeCwd === project.path ? "bg-[color-mix(in_srgb,var(--text-primary)_6%,transparent)]" : ""
+          className={`flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-body hover:bg-[var(--fill-hover)] ${
+            activeCwd === project.path ? "bg-[var(--fill-hover)]" : ""
           }`}
         >
           <span className="shrink-0 text-[var(--sidebar-text-muted,#898781)]">
@@ -87,7 +87,7 @@ export function ProjectPicker({
         type="button"
         role="menuitem"
         onClick={onAddProject}
-        className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-body text-[var(--sidebar-text-muted,#898781)] hover:bg-[color-mix(in_srgb,var(--text-primary)_5%,transparent)]"
+        className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-body text-[var(--sidebar-text-muted,#898781)] hover:bg-[var(--fill-hover)]"
       >
         <Plus size={14} className="shrink-0" />
         New project

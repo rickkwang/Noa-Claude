@@ -80,7 +80,7 @@ export function QueuedMessages({
   }
 
   return (
-    <section aria-label="Queued messages" className="flex max-h-[30dvh] flex-col overflow-hidden rounded-panel border border-[var(--divider-subtle)] bg-[var(--bg-card)]">
+    <section aria-label="Queued messages" className="flex max-h-[30dvh] flex-col overflow-hidden rounded-panel border border-[var(--border-default)] bg-[var(--bg-card)]">
       <div className="flex h-9 shrink-0 items-center gap-2 border-b border-[var(--divider-subtle)] px-3 text-caption text-[var(--sidebar-text-muted)]">
         <span className="min-w-0 flex-1 truncate tabular-nums">
           {visible.length} queued · {paused ? "paused" : busy ? "sends after this turn" : "ready to send"}
@@ -95,13 +95,13 @@ export function QueuedMessages({
                 if (!busy) onRun()
               } else onPaused(true)
             }}
-            className="rounded px-1.5 py-0.5 hover:bg-[color-mix(in_srgb,var(--text-primary)_7%,transparent)] hover:text-[var(--text-primary)]"
+            className="rounded px-1.5 py-0.5 hover:bg-[var(--fill-hover)] hover:text-[var(--text-primary)]"
           >
             {paused ? "Resume" : "Pause"}
           </button>
         )}
         {!busy && !paused && (
-          <button type="button" disabled={editing} onClick={onRun} className="rounded px-1.5 py-0.5 text-[var(--accent-color)] hover:bg-[color-mix(in_srgb,var(--text-primary)_7%,transparent)]">
+          <button type="button" disabled={editing} onClick={onRun} className="rounded px-1.5 py-0.5 text-[var(--accent-color)] hover:bg-[var(--fill-hover)]">
             Send next
           </button>
         )}
@@ -124,7 +124,7 @@ export function QueuedMessages({
               onKeyDown={(event) => keyboard(event, index)}
               tabIndex={0}
               data-exiting={exiting[message.id] ? true : undefined}
-              className={`group/queue flex min-h-9 items-start gap-2 rounded-md px-2 py-1.5 text-body outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-color)] ${dragId === message.id ? "opacity-50" : "hover:bg-[color-mix(in_srgb,var(--text-primary)_5%,transparent)]"}`}
+              className={`group/queue flex min-h-9 items-start gap-2 rounded-md px-2 py-1.5 text-body outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-color)] ${dragId === message.id ? "opacity-50" : "hover:bg-[var(--fill-hover)]"}`}
             >
               <ArrowUpDown size={13} className="mt-1 shrink-0 cursor-grab text-[var(--sidebar-text-muted)]" aria-hidden="true" />
               <div className="min-w-0 flex-1">
@@ -137,7 +137,7 @@ export function QueuedMessages({
                         type="button"
                         aria-label={`Preview ${image.alt}`}
                         onClick={() => setPreview({ items: images, index: imageIndex })}
-                        className="size-9 shrink-0 overflow-hidden rounded-md border border-[var(--divider-subtle)] cursor-zoom-in"
+                        className="size-9 shrink-0 overflow-hidden rounded-md border border-[var(--border-default)] cursor-zoom-in"
                       >
                         <img src={image.src} alt={image.alt} className="size-full object-cover" />
                       </button>
@@ -147,17 +147,17 @@ export function QueuedMessages({
               </div>
               <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover/queue:opacity-100 group-focus-within/queue:opacity-100">
                 {busy && (
-                  <button type="button" disabled={editing} aria-label="Steer current turn with queued message" title="Steer now" onClick={() => onSteer(message.id)} className="rounded p-1 hover:bg-[color-mix(in_srgb,var(--text-primary)_8%,transparent)]">
+                  <button type="button" disabled={editing} aria-label="Steer current turn with queued message" title="Steer now" onClick={() => onSteer(message.id)} className="rounded p-1 hover:bg-[var(--fill-hover)]">
                     <ArrowRight size={13} />
                   </button>
                 )}
-                <button type="button" aria-label="Edit queued message" title="Edit" onClick={() => onEdit(message)} className="rounded p-1 hover:bg-[color-mix(in_srgb,var(--text-primary)_8%,transparent)]">
+                <button type="button" aria-label="Edit queued message" title="Edit" onClick={() => onEdit(message)} className="rounded p-1 hover:bg-[var(--fill-hover)]">
                   <Edit2 size={13} />
                 </button>
-                <button type="button" disabled={editing} aria-label="Send queued message next" title="Send next" onClick={() => onRetry(message.id)} className="rounded px-1 py-0.5 text-caption hover:bg-[color-mix(in_srgb,var(--text-primary)_8%,transparent)]">
+                <button type="button" disabled={editing} aria-label="Send queued message next" title="Send next" onClick={() => onRetry(message.id)} className="rounded px-1 py-0.5 text-caption hover:bg-[var(--fill-hover)]">
                   Send next
                 </button>
-                <button type="button" aria-label="Delete queued message" title="Delete" onClick={() => remove(message, index)} className="rounded p-1 hover:bg-[color-mix(in_srgb,var(--text-primary)_8%,transparent)]">
+                <button type="button" aria-label="Delete queued message" title="Delete" onClick={() => remove(message, index)} className="rounded p-1 hover:bg-[var(--fill-hover)]">
                   <X size={13} />
                 </button>
               </div>
