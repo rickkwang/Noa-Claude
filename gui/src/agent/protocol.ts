@@ -86,6 +86,7 @@ export interface SlashCommand {
   name: string
   description: string
   argumentHint: string
+  rawDescription?: string
 }
 
 export interface ContextUsage {
@@ -113,12 +114,25 @@ export interface McpServerStatus {
   status: "connected" | "failed" | "needs-auth" | "pending" | "disabled"
 }
 
+export interface CliSettings {
+  effective: {
+    permissions?: { defaultMode?: PermissionMode; allow?: string[]; deny?: string[]; ask?: string[] }
+    enabledPlugins?: Record<string, boolean>
+  }
+  hooks?: {
+    items: { event: string; type: string; text: string; source: string; matcher?: string; timeout?: number }[]
+    restricted: boolean
+  }
+  sources: { source: "userSettings" | "projectSettings" | "localSettings" | "flagSettings" | "policySettings"; settings: CliSettings["effective"] }[]
+}
+
 // Responses to requests the GUI sent, keyed by request_id on the client.
 export type ControlPayload =
   | { kind: "initialize"; models: ModelInfo[]; commands: SlashCommand[]; account?: AccountInfo }
   | { kind: "context_usage"; usage: ContextUsage }
   | { kind: "mcp_status"; servers: McpServerStatus[] }
   | { kind: "commands"; commands: SlashCommand[] }
+  | { kind: "settings"; settings: CliSettings }
 
 export interface RateLimitInfo {
   status: "allowed" | "allowed_warning" | "rejected"
@@ -253,6 +267,8 @@ export type ControlRequest =
   | { subtype: "set_permission_mode"; mode: PermissionMode }
   | { subtype: "get_context_usage" }
   | { subtype: "mcp_status" }
+  | { subtype: "mcp_reconnect"; serverName: string }
+  | { subtype: "mcp_toggle"; serverName: string; enabled: boolean }
   | { subtype: "get_settings" }
   | { subtype: "reload_plugins" }
   | { subtype: "apply_flag_settings"; settings: { effortLevel: string | null } }

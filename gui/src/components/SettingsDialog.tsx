@@ -2,23 +2,85 @@ import { Children, useEffect, useRef, useState, type CSSProperties, type Keyboar
 import { createPortal } from "react-dom"
 import type { AppSettings } from "../types"
 import type { AgentState } from "../agent/reducer"
-import type { AccountInfo } from "../agent/protocol"
-import { ArrowLeft, ChevronDown, Keyboard, Palette, Search, Settings } from "../lib/icons"
+import type { PermissionMode, AccountInfo } from "../agent/protocol"
+import { ArrowLeft, ChevronDown, Keyboard, Palette, Search, Settings, Plug, SlidersHorizontal, List, RefreshCcw } from "../lib/icons"
 import { SYSTEM_DEFAULT_FONT, UI_FONT_STYLES } from "../lib/fontFamily"
+import { findModel } from "../lib/models"
+import { defaultSettings } from "../theme/settings"
 import { AuthDialog } from "./AuthDialog"
 
 const dragRegion = { WebkitAppRegion: "drag" } as CSSProperties
 const noDragRegion = { WebkitAppRegion: "no-drag" } as CSSProperties
 
-type Page = "general" | "appearance" | "shortcuts"
+type Page = "general" | "appearance" | "shortcuts" | "configuration" | "mcp" | "hooks" | "skills"
 type Theme = AppSettings["appearance"]["theme"]
 type DefaultMode = AppSettings["agent"]["permissionDefault"]
 
-const pages: { key: Page; label: string; icon: ReactNode }[] = [
-  { key: "general", label: "General", icon: <Settings size={16} /> },
-  { key: "appearance", label: "Appearance", icon: <Palette size={16} /> },
-  { key: "shortcuts", label: "Keyboard shortcuts", icon: <Keyboard size={16} /> },
+const pages: { key: Page; label: string; group: string; icon: ReactNode; rows: string[] }[] = [
+  {
+    key: "general",
+    label: "General",
+    group: "Personal",
+    icon: <Settings size={16} />,
+    rows: ["Account", "Default permissions", "Send shortcut", "Show context window usage"],
+  },
+  {
+    key: "appearance",
+    label: "Appearance",
+    group: "Personal",
+    icon: <Palette size={16} />,
+    rows: [
+      "Mode",
+      "Font",
+      "Font style",
+      "Code font",
+      "UI font size",
+      "Code font size",
+      "Font smoothing",
+      "Output width",
+      "Reduce motion",
+      "Pointer cursors",
+      "Reset appearance",
+    ],
+  },
+  {
+    key: "shortcuts",
+    label: "Keyboard shortcuts",
+    group: "Personal",
+    icon: <Keyboard size={16} />,
+    rows: ["New task", "Find tasks", "Settings", "Run instruction", "New line", "Reorder task", "Stop agent"],
+  },
+  {
+    key: "configuration",
+    label: "Configuration",
+    group: "Coding",
+    icon: <SlidersHorizontal size={16} />,
+    rows: ["Model", "Reasoning effort", "Current permissions", "Configuration sources", "Permission rules"],
+  },
+  { key: "hooks", label: "Hooks", group: "Coding", icon: <List size={16} />, rows: ["Configured hooks"] },
+  { key: "mcp", label: "MCP servers", group: "Integrations", icon: <Plug size={16} />, rows: ["Connected servers"] },
+  {
+    key: "skills",
+    label: "Skills & plugins",
+    group: "Integrations",
+    icon: <List size={16} />,
+    rows: ["Available skills and commands", "Configured plugins"],
+  },
 ]
+
+const sourceLabels: Record<string, string> = {
+  bundled: "Bundled",
+  builtin: "Built-in",
+  plugin: "Plugin",
+  mcp: "MCP",
+  userSettings: "User",
+  projectSettings: "Project",
+  localSettings: "Local project",
+  flagSettings: "Session",
+  policySettings: "Managed",
+}
+const actionButton =
+  "h-8 shrink-0 rounded-lg border border-[var(--divider-subtle)] px-3 text-body hover:bg-[var(--settings-fill-hover)] disabled:opacity-40"
 
 const permissionOptions: [DefaultMode, string][] = [
   ["inherit", "Follow Noa settings"],
@@ -42,6 +104,14 @@ export function SettingsDialog({
   navWidth,
   navResizeHandle,
   settings,
+  agent,
+  onRefreshSettings,
+  onRefreshMcp,
+  onChangeMcp,
+  onReloadCommands,
+  onModel,
+  onEffort,
+  onMode,
   onChange,
   onClose,
   account,
@@ -56,6 +126,14 @@ export function SettingsDialog({
   // The main sidebar's resize handle, so dragging here resizes the sidebar too.
   navResizeHandle: ReactNode
   settings: AppSettings
+  agent: AgentState
+  onRefreshSettings: () => void
+  onRefreshMcp: () => void
+  onChangeMcp: (name: string, enabled?: boolean) => void
+  onReloadCommands: () => void
+  onModel: (model: string) => void
+  onEffort: (effort: string | null) => void
+  onMode: (mode: PermissionMode) => void
   onChange: (settings: AppSettings) => void
   onClose: () => void
   account?: AccountInfo
@@ -68,6 +146,7 @@ export function SettingsDialog({
   const [page, setPage] = useState<Page>("general")
   const [query, setQuery] = useState("")
   const [authOpen, setAuthOpen] = useState(false)
+  const [searchTarget, setSearchTarget] = useState<{ label: string }>()
   const dialogRef = useRef<HTMLDivElement>(null)
   const backRef = useRef<HTMLButtonElement>(null)
   const appearance = settings.appearance
@@ -78,7 +157,36 @@ export function SettingsDialog({
   const setPermission = (permissionDefault: DefaultMode) =>
     onChange({ ...settings, agent: { ...settings.agent, permissionDefault } })
   const [localFonts, setLocalFonts] = useState<string[]>([])
-  const visiblePages = pages.filter((p) => p.label.toLowerCase().includes(query.trim().toLowerCase()))
+  const searchTerms = query.trim().toLowerCase().split(/\s+/).filter(Boolean)
+  const searchResults = pages.flatMap((p) => p.rows.map((label) => ({ page: p, label })))
+    .filter(({ page, label }) => searchTerms.every((term) => `${page.label} ${label}`.toLowerCase().includes(term)))
+  const disconnected = agent.connection !== "ready"
+  const locked = disconnected || agent.busy
+  const activeModel = findModel(agent.models, agent.model)
+  const modelOptions: [string, string][] = agent.models.map((m) => [m.value, m.displayName])
+  if (agent.model && !activeModel) modelOptions.unshift([agent.model, agent.model])
+  const effortOptions: [string, string][] = [["default", "Default"], ...(activeModel?.supportsEffort ? activeModel.supportedEffortLevels ?? [] : []).map((level): [string, string] => [level, level])]
+  const hooks = agent.cliSettings?.hooks
+  const skills = agent.commands.filter((command) => !command.hidden && command.type === "prompt")
+  const plugins = Object.entries(agent.cliSettings?.effective.enabledPlugins ?? {})
+
+  useEffect(() => {
+    if (disconnected) return
+    if (page === "mcp") onRefreshMcp()
+    if (["configuration", "hooks", "skills"].includes(page)) onRefreshSettings()
+  }, [page, disconnected, onRefreshMcp, onRefreshSettings])
+
+  useEffect(() => {
+    if (!searchTarget) {
+      const main = dialogRef.current?.querySelector("main")
+      if (main) main.scrollTop = 0
+      return
+    }
+    const row = [...(dialogRef.current?.querySelectorAll<HTMLElement>("[data-settings-label]") ?? [])]
+      .find((element) => element.dataset.settingsLabel === searchTarget.label)
+    row?.scrollIntoView({ block: "center" })
+    if (!appearance.reduceMotion) row?.animate([{ backgroundColor: "var(--settings-fill-active)" }, { backgroundColor: "transparent" }], { duration: 1200 })
+  }, [page, searchTarget, appearance.reduceMotion])
   const current = pages.find((p) => p.key === page)
   const fontOptions: [string, string][] = [
     [SYSTEM_DEFAULT_FONT, "System default"],
@@ -175,26 +283,66 @@ export function SettingsDialog({
             className="min-w-0 flex-1 bg-transparent text-[var(--text-primary)] outline-none placeholder:text-[var(--sidebar-text-muted)]"
           />
         </label>
-        <div className="mt-2 mb-2 flex h-[30px] items-center px-2 text-[var(--sidebar-text-muted)]">Personal</div>
-        {visiblePages.map((p) => (
-          <button
-            key={p.key}
-            onClick={() => setPage(p.key)}
-            aria-pressed={page === p.key}
-            className={`mb-px flex h-[30px] items-center gap-2.5 rounded-lg px-2 ${
-              page === p.key ? "bg-[var(--settings-fill-hover)]" : "hover:bg-[var(--settings-fill-hover)]"
-            }`}
-          >
-            <span className="flex">{p.icon}</span>
-            {p.label}
-          </button>
-        ))}
+        <div className="mt-2 min-h-0 flex-1 overflow-y-auto">
+          {query.trim() ? (
+            <>
+              <button
+                type="button"
+                className="w-full px-2 py-2 text-left text-caption text-[var(--sidebar-text-muted)]"
+                onClick={() => setQuery("")}
+              >
+                Clear search
+              </button>
+              {searchResults.length === 0 && (
+                <p role="status" className="px-2 py-2 text-body text-[var(--sidebar-text-muted)]">
+                  No results found
+                </p>
+              )}
+              {searchResults.map(({ page: destination, label }) => (
+                <button
+                  key={`${destination.key}:${label}`}
+                  type="button"
+                  className="mb-px flex w-full flex-col rounded-lg px-2 py-2 text-left hover:bg-[var(--settings-fill-hover)]"
+                  onClick={() => {
+                    setPage(destination.key)
+                    setSearchTarget({ label })
+                    setQuery("")
+                  }}
+                >
+                  <span className="text-body">{label}</span>
+                  <span className="text-caption text-[var(--sidebar-text-muted)]">{destination.label}</span>
+                </button>
+              ))}
+            </>
+          ) : (
+            pages.map((p, index) => (
+              <div key={p.key}>
+                {pages[index - 1]?.group !== p.group && (
+                  <div className="mb-2 flex h-[30px] items-center px-2 text-[var(--sidebar-text-muted)]">{p.group}</div>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPage(p.key)
+                    setSearchTarget(undefined)
+                  }}
+                  aria-pressed={page === p.key}
+                  className={`mb-px flex h-[30px] w-full items-center gap-2.5 rounded-lg px-2 ${page === p.key ? "bg-[var(--settings-fill-hover)]" : "hover:bg-[var(--settings-fill-hover)]"}`}
+                >
+                  <span className="flex">{p.icon}</span>
+                  {p.label}
+                </button>
+              </div>
+            ))
+          )}
+        </div>
+
       </nav>
 
       {navResizeHandle}
       <div aria-hidden="true" className="w-[0.5px] shrink-0 bg-[var(--divider-subtle,#E6E2DA)]" />
       <main className="min-w-0 flex-1 overflow-y-auto px-5 pt-[120px] pb-5">
-        <div className="mx-auto flex max-w-3xl flex-col gap-10">
+        <div key={page} className="mx-auto flex max-w-3xl flex-col gap-10">
           <h1 className="text-[26px] leading-8 font-normal">{current?.label}</h1>
 
           {page === "general" && (
@@ -234,6 +382,32 @@ export function SettingsDialog({
                 />
               </Row>
               </Section>
+              <Section title="Composer">
+                <Row label="Send shortcut" description="Choose when Enter sends a message or inserts a new line.">
+                  <Select
+                    value={settings.composer.sendShortcut}
+                    options={[
+                      ["enter", "Enter"],
+                      ["modifier-enter", `${navigator.platform.includes("Mac") ? "⌘" : "Ctrl"} + Enter`],
+                    ]}
+                    onChange={(value) =>
+                      onChange({
+                        ...settings,
+                        composer: { ...settings.composer, sendShortcut: value as AppSettings["composer"]["sendShortcut"] },
+                      })
+                    }
+                  />
+                </Row>
+                <Row label="Show context window usage" description="Show context usage in the composer.">
+                  <Toggle
+                    checked={settings.composer.showContextUsage}
+                    onChange={(showContextUsage) =>
+                      onChange({ ...settings, composer: { ...settings.composer, showContextUsage } })
+                    }
+                  />
+                </Row>
+              </Section>
+
             </>
           )}
 
@@ -314,6 +488,245 @@ export function SettingsDialog({
                 <Row label="Pointer cursors" description="Show a pointer over clickable controls.">
                   <Toggle checked={appearance.usePointerCursors} onChange={(usePointerCursors) => change({ usePointerCursors })} />
                 </Row>
+                <Row label="Reset appearance" description="Restore the default fonts, colors, and layout."><button type="button" className={actionButton} onClick={() => onChange({ ...settings, appearance: { ...defaultSettings.appearance } })}>Reset to default</button></Row>
+              </Section>
+            </>
+          )}
+
+          {["configuration", "hooks", "mcp", "skills"].includes(page) && (
+            <>
+              <div className="flex items-center justify-between gap-4 text-body text-[var(--sidebar-text-muted)]">
+                <span>{disconnected ? "Connect Noa to load settings." : "Review settings for this workspace."}</span>
+                <button
+                  type="button"
+                  disabled={disconnected || agent.mcpPending}
+                  className={actionButton}
+                  onClick={() => {
+                    if (page === "mcp") onRefreshMcp()
+                    else {
+                      onRefreshSettings()
+                      if (page === "skills") onReloadCommands()
+                    }
+                  }}
+                >
+                  <RefreshCcw size={14} className="mr-1 inline" />
+                  Refresh
+                </button>
+              </div>
+              {agent.error && (
+                <p role="alert" className="text-body text-[#C24444]">
+                  {agent.error}
+                </p>
+              )}
+            </>
+          )}
+          {page === "configuration" && (
+            <>
+              <Section title="Current chat">
+                <Row label="Model" description="Choose the model for this chat.">
+                  <Select
+                    value={activeModel?.value ?? agent.model ?? ""}
+                    options={modelOptions}
+                    disabled={locked || !modelOptions.length}
+                    onChange={onModel}
+                  />
+                </Row>
+                <Row label="Reasoning effort" description="Use a level supported by the current model.">
+                  <Select
+                    value={agent.effort ?? "default"}
+                    options={effortOptions}
+                    disabled={locked || effortOptions.length < 2}
+                    onChange={(value) => onEffort(value === "default" ? null : value)}
+                  />
+                </Row>
+                <Row
+                  label="Current permissions"
+                  description="Applies to this chat. Managed policies and model restrictions still apply."
+                >
+                  <Select
+                    value={agent.permissionMode ?? "default"}
+                    options={[
+                      ...(agent.permissionMode && !permissionOptions.some(([mode]) => mode === agent.permissionMode)
+                        ? [[agent.permissionMode, agent.permissionMode] as [string, string]]
+                        : []),
+                      ...permissionOptions.filter(
+                        ([mode]) =>
+                          mode !== "inherit" &&
+                          (mode !== "auto" || activeModel?.supportsAutoMode !== false || agent.permissionMode === "auto")
+                      ),
+                    ]}
+                    disabled={locked}
+                    onChange={(value) => onMode(value as PermissionMode)}
+                  />
+                </Row>
+              </Section>
+              <Section title="Configuration sources">
+                {agent.cliSettings ? (
+                  agent.cliSettings.sources.length ? (
+                    agent.cliSettings.sources.map(({ source, settings: values }) => (
+                      <Row
+                        key={source}
+                        label={sourceLabels[source] ?? source}
+                        description={
+                          source === "policySettings"
+                            ? "Managed by your organization"
+                            : source === "flagSettings"
+                              ? "Overrides for this session"
+                              : undefined
+                        }
+                      >
+                        <span className="shrink-0 text-caption text-[var(--sidebar-text-muted)]">
+                          {Object.keys(values).length} {Object.keys(values).length === 1 ? "setting" : "settings"}
+                        </span>
+                      </Row>
+                    ))
+                  ) : (
+                    <Row label="Using Noa defaults" />
+                  )
+                ) : (
+                  <Row label={disconnected ? "Noa is disconnected" : "Loading…"} />
+                )}
+              </Section>
+              <Section title="Permission rules">
+                {!agent.cliSettings ? (
+                  <Row label={disconnected ? "Noa is disconnected" : "Loading…"} />
+                ) : (
+                  (["allow", "ask", "deny"] as const).map((kind) => {
+                    const rules = agent.cliSettings?.effective.permissions?.[kind] ?? []
+                    const label = { allow: "Allow", ask: "Ask", deny: "Deny" }[kind]
+                    return rules.length ? (
+                      <details key={kind} data-permission-kind={kind} className="group">
+                        <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-4 py-3 text-body">
+                          <span className="font-medium">{label}</span>
+                          <span className="flex items-center gap-2 text-caption text-[var(--sidebar-text-muted)]">
+                            {rules.length} {rules.length === 1 ? "rule" : "rules"}
+                            <ChevronDown size={14} className="transition-transform group-open:rotate-180" />
+                          </span>
+                        </summary>
+                        <ul className="noa-selectable m-0 max-h-64 list-none overflow-y-auto border-t border-[var(--divider-subtle)] px-4 py-1 font-mono text-caption leading-5">
+                          {rules.map((rule, index) => (
+                            <li
+                              key={index}
+                              className="whitespace-pre-wrap break-all border-b border-[var(--divider-subtle)] py-2 last:border-b-0"
+                            >
+                              {rule}
+                            </li>
+                          ))}
+                        </ul>
+                      </details>
+                    ) : (
+                      <Row key={kind} label={label} description="No configured rules" />
+                    )
+                  })
+                )}
+              </Section>
+            </>
+          )}
+          {page === "mcp" && (
+            <Section title="Connected servers">
+              {!agent.mcpServers?.length ? (
+                <Row label={agent.mcpServers ? "No MCP servers connected" : "Loading…"} />
+              ) : (
+                agent.mcpServers.map((server) => (
+                  <Row key={server.name} label={server.name} description={server.status}>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        disabled={locked || agent.mcpPending || server.status === "disabled" || server.status === "pending"}
+                        className={actionButton}
+                        onClick={() => onChangeMcp(server.name)}
+                      >
+                        Reconnect
+                      </button>
+                      <button
+                        type="button"
+                        disabled={locked || agent.mcpPending || server.status === "pending"}
+                        className={actionButton}
+                        onClick={() => onChangeMcp(server.name, server.status === "disabled")}
+                      >
+                        {server.status === "disabled" ? "Enable" : "Disable"}
+                      </button>
+                    </div>
+                  </Row>
+                ))
+              )}
+            </Section>
+          )}
+          {page === "hooks" && (
+            <Section title="Configured hooks">
+              {hooks?.restricted && (
+                <Row
+                  label="Custom hooks restricted"
+                  description="Some hooks are hidden or disabled by your current settings, policy, or safe mode."
+                />
+              )}
+              {!hooks ? (
+                <Row
+                  label={agent.cliSettings ? "Hook details unavailable" : disconnected ? "Noa is disconnected" : "Loading…"}
+                />
+              ) : hooks.items.length === 0 ? (
+                <Row label="No hooks available" />
+              ) : (
+                hooks.items.map((hook, index) => (
+                  <details key={index} className="group">
+                    <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-4 py-3 text-body">
+                      <span className="font-medium">{hook.event}</span>
+                      <span className="flex items-center gap-2 text-caption text-[var(--sidebar-text-muted)]">
+                        {hook.source} · {hook.type}
+                        <ChevronDown size={14} className="transition-transform group-open:rotate-180" />
+                      </span>
+                    </summary>
+                    <div className="border-t border-[var(--divider-subtle)] px-4 py-3 text-caption text-[var(--sidebar-text-muted)]">
+                      {hook.matcher && <p>Matcher: {hook.matcher}</p>}
+                      {hook.timeout !== undefined && <p>Timeout: {hook.timeout}s</p>}
+                      <pre className="noa-selectable m-0 mt-2 max-h-64 overflow-y-auto whitespace-pre-wrap break-words font-mono">
+                        {hook.text}
+                      </pre>
+                    </div>
+                  </details>
+                ))
+              )}
+            </Section>
+          )}
+          {page === "skills" && (
+            <>
+              <Section title="Available skills and commands">
+                {skills.length ? (
+                  skills.map((command) => (
+                    <details key={command.name} data-skill={command.name} className="group">
+                      <summary className="flex cursor-pointer list-none items-start justify-between gap-4 px-4 py-3">
+                        <span className="min-w-0 flex-1">
+                          <span className="block text-body font-medium">/{command.name}</span>
+                          <span className="mt-0.5 line-clamp-2 text-caption leading-4 text-[var(--sidebar-text-muted)]">
+                            {command.rawDescription ?? command.description}
+                          </span>
+                        </span>
+                        <span className="flex shrink-0 items-center gap-2 text-caption text-[var(--sidebar-text-muted)]">
+                          {command.rawDescription !== undefined && command.source
+                            ? (sourceLabels[command.source] ?? command.source)
+                            : null}
+                          <ChevronDown size={14} className="mt-0.5 transition-transform group-open:rotate-180" />
+                        </span>
+                      </summary>
+                      <div className="noa-selectable max-h-64 overflow-y-auto whitespace-pre-wrap break-words border-t border-[var(--divider-subtle)] px-4 py-3 text-body leading-5">
+                        {command.rawDescription ?? command.description}
+                      </div>
+                    </details>
+                  ))
+                ) : (
+                  <Row label="No skills available" />
+                )}
+              </Section>
+              <Section title="Configured plugins">
+                {!agent.cliSettings ? (
+                  <Row label="Loading…" />
+                ) : plugins.length ? (
+                  plugins.map(([name, enabled]) => (
+                    <Row key={name} label={name} description={enabled ? "Enabled" : "Disabled"} />
+                  ))
+                ) : (
+                  <Row label="No plugins configured" />
+                )}
               </Section>
             </>
           )}
@@ -323,7 +736,7 @@ export function SettingsDialog({
               {shortcuts.map(([label, keys]) => (
                 <Row key={label} label={label}>
                   <span className="flex shrink-0 gap-1">
-                    {keys.map((key) => (
+                    {(label === "Run instruction" && settings.composer.sendShortcut === "modifier-enter" ? [navigator.platform.includes("Mac") ? "⌘" : "Ctrl", "Enter"] : keys).map((key) => (
                       <kbd
                         key={key}
                         className="flex h-5 min-w-5 items-center justify-center rounded-md border border-[var(--divider-subtle)] bg-[var(--bg-card)] px-1.5 text-caption text-[var(--sidebar-text-muted)]"
@@ -360,7 +773,7 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
   const rows = Children.toArray(children)
   return (
     // A settings group: a 40px header row above an outlined 16px-radius card whose dividers inset 16px.
-    <section className="flex flex-col">
+    <section data-settings-label={title} className="flex flex-col">
       <h3 className="flex min-h-10 items-center pb-1.5 text-balance text-body font-medium">{title}</h3>
       <div className="flex flex-col overflow-hidden rounded-2xl border border-[var(--divider-subtle)] bg-[color-mix(in_srgb,var(--bg-card,#FFFFFF)_30%,transparent)]">
         {rows.map((row, i) => (
@@ -376,7 +789,7 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 
 function Row({ label, description, children }: { label: string; description?: string; children?: ReactNode }) {
   return (
-    <div className="flex items-center justify-between gap-6 px-4 py-3">
+    <div data-settings-label={label} className="flex items-center justify-between gap-6 px-4 py-3">
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
         <span className="text-chat-sm leading-[18px] font-medium">{label}</span>
         {description && <span className="text-caption leading-4 text-[var(--sidebar-text-muted)]">{description}</span>}

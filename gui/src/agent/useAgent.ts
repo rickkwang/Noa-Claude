@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useReducer, useRef } from "react"
 import type {
   AccountInfo,
+  CliSettings,
   ContextUsage,
   ControlRequest,
   McpServerStatus,
@@ -32,6 +33,7 @@ type ResponseKind =
   | "auth_complete"
   | "context_usage"
   | "mcp_status"
+  | "mcp_action"
   | "settings"
   | "startup_settings"
   | "effort"
@@ -49,6 +51,7 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
   const socketRef = useRef<WebSocket | null>(null)
   const modeRef = useRef<PermissionMode | undefined>(undefined)
   const pendingRef = useRef(new Map<string, ResponseKind>())
+  const mcpTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const contextTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const contextRefreshAfterRef = useRef(false)
 
@@ -61,11 +64,21 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
 
   const control = useCallback(
     (request: ControlRequest, expects?: ResponseKind) => {
+      if (expects === "mcp_action" && [...pendingRef.current.values()].includes("mcp_action")) return false
       if (expects === "context_usage" && [...pendingRef.current.values()].includes("context_usage")) return false
       const requestId = crypto.randomUUID()
       if (expects) pendingRef.current.set(requestId, expects)
       const sent = write({ type: "control_request", request_id: requestId, request })
       if (!sent && expects) pendingRef.current.delete(requestId)
+      if (expects === "mcp_action") {
+        if (sent) mcpTimerRef.current = setTimeout(() => {
+          pendingRef.current.delete(requestId)
+          mcpTimerRef.current = undefined
+          dispatch({ type: "mcp-pending", pending: false })
+          dispatch({ type: "error", text: "MCP request timed out. Refresh server status before trying again." })
+        }, 60000)
+        else dispatch({ type: "error", text: "Noa is disconnected." })
+      }
       if (expects === "context_usage") {
         dispatch(sent ? { type: "context-request" } : { type: "context-error", error: "Agent is disconnected" })
         if (sent) contextTimerRef.current = setTimeout(() => {
@@ -184,6 +197,12 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
               pendingRef.current.delete(message.response.request_id)
               if (kind === "context_usage") { clearTimeout(contextTimerRef.current); contextTimerRef.current = undefined }
               if (kind === "initialize") clearInitializationTimer()
+              if (kind === "mcp_action") {
+                clearTimeout(mcpTimerRef.current)
+                mcpTimerRef.current = undefined
+                dispatch({ type: "mcp-pending", pending: false })
+                control({ subtype: "mcp_status" }, "mcp_status")
+              }
               if (message.response.subtype === "error") {
                 const error = message.response.error ?? "Agent rejected the request"
                 if (kind === "context_usage") dispatch({ type: "context-error", error })
@@ -220,9 +239,12 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
     socket.onclose = () => {
       clearInitializationTimer()
       if (isCurrent()) {
+        clearTimeout(mcpTimerRef.current)
+        mcpTimerRef.current = undefined
         clearTimeout(contextTimerRef.current)
         contextTimerRef.current = undefined
         contextRefreshAfterRef.current = false
+        dispatch({ type: "mcp-pending", pending: false })
         flushDeltas(); dispatch({ type: "connection", status: "closed" })
       }
     }
@@ -259,6 +281,7 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
         control({ subtype: "get_settings" }, "settings")
         return
       }
+      if (kind === "mcp_action") return
       if (kind === "mcp_status") {
         const servers = (response as { mcpServers?: McpServerStatus[] } | undefined)?.mcpServers
         if (Array.isArray(servers)) dispatch({ type: "control", payload: { kind: "mcp_status", servers } })
@@ -279,6 +302,7 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
           },
         })
       } else if (kind === "settings" || kind === "startup_settings") {
+        dispatch({ type: "control", payload: { kind: "settings", settings: body as unknown as CliSettings } })
         const applied = body.applied as { model?: string; effort?: string | null } | undefined
         const effective = body.effective as { permissions?: { defaultMode?: PermissionMode } } | undefined
         if (applied?.model) dispatch({ type: "model-set", model: applied.model })
@@ -297,6 +321,8 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
       clearInitializationTimer()
       clearTimeout(contextTimerRef.current)
       contextTimerRef.current = undefined
+      clearTimeout(mcpTimerRef.current)
+      mcpTimerRef.current = undefined
       socketRef.current = null
       socket.close()
     }
@@ -331,6 +357,11 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
     if (write({ type: "history_before", before: state.historyBefore })) dispatch({ type: "history-loading" })
   }, [write, state.historyBefore, state.historyLoading])
 
+  const refreshSettings = useCallback(() => control({ subtype: "get_settings" }, "settings"), [control])
+  const changeMcp = useCallback((serverName: string, enabled?: boolean) => {
+    const sent = control(enabled === undefined ? { subtype: "mcp_reconnect", serverName } : { subtype: "mcp_toggle", serverName, enabled }, "mcp_action")
+    if (sent) dispatch({ type: "mcp-pending", pending: true })
+  }, [control])
   const refreshMcp = useCallback(() => control({ subtype: "mcp_status" }, "mcp_status"), [control])
   const refreshContext = useCallback(() => control({ subtype: "get_context_usage" }, "context_usage"), [control])
 
@@ -400,7 +431,7 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
   }, [control])
   const closeAuthentication = useCallback(() => dispatch({ type: "auth-close" }), [])
 
-  return { state: ownerRef.current === runtimeId ? state : initialState, sendMessage, reloadCommands, loadEarlier, answerElicitation, removeQueued, moveQueued, updateQueued, steerQueued, setQueuePaused, runQueued, stopTask, interrupt, answerPermission, setModel, setPermissionMode, setEffort, refreshContext, refreshMcp, turnDiffAction, clearDiffAction, startAuthentication, waitForAuthentication, submitAuthenticationCode, closeAuthentication }
+  return { state: ownerRef.current === runtimeId ? state : initialState, sendMessage, reloadCommands, loadEarlier, answerElicitation, removeQueued, moveQueued, updateQueued, steerQueued, setQueuePaused, runQueued, stopTask, interrupt, answerPermission, setModel, setPermissionMode, setEffort, refreshSettings, changeMcp, refreshContext, refreshMcp, turnDiffAction, clearDiffAction, startAuthentication, waitForAuthentication, submitAuthenticationCode, closeAuthentication }
 }
 
 export function parseAuthorizationCode(raw: string): { authorizationCode: string; state: string } | undefined {

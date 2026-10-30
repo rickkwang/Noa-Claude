@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, writeFil
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { initialState, reducer } from "../src/agent/reducer"
-import type { Envelope, Outgoing } from "../src/agent/protocol"
+import type { ControlRequest, Envelope, Outgoing } from "../src/agent/protocol"
 
 const directory = mkdtempSync(join(tmpdir(), "noa-gui-runtime-"))
 const cwd = join(directory, "workspace")
@@ -21,6 +21,7 @@ writeFileSync(
     model: "claude-sonnet-4-6",
     permissions: { defaultMode: "default" },
     enableAllProjectMcpServers: true,
+    hooks: { PreToolUse: [{ matcher: "^NeverMatchesSettingsFixture$", hooks: [{ type: "command", command: "printf CLI_CONFIG_HOOK" }] }] },
   }),
 )
 writeFileSync(
@@ -201,6 +202,21 @@ writeFileSync(settingsPath, JSON.stringify({
   ...JSON.parse(readFileSync(settingsPath, "utf8")),
   env: { ANTHROPIC_API_KEY: "local-fixture", ANTHROPIC_BASE_URL: `http://127.0.0.1:${provider.port}` },
 }))
+if (process.env.NOA_GUI_BROWSER_FIXTURE === "1") {
+  writeFileSync(settingsPath, JSON.stringify({
+    ...JSON.parse(readFileSync(settingsPath, "utf8")),
+    hooks: { PreToolUse: [{ matcher: "Read", hooks: [{ type: "command", command: "printf SETTINGS_HOOK" }] }] },
+    permissions: {
+      defaultMode: "default",
+      allow: [...Array.from({ length: 40 }, (_, i) => `WebFetch(domain:settings-probe-${i}.invalid)`), `Bash(echo ${"long-path/".repeat(120)})`],
+      deny: ["Read(/settings-private/**)"],
+    },
+  }))
+  const skillDir = join(cwd, ".noa", "skills", "settings-probe")
+  mkdirSync(skillDir, { recursive: true })
+  const description = "Settings integration fixture. " + "A deliberately long description to verify compact lists and full details. ".repeat(18)
+  writeFileSync(join(skillDir, "SKILL.md"), `---\nname: settings-probe\ndescription: ${description}\n---\nOnly reply SETTINGS_SKILL.\n`)
+}
 const reservation = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Response() })
 const port = reservation.port!
 reservation.stop(true)
@@ -271,8 +287,16 @@ function connect(runtime: string, resume?: string, workdir = cwd) {
     assert.equal(response.message.response.subtype, "success", JSON.stringify(response.message.response))
     return response.message.response.response
   }
+  const request = async (request: ControlRequest) => {
+    const requestId = crypto.randomUUID()
+    send({ type: "control_request", request_id: requestId, request })
+    await wait(() => events.some((event) => event.kind === "agent" && event.message.type === "control_response" && event.message.response.request_id === requestId), request.subtype)
+    const event = events.find((event) => event.kind === "agent" && event.message.type === "control_response" && event.message.response.request_id === requestId) as any
+    assert.equal(event.message.response.subtype, "success", JSON.stringify(event.message.response))
+    return event.message.response.response
+  }
   const results = () => events.filter((e) => e.kind === "agent" && e.message.type === "result")
-  return { socket, events, send, initialize, results }
+  return { socket, events, send, initialize, request, results }
 }
 try {
   for (let i = 0; i < 200; i++) {
@@ -306,6 +330,29 @@ try {
   concurrent.socket.close()
   console.log("PASS simultaneous initialize requests share one CLI handshake")
   assert.ok(init.models.length)
+  const settings = await first.request({ subtype: "get_settings" })
+  assert.equal(settings.effective.permissions.defaultMode, "default")
+  assert.ok(settings.sources.some((source: any) => source.source === "userSettings" && source.settings.permissions?.defaultMode === "default"))
+  assert.ok(settings.applied.model)
+  assert.ok(settings.hooks.items.some((hook: any) => hook.text === "printf CLI_CONFIG_HOOK" && hook.source === "User"))
+  assert.equal(settings.hooks.restricted, false)
+  await first.request({ subtype: "apply_flag_settings", settings: { disableAllHooks: true } } as any)
+  assert.equal((await first.request({ subtype: "get_settings" })).hooks.restricted, true)
+  await first.request({ subtype: "apply_flag_settings", settings: { disableAllHooks: null } } as any)
+  assert.equal((await first.request({ subtype: "get_settings" })).hooks.restricted, false)
+  assert.ok(init.commands.some((command: any) => command.source === "bundled" && typeof command.rawDescription === "string" && command.description !== command.rawDescription))
+  console.log("PASS CLI hook enumeration reports restrictions and command descriptions separate source metadata")
+
+  console.log("PASS settings expose CLI effective values, applied model, and configuration sources")
+  await wait(async () => (await first.request({ subtype: "mcp_status" })).mcpServers.some((server: any) => server.name === "fixture" && server.status === "connected"), "MCP settings initial connection")
+  await first.request({ subtype: "mcp_toggle", serverName: "fixture", enabled: false })
+  assert.equal((await first.request({ subtype: "mcp_status" })).mcpServers.find((server: any) => server.name === "fixture").status, "disabled")
+  await first.request({ subtype: "mcp_toggle", serverName: "fixture", enabled: true })
+  assert.equal((await first.request({ subtype: "mcp_status" })).mcpServers.find((server: any) => server.name === "fixture").status, "connected")
+  await first.request({ subtype: "mcp_reconnect", serverName: "fixture" })
+  assert.equal((await first.request({ subtype: "mcp_status" })).mcpServers.find((server: any) => server.name === "fixture").status, "connected")
+  console.log("PASS MCP settings disable, enable, and reconnect through the real CLI")
+
   first.send({ type: "user", message: { role: "user", content: "GUI_SLOW first" }, parent_tool_use_id: null })
   await wait(() => first.events.some((e) => e.kind === "user"), "user acknowledgement")
   first.send({ type: "user", message: { role: "user", content: "second queued" }, parent_tool_use_id: null })

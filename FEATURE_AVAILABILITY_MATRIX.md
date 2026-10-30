@@ -27,7 +27,7 @@ Last updated: 2026-10-24
 | CLI startup (`noa`) | Available | Stable, isolated product directory defaults. |
 | Non-interactive (`--print`) | Available | Regular MCP now uses bounded wait + background continue. |
 | Interactive REPL | Available | Mainline usable; some historical complexity remains. |
-| Desktop GUI (`gui/`) | Implemented but Non-Baseline | Development Electron shell; searchable files, guarded text editing, unified/split local Git review and per-file and staged/unstaged-hunk stage/unstage/revert, context and tool activity; math/diagrams, scoped media, review comments, structured results and paged conversation history. 512 KiB text/image preview / 3,000 rendered-line limits; no full Codex parity claim. Verified with `scripts/e2e-gui-workspace.mjs`; native conversation fixtures: `bun run --cwd gui test:rendering`. |
+| Desktop GUI (`gui/`) | Implemented but Non-Baseline | Development Electron shell; searchable files, guarded text editing, unified/split local Git review and per-file and staged/unstaged-hunk stage/unstage/revert, context and tool activity; searchable settings, composer preferences, CLI-backed configuration/Hook/skill/plugin inspection and MCP controls; math/diagrams, scoped media, review comments, structured results and paged conversation history. 512 KiB text/image preview / 3,000 rendered-line limits; no full Codex parity claim. Verified with `scripts/e2e-gui-workspace.mjs`; native conversation fixtures: `bun run --cwd gui test:rendering`. |
 | MiniMax Anthropic-compatible backend | Available | Default product path and launcher checks in place. |
 | Official Claude OAuth fallback on 3P path | Disabled by policy | Missing/invalid 3P token fails clearly; no OAuth fallback. |
 

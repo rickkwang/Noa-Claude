@@ -519,6 +519,17 @@ export const SDKControlGetSettingsResponseSchema = lazySchema(() =>
         .describe(
           'Ordered low-to-high priority — later entries override earlier ones.',
         ),
+      hooks: z.object({
+        items: z.array(z.object({
+          event: z.string(),
+          type: z.string(),
+          text: z.string(),
+          source: z.string(),
+          matcher: z.string().optional(),
+          timeout: z.number().optional(),
+        })),
+        restricted: z.boolean(),
+      }).optional().describe('Hooks visible in the CLI hooks UI, with current customization restrictions'),
       applied: z
         .object({
           model: z.string(),

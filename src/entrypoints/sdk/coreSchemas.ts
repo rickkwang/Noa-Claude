@@ -1019,6 +1019,7 @@ export const SlashCommandSchema = lazySchema(() =>
     .object({
       name: z.string().describe('Skill name (without the leading slash)'),
       description: z.string().describe('Description of what the skill does'),
+      rawDescription: z.string().optional().describe('Description without source annotations'),
       type: z.enum(['prompt', 'local', 'local-jsx']).optional(),
       source: z.string().optional(),
       aliases: z.array(z.string()).optional(),

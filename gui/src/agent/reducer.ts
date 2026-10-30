@@ -1,5 +1,6 @@
 import type {
   AccountInfo,
+  CliSettings,
   HistoryItem,
   AgentMessage,
   ElicitationRequest,
@@ -106,6 +107,8 @@ export interface AgentState {
   }
   contextUsage?: ContextUsage
   mcpServers?: McpServerStatus[]
+  cliSettings?: CliSettings
+  mcpPending?: boolean
   contextLoading?: boolean
   contextError?: string
   contextUpdatedAt?: number
@@ -133,6 +136,7 @@ export interface AgentState {
 }
 
 export type Action =
+  | { type: "mcp-pending"; pending: boolean }
   | { type: "context-request" }
   | { type: "context-error"; error: string }
   | { type: "history"; items: HistoryItem[]; before?: number; prepend?: boolean }
@@ -332,7 +336,10 @@ export function reducer(state: AgentState, action: Action): AgentState {
       return { ...state, effort: action.effort }
     case "permission-mode-set":
       return { ...state, permissionMode: action.mode }
+    case "mcp-pending":
+      return { ...state, mcpPending: action.pending, error: action.pending ? undefined : state.error }
     case "control":
+      if (action.payload.kind === "settings") return { ...state, cliSettings: action.payload.settings }
       if (action.payload.kind === "mcp_status") return { ...state, mcpServers: action.payload.servers }
       if (action.payload.kind === "commands") return { ...state, commands: action.payload.commands }
       if (action.payload.kind === "initialize") {

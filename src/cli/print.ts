@@ -167,6 +167,10 @@ import {
   getSettings_DEPRECATED,
   getSettingsWithSources,
 } from 'src/utils/settings/settings.js'
+import { getAllHooks, getHookDisplayText, hookSourceInlineDisplayString } from 'src/utils/hooks/hooksSettings.js'
+import { shouldAllowManagedHooksOnly, shouldDisableAllHooksIncludingManaged } from 'src/utils/hooks/hooksConfigSnapshot.js'
+import { isSafeMode } from 'src/utils/envUtils.js'
+import { isRestrictedToPluginOnly } from 'src/utils/settings/pluginOnlyPolicy.js'
 import { settingsChangeDetector } from 'src/utils/settings/changeDetector.js'
 import { applySettingsChange } from 'src/utils/settings/applySettingsChange.js'
 import {
@@ -3197,6 +3201,7 @@ function runHeadlessStreaming(
                 .map(cmd => ({
                   name: getCommandName(cmd),
                   description: formatDescriptionWithSource(cmd),
+                  rawDescription: cmd.description,
                   argumentHint: cmd.argumentHint || '',
                   type: cmd.type,
                   source: cmd.type === 'prompt' ? cmd.source : 'builtin',
@@ -3863,6 +3868,19 @@ function runHeadlessStreaming(
             : undefined
           sendControlResponseSuccess(message, {
             ...getSettingsWithSources(),
+            hooks: {
+              items: getAllHooks(currentAppState).map(hook => ({
+                event: hook.event,
+                type: hook.config.type,
+                text: getHookDisplayText(hook.config),
+                source: hookSourceInlineDisplayString(hook.source),
+                matcher: hook.matcher,
+                timeout: hook.config.timeout,
+              })),
+              restricted: shouldAllowManagedHooksOnly() ||
+                shouldDisableAllHooksIncludingManaged() ||
+                isSafeMode() || isRestrictedToPluginOnly('hooks'),
+            },
             applied: {
               model,
               // Numeric effort (ant-only) → null; SDK schema is string-level only.
@@ -4563,6 +4581,7 @@ async function handleInitializeRequest(
       .map(cmd => ({
         name: getCommandName(cmd),
         description: formatDescriptionWithSource(cmd),
+        rawDescription: cmd.description,
         argumentHint: cmd.argumentHint || '',
         type: cmd.type,
         source: cmd.type === 'prompt' ? cmd.source : 'builtin',

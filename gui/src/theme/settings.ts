@@ -15,6 +15,7 @@ export const defaultSettings: AppSettings = {
     codeFontFamily: SYSTEM_DEFAULT_FONT,
     fontSmoothing: true,
   },
+  composer: { sendShortcut: 'enter', showContextUsage: true },
   agent: {
     permissionDefault: 'inherit',
   },

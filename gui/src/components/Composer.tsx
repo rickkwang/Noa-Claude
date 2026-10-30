@@ -1,3 +1,4 @@
+import { findModel } from "../lib/models"
 import { SlashCommandMenu } from "./SlashCommandMenu"
 import { composerCommands, findComposerCommand, filterComposerCommands, slashAtCaret, type ComposerCommand, type GuiCommandAction } from "../agent/commands"
 import { loadImageDraft, saveImageDraft } from "../agent/imageDrafts"
@@ -76,6 +77,7 @@ interface ComposerProps {
   onWorktree: (on: boolean) => Promise<void>
   onFiles: () => void
   newTask: boolean
+  sendShortcut?: "enter" | "modifier-enter"
   contextUsage?: ContextUsage
 }
 
@@ -110,6 +112,7 @@ export function Composer({
   onFiles,
   newTask,
   contextUsage,
+  sendShortcut = "enter",
 }: ComposerProps) {
   const disabled = connection !== "ready"
   const [text, setText] = useState(() => localStorage.getItem(draftKey) ?? "")
@@ -500,10 +503,9 @@ export function Composer({
         })
         return
       }
-      if (e.key === "Enter" || e.key === "Tab") {
+      if (e.key === "Tab" || e.key === "Enter" && !e.shiftKey && menuItems[menuIndex]) {
         e.preventDefault()
         if (menuItems[menuIndex]) pickCommand(menuItems[menuIndex], e.key === "Tab")
-        else if (e.key === "Enter") submit()
         return
       }
     }
@@ -514,7 +516,7 @@ export function Composer({
       return
     }
 
-    if (e.key === "Enter" && !e.shiftKey) {
+    if (e.key === "Enter" && !e.shiftKey && (sendShortcut === "enter" || e.metaKey || e.ctrlKey)) {
       e.preventDefault()
       submit()
     }
@@ -898,15 +900,6 @@ function compactTokens(tokens: number): string {
   if (tokens >= 1_000_000) return `${+(tokens / 1_000_000).toFixed(1)}M`
   if (tokens >= 1000) return `${+(tokens / 1000).toFixed(1)}K`
   return String(tokens)
-}
-
-// The agent reports full model IDs (claude-opus-5-5) while the list uses aliases (opus, default).
-function findModel(models: ModelInfo[], model: string | undefined): ModelInfo | undefined {
-  if (!model) return undefined
-  const exact = models.find((m) => m.value === model)
-  if (exact) return exact
-  const family = model.match(/(?:^|[-/])(opus|sonnet|haiku|fable)(?:-|$)/)?.[1]
-  return family ? models.find((m) => m.value === family || m.value === `${family}[1m]`) : undefined
 }
 
 interface PickerItem {

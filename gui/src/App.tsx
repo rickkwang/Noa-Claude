@@ -92,6 +92,7 @@ function Workspace({ cwd }: { cwd: string }) {
           ...appearance,
         },
         agent,
+        composer: { ...defaultSettings.composer, ...JSON.parse(localStorage.getItem("noa-agent.composer") ?? "{}") },
       }
     } catch {
       return defaultSettings
@@ -101,6 +102,7 @@ function Workspace({ cwd }: { cwd: string }) {
   useEffect(() => {
     localStorage.setItem("noa-agent.appearance", JSON.stringify(settings.appearance))
     localStorage.setItem("noa-agent.agent", JSON.stringify(settings.agent))
+    localStorage.setItem("noa-agent.composer", JSON.stringify(settings.composer))
   }, [settings])
   const readingWidth = settings.appearance.maxWidth
   // cwd travels with resume: a session belongs to the project it was started in.
@@ -138,7 +140,7 @@ function Workspace({ cwd }: { cwd: string }) {
   const [rightTab, setRightTab] = useState<PanelTab>("files")
   useEffect(() => { setTurnDiff(undefined) }, [session.key])
 
-  const { state, sendMessage, reloadCommands, loadEarlier, interrupt, answerPermission, answerElicitation, removeQueued, moveQueued, updateQueued, steerQueued, setQueuePaused, runQueued, stopTask, setModel, setPermissionMode, setEffort, refreshContext, refreshMcp, turnDiffAction, clearDiffAction, startAuthentication, waitForAuthentication, submitAuthenticationCode, closeAuthentication } =
+  const { state, sendMessage, reloadCommands, loadEarlier, interrupt, answerPermission, answerElicitation, removeQueued, moveQueued, updateQueued, steerQueued, setQueuePaused, runQueued, stopTask, setModel, setPermissionMode, setEffort, refreshSettings, changeMcp, refreshContext, refreshMcp, turnDiffAction, clearDiffAction, startAuthentication, waitForAuthentication, submitAuthenticationCode, closeAuthentication } =
     useAgent({
       cwd: session.cwd,
       resume: session.resume,
@@ -947,7 +949,8 @@ function Workspace({ cwd }: { cwd: string }) {
                 onWorktree={toggleWorktree}
                 onFiles={() => showWorkspacePane("files")}
                 newTask={!hasTurns}
-                contextUsage={state.contextUsage}
+                contextUsage={settings.composer.showContextUsage ? state.contextUsage : undefined}
+                sendShortcut={settings.composer.sendShortcut}
                 connection={state.connection}
                 busy={state.busy}
                 models={state.models}
@@ -1021,6 +1024,14 @@ function Workspace({ cwd }: { cwd: string }) {
             />
           }
           settings={settings}
+          agent={state}
+          onRefreshSettings={refreshSettings}
+          onRefreshMcp={refreshMcp}
+          onChangeMcp={changeMcp}
+          onReloadCommands={reloadCommands}
+          onModel={setModel}
+          onEffort={setEffort}
+          onMode={setPermissionMode}
           onChange={setSettings}
           onClose={() => setSettingsOpen(false)}
           account={state.account}

@@ -12,6 +12,10 @@ export interface AppSettings {
     codeFontFamily: string;
     fontSmoothing: boolean;
   };
+  composer: {
+    sendShortcut: 'enter' | 'modifier-enter';
+    showContextUsage: boolean;
+  };
   agent: {
     // 'inherit' starts sessions in the mode from Noa's settings.json instead of overriding it.
     permissionDefault: 'inherit' | 'default' | 'acceptEdits' | 'plan' | 'auto';

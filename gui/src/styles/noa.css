@@ -261,15 +261,13 @@ body {
   /* Keyboard focus ring, drawn inside the control: an outside ring is clipped by scroll containers that edge the control. */
   --focus-ring-color: var(--accent-color, #CC7D5E);
   --focus-shadow: inset 0 0 0 2px var(--focus-ring-color);
-}
-
-.noa-app-shell {
   -webkit-user-select: none;
   user-select: none;
 }
 
 .noa-selectable,
-.noa-app-shell :where(input, textarea, [contenteditable]:not([contenteditable="false"]), .cm-content) {
+.noa-code-view code,
+:where(input, textarea, [contenteditable]:not([contenteditable="false"]), .cm-content) {
   -webkit-user-select: text;
   user-select: text;
 }
