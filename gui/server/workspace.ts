@@ -1,7 +1,8 @@
 import { createHash, randomUUID } from "node:crypto"
 import { createReadStream } from "node:fs"
-import { opendir, readdir, realpath, stat, lstat, readFile, writeFile, rename, chmod, unlink } from "node:fs/promises"
-import { dirname, relative, resolve, sep, extname } from "node:path"
+import { opendir, readdir, rmdir, realpath, stat, lstat, readFile, writeFile, rename, chmod, unlink } from "node:fs/promises"
+import { homedir } from "node:os"
+import { basename, dirname, join, relative, resolve, sep, extname } from "node:path"
 import { createTwoFilesPatch, parsePatch, formatPatch } from "diff"
 
 const MAX_PREVIEW = 512 * 1024
@@ -173,13 +174,61 @@ async function switchBranch(cwd: string, body: { action?: unknown; branch?: unkn
     await git(cwd, ["switch", "-c", name])
     return { ok: true }
   }
-  if (body.action !== "checkout") throw new Error("Invalid branch action")
+  if (body.action !== "checkout" && body.action !== "detach") throw new Error("Invalid branch action")
   if (!state.branches.includes(name)) throw new Error("That branch no longer exists")
   if (name === state.current) return { ok: true }
+  // A worktree starts from a branch without owning it: git refuses a branch another checkout already has.
+  if (body.action === "detach") {
+    if (state.uncommitted > 0) throw Object.assign(new Error(`Commit changes in ${state.uncommitted} ${state.uncommitted === 1 ? "file" : "files"} to start from ${name}.`), { uncommitted: state.uncommitted })
+    await git(cwd, ["switch", "--detach", name])
+    return { ok: true }
+  }
   // Uncommitted tracked changes must be committed before switching branches.
   if (state.uncommitted > 0) throw Object.assign(new Error(`Commit changes in ${state.uncommitted} ${state.uncommitted === 1 ? "file" : "files"} to check out ${name}.`), { uncommitted: state.uncommitted })
   await git(cwd, ["switch", "--no-guess", name])
   return { ok: true }
+}
+
+// Worktrees for new tasks live outside the project so they never show up as untracked files in it.
+const WORKTREES_ROOT = join(process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".noa"), "worktrees")
+
+export function isManagedWorktree(cwd: string) {
+  return cwd.startsWith(WORKTREES_ROOT + sep)
+}
+
+// The project checkout a managed worktree was created from.
+async function worktreeOrigin(cwd: string) {
+  if (!isManagedWorktree(cwd)) return null
+  const common = (await git(cwd, ["rev-parse", "--path-format=absolute", "--git-common-dir"]).catch(() => "")).trim()
+  return common ? dirname(common) : null
+}
+
+// Managed worktrees linked to a project checkout, for listing the sessions started in them.
+export async function projectWorktrees(cwd: string) {
+  const raw = await git(cwd, ["worktree", "list", "--porcelain"]).catch(() => "")
+  return raw.split("\n").flatMap((line) => line.startsWith("worktree ") && isManagedWorktree(line.slice(9)) ? [line.slice(9)] : [])
+}
+
+async function worktreeRequest(cwd: string, body?: { action?: unknown; base?: unknown }) {
+  if (body === undefined) return { origin: await worktreeOrigin(cwd) }
+  if (body.action === "create") {
+    if (isManagedWorktree(cwd)) throw new Error("Start the worktree from the project, not from another worktree")
+    const state = await branches(cwd)
+    if (!state.isGit || !state.hasCommits) throw new Error("Worktrees need a Git repository with at least one commit")
+    const base = typeof body.base === "string" && body.base.trim() ? body.base.trim() : state.current ?? "HEAD"
+    if (base !== "HEAD" && !state.branches.includes(base)) throw new Error("That branch no longer exists")
+    const path = join(WORKTREES_ROOT, randomUUID().slice(0, 8), basename(cwd))
+    await git(cwd, ["worktree", "add", "--detach", path, base])
+    return { path }
+  }
+  if (body.action === "remove") {
+    const origin = await worktreeOrigin(cwd)
+    if (!origin) throw new Error("Not a Noa worktree")
+    await git(origin, ["worktree", "remove", "--force", cwd])
+    await rmdir(dirname(cwd)).catch(() => undefined)
+    return { ok: true }
+  }
+  throw new Error("Invalid worktree action")
 }
 
 async function diff(cwd: string, path: string, scope: string, context: string | null) {
@@ -360,6 +409,7 @@ export async function workspaceRequest(url: URL, cwd: string, body?: unknown, si
   if (url.pathname === "/api/grep") return grep(cwd, url.searchParams.get("q") ?? "", Math.min(1000, Math.max(1, Number(url.searchParams.get("max")) || 241)), signal)
   if (url.pathname === "/api/open-in") return openIn(cwd, body as { path?: unknown; target?: unknown })
   if (url.pathname === "/api/branches") return body === undefined ? branches(cwd) : switchBranch(cwd, body as { action?: unknown; branch?: unknown })
+  if (url.pathname === "/api/worktree") return worktreeRequest(cwd, body as { action?: unknown; base?: unknown } | undefined)
   const scope = url.searchParams.get("scope") ?? "all"
   if (!["all", "staged", "unstaged"].includes(scope)) throw new Error("Invalid changes scope")
   if (url.pathname === "/api/git-action") {

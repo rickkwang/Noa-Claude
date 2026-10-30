@@ -322,6 +322,34 @@ function Workspace({ cwd }: { cwd: string }) {
     setQueueEditId(undefined)
     setSession((s) => ({ cwd: target.cwd, resume: target.resume, runtimeId: target.runtimeId ?? crypto.randomUUID(), key: s.key + 1 }))
   }
+  // Set while the session runs in a worktree: the project checkout that worktree belongs to.
+  const [worktreeOf, setWorktreeOf] = useState<string>()
+  useEffect(() => {
+    let cancelled = false
+    fetch(`/api/worktree${query(session.cwd)}`)
+      .then((r) => (r.ok ? r.json() : { origin: null }))
+      .then((info: { origin: string | null }) => !cancelled && setWorktreeOf(info.origin ?? undefined), () => !cancelled && setWorktreeOf(undefined))
+    return () => { cancelled = true }
+  }, [session.cwd])
+  const worktreeRequest = async (cwd: string, body: { action: "create" | "remove"; base?: string }) => {
+    const response = await fetch(`/api/worktree${query(cwd)}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
+    const result = await response.json()
+    if (!response.ok) throw new Error(result.error ?? "Git command failed")
+    return result as { path?: string }
+  }
+  // A worktree is made as soon as the switch turns on and dropped again when it turns off, so an
+  // abandoned new task leaves nothing behind but the switch's own state.
+  const toggleWorktree = async (on: boolean) => {
+    if (on) {
+      const { path } = await worktreeRequest(session.cwd, { action: "create", base: changes?.branch === "Detached HEAD" ? undefined : changes?.branch })
+      setWorktreeOf(session.cwd)
+      newSession(path!)
+    } else if (worktreeOf) {
+      const worktree = session.cwd
+      newSession(worktreeOf)
+      await worktreeRequest(worktree, { action: "remove" }).catch(() => undefined)
+    }
+  }
   const newSession = (dir?: string) => {
     setQuote(undefined)
     setReference(undefined)
@@ -821,6 +849,8 @@ function Workspace({ cwd }: { cwd: string }) {
                 onProject={newSession}
                 branch={changes?.branch}
                 onBranchChange={() => setRefreshTick((n) => n + 1)}
+                worktreeOf={worktreeOf}
+                onWorktree={toggleWorktree}
                 onFiles={() => showWorkspacePane("files")}
                 newTask={!hasTurns}
                 contextUsage={state.contextUsage}

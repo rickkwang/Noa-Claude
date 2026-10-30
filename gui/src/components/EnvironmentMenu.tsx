@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { query } from "../api"
-import { Check, ChevronRight, GitBranch, Plus, Search } from "../lib/icons"
-import { ComposerSettingsIcon } from "./ComposerIcons"
+import { Check, ChevronRight, GitBranch, Plus, Search, Settings, Worktree } from "../lib/icons"
+import { ComposerBranchIcon, ComposerSettingsIcon } from "./ComposerIcons"
 
 type BranchState =
   | { isGit: false }
@@ -9,7 +9,7 @@ type BranchState =
 
 const files = (count: number) => `${count} ${count === 1 ? "file" : "files"}`
 
-async function branchRequest(cwd: string, body?: { action: "checkout" | "create"; branch: string }) {
+async function branchRequest(cwd: string, body?: { action: "checkout" | "detach" | "create"; branch: string }) {
   const response = await fetch(`/api/branches${query(cwd)}`, body
     ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }
     : undefined)
@@ -20,7 +20,15 @@ async function branchRequest(cwd: string, body?: { action: "checkout" | "create"
 
 // The composer's local environment menu: the worktree switch, the branch with its
 // branch switcher (search, the current branch's uncommitted count, create and checkout), and the environment.
-export function EnvironmentMenu({ cwd, branch, onBranchChange }: { cwd: string; branch?: string; onBranchChange: () => void }) {
+// In a worktree the branch row picks the branch the task starts from, which the worktree checks out detached.
+export function EnvironmentMenu({ cwd, branch, onBranchChange, worktree, canToggleWorktree, onWorktree }: {
+  cwd: string
+  branch?: string
+  onBranchChange: () => void
+  worktree: boolean
+  canToggleWorktree: boolean
+  onWorktree: (on: boolean) => Promise<void>
+}) {
   const [open, setOpen] = useState(false)
   const [view, setView] = useState<"main" | "branches" | "create">("main")
   const [state, setState] = useState<BranchState>()
@@ -73,7 +81,7 @@ export function EnvironmentMenu({ cwd, branch, onBranchChange }: { cwd: string; 
     return (git?.branches ?? []).filter((name) => name.toLowerCase().includes(needle))
   }, [git, search])
 
-  async function run(body: { action: "checkout" | "create"; branch: string }) {
+  async function run(body: { action: "checkout" | "detach" | "create"; branch: string }) {
     setPending(true)
     setError(undefined)
     try {
@@ -91,7 +99,20 @@ export function EnvironmentMenu({ cwd, branch, onBranchChange }: { cwd: string; 
     if (!git || name === git.current) return close()
     // A commit is required before switching away from uncommitted tracked changes.
     if (git.uncommitted > 0) return setError(`Commit changes in ${files(git.uncommitted)} to check out ${name}.`)
-    void run({ action: "checkout", branch: name })
+    void run({ action: worktree ? "detach" : "checkout", branch: name })
+  }
+
+  async function toggleWorktree() {
+    setPending(true)
+    setError(undefined)
+    try {
+      await onWorktree(!worktree)
+      close()
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setPending(false)
+    }
   }
 
   const createError = (() => {
@@ -108,7 +129,7 @@ export function EnvironmentMenu({ cwd, branch, onBranchChange }: { cwd: string; 
         onClick={() => (open ? close() : setOpen(true))}
         aria-label="Configure local environment"
         aria-expanded={open}
-        className="flex size-7 items-center justify-center rounded-full noa-sidebar-hover-surface-subtle"
+        className={`flex size-7 items-center justify-center rounded-full noa-sidebar-hover-surface-subtle ${open ? "bg-[color-mix(in_srgb,var(--text-primary)_6%,transparent)]" : ""}`}
       >
         <ComposerSettingsIcon />
       </button>
@@ -122,24 +143,36 @@ export function EnvironmentMenu({ cwd, branch, onBranchChange }: { cwd: string; 
             <>
               <div className="noa-popup-menu-heading">Configure local environment</div>
               <div className="noa-context-menu-entry">
-                <button type="button" role="switch" aria-checked={false} disabled title="Worktrees are not available in Noa yet">
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={worktree}
+                  disabled={pending || !canToggleWorktree || (!worktree && !!state && !git?.hasCommits)}
+                  title={!canToggleWorktree ? "Only a new task can start in a worktree" : state && !git?.hasCommits ? "Worktrees need a Git repository with a commit" : undefined}
+                  onClick={() => void toggleWorktree()}
+                >
+                  <Worktree size={16} className="noa-popup-menu-icon" />
                   <span className="noa-popup-menu-label">New worktree</span>
-                  <span aria-hidden="true" className="noa-popup-switch" />
+                  <span aria-hidden="true" className="noa-popup-switch" data-checked={worktree || undefined} />
                 </button>
               </div>
+              {error && <p role="alert" className="m-0 px-2 py-1.5 text-caption text-[#C24444]">{error}</p>}
               <div className="noa-context-menu-entry">
                 <button type="button" disabled={!git} onClick={() => setView("branches")} aria-haspopup="menu">
+                  <ComposerBranchIcon className="noa-popup-menu-icon" />
                   <span className="noa-popup-menu-label">Branch</span>
-                  <span className="min-w-0 max-w-32 truncate text-[var(--sidebar-text-muted)]">
+                  <span className="noa-popup-menu-value min-w-0 max-w-32 truncate">
                     {git ? git.current ?? "Detached HEAD" : state ? "No git repo" : branch ?? "…"}
                   </span>
-                  {git && <ChevronRight size={14} className="noa-popup-menu-chevron shrink-0" />}
+                  {git && <ChevronRight size={16} className="noa-popup-menu-chevron shrink-0" />}
                 </button>
               </div>
               <div className="noa-context-menu-entry">
                 <button type="button" disabled>
+                  <Settings size={16} className="noa-popup-menu-icon" />
                   <span className="noa-popup-menu-label">Environment</span>
-                  <span>No environment</span>
+                  <span className="noa-popup-menu-value">No environment</span>
+                  <ChevronRight size={16} className="noa-popup-menu-chevron shrink-0" />
                 </button>
               </div>
             </>

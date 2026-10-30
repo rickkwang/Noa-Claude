@@ -53,6 +53,7 @@ function glyph(name: string, mirrored = false) {
 export const AlertTriangle = glyph("exclamation-mark-triangle");
 export const AlignLeft = glyph("text-alignleft");
 export const ArrowUpDown = glyph("arrow-down-arrow-up");
+export const Worktree = glyph("arrow-branch");
 export const ArrowDown = glyph("arrow-down-md");
 export const ArrowLeft = glyph("arrow-left-md");
 export const ArrowRight = glyph("arrow-right-md");

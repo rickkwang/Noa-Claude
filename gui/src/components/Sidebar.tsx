@@ -444,7 +444,6 @@ export function Sidebar({
           {projectsOpen &&
             groups.map(({ project, visible }) => {
               const isOpen = q !== "" || expanded.has(project.path)
-              const isActiveProject = active.cwd === project.path
               return (
                 <div
                   key={project.path}
@@ -478,7 +477,7 @@ export function Sidebar({
                           path={project.path}
                           title={session.title}
                           status={session.status}
-                          active={isActiveProject && session.id === active.id}
+                          active={active.cwd === (session.cwd ?? project.path) && session.id === active.id}
                           indent
                           pinned={isPinned(project.path, session.id)}
                           dragging={dragging?.kind === "session" && dragging.path === project.path && dragging.id === session.id}
@@ -487,7 +486,7 @@ export function Sidebar({
                               ? dropTarget.edge
                               : undefined
                           }
-                          onClick={() => selectSession(project.path, session.id)}
+                          onClick={() => selectSession(session.cwd ?? project.path, session.id)}
                           onTogglePin={() => togglePin(project.path, session.id)}
                           onMove={(direction) => moveBy(project.path, session.id, direction)}
                           onPointerDown={(event) => startDrag(event, "session", project.path, session.id, session.title)}
@@ -616,9 +615,9 @@ export function Sidebar({
                       path={project.path}
                       title={session.title}
                       status={session.status}
-                      active={active.cwd === project.path && session.id === active.id}
+                      active={active.cwd === (session.cwd ?? project.path) && session.id === active.id}
                       pinned={isPinned(project.path, session.id)}
-                      onClick={() => selectSession(project.path, session.id)}
+                      onClick={() => selectSession(session.cwd ?? project.path, session.id)}
                       onTogglePin={() => togglePin(project.path, session.id)}
                     />
                   ))}

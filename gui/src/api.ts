@@ -6,6 +6,8 @@ export interface SessionSummary {
   updatedAt: number
   createdAt: number
   status?: "running" | "waiting" | "queued"
+  // Set when the session runs in one of the project's worktrees instead of the project folder.
+  cwd?: string
 }
 
 export interface ProjectInfo {

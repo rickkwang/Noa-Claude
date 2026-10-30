@@ -3,7 +3,7 @@ import { existsSync, statSync } from "node:fs"
 import { resolve, sep } from "node:path"
 import { SESSION_ID, listSessions, loadHistory, renameSession } from "./sessions"
 import { addProject, listProjects, removeProject } from "./projects"
-import { mediaResponse, workspaceRequest } from "./workspace"
+import { isManagedWorktree, mediaResponse, projectWorktrees, workspaceRequest } from "./workspace"
 import { attachAgent, agentMessage, detachAgent, listAgentRuns, SPAWN_PERMISSION_MODES, type SocketData } from "./agents"
 
 const REPO_ROOT = resolve(import.meta.dir, "../..")
@@ -50,12 +50,12 @@ Bun.serve<SocketData>({
       catch (error) { return json({ error: (error as Error).message }, 400) }
     }
 
-    if (["/api/files", "/api/file", "/api/changes", "/api/diff", "/api/git-action", "/api/editors", "/api/open-in", "/api/grep", "/api/branches"].includes(url.pathname)) {
-      if (req.method !== "GET" && !(req.method === "POST" && ["/api/file", "/api/git-action", "/api/open-in", "/api/branches"].includes(url.pathname))) return json({ error: "Method not allowed" }, 405)
+    if (["/api/files", "/api/file", "/api/changes", "/api/diff", "/api/git-action", "/api/editors", "/api/open-in", "/api/grep", "/api/branches", "/api/worktree"].includes(url.pathname)) {
+      if (req.method !== "GET" && !(req.method === "POST" && ["/api/file", "/api/git-action", "/api/open-in", "/api/branches", "/api/worktree"].includes(url.pathname))) return json({ error: "Method not allowed" }, 405)
       if (["/api/git-action", "/api/open-in"].includes(url.pathname) && req.method !== "POST") return json({ error: "Method not allowed" }, 405)
       if (!cwd) return json({ error: "cwd is not a directory" }, 400)
       // Writes are limited to listed projects (or folders inside them).
-      if (req.method === "POST" && !listProjects(REPO_ROOT).some((project) =>
+      if (req.method === "POST" && !isManagedWorktree(cwd) && !listProjects(REPO_ROOT).some((project) =>
         project.sources.some((source) => cwd === source || cwd.startsWith(source + sep))
       ))
         return json({ error: "Writes are only allowed inside listed projects" }, 403)
@@ -125,7 +125,10 @@ Bun.serve<SocketData>({
 
     if (url.pathname === "/api/sessions") {
       if (!cwd) return json({ error: "cwd is not a directory" }, 400)
-      return json(listSessions(cwd))
+      // Sessions started in the project's worktrees are listed with it, tagged with the folder they run in.
+      const worktrees = await projectWorktrees(cwd)
+      return json([...listSessions(cwd), ...worktrees.flatMap((path) => listSessions(path).map((session) => ({ ...session, cwd: path })))]
+        .sort((a, b) => b.updatedAt - a.updatedAt))
     }
 
     const historyMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)$/)
