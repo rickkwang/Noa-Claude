@@ -39,8 +39,8 @@ export default function ThemeInjector({ settings }: ThemeInjectorProps) {
       root.style.setProperty('--text-secondary', '#9C9B96');
       root.style.setProperty('--text-tertiary', '#9C9B96');
       // Solid sidebar text tiers (primary is --text-primary): alpha text over the translucent material washes out.
-      root.style.setProperty('--sidebar-text', '#C3C2B7');
-      root.style.setProperty('--sidebar-text-muted', '#898781');
+      root.style.setProperty('--sidebar-text', '#DBDBD9');
+      root.style.setProperty('--sidebar-text-muted', '#959592');
       // Resting icon ink: the secondary text tier, one step below primary (as Claude's desktop icons).
       root.style.setProperty('--icon-ink', '#C3C2B7');
       root.style.setProperty('--divider-subtle', 'color-mix(in srgb, var(--text-primary) 8%, transparent)');
@@ -64,8 +64,8 @@ export default function ThemeInjector({ settings }: ThemeInjectorProps) {
       root.style.setProperty('--text-primary', '#2D2D2B');
       root.style.setProperty('--text-secondary', '#5D5D5D');
       root.style.setProperty('--text-tertiary', '#8F8F8F');
-      root.style.setProperty('--sidebar-text', '#52514E');
-      root.style.setProperty('--sidebar-text-muted', '#898781');
+      root.style.setProperty('--sidebar-text', '#0D0D0D');
+      root.style.setProperty('--sidebar-text-muted', '#8F8F8F');
       root.style.setProperty('--icon-ink', '#52514E');
       // Hairlines: near-black at 10%, strong at 20%.
       root.style.setProperty('--divider-subtle', 'rgba(11,11,11,0.10)');

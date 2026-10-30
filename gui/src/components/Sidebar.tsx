@@ -403,7 +403,7 @@ export function Sidebar({
       <button
         type="button"
         onClick={() => onNewSession()}
-        className="noa-sidebar-tree-item noa-sidebar-tree-row noa-sidebar-hover-surface-subtle mx-2 mb-1 flex min-h-[26px] shrink-0 items-center gap-2 rounded-lg pl-[7px] pr-2 text-body"
+        className="noa-sidebar-tree-item noa-sidebar-tree-row noa-sidebar-hover-surface-subtle mx-2 mb-1 flex h-[30px] shrink-0 items-center gap-2 rounded-lg pl-[7px] pr-2 text-body"
       >
         <SquarePen size={14} className="shrink-0" />
         New task
@@ -448,7 +448,7 @@ export function Sidebar({
                 <div
                   key={project.path}
                   data-project-group={project.path}
-                  className={`relative font-ui ${isOpen ? "mb-2" : "mb-px"}`}
+                  className={`relative font-ui ${isOpen ? "mb-2" : ""}`}
                 >
                   {dropTarget?.kind === "project" && dropTarget.id === project.path && (
                     <DropIndicator edge={dropTarget.edge} className="left-2 right-2" />
@@ -499,7 +499,7 @@ export function Sidebar({
                         <button
                           type="button"
                           onClick={() => toggleUnfolded(project.path)}
-                          className="noa-sidebar-hover-surface-subtle mx-2 mb-px block min-h-[26px] w-[calc(100%-1rem)] cursor-pointer rounded-lg py-1 text-left text-body text-[var(--sidebar-text-muted,#898781)] hover:text-[var(--text-primary,#2D2D2B)]"
+                          className="noa-sidebar-hover-surface-subtle mx-2 mb-0.5 block min-h-[30px] w-[calc(100%-1rem)] cursor-pointer rounded-lg py-1 text-left text-body text-[var(--sidebar-text-muted,#898781)] hover:text-[var(--text-primary,#2D2D2B)]"
                           style={{ paddingLeft: "29px" }}
                         >
                           {unfolded.has(project.path) ? "Show less" : "Show more"}
@@ -625,7 +625,7 @@ export function Sidebar({
                     <button
                       type="button"
                       onClick={() => setRecentsUnfolded((open) => !open)}
-                      className="noa-sidebar-hover-surface-subtle mx-2 mb-px block min-h-[26px] w-[calc(100%-1rem)] cursor-pointer rounded-lg py-1 text-left text-body text-[var(--sidebar-text-muted,#898781)] hover:text-[var(--text-primary,#2D2D2B)]"
+                      className="noa-sidebar-hover-surface-subtle mx-2 mb-0.5 block min-h-[30px] w-[calc(100%-1rem)] cursor-pointer rounded-lg py-1 text-left text-body text-[var(--sidebar-text-muted,#898781)] hover:text-[var(--text-primary,#2D2D2B)]"
                       style={{ paddingLeft: "7px" }}
                     >
                       {recentsUnfolded ? "Show less" : "Show more"}
@@ -647,7 +647,7 @@ export function Sidebar({
         <button
           type="button"
           onClick={onSettings}
-          className="noa-sidebar-tree-item noa-sidebar-hover-surface-subtle group flex h-[26px] w-full items-center gap-2 rounded-lg pl-[7px] pr-2 text-body text-[var(--sidebar-text-muted)] hover:text-[var(--text-primary,#2D2D2B)]"
+          className="noa-sidebar-tree-item noa-sidebar-hover-surface-subtle group flex h-[30px] w-full items-center gap-2 rounded-lg pl-[7px] pr-2 text-body text-[var(--sidebar-text-muted)] hover:text-[var(--text-primary,#2D2D2B)]"
         >
           <Settings size={14} className="shrink-0" />
           <span className="min-w-0 flex-1 truncate text-left">Settings</span>
@@ -709,7 +709,7 @@ function DragOverlay({ drag }: { drag: DragState }) {
   return createPortal(
     <div
       aria-hidden="true"
-      className="noa-drag-overlay pointer-events-none fixed z-[100] flex h-[26px] max-w-80 items-center gap-2 overflow-hidden rounded-lg font-ui text-body"
+      className="noa-drag-overlay pointer-events-none fixed z-[100] flex h-[30px] max-w-80 items-center gap-2 overflow-hidden rounded-lg font-ui text-body"
       style={{ left: drag.left, top: drag.top, paddingLeft: drag.kind === "project" ? 7 : 8, paddingRight: 12 }}
     >
       {drag.kind === "project" && <Folder size={16} className="shrink-0" />}
@@ -770,7 +770,7 @@ function ProjectRow({
     }
   }, [menuOpen])
   return (
-    <div className="noa-sidebar-tree-item mb-px">
+    <div className="noa-sidebar-tree-item mb-0.5">
       <div
         role="button"
         tabIndex={0}
@@ -791,13 +791,13 @@ function ProjectRow({
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerCancel}
-        className={`noa-sidebar-tree-row noa-agent-sidebar-row group flex min-h-[26px] items-center gap-[7px] pl-[6px] pr-2 mx-2 rounded-lg cursor-pointer select-none text-[var(--sidebar-text,#52514E)] ${menuOpen ? "is-active" : ""} ${dragging ? "noa-session-row-dragging" : ""}`}
+        className={`noa-sidebar-tree-row noa-agent-sidebar-row group flex h-[30px] items-center gap-[7px] pl-[6px] pr-2 mx-2 rounded-lg cursor-pointer select-none ${menuOpen ? "is-active" : ""} ${dragging ? "noa-session-row-dragging" : ""}`}
       >
         {/* A 16px folder in the label's color, the same open or closed, centred on the New task icon's
             column so names line up with the search and New task labels. */}
         <Folder size={16} className="shrink-0" />
         <span
-          className={`min-w-0 flex-1 truncate text-body text-[var(--sidebar-text,#52514E)] ${project.missing ? "text-[var(--sidebar-text-muted,#898781)] line-through" : ""}`}
+          className={`min-w-0 flex-1 truncate text-body ${project.missing ? "text-[var(--sidebar-text-muted,#898781)] line-through" : ""}`}
         >
           {project.name}
         </span>
@@ -938,7 +938,7 @@ function SessionRow({
     }
   }
   return (
-    <div className="font-ui mb-px noa-sidebar-tree-item">
+    <div className="font-ui mb-0.5 noa-sidebar-tree-item">
       <div
         data-session-id={onPointerDown ? id : undefined}
         data-session-path={onPointerDown ? path : undefined}
@@ -953,7 +953,7 @@ function SessionRow({
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerCancel}
-        className={`noa-sidebar-tree-row relative flex min-h-[26px] items-center justify-between py-0 px-2 mx-2 rounded-lg cursor-pointer select-none group ${
+        className={`noa-sidebar-tree-row relative flex h-[30px] items-center justify-between py-0 px-2 mx-2 rounded-lg cursor-pointer select-none group ${
           active ? "noa-agent-sidebar-row is-active" : "noa-agent-sidebar-row"
         } ${dragging ? "noa-session-row-dragging" : ""}`}
         style={{ paddingLeft: indent ? "29px" : "7px" }}

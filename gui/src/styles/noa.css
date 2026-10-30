@@ -33,17 +33,12 @@
   .noa-agent-input { box-shadow: 0 0 0 1px #0000000a, 0 2px 8px #0000000a, 0 4px 40px 8px #00000006; }
 }
 .noa-agent-footer { container: noa-agent-footer / inline-size; }
+/* The sidebar follows the Appearance font settings (family, style, size); only its leading is its own, scaled with the size. */
 .noa-sidebar-surface {
-  --font-weight-medium: 400;
-  --font-weight-bold: 450;
   font-size: var(--text-body);
-  font-weight: 400;
-  line-height: 18px;
+  line-height: calc(var(--text-body) * 18 / 13);
 }
-.noa-sidebar-surface, .noa-sidebar-surface .font-ui {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, "PingFang SC", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif !important;
-}
-.noa-agent-sidebar-row { min-height: 26px; transition: background-color 120ms ease; }
+.noa-agent-sidebar-row { min-height: 30px; transition: background-color 120ms ease; }
 .noa-agent-sidebar-row:hover,
 .noa-agent-sidebar-row.is-active { background: #EAEAE8; }
 [data-theme="dark"] .noa-agent-sidebar-row:hover,
