@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "server": "bun run server/main.ts",
+    "server": "NOA_GUI_INSECURE=1 bun run server/main.ts",
     "dev": "vite",
     "build": "vite build",
     "typecheck": "tsc --noEmit",

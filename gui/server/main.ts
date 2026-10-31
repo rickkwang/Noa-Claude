@@ -33,6 +33,11 @@ function serveStatic(pathname: string): Response {
 
 const TOKEN = process.env.NOA_GUI_TOKEN
 const TOKEN_COOKIE = "noa_token"
+// Without a token any local process can add a project and then read it, so running open is an explicit opt-in.
+if (!TOKEN && process.env.NOA_GUI_INSECURE !== "1") {
+  console.error("NOA_GUI_TOKEN is not set. Set it, or set NOA_GUI_INSECURE=1 to run the bridge without authentication.")
+  process.exit(1)
+}
 
 // The desktop shell hands the page a cookie and itself a bearer header; anything else on this machine is refused.
 function authorized(req: Request): boolean {

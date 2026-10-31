@@ -225,6 +225,7 @@ const bridge = Bun.spawn([process.execPath, "run", "server/main.ts"], {
   env: {
     ...process.env,
     NOA_GUI_PORT: String(port),
+    NOA_GUI_INSECURE: "1",
     CLAUDE_CONFIG_DIR: config,
     CLAUDE_CODE_PRODUCT_DIR: config,
     CLAUDE_CODE_CACHE_DIR: join(directory, "cache"),

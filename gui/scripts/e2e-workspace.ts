@@ -13,7 +13,7 @@ const port = reservation.port!
 await reservation.stop(true)
 const server = Bun.spawn([process.execPath, "run", "server/main.ts"], {
   cwd: resolve(import.meta.dir, ".."),
-  env: { ...process.env, NOA_GUI_PORT: String(port), CLAUDE_CONFIG_DIR: config },
+  env: { ...process.env, NOA_GUI_PORT: String(port), NOA_GUI_INSECURE: "1", CLAUDE_CONFIG_DIR: config },
   stdout: "ignore",
   stderr: "inherit",
 })
