@@ -2176,7 +2176,8 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
 .noa-file-search-field input { min-width: 0; flex: 1; border: 0; outline: 0; background: transparent; font: inherit; font-size: 13px; color: var(--text-primary); }
 .noa-file-search-field input::placeholder { color: var(--sidebar-text-muted); }
 .noa-file-search-field svg { flex-shrink: 0; }
-.noa-file-tree { padding: 4px 8px 8px; font-size: 13px; }
+/* No right padding: the scroll body already reserves an 8px scrollbar strip there, which makes the gap match the left. */
+.noa-file-tree { padding: 4px 0 8px 8px; font-size: 13px; }
 .noa-file-row { position: relative; display: flex; align-items: center; gap: 5px; height: 28px; width: 100%; padding: 0 8px; border-radius: 6px; text-align: left; color: var(--sidebar-text); }
 .noa-file-icon { display: flex; flex-shrink: 0; align-items: center; justify-content: center; width: 16px; color: var(--sidebar-text-muted); }
 .noa-file-icon > svg { transition: transform 120ms ease; }
@@ -2281,8 +2282,6 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
   padding: 4px;
   border-radius: 16px;
   background: color-mix(in srgb, var(--surface-page, #F9F9F7) 90%, transparent);
-  -webkit-backdrop-filter: blur(8px);
-  backdrop-filter: blur(8px);
   box-shadow: 0 0 0 0.5px var(--border-default), 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
   font-size: 13px;
   line-height: calc(1.25 / 0.875);
