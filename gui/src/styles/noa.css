@@ -2328,8 +2328,8 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
 .noa-row-stats { display: inline-flex; flex-shrink: 0; gap: 4px; font-size: 12px; font-variant-numeric: tabular-nums; }
 .noa-row-stats .is-added { color: #168447; } .noa-row-stats .is-removed { color: #C24444; }
 [data-theme="dark"] .noa-row-stats .is-added { color: #68CC74; } [data-theme="dark"] .noa-row-stats .is-removed { color: #F27F57; }
-/* Diff colours: line = 12% of the base over the page (20% in dark), gutter = 18% in light and a darker floor in dark, inline emphasis = 15% alpha (20% in dark), neutral hunk separators. */
-.noa-code-view { --diff-add-base: #0DBE4E; --diff-del-base: #FF2E3F; --code-addition: color-mix(in lab, var(--surface-page, #F9F9F7) 88%, var(--diff-add-base)); --code-deletion: color-mix(in lab, var(--surface-page, #F9F9F7) 88%, var(--diff-del-base)); --code-addition-gutter: color-mix(in lab, var(--surface-page, #F9F9F7) 82%, var(--diff-add-base)); --code-deletion-gutter: color-mix(in lab, var(--surface-page, #F9F9F7) 82%, var(--diff-del-base)); line-height: 1.8; }
+/* Diff colours: line = 12% of the base over the page (20% in dark), gutter = 5% in light and a darker floor in dark, inline emphasis = 15% alpha (20% in dark), neutral hunk separators. */
+.noa-code-view { --diff-add-base: #0DBE4E; --diff-del-base: #FF2E3F; --code-addition: color-mix(in lab, var(--surface-page, #F9F9F7) 88%, var(--diff-add-base)); --code-deletion: color-mix(in lab, var(--surface-page, #F9F9F7) 88%, var(--diff-del-base)); --code-addition-gutter: color-mix(in lab, var(--surface-page, #F9F9F7) 95%, var(--diff-add-base)); --code-deletion-gutter: color-mix(in lab, var(--surface-page, #F9F9F7) 95%, var(--diff-del-base)); line-height: 1.8; }
 [data-theme="dark"] .noa-code-view { --diff-add-base: #5ECC71; --diff-del-base: #FF6762; --code-addition: color-mix(in lab, var(--surface-page) 80%, var(--diff-add-base)); --code-deletion: color-mix(in lab, var(--surface-page) 80%, var(--diff-del-base)); --code-addition-gutter: color-mix(in lab, color-mix(in lab, var(--surface-page) 35%, #000) 85%, var(--diff-add-base)); --code-deletion-gutter: color-mix(in lab, color-mix(in lab, var(--surface-page) 35%, #000) 85%, var(--diff-del-base)); }
 .noa-code-line, .noa-source-line { min-height: 1.8em; }
 .noa-code-number { opacity: 1; color: color-mix(in srgb, var(--text-primary) 40%, transparent); }
@@ -2352,6 +2352,26 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
 .noa-diff-hunk-header { padding: 2px 12px; min-height: 32px; border-block: 0; background: color-mix(in lab, var(--surface-page, #F9F9F7) 96%, #000); color: color-mix(in lab, var(--text-primary) 65%, var(--surface-page, #F9F9F7)); font-family: var(--font-ui); font-size: var(--text-caption); }
 [data-theme="dark"] .noa-diff-hunk-header { background: color-mix(in lab, var(--surface-page) 85%, #fff); }
 .noa-diff-pair .noa-code-line:first-child { border-right: 1px solid var(--surface-page); }
+/* The separator's left cell is a button the width of the line-number gutter, split from the label by a page-coloured seam; split views also cut the bar at the middle. */
+.noa-diff-hunk-header { padding-left: 0; gap: 0; }
+.noa-hunk-expand { display: flex; flex: none; flex-direction: column; align-self: stretch; width: var(--noa-diff-gutter, 7ch); border-right: 2px solid var(--surface-page); }
+.noa-hunk-expand > button { display: flex; flex: 1; align-items: center; justify-content: center; color: inherit; background: transparent; cursor: pointer; }
+.noa-hunk-expand > button + button { border-top: 1px solid var(--surface-page); }
+.noa-hunk-expand > button:hover { color: var(--text-primary); background: color-mix(in lab, var(--text-primary) 6%, transparent); }
+.noa-hunk-label { padding-left: 12px; margin-right: auto; }
+.noa-code-view.is-split .noa-diff-hunk-header { background-image: linear-gradient(to right, transparent calc(50% - 1px), var(--surface-page) calc(50% - 1px), var(--surface-page) calc(50% + 1px), transparent calc(50% + 1px)); }
+/* Without word wrap a split diff keeps two half-width columns, each scrolling sideways on its own, so a long line never pushes the other side off screen. */
+.noa-code-view.is-split:not(.is-wrapped) { width: 100%; }
+.noa-diff-sides { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.noa-diff-side { min-width: 0; overflow-x: auto; scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
+.noa-diff-side > div { width: max-content; min-width: 100%; }
+.noa-diff-side + .noa-diff-side { border-left: 1px solid var(--surface-page); }
+/* A split side with no counterpart line is filled with diagonal hatching, so the missing side reads as absent rather than blank. The pattern is fixed to the viewport so consecutive empty rows read as one continuous block. */
+.noa-code-view { --diff-buffer: color-mix(in lab, var(--surface-page, #F9F9F7) 92%, #000); }
+[data-theme="dark"] .noa-code-view { --diff-buffer: color-mix(in lab, var(--surface-page) 92%, #fff); }
+.noa-code-view.is-diff .noa-code-line.is-empty .noa-code-number { background: color-mix(in lab, var(--surface-page, #F9F9F7) 98.5%, #000); }
+[data-theme="dark"] .noa-code-view.is-diff .noa-code-line.is-empty .noa-code-number { background: color-mix(in lab, var(--surface-page) 98.5%, #fff); }
+.noa-code-view.is-diff .noa-code-line.is-empty code { background: repeating-linear-gradient(-45deg, transparent, transparent calc(3px * 1.414), var(--diff-buffer) calc(3px * 1.414), var(--diff-buffer) calc(4px * 1.414)) 5px 0 / 8px 8px fixed; }
 /* Panel alignment grid: leading icons and text sit 16px from the panel edge in every tab. */
 .noa-panel-title { padding-left: 6px; }
 .noa-panel-toolbar > .noa-panel-button:first-child + .noa-panel-title { padding-left: 2px; }

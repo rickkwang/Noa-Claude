@@ -218,6 +218,23 @@ export function WorkspaceFiles({ cwd, changes = false, scope: scopeProp, focus, 
     return () => controller.abort()
   }, [cwd, selected, view, scope, expanded, search, changes, tick, refreshKey, active, editing, context])
 
+  // Separators reveal their hidden lines from the same diff with every line of context, fetched on the first click.
+  const [wantFull, setWantFull] = useState(false)
+  const [fullDiff, setFullDiff] = useState<{ key: string; content: string }>()
+  useEffect(() => { setWantFull(false) }, [selected, scope, cwd])
+  // The count after the last hunk needs the whole file, so a loaded diff pulls the full version in the background.
+  useEffect(() => { if (view === "diff" && current?.snapshot) setWantFull(true) }, [view, current?.snapshot, selected, scope])
+  useEffect(() => {
+    if (!wantFull || !selected || view !== "diff" || context) return
+    const key = `${cwd}\0${scope}\0${selected}`
+    if (fullDiff?.key === key) return
+    const controller = new AbortController()
+    load<Preview>("diff", cwd, { path: selected, scope, context: "all" }, controller.signal)
+      .then((body) => { if (!controller.signal.aborted) setFullDiff({ key, content: body.content ?? "" }) })
+      .catch(() => { /* Separators keep their counts when the full diff cannot be loaded. */ })
+    return () => controller.abort()
+  }, [wantFull, selected, view, scope, cwd, context, fullDiff?.key])
+
   const select = async (path?: string, nextView = changes ? "diff" : "file", nextScope?: "all") => {
     if (dirty && !(await confirm({
       title: "Discard unsaved edits?",
@@ -509,7 +526,7 @@ export function WorkspaceFiles({ cwd, changes = false, scope: scopeProp, focus, 
     {statusError && <p className="noa-panel-error" role="alert">Could not load changes: {statusError}{currentStatus && " · Showing last result"} <button type="button" className={button} onClick={() => setTick((n) => n + 1)}>Retry</button></p>}
     {loading && !current && selected && <p className="noa-panel-empty" role="status">Loading…</p>}
     <div className={`noa-panel-body ${selected && !editing ? "is-code" : "scrollbar-on-scroll"}`}>
-      {selected ? current && (editing ? <textarea aria-label="Edit file content" className="noa-file-editor" value={draft} onChange={(e) => setDraft(e.target.value)} spellCheck={false} /> : current.kind === "image" ? <div className="noa-image-preview"><img src={current.dataUrl} alt={selected} /></div> : current.kind === "binary" ? <p className="noa-panel-empty">Binary file cannot be previewed</p> : current.truncated ? <p className="noa-panel-empty">Diff too large to display. Open the file in your editor to review it.</p> : <Suspense fallback={<p className="noa-panel-empty">Loading code viewer…</p>}><CodeView focusRequest={lineTarget?.at} focusLine={lineTarget?.line} focusEndLine={lineTarget && "endLine" in lineTarget ? lineTarget.endLine : undefined} gotoRequest={gotoRequest} path={selected} content={current.content ?? ""} diff={view === "diff"} split={sideBySide && canSplit} wrap={view === "diff" ? wordWrap : codeWrap} wordDiff={wordDiff} hideWhitespace={hideWhitespace} hunkScope={scope !== "all" && !readOnly && !selectedChange?.oldPath && !action ? scope : undefined} onHunkAction={gitAction} findRequest={findRequest} onCloseFind={() => setFindRequest(0)} /></Suspense>)
+      {selected ? current && (editing ? <textarea aria-label="Edit file content" className="noa-file-editor" value={draft} onChange={(e) => setDraft(e.target.value)} spellCheck={false} /> : current.kind === "image" ? <div className="noa-image-preview"><img src={current.dataUrl} alt={selected} /></div> : current.kind === "binary" ? <p className="noa-panel-empty">Binary file cannot be previewed</p> : current.truncated ? <p className="noa-panel-empty">Diff too large to display. Open the file in your editor to review it.</p> : <Suspense fallback={<p className="noa-panel-empty">Loading code viewer…</p>}><CodeView focusRequest={lineTarget?.at} focusLine={lineTarget?.line} focusEndLine={lineTarget && "endLine" in lineTarget ? lineTarget.endLine : undefined} gotoRequest={gotoRequest} path={selected} content={current.content ?? ""} diff={view === "diff"} split={sideBySide && canSplit} wrap={view === "diff" ? wordWrap : codeWrap} wordDiff={wordDiff} hideWhitespace={hideWhitespace} hunkScope={scope !== "all" && !readOnly && !selectedChange?.oldPath && !action ? scope : undefined} onHunkAction={gitAction} fullContent={fullDiff?.key === `${cwd}\0${scope}\0${selected}` ? fullDiff.content : undefined} onNeedFull={view === "diff" && !context ? () => setWantFull(true) : undefined} findRequest={findRequest} onCloseFind={() => setFindRequest(0)} /></Suspense>)
         : changes ? !currentStatus ? !statusError && <p className="noa-panel-empty" role="status">Loading changes…</p> : currentStatus.isGit === false ? <div className="noa-panel-empty"><p>This folder is not a Git repository</p><button type="button" className={button} disabled={!!action} onClick={() => gitAction("init")}>Create Git repository</button></div> : <div ref={changeList} role="tree" aria-label="Changed files" className={`noa-file-tree${bareNames ? " is-bare-names" : ""}`} onKeyDown={onTreeKey}>{changeFiles.length ? fileTree ? changedRows(changeTree(changeFiles), "", 0) : [...changeFiles].sort((a, b) => a.path.localeCompare(b.path)).map((file) => changedFile(file, 0, <MiddlePath path={file.path} />)) : <div className="noa-panel-empty">{!filter && <CheckCircle2 size={20} />}<p>{filter ? "No matching files" : scope === "staged" ? "No staged changes" : scope === "unstaged" ? "No unstaged changes" : readOnly ? "No differences" : "Working tree clean"}</p></div>}</div>
         : contentMode ? <div role="tree" aria-label="File content matches" className="noa-file-tree" onKeyDown={onTreeKey}>{contentResults}</div>
         : <div role="tree" aria-label="Project files" className="noa-file-tree" onKeyDown={onTreeKey}>{!search && onOpenChanges && status?.isGit && <button type="button" role="treeitem" className="noa-file-row" onClick={() => onOpenChanges()}><span className="noa-file-icon"><ListDetails size={15} /></span><span className="noa-file-name">All changes</span></button>}

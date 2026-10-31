@@ -1,11 +1,11 @@
 import { useSyncExternalStore } from "react"
 
 // Diff display options shared by every diff surface, with Claude Code's defaults: unified layout,
-// word wrap and changed-word emphasis on, whitespace changes shown, changed files listed flat.
+// changed-word emphasis on, word wrap off, whitespace changes shown, changed files listed flat.
 // Side by side and word wrap keep reading the keys the GUI used before these options moved here.
 export const DIFF_PREFS = {
   sideBySide: { key: "noa-diff-side-by-side", fallback: false, legacy: () => localStorage.getItem("noa-diff-layout") === "split" },
-  wordWrap: { key: "noa-diff-wrap-v2", fallback: true },
+  wordWrap: { key: "noa-diff-wrap-v2", fallback: false },
   wordDiff: { key: "noa-diff-word-diff", fallback: true },
   hideWhitespace: { key: "noa-diff-hide-whitespace", fallback: false },
   fileTree: { key: "noa-diff-file-tree", fallback: false },

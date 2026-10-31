@@ -188,7 +188,7 @@ window.runChecks = async () => {
   ;(Array.from(scopeBar.querySelectorAll("button")).find(button => button.textContent === "All"))?.click()
   await wait(() => !!document.querySelector('[title="changed.txt"]'))
   ;(document.querySelector('[title="changed.txt"]') as HTMLElement)?.click()
-  results.workingDiffWrapsByDefault = await wait(() => !!document.querySelector(".noa-code-view.is-wrapped")) && (() => { const body = document.querySelector<HTMLElement>(".noa-panel-body")!, code = document.querySelector<HTMLElement>(".noa-code-line.is-add code")!; return body.scrollWidth <= body.clientWidth + 1 && code.getBoundingClientRect().height > 40 })()
+  results.workingDiffScrollsByDefault = await wait(() => !!document.querySelector(".noa-code-view.is-diff")) && (() => { const body = document.querySelector<HTMLElement>(".noa-panel-body")!, code = document.querySelector<HTMLElement>(".noa-code-line.is-add code")!; return !document.querySelector(".noa-code-view.is-wrapped") && body.scrollWidth > body.clientWidth + 1 && code.getBoundingClientRect().height < 40 })()
   ;(Array.from(document.querySelectorAll<HTMLButtonElement>('[aria-label="Diff layout"] button')).find(button => button.textContent === "Split"))?.click()
   results.splitDiffWraps = await wait(() => !!document.querySelector(".noa-code-view.is-split")) && (() => { const body = document.querySelector<HTMLElement>(".noa-panel-body")!, code = document.querySelector<HTMLElement>(".noa-code-line.is-add code")!; return body.scrollWidth <= body.clientWidth + 1 && code.getBoundingClientRect().height > 40 })()
   ;(document.querySelector('[aria-label="Review actions"]') as HTMLElement)?.click()
@@ -212,7 +212,7 @@ window.runChecks = async () => {
   localStorage.removeItem("noa-turn-diff-wrap-v2")
   await show(<div style={{ width: 320, height: 400 }}><TurnReview diff={longDiff} /></div>)
   const reviewBody = document.querySelector<HTMLElement>(".noa-panel-body")!
-  results.turnDiffWrapsByDefault = !!document.querySelector(".noa-code-view.is-wrapped") && reviewBody.scrollWidth <= reviewBody.clientWidth + 1
+  results.turnDiffScrollsByDefault = !document.querySelector(".noa-code-view.is-wrapped") && reviewBody.scrollWidth > reviewBody.clientWidth + 1
   const markedPatch = "--- a/a.ts\n+++ b/a.ts\n@@ -10,1 +10,1 @@\n-oldValue\n+newValue\n"
   await show(<div style={{ width: 320, height: 400 }}><CodeView path="a.ts" content={markedPatch} diff wrap /></div>)
   const addedRow = document.querySelector<HTMLElement>(".noa-code-line.is-add")!, removedRow = document.querySelector<HTMLElement>(".noa-code-line.is-remove")!

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import hljs from "highlight.js/lib/common"
 import { parsePatch, diffWordsWithSpace } from "diff"
 import { hideWhitespaceChanges } from "../lib/diffWhitespace"
+import { ChevronDown, ChevronUp, ChevronsUpDown } from "../lib/icons"
 
 const languages: Record<string, string> = { ts: "typescript", tsx: "typescript", js: "javascript", jsx: "javascript", mjs: "javascript", cjs: "javascript", py: "python", sh: "bash", zsh: "bash", json: "json", css: "css", html: "xml", svg: "xml", xml: "xml", md: "markdown", yml: "yaml", yaml: "yaml", rs: "rust", go: "go", java: "java", c: "c", h: "c", cpp: "cpp", sql: "sql", swift: "swift" }
 
@@ -64,20 +65,42 @@ function wordChanges(before: Line, after: Line) {
   after.html = emphasis(after.html, added)
 }
 
-// The separator above a hunk says how much unchanged text it skips, instead of the patch's raw @@ ranges.
-function unmodifiedBefore(hunks: { oldStart: number; oldLines: number }[], index: number) {
+// Old-file line range an unmodified gap covers before hunk `index`, as the patch leaves it out.
+function gapBefore(hunks: { oldStart: number; oldLines: number }[], index: number) {
   const first = (hunk: { oldStart: number; oldLines: number }) => hunk.oldLines === 0 ? hunk.oldStart + 1 : hunk.oldStart
   const previous = hunks[index - 1]
-  const skipped = first(hunks[index]!) - 1 - (previous ? first(previous) + previous.oldLines - 1 : 0)
-  return skipped > 0 ? `${skipped} unmodified line${skipped === 1 ? "" : "s"}` : ""
+  return { start: previous ? first(previous) + previous.oldLines : 1, end: first(hunks[index]!) - 1 }
 }
 
-export default function CodeView({ path, content, diff = false, split = false, wrap = false, wordDiff = true, hideWhitespace = false, hunkScope, onHunkAction, findRequest = 0, onCloseFind, gotoRequest = 0, focusLine, focusEndLine, focusRequest }: {
+// Each click on a separator reveals this many unchanged lines.
+const EXPAND_STEP = 100
+// Reveal state key of the gap after the last hunk.
+const TAIL = -1
+// A gap this small is revealed whole by a single button; a larger one at the top of the file still moves 100 lines per click.
+const SMALL_GAP = 20
+
+function toLines(displayed: string[], oldStart: number, newStart: number, path: string): Line[] {
+  let old = oldStart, next = newStart
+  const before = highlightedLines(displayed.filter((l) => l[0] === " " || l[0] === "-").map((l) => l.slice(1)).join("\n"), path)
+  const after = highlightedLines(displayed.filter((l) => l[0] === " " || l[0] === "+").map((l) => l.slice(1)).join("\n"), path)
+  let a = 0, b = 0
+  return displayed.map((line) => {
+    const text = line.slice(1)
+    if (line[0] === "-") return { kind: "remove", text, old: old++, html: before[a++] ?? "" }
+    if (line[0] === "+") return { kind: "add", text, next: next++, html: after[b++] ?? "" }
+    if (line[0] === " ") { a++; return { kind: "context", text, old: old++, next: next++, html: after[b++] ?? "" } }
+    return { kind: "meta", text, html: text }
+  })
+}
+
+export default function CodeView({ path, content, diff = false, split = false, wrap = false, wordDiff = true, hideWhitespace = false, hunkScope, onHunkAction, fullContent, onNeedFull, findRequest = 0, onCloseFind, gotoRequest = 0, focusLine, focusEndLine, focusRequest }: {
   path: string; content: string; diff?: boolean; split?: boolean; wrap?: boolean; wordDiff?: boolean; hideWhitespace?: boolean
   focusLine?: number; focusEndLine?: number; focusRequest?: number; findRequest?: number; onCloseFind?: () => void; gotoRequest?: number
   hunkScope?: string; onHunkAction?: (action: string, hunk: number) => void
+  // The same diff with every line of context; separators reveal their skipped lines from it.
+  fullContent?: string; onNeedFull?: () => void
 }) {
-  const { hunks, whitespaceOnly } = useMemo(() => {
+  const { hunks: patchHunks, whitespaceOnly } = useMemo(() => {
     if (!diff) return { hunks: [], whitespaceOnly: false }
     try {
       let remaining = 3000, hidden = 0
@@ -88,17 +111,7 @@ export default function CodeView({ path, content, diff = false, split = false, w
         if (!shown.changed) { hidden++; return [] }
         const displayed = shown.lines.slice(0, remaining)
         remaining -= displayed.length
-        let old = hunk.oldStart, next = hunk.newStart
-        const before = highlightedLines(displayed.filter((l) => l[0] === " " || l[0] === "-").map((l) => l.slice(1)).join("\n"), path)
-        const after = highlightedLines(displayed.filter((l) => l[0] === " " || l[0] === "+").map((l) => l.slice(1)).join("\n"), path)
-        let a = 0, b = 0
-        const lines: Line[] = displayed.map((line) => {
-          const text = line.slice(1)
-          if (line[0] === "-") return { kind: "remove", text, old: old++, html: before[a++] ?? "" }
-          if (line[0] === "+") return { kind: "add", text, next: next++, html: after[b++] ?? "" }
-          if (line[0] === " ") { a++; return { kind: "context", text, old: old++, next: next++, html: after[b++] ?? "" } }
-          return { kind: "meta", text, html: text }
-        })
+        const lines = toLines(displayed, hunk.oldStart, hunk.newStart, path)
         const pairs: [Line | undefined, Line | undefined][] = []
         for (let i = 0; i < lines.length;) {
           const line = lines[i]!
@@ -112,11 +125,52 @@ export default function CodeView({ path, content, diff = false, split = false, w
           }
         }
         // A hunk rewritten to hide whitespace no longer shows everything an action would apply.
-        return { index, label: unmodifiedBefore(file.hunks, index), lines, pairs, complete: displayed.length === hunk.lines.length && !shown.altered }
+        return { index, gap: gapBefore(file.hunks, index), after: (hunk.oldLines === 0 ? hunk.oldStart + 1 : hunk.oldStart) + hunk.oldLines, lines, pairs, complete: displayed.length === hunk.lines.length && !shown.altered }
       }))
       return { hunks, whitespaceOnly: hunks.length === 0 && hidden > 0 }
     } catch { return { hunks: [], whitespaceOnly: false } }
   }, [content, path, diff, wordDiff, hideWhitespace])
+  const [reveal, setReveal] = useState<Record<number, { down: number; up: number }>>({})
+  useEffect(() => { setReveal({}) }, [content, path])
+  // The full-context diff is parsed cheaply for the line count; its lines are highlighted only once a separator is used.
+  const fullHunk = useMemo(() => {
+    if (!diff || !fullContent) return undefined
+    try { return parsePatch(fullContent)[0]?.hunks[0] } catch { return undefined }
+  }, [diff, fullContent])
+  const fullLines = useMemo(() => fullHunk && Object.keys(reveal).length ? toLines(fullHunk.lines, fullHunk.oldStart, fullHunk.newStart, path) : undefined, [fullHunk, reveal, path])
+  // Separators show what is still hidden; revealed lines join the hunk above (down) or below (up) the gap.
+  const hunks = useMemo(() => patchHunks.map((hunk, at) => {
+    const size = Math.max(0, hunk.gap.end - hunk.gap.start + 1)
+    const state = reveal[hunk.index] ?? { down: 0, up: 0 }
+    const pick = (from: number, to: number) => (fullLines ?? []).filter((line) => line.kind === "context" && line.old! >= from && line.old! <= to)
+    const up = pick(hunk.gap.end - state.up + 1, hunk.gap.end)
+    const later = patchHunks[at + 1]
+    const laterState = later ? reveal[later.index] ?? { down: 0, up: 0 } : reveal[TAIL] ?? { down: 0, up: 0 }
+    const down = pick(hunk.after, hunk.after + laterState.down - 1)
+    const asPairs = (lines: Line[]): [Line, Line][] => lines.map((line) => [line, line])
+    return {
+      ...hunk,
+      hidden: Math.max(0, size - state.down - state.up),
+      hasAbove: at > 0,
+      lines: [...up, ...hunk.lines, ...down],
+      pairs: [...asPairs(up), ...hunk.pairs, ...asPairs(down)],
+    }
+  }), [patchHunks, reveal, fullLines])
+  // Lines left after the last hunk, known once the full diff has loaded.
+  const tail = useMemo(() => {
+    const last = patchHunks[patchHunks.length - 1]
+    if (!last || !fullHunk) return undefined
+    const total = fullHunk.oldStart - 1 + fullHunk.lines.filter((line) => line[0] === " " || line[0] === "-").length
+    return { hidden: Math.max(0, total - last.after + 1 - (reveal[TAIL]?.down ?? 0)) }
+  }, [patchHunks, fullHunk, reveal])
+  const expand = (hunk: { index: number; hidden: number }, direction: "down" | "up" | "all") => {
+    onNeedFull?.()
+    setReveal((all) => {
+      const state = all[hunk.index] ?? { down: 0, up: 0 }
+      const step = direction === "all" ? hunk.hidden : Math.min(EXPAND_STEP, hunk.hidden)
+      return { ...all, [hunk.index]: direction === "down" || hunk.index === TAIL ? { ...state, down: state.down + step } : { ...state, up: state.up + step } }
+    })
+  }
   const source = useMemo(() => diff ? [] : highlightedLines(content.split("\n").slice(0, 3000).join("\n"), path), [content, path, diff])
   const gutter = Math.max(4, ...hunks.flatMap((hunk) => hunk.lines.map((line) => String(Math.max(line.old ?? 0, line.next ?? 0)).length))) + 3
   const root = useRef<HTMLDivElement>(null)
@@ -193,7 +247,7 @@ export default function CodeView({ path, content, diff = false, split = false, w
       </div>}
       {content.split("\n").length > 3000 && <p className="noa-panel-notice">Large file: showing up to 3,000 lines. Open the file in your editor to read the remaining lines.</p>}
       {!diff ? source.map((html, i) => <div className="noa-source-line" data-reference-line={referenceLine && i + 1 >= referenceLine && i + 1 <= (referenceEnd ?? referenceLine) ? "true" : undefined} key={i}><span className="noa-code-number">{i + 1}</span><code dangerouslySetInnerHTML={{ __html: html || " " }} /></div>)
-        : hunks.length ? hunks.map((hunk) => <section key={hunk.index} className="noa-diff-hunk">{(hunk.label || (hunkScope && hunk.complete)) && <div className="noa-diff-hunk-header"><span>{hunk.label}</span>{hunkScope && hunk.complete && <span className="noa-hunk-actions"><button type="button" className="noa-panel-button" aria-label={`${hunkScope === "staged" ? "Unstage" : "Stage"} hunk ${hunk.index + 1}`} onClick={() => onHunkAction?.(hunkScope === "staged" ? "unstage-hunk" : "stage-hunk", hunk.index)}>{hunkScope === "staged" ? "Unstage hunk" : "Stage hunk"}</button><button type="button" className="noa-panel-button" aria-label={`Revert hunk ${hunk.index + 1}`} onClick={() => onHunkAction?.("revert-hunk", hunk.index)}>Revert hunk</button></span>}</div>}{split ? hunk.pairs.map(([old, next], j) => <div className="noa-diff-pair" key={j}>{cell(old, "old")}{cell(next, "next")}</div>) : hunk.lines.map((line, j) => <div key={j}>{cell(line)}</div>)}</section>)
+        : hunks.length ? <>{hunks.map((hunk) => <section key={hunk.index} className="noa-diff-hunk">{(hunk.hidden > 0 || (hunkScope && hunk.complete)) && <div className="noa-diff-hunk-header">{hunk.hidden > 0 && <span className="noa-hunk-expand">{!hunk.hasAbove || hunk.hidden <= SMALL_GAP ? <button type="button" aria-label="Show unmodified lines" title="Show unmodified lines" onClick={() => expand(hunk, hunk.hidden <= SMALL_GAP ? "all" : "up")}><ChevronsUpDown size={16} /></button> : <><button type="button" aria-label="Show more lines below" title="Show more lines below" onClick={() => expand(hunk, "down")}><ChevronDown size={14} /></button><button type="button" aria-label="Show more lines above" title="Show more lines above" onClick={() => expand(hunk, "up")}><ChevronUp size={14} /></button></>}</span>}<span className="noa-hunk-label">{hunk.hidden > 0 ? `${hunk.hidden} unmodified line${hunk.hidden === 1 ? "" : "s"}` : ""}</span>{hunkScope && hunk.complete && <span className="noa-hunk-actions"><button type="button" className="noa-panel-button" aria-label={`${hunkScope === "staged" ? "Unstage" : "Stage"} hunk ${hunk.index + 1}`} onClick={() => onHunkAction?.(hunkScope === "staged" ? "unstage-hunk" : "stage-hunk", hunk.index)}>{hunkScope === "staged" ? "Unstage hunk" : "Stage hunk"}</button><button type="button" className="noa-panel-button" aria-label={`Revert hunk ${hunk.index + 1}`} onClick={() => onHunkAction?.("revert-hunk", hunk.index)}>Revert hunk</button></span>}</div>}{split && !wrap ? <div className="noa-diff-sides">{(["old", "next"] as const).map((side) => <div className="noa-diff-side" key={side}><div>{hunk.pairs.map((pair, j) => <div key={j}>{cell(pair[side === "old" ? 0 : 1], side)}</div>)}</div></div>)}</div> : split ? hunk.pairs.map(([old, next], j) => <div className="noa-diff-pair" key={j}>{cell(old, "old")}{cell(next, "next")}</div>) : hunk.lines.map((line, j) => <div key={j}>{cell(line)}</div>)}</section>)}{tail && tail.hidden > 0 && <section className="noa-diff-hunk"><div className="noa-diff-hunk-header"><span className="noa-hunk-expand"><button type="button" aria-label="Show more lines below" title="Show more lines below" onClick={() => expand({ index: TAIL, hidden: tail.hidden }, tail.hidden <= SMALL_GAP ? "all" : "down")}>{tail.hidden <= SMALL_GAP ? <ChevronsUpDown size={16} /> : <ChevronDown size={14} />}</button></span><span className="noa-hunk-label">{tail.hidden} unmodified line{tail.hidden === 1 ? "" : "s"}</span></div></section>}</>
         : <p className="noa-panel-empty">{whitespaceOnly ? "Whitespace only" : content.includes("Binary") ? "Binary file changed" : content ? "File mode, rename or other metadata change. No text hunks." : "No changes in this view"}</p>}
     </div>
   )
