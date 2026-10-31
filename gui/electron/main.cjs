@@ -1,8 +1,9 @@
 // Desktop shell: starts the Bun bridge (server/main.ts), serves the
 // built UI from it, and shows it in a native window. The bridge is the only
 // process that talks to the agent; the window is a plain client of it.
-const { app, BrowserWindow, Menu, dialog, ipcMain, nativeImage, nativeTheme, shell } = require('electron')
+const { app, BrowserWindow, Menu, dialog, ipcMain, nativeImage, nativeTheme, session, shell } = require('electron')
 const { spawn } = require('child_process')
+const { randomBytes } = require('crypto')
 const fs = require('fs')
 const http = require('http')
 const net = require('net')
@@ -18,6 +19,8 @@ let win = null
 let quitting = false
 let checkingQuit = false
 let bridgePort
+// Every bridge request must carry this; other local processes do not know it.
+const BRIDGE_TOKEN = randomBytes(32).toString('hex')
 // NOA_GUI_DEV=1 serves the UI from Vite with hot reload instead of the built dist/.
 const DEV = process.env.NOA_GUI_DEV === '1'
 const VITE_PORT = 5173
@@ -116,7 +119,7 @@ async function startBridge() {
   const port = await freePort(DEV ? 0 : 18787)
   bridge = spawn(findBun(), [...(DEV ? ['--hot'] : []), 'run', 'server/main.ts'], {
     cwd: GUI_DIR,
-    env: { ...process.env, NOA_GUI_PORT: String(port) },
+    env: { ...process.env, NOA_GUI_PORT: String(port), NOA_GUI_TOKEN: BRIDGE_TOKEN },
     stdio: ['ignore', 'inherit', 'inherit'],
   })
   bridge.on('exit', (code) => {
@@ -128,6 +131,10 @@ async function startBridge() {
   })
   await waitForBridge(port)
   bridgePort = port
+  // Cookies ignore the port, so one cookie covers the bridge and the Vite dev origin.
+  await session.defaultSession.cookies.set({
+    url: 'http://127.0.0.1', name: 'noa_token', value: BRIDGE_TOKEN, httpOnly: true, sameSite: 'strict',
+  })
   if (DEV) {
     // The Vite proxy reads NOA_GUI_PORT, so it follows the bridge's free port.
     vite = spawn(findBun(), ['x', 'vite', '--host', '127.0.0.1', '--port', String(VITE_PORT), '--strictPort'], {
@@ -242,7 +249,10 @@ async function requestQuit() {
   try {
     let detail
     try {
-      const response = await fetch(`http://127.0.0.1:${bridgePort}/api/runs`, { signal: AbortSignal.timeout(2000) })
+      const response = await fetch(`http://127.0.0.1:${bridgePort}/api/runs`, {
+        headers: { authorization: `Bearer ${BRIDGE_TOKEN}` },
+        signal: AbortSignal.timeout(2000),
+      })
       if (!response.ok) throw new Error('Could not read task status')
       const runs = await response.json()
       const queued = runs.reduce((total, run) => total + run.queued, 0)

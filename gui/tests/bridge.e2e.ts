@@ -26,7 +26,7 @@ writeFileSync(
 )
 writeFileSync(
   join(config, "gui-projects.json"),
-  JSON.stringify({ projects: [{ path: cwd, sources: [cwd, extraCwd] }] }),
+  JSON.stringify({ projects: [{ path: cwd, sources: [cwd, extraCwd] }, { path: plainCwd }] }),
 )
 const mcpScript = join(directory, "mcp.ts")
 writeFileSync(

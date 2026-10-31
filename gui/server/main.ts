@@ -31,6 +31,125 @@ function serveStatic(pathname: string): Response {
   return new Response(Bun.file(path))
 }
 
+const TOKEN = process.env.NOA_GUI_TOKEN
+const TOKEN_COOKIE = "noa_token"
+
+// The desktop shell hands the page a cookie and itself a bearer header; anything else on this machine is refused.
+function authorized(req: Request): boolean {
+  if (!TOKEN) return true
+  const bearer = req.headers.get("authorization")
+  if (bearer === `Bearer ${TOKEN}`) return true
+  return (req.headers.get("cookie") ?? "").split(";").some((part) => part.trim() === `${TOKEN_COOKIE}=${TOKEN}`)
+}
+
+function inListedProject(cwd: string): boolean {
+  return isManagedWorktree(cwd) || listProjects(REPO_ROOT).some((project) =>
+    project.sources.some((source) => cwd === source || cwd.startsWith(source + sep))
+  )
+}
+
+type Handler = (ctx: { req: Request; url: URL; cwd: string; server: Bun.Server<SocketData> }) => Response | undefined | Promise<Response | undefined>
+
+// Routes that act on a folder. Every method a route accepts is listed here, and the folder must belong to a listed project.
+const cwdRoutes: Record<string, { methods: string[]; handler: Handler }> = {}
+
+function workspaceRoute(path: string, methods: string[]) {
+  cwdRoutes[path] = {
+    methods,
+    async handler({ req, url, cwd }) {
+      try {
+        return json(await workspaceRequest(url, cwd, req.method === "POST" ? await req.json() : undefined, req.signal))
+      } catch (error) {
+        return json({ error: (error as Error).message }, 400)
+      }
+    },
+  }
+}
+for (const path of ["/api/files", "/api/changes", "/api/diff", "/api/editors", "/api/grep"]) workspaceRoute(path, ["GET"])
+for (const path of ["/api/file", "/api/branches", "/api/worktree"]) workspaceRoute(path, ["GET", "POST"])
+for (const path of ["/api/git-action", "/api/open-in"]) workspaceRoute(path, ["POST"])
+
+cwdRoutes["/api/media"] = {
+  methods: ["GET", "HEAD"],
+  async handler({ req, url, cwd }) {
+    try { return await mediaResponse(cwd, url.searchParams.get("path") ?? "", req) }
+    catch (error) { return json({ error: (error as Error).message }, 400) }
+  },
+}
+
+cwdRoutes["/ws"] = {
+  methods: ["GET"],
+  handler({ req, url, cwd, server }) {
+    const resume = url.searchParams.get("resume") ?? undefined
+    if (resume && !SESSION_ID.test(resume)) return new Response("invalid session id", { status: 400 })
+    const runtimeId = url.searchParams.get("runtime") ?? crypto.randomUUID()
+    if (!SESSION_ID.test(runtimeId)) return new Response("invalid runtime id", { status: 400 })
+    const modeParam = url.searchParams.get("mode") ?? undefined
+    if (modeParam && !SPAWN_PERMISSION_MODES.has(modeParam)) return new Response("invalid permission mode", { status: 400 })
+    if (server.upgrade(req, { data: { cwd, resume, runtimeId, mode: modeParam } })) return undefined
+    return new Response("Expected WebSocket upgrade", { status: 426 })
+  },
+}
+
+cwdRoutes["/api/sessions"] = {
+  methods: ["GET"],
+  async handler({ cwd }) {
+    // Sessions started in the project's worktrees are listed with it, tagged with the folder they run in.
+    const worktrees = await projectWorktrees(cwd)
+    return json([...listSessions(cwd), ...worktrees.flatMap((path) => listSessions(path).map((session) => ({ ...session, cwd: path })))]
+      .sort((a, b) => b.updatedAt - a.updatedAt))
+  },
+}
+
+async function sessionRequest(req: Request, cwd: string, id: string): Promise<Response> {
+  if (req.method === "PATCH") {
+    try {
+      const body = (await req.json()) as { title?: unknown }
+      if (typeof body.title !== "string") return json({ error: "Missing task name" }, 400)
+      renameSession(cwd, id, body.title)
+      return json(listSessions(cwd))
+    } catch (error) {
+      return json({ error: (error as Error).message }, 400)
+    }
+  }
+  const items = await loadHistory(cwd, id)
+  return items ? json(items) : json({ error: "session not found" }, 404)
+}
+
+async function projectsRequest(req: Request, url: URL): Promise<Response> {
+  const defaultCwd = resolveCwd(null)!
+  if (req.method === "GET") return json(listProjects(defaultCwd))
+  if (req.method === "POST") {
+    const body = (await req.json().catch(() => null)) as { path?: unknown; name?: unknown; sources?: unknown } | null
+    let error: string | null = "Missing path."
+    if (typeof body?.path === "string") {
+      try {
+        const sources = Array.isArray(body.sources)
+          ? body.sources.filter((source): source is string => typeof source === "string")
+          : undefined
+        error = addProject(defaultCwd, body.path, typeof body.name === "string" ? body.name : undefined, sources)
+      } catch (caught) {
+        error = (caught as Error).message
+      }
+    }
+    return error ? json({ error }, 400) : json(listProjects(defaultCwd))
+  }
+  const path = url.searchParams.get("path")
+  if (!path) return json({ error: "Missing path." }, 400)
+  removeProject(defaultCwd, path)
+  return json(listProjects(defaultCwd))
+}
+
+async function revealProject(req: Request): Promise<Response> {
+  const body = (await req.json().catch(() => null)) as { path?: unknown } | null
+  const path = typeof body?.path === "string" ? body.path : null
+  // Only listed projects may be opened, so this cannot launch arbitrary paths.
+  if (!path || !listProjects(resolveCwd(null)!).some((p) => p.path === path))
+    return json({ error: "Unknown project." }, 400)
+  Bun.spawn(["open", path])
+  return json({ ok: true })
+}
+
 Bun.serve<SocketData>({
   port: PORT,
   hostname: "127.0.0.1",
@@ -41,112 +160,38 @@ Bun.serve<SocketData>({
     const origin = req.headers.get("origin")
     if (origin && origin !== url.origin && !["http://localhost:5173", "http://127.0.0.1:5173"].includes(origin))
       return json({ error: "Origin not allowed" }, 403)
-    const cwd = resolveCwd(url.searchParams.get("cwd"))
+    if (!authorized(req)) return json({ error: "Unauthorized" }, 401)
 
-    if (url.pathname === "/api/media") {
-      if (req.method !== "GET" && req.method !== "HEAD") return json({ error: "Method not allowed" }, 405)
-      if (!cwd) return json({ error: "cwd is not a directory" }, 400)
-      try { return await mediaResponse(cwd, url.searchParams.get("path") ?? "", req) }
-      catch (error) { return json({ error: (error as Error).message }, 400) }
-    }
-
-    if (["/api/files", "/api/file", "/api/changes", "/api/diff", "/api/git-action", "/api/editors", "/api/open-in", "/api/grep", "/api/branches", "/api/worktree"].includes(url.pathname)) {
-      if (req.method !== "GET" && !(req.method === "POST" && ["/api/file", "/api/git-action", "/api/open-in", "/api/branches", "/api/worktree"].includes(url.pathname))) return json({ error: "Method not allowed" }, 405)
-      if (["/api/git-action", "/api/open-in"].includes(url.pathname) && req.method !== "POST") return json({ error: "Method not allowed" }, 405)
-      if (!cwd) return json({ error: "cwd is not a directory" }, 400)
-      // Writes are limited to listed projects (or folders inside them).
-      if (req.method === "POST" && !isManagedWorktree(cwd) && !listProjects(REPO_ROOT).some((project) =>
-        project.sources.some((source) => cwd === source || cwd.startsWith(source + sep))
-      ))
-        return json({ error: "Writes are only allowed inside listed projects" }, 403)
-      try {
-        return json(await workspaceRequest(url, cwd, req.method === "POST" ? await req.json() : undefined, req.signal))
-      } catch (error) {
-        return json({ error: (error as Error).message }, 400)
-      }
+    const route = cwdRoutes[url.pathname]
+    if (route) {
+      if (!route.methods.includes(req.method)) return json({ error: "Method not allowed" }, 405)
+      const cwd = resolveCwd(url.searchParams.get("cwd"))
+      if (!cwd) return url.pathname === "/ws" ? new Response("cwd is not a directory", { status: 400 }) : json({ error: "cwd is not a directory" }, 400)
+      if (!inListedProject(cwd)) return json({ error: "Only listed projects are accessible" }, 403)
+      return route.handler({ req, url, cwd, server })
     }
 
     if (url.pathname === "/api/projects") {
-      const defaultCwd = resolveCwd(null)!
-      if (req.method === "GET") return json(listProjects(defaultCwd))
-      if (req.method === "POST") {
-        const body = (await req.json().catch(() => null)) as { path?: unknown; name?: unknown; sources?: unknown } | null
-        let error: string | null = "Missing path."
-        if (typeof body?.path === "string") {
-          try {
-            const sources = Array.isArray(body.sources)
-              ? body.sources.filter((source): source is string => typeof source === "string")
-              : undefined
-            error = addProject(defaultCwd, body.path, typeof body.name === "string" ? body.name : undefined, sources)
-          } catch (caught) {
-            error = (caught as Error).message
-          }
-        }
-        return error ? json({ error }, 400) : json(listProjects(defaultCwd))
-      }
-      if (req.method === "DELETE") {
-        const path = url.searchParams.get("path")
-        if (!path) return json({ error: "Missing path." }, 400)
-        removeProject(defaultCwd, path)
-        return json(listProjects(defaultCwd))
-      }
-      return json({ error: "Method not allowed" }, 405)
+      if (!["GET", "POST", "DELETE"].includes(req.method)) return json({ error: "Method not allowed" }, 405)
+      return projectsRequest(req, url)
     }
-
     if (url.pathname === "/api/projects/reveal") {
       if (req.method !== "POST") return json({ error: "Method not allowed" }, 405)
-      const body = (await req.json().catch(() => null)) as { path?: unknown } | null
-      const path = typeof body?.path === "string" ? body.path : null
-      // Only listed projects may be opened, so this cannot launch arbitrary paths.
-      if (!path || !listProjects(resolveCwd(null)!).some((p) => p.path === path))
-        return json({ error: "Unknown project." }, 400)
-      Bun.spawn(["open", path])
-      return json({ ok: true })
+      return revealProject(req)
     }
-
-    if (url.pathname === "/ws") {
-      if (!cwd) return new Response("cwd is not a directory", { status: 400 })
-      const resume = url.searchParams.get("resume") ?? undefined
-      if (resume && !SESSION_ID.test(resume)) return new Response("invalid session id", { status: 400 })
-      const runtimeId = url.searchParams.get("runtime") ?? crypto.randomUUID()
-      if (!SESSION_ID.test(runtimeId)) return new Response("invalid runtime id", { status: 400 })
-      const modeParam = url.searchParams.get("mode") ?? undefined
-      if (modeParam && !SPAWN_PERMISSION_MODES.has(modeParam)) return new Response("invalid permission mode", { status: 400 })
-      if (server.upgrade(req, { data: { cwd, resume, runtimeId, mode: modeParam } })) return undefined
-      return new Response("Expected WebSocket upgrade", { status: 426 })
-    }
-
     if (url.pathname === "/api/runs") return json(listAgentRuns())
-
     if (url.pathname === "/api/info") {
-      if (!cwd) return json({ error: "cwd is not a directory" }, 400)
-      return json({ cwd })
-    }
-
-    if (url.pathname === "/api/sessions") {
-      if (!cwd) return json({ error: "cwd is not a directory" }, 400)
-      // Sessions started in the project's worktrees are listed with it, tagged with the folder they run in.
-      const worktrees = await projectWorktrees(cwd)
-      return json([...listSessions(cwd), ...worktrees.flatMap((path) => listSessions(path).map((session) => ({ ...session, cwd: path })))]
-        .sort((a, b) => b.updatedAt - a.updatedAt))
+      const cwd = resolveCwd(url.searchParams.get("cwd"))
+      return cwd ? json({ cwd }) : json({ error: "cwd is not a directory" }, 400)
     }
 
     const historyMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)$/)
     if (historyMatch) {
+      if (req.method !== "GET" && req.method !== "PATCH") return json({ error: "Method not allowed" }, 405)
+      const cwd = resolveCwd(url.searchParams.get("cwd"))
       if (!cwd) return json({ error: "cwd is not a directory" }, 400)
-      if (req.method === "PATCH") {
-        try {
-          const body = (await req.json()) as { title?: unknown }
-          if (typeof body.title !== "string") return json({ error: "Missing task name" }, 400)
-          renameSession(cwd, decodeURIComponent(historyMatch[1]!), body.title)
-          return json(listSessions(cwd))
-        } catch (error) {
-          return json({ error: (error as Error).message }, 400)
-        }
-      }
-      if (req.method !== "GET") return json({ error: "Method not allowed" }, 405)
-      const items = await loadHistory(cwd, decodeURIComponent(historyMatch[1]!))
-      return items ? json(items) : json({ error: "session not found" }, 404)
+      if (!inListedProject(cwd)) return json({ error: "Only listed projects are accessible" }, 403)
+      return sessionRequest(req, cwd, decodeURIComponent(historyMatch[1]!))
     }
 
     return serveStatic(url.pathname)
