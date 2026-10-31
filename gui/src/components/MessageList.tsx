@@ -1068,7 +1068,8 @@ function formatDuration(ms: number): string {
 }
 
 function Working() {
-  return <div className="noa-shimmer py-1 text-[length:var(--font-text-md-size)] leading-5">Thinking</div>
+  // Sits outside the turn items, so it carries the conversation typeface itself to match the rows above.
+  return <div className="noa-shimmer text-[length:var(--font-text-md-size)] leading-5" style={{ fontFamily: "var(--font-content, var(--font-ui))" }}>Thinking</div>
 }
 
 // Today shows the time, the past week the weekday and time, anything older the date and time.

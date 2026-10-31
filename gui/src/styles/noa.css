@@ -2431,7 +2431,7 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
    starts half a pixel in so it does not paint over the surface's left hairline. */
 .noa-conversation-footer { position: absolute; inset-inline: 0 calc(var(--noa-scrollbar-strip) + var(--noa-overview-dock, 0px)); bottom: 0; z-index: 20; display: flex; max-height: 100%; flex-direction: column; margin-left: 0.5px; padding: 32px 21px 12px 29px; border-bottom-left-radius: var(--noa-surface-radius); background: linear-gradient(to bottom, color-mix(in srgb, var(--surface-page, #F9F9F7) 0%, transparent), var(--surface-page, #F9F9F7) 32px); pointer-events: none; }
 .noa-conversation-footer > * { min-height: 0; width: 100%; pointer-events: auto; }
-/* Loading shimmer: a stable base with a narrow highlight band. */
+/* Loading shimmer: a stable base with a narrow highlight band that sweeps on a cadence. */
 .noa-shimmer {
   --noa-shimmer-foreground: var(--text-secondary, #5D5D5D);
   --noa-shimmer-base: var(--noa-shimmer-foreground);
@@ -2444,7 +2444,7 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
-  animation: noa-shimmer 2s linear infinite;
+  animation: noa-shimmer 4s steps(48, end) 0.6s infinite;
 }
 [data-theme="dark"] .noa-shimmer { --noa-shimmer-highlight: rgba(0, 0, 0, 0.6); }
 
@@ -2458,7 +2458,8 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
   color: var(--text-secondary);
 }
 
-@keyframes noa-shimmer { from { background-position: -100% 0; } to { background-position: 250% 0; } }
+/* One 1s sweep every 4s, the first after 0.6s, stepped; the rest of the cycle holds the band off the text. */
+@keyframes noa-shimmer { 0% { background-position: -100% 0; } 25%, 100% { background-position: 250% 0; } }
 @media (prefers-reduced-motion: reduce) { .noa-shimmer { animation: none; color: var(--text-secondary, #5D5D5D); background: none; -webkit-text-fill-color: currentColor; } }
 
 /* New live text and block decorations fade in as they arrive over 0.4s. */
