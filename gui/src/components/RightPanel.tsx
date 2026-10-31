@@ -2,7 +2,9 @@ import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, ty
 import type { AgentState } from "../agent/reducer"
 import type { TurnDiff } from "../agent/protocol"
 import { ChevronRight, MoreHorizontal } from "../lib/icons"
+import { query } from "../api"
 import { SPLIT_MIN_WIDTH, useDiffPref } from "../lib/diffPrefs"
+import { PopupMenu, anchorBelow, type PopupMenuAnchor } from "./PopupMenu"
 import { ToolCard } from "./ToolCard"
 import { TurnReview } from "./TurnReview"
 import { WorkspaceFiles } from "./WorkspaceFiles"
@@ -12,6 +14,8 @@ export type PanelTab = "files" | "changes" | "activity"
 // The panel sits in a no-drag column; its tab row drags the window again, except on the tabs themselves.
 const dragRegion = { WebkitAppRegion: "drag" } as CSSProperties
 const noDragRegion = { WebkitAppRegion: "no-drag" } as CSSProperties
+
+const SOURCES = { turn: "Last turn", all: "Uncommitted", unstaged: "Unstaged", staged: "Staged", branch: "Branch comparison", commit: "Committed" } as const
 
 const TABS: { id: PanelTab; label: string }[] = [
   { id: "files", label: "Files" },
@@ -37,11 +41,54 @@ interface RightPanelProps {
 export function RightPanel({ state, onStopTask, cwd, tab, onTab, onReference, onWorkspaceChange, workspaceRefreshKey, focusChange, focusFile, turnDiff }: RightPanelProps) {
   const [fileChange, setFileChange] = useState<{ cwd: string; path: string; at: number; scope: "all" }>()
   // One review source: the last turn's patch or a slice of the working tree.
-  const [source, setSource] = useState<"turn" | "all" | "unstaged" | "staged">("all")
+  const [source, setSource] = useState<"turn" | "all" | "unstaged" | "staged" | "branch" | "commit">("all")
   useEffect(() => {
     setSource(turnDiff ? "turn" : "all")
   }, [turnDiff?.key, turnDiff === undefined])
   const changeMode = source === "turn" && turnDiff ? "turn" : "working"
+  // Branch comparison and commit review are read-only sources picked from a second selector.
+  const [refs, setRefs] = useState<{ cwd: string; branches: { name: string; current: boolean }[]; commits: { sha: string; short: string; subject: string; date: string }[]; error?: string }>()
+  const [branchTarget, setBranchTarget] = useState<string>()
+  const [commitSha, setCommitSha] = useState<string>()
+  useEffect(() => {
+    if (source !== "branch" && source !== "commit") return
+    const controller = new AbortController()
+    const get = async <T,>(route: string) => {
+      const response = await fetch(`/api/${route}${query(cwd)}`, { signal: controller.signal })
+      const value = await response.json()
+      if (!response.ok) throw new Error(value.error ?? "Could not load Git history")
+      return value as T
+    }
+    Promise.all([get<{ isGit: boolean; current?: string | null; defaultBranch?: string | null; branches?: string[] }>("branches"), get<{ commits: NonNullable<typeof refs>["commits"] }>("commits")])
+      .then(([branchInfo, history]) => {
+        const names = branchInfo.branches ?? []
+        setRefs({ cwd, branches: names.map((name) => ({ name, current: name === branchInfo.current })), commits: history.commits })
+        setBranchTarget((chosen) => chosen && names.includes(chosen) ? chosen : names.find((name) => name !== branchInfo.current && name === branchInfo.defaultBranch) ?? names.find((name) => name !== branchInfo.current))
+        setCommitSha((chosen) => chosen && history.commits.some((commit) => commit.sha === chosen) ? chosen : history.commits[0]?.sha)
+      })
+      .catch((error: Error) => { if (!controller.signal.aborted) setRefs({ cwd, branches: [], commits: [], error: error.message }) })
+    return () => controller.abort()
+  }, [source, cwd])
+  const refsReady = refs?.cwd === cwd ? refs : undefined
+  const [sourceMenu, setSourceMenu] = useState<{ anchor: PopupMenuAnchor; trigger: Element }>()
+  const shownSource = changeMode === "turn" ? "turn" : source === "turn" ? "all" : source
+  const [refMenu, setRefMenu] = useState<{ anchor: PopupMenuAnchor; trigger: Element }>()
+  useEffect(() => { setRefMenu(undefined); setSourceMenu(undefined) }, [source, cwd])
+  // Until a target is picked, a read-only comparison of HEAD with itself shows no differences rather than the working tree.
+  const scope = source === "turn" ? "all" : source === "branch" ? `branch:${branchTarget ?? "HEAD"}` : source === "commit" ? (commitSha ? `commit:${commitSha}` : "branch:HEAD") : source
+  const [copied, setCopied] = useState<"idle" | "done" | "failed">("idle")
+  const copyApply = async (close: () => void) => {
+    close()
+    try {
+      const response = await fetch(`/api/patch${query(cwd)}&${new URLSearchParams({ scope })}`)
+      const value = await response.json()
+      if (!response.ok) throw new Error(value.error)
+      if (!value.patch) throw new Error("empty")
+      await navigator.clipboard.writeText(`git apply <<'NOA_PATCH'\n${value.patch.replace(/\n?$/, "\n")}NOA_PATCH\n`)
+      setCopied("done")
+    } catch { setCopied("failed") }
+    setTimeout(() => setCopied("idle"), 2000)
+  }
   const [revealFile, setRevealFile] = useState<{ path: string; at: number }>()
   const [foldAll, setFoldAll] = useState<{ collapsed: boolean; seq: number }>()
   const [fileTree, setFileTree] = useDiffPref("fileTree")
@@ -73,7 +120,7 @@ export function RightPanel({ state, onStopTask, cwd, tab, onTab, onReference, on
 
   return (
     <div className="flex h-full min-h-0 w-full flex-col bg-[var(--surface-page,#F9F9F7)] font-ui">
-      <div className="flex h-11 shrink-0 items-center gap-1 pl-2 pr-[76px] select-none" style={dragRegion}>
+      <div className="flex h-11 shrink-0 items-center gap-1 pl-2.5 pr-[76px] select-none" style={dragRegion}>
         <div
           className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto whitespace-nowrap hide-scrollbar"
           role="tablist"
@@ -111,12 +158,36 @@ export function RightPanel({ state, onStopTask, cwd, tab, onTab, onReference, on
       </div>
       <div ref={changesRef} id="panel-changes" role="tabpanel" aria-labelledby="panel-tab-changes" className="min-h-0 flex-1 flex-col overflow-hidden" style={{ display: tab === "changes" ? "flex" : "none" }}>
         <div className="noa-panel-toolbar noa-turn-scope">
-          <select aria-label="Review source" value={changeMode === "turn" ? "turn" : source === "turn" ? "all" : source} onChange={(e) => setSource(e.target.value as typeof source)}>
-            {turnDiff && <option value="turn">Last turn</option>}
-            <option value="all">Uncommitted</option>
-            <option value="unstaged">Unstaged</option>
-            <option value="staged">Staged</option>
-          </select>
+          <button type="button" className="noa-ref-trigger is-source" aria-label="Review source" aria-haspopup="menu" aria-expanded={!!sourceMenu} onClick={(event) => setSourceMenu(sourceMenu ? undefined : { anchor: anchorBelow(event.currentTarget), trigger: event.currentTarget })}>{SOURCES[shownSource]}</button>
+          {sourceMenu && (
+            <PopupMenu
+              anchor={sourceMenu.anchor}
+              trigger={sourceMenu.trigger}
+              label="Review source"
+              onClose={() => setSourceMenu(undefined)}
+              entries={(Object.keys(SOURCES) as (keyof typeof SOURCES)[]).filter((id) => id !== "turn" || turnDiff).map((id) => ({ key: id, label: SOURCES[id], checked: id === shownSource, onSelect: () => setSource(id) }))}
+            />
+          )}
+          {(source === "branch" || source === "commit") && (() => {
+            const items = source === "branch" ? refsReady?.branches.filter((branch) => !branch.current) : refsReady?.commits
+            if (!items?.length) return <span className="min-w-0 truncate text-caption text-[var(--sidebar-text-muted)]">{refsReady?.error ?? (refsReady ? (source === "branch" ? "No other branches" : "No commits yet") : "Loading…")}</span>
+            const commit = refsReady?.commits.find((entry) => entry.sha === commitSha)
+            const current = refsReady?.branches.find((branch) => branch.current)?.name ?? "HEAD"
+            return <button type="button" className="noa-ref-trigger" aria-haspopup="menu" aria-expanded={!!refMenu} aria-label={source === "branch" ? "Compare with branch" : "Commit"} title={source === "branch" ? undefined : commit?.subject} onClick={(event) => setRefMenu(refMenu ? undefined : { anchor: anchorBelow(event.currentTarget), trigger: event.currentTarget })}>
+              {source === "branch" ? `${current} → ${branchTarget ?? ""}` : commit ? `${commit.short} ${commit.subject}` : ""}
+            </button>
+          })()}
+          {refMenu && (source === "branch" || source === "commit") && refsReady && (
+            <PopupMenu
+              anchor={refMenu.anchor}
+              trigger={refMenu.trigger}
+              label={source === "branch" ? "Review branches" : "Review commits"}
+              onClose={() => setRefMenu(undefined)}
+              entries={source === "branch"
+                ? refsReady.branches.filter((branch) => !branch.current).map((branch) => ({ key: branch.name, label: <span className="noa-ref-option"><span className="noa-ref-subject">{branch.name}</span></span>, checked: branch.name === branchTarget, onSelect: () => setBranchTarget(branch.name) }))
+                : refsReady.commits.map((commit) => ({ key: commit.sha, label: <span className="noa-ref-option"><span className="noa-ref-sha">{commit.short}</span><span className="noa-ref-subject">{commit.subject}</span><span className="noa-ref-date">{commit.date}</span></span>, checked: commit.sha === commitSha, onSelect: () => setCommitSha(commit.sha) }))}
+            />
+          )}
           {changeMode === "turn" && turnDiff && (
             <span className="min-w-0 truncate text-caption tabular-nums text-[var(--sidebar-text-muted)]">
               {turnDiff.diff.files.length} {turnDiff.diff.files.length === 1 ? "file" : "files"}
@@ -138,13 +209,15 @@ export function RightPanel({ state, onStopTask, cwd, tab, onTab, onReference, on
               <label className="noa-viewed-label" title={sideBySide && !canSplit ? "Needs a wider pane" : undefined}><input type="checkbox" checked={sideBySide} onChange={(event) => setSideBySide(event.target.checked)} />Side by side{sideBySide && !canSplit && <span className="noa-review-menu-hint">Needs a wider pane</span>}</label>
               <label className="noa-viewed-label"><input type="checkbox" checked={wordWrap} onChange={(event) => setWordWrap(event.target.checked)} />Word wrap</label>
               <div className="noa-review-menu-separator" role="separator" />
+              {changeMode === "working" && <button type="button" className="noa-panel-button" onClick={(event) => { void copyApply(() => { event.currentTarget.closest("details")!.open = false }) }}>{copied === "done" ? "Copied" : copied === "failed" ? "Nothing to copy" : "Copy git apply command"}</button>}
+              {changeMode === "working" && <div className="noa-review-menu-separator" role="separator" />}
               <label className="noa-viewed-label"><input type="checkbox" checked={wordDiff} onChange={(event) => setWordDiff(event.target.checked)} />Highlight changed words</label>
               <label className="noa-viewed-label"><input type="checkbox" checked={hideWhitespace} onChange={(event) => setHideWhitespace(event.target.checked)} />Hide whitespace changes</label>
             </div>
           </details>
         </div>
         <div className="min-h-0 flex-1 flex-col" style={{ display: tab === "changes" && changeMode === "working" ? "flex" : "none" }}>
-          <WorkspaceFiles key={`changes-${cwd}`} cwd={cwd} changes scope={source === "turn" ? "all" : source} focus={fileChange?.cwd === cwd && (!focusChange || fileChange.at > focusChange.at) ? fileChange : focusChange} foldAll={foldAll} canSplit={canSplit} onRevealInTree={(path) => { setRevealFile({ path, at: Date.now() }); onTab("files") }} active={tab === "changes" && changeMode === "working"} refreshKey={workspaceRefreshKey} onReference={onReference} onUpdated={onWorkspaceChange} />
+          <WorkspaceFiles key={`changes-${cwd}`} cwd={cwd} changes scope={scope} focus={fileChange?.cwd === cwd && (!focusChange || fileChange.at > focusChange.at) ? fileChange : focusChange} foldAll={foldAll} canSplit={canSplit} onRevealInTree={(path) => { setRevealFile({ path, at: Date.now() }); onTab("files") }} active={tab === "changes" && changeMode === "working"} refreshKey={workspaceRefreshKey} onReference={onReference} onUpdated={onWorkspaceChange} />
         </div>
         {turnDiff && (
           <div className="min-h-0 flex-1 flex-col" style={{ display: tab === "changes" && changeMode === "turn" ? "flex" : "none" }}>

@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from "react"
+import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from "react"
 import { query } from "../api"
 import { useConfirm } from "./ConfirmDialog"
 import { FileMenu, loadEditors, openPath, revealLabel, type Editor, type FileMenuTarget } from "./FileMenu"
@@ -124,6 +124,8 @@ export function WorkspaceFiles({ cwd, changes = false, scope: scopeProp, focus, 
   const [ownScope, setScope] = useState("all")
   // The Changes tab owns the review source (its toolbar selector); Files keeps its own.
   const scope = scopeProp ?? ownScope
+  // Branch and commit review sources cannot stage or revert.
+  const readOnly = scope.includes(":")
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [tree, setTree] = useState<Record<string, Entry[]>>({})
   const [matches, setMatches] = useState<Entry[]>([])
@@ -401,6 +403,25 @@ export function WorkspaceFiles({ cwd, changes = false, scope: scopeProp, focus, 
     {node.files.sort((a, b) => a.path.localeCompare(b.path)).map((file) => changedFile(file, depth))}
   </>
   const currentStatus = status?.scope === scope ? status : undefined
+  // The flat list shows folders only while every row has room for its full path; otherwise all rows show file names alone.
+  const changeList = useRef<HTMLDivElement>(null)
+  const [bareNames, setBareNames] = useState(false)
+  useLayoutEffect(() => {
+    const list = changeList.current
+    if (!list) return
+    const measure = () => {
+      const crowded = [...list.querySelectorAll<HTMLElement>(".noa-middle-path")].some((path) => {
+        const dir = path.querySelector<HTMLElement>(".noa-middle-path-dir")
+        const base = path.querySelector<HTMLElement>(".noa-middle-path-base")
+        return !!dir && !!base && dir.scrollWidth + base.scrollWidth > path.clientWidth
+      })
+      setBareNames(crowded)
+    }
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(list)
+    return () => observer.disconnect()
+  }, [currentStatus, filter, fileTree, changes])
   const selectedChange = currentStatus?.files.find((f) => f.path === selected)
   const changeFiles = currentStatus?.files.filter((f) => f.path.toLowerCase().includes(filter.toLowerCase())) ?? []
   const button = "noa-panel-button"
@@ -442,10 +463,10 @@ export function WorkspaceFiles({ cwd, changes = false, scope: scopeProp, focus, 
           {view === "diff" && current?.snapshot && <>
             <button type="button" className={button} onClick={() => setContext(context ? "" : "all")}>{context ? "Collapse context" : "Expand context"}</button>
             <label className="noa-viewed-label"><input type="checkbox" checked={viewed[selected] === current.snapshot} onChange={(event) => setViewed((v) => ({ ...v, [selected]: event.target.checked ? current.snapshot! : "" }))} />Viewed</label>
-            <div className="noa-review-menu-separator" role="separator" />
-            {scope !== "staged" && selectedChange && selectedChange.status[1] !== " " && <button type="button" className={button} disabled={!!action} onClick={() => gitAction("stage")}>Stage file</button>}
-            {scope !== "unstaged" && selectedChange && selectedChange.status !== "??" && selectedChange.status[0] !== " " && <button type="button" className={button} disabled={!!action} onClick={() => gitAction("unstage")}>Unstage file</button>}
-            <button type="button" className={button} disabled={!!action} onClick={() => gitAction("revert")}>Revert file</button>
+            {!readOnly && <div className="noa-review-menu-separator" role="separator" />}
+            {!readOnly && scope !== "staged" && selectedChange && selectedChange.status[1] !== " " && <button type="button" className={button} disabled={!!action} onClick={() => gitAction("stage")}>Stage file</button>}
+            {!readOnly && scope !== "unstaged" && selectedChange && selectedChange.status !== "??" && selectedChange.status[0] !== " " && <button type="button" className={button} disabled={!!action} onClick={() => gitAction("unstage")}>Unstage file</button>}
+            {!readOnly && <button type="button" className={button} disabled={!!action} onClick={() => gitAction("revert")}>Revert file</button>}
           </>}
           {view === "file" && current && <>
             {current.kind === "text" && <button type="button" className={button} onClick={() => navigator.clipboard.writeText(current.content ?? "").catch((e) => setActionError(`Copy failed: ${e.message}`))}>Copy file contents</button>}
@@ -488,8 +509,8 @@ export function WorkspaceFiles({ cwd, changes = false, scope: scopeProp, focus, 
     {statusError && <p className="noa-panel-error" role="alert">Could not load changes: {statusError}{currentStatus && " · Showing last result"} <button type="button" className={button} onClick={() => setTick((n) => n + 1)}>Retry</button></p>}
     {loading && !current && selected && <p className="noa-panel-empty" role="status">Loading…</p>}
     <div className="noa-panel-body scrollbar-on-scroll">
-      {selected ? current && (editing ? <textarea aria-label="Edit file content" className="noa-file-editor" value={draft} onChange={(e) => setDraft(e.target.value)} spellCheck={false} /> : current.kind === "image" ? <div className="noa-image-preview"><img src={current.dataUrl} alt={selected} /></div> : current.kind === "binary" ? <p className="noa-panel-empty">Binary file cannot be previewed</p> : current.truncated ? <p className="noa-panel-empty">Diff too large to display. Open the file in your editor to review it.</p> : <Suspense fallback={<p className="noa-panel-empty">Loading code viewer…</p>}><CodeView focusRequest={lineTarget?.at} focusLine={lineTarget?.line} focusEndLine={lineTarget && "endLine" in lineTarget ? lineTarget.endLine : undefined} gotoRequest={gotoRequest} path={selected} content={current.content ?? ""} diff={view === "diff"} split={sideBySide && canSplit} wrap={view === "diff" ? wordWrap : codeWrap} wordDiff={wordDiff} hideWhitespace={hideWhitespace} hunkScope={scope !== "all" && !selectedChange?.oldPath && !action ? scope : undefined} onHunkAction={gitAction} findRequest={findRequest} onCloseFind={() => setFindRequest(0)} /></Suspense>)
-        : changes ? !currentStatus ? !statusError && <p className="noa-panel-empty" role="status">Loading changes…</p> : currentStatus.isGit === false ? <div className="noa-panel-empty"><p>This folder is not a Git repository</p><button type="button" className={button} disabled={!!action} onClick={() => gitAction("init")}>Create Git repository</button></div> : <div role="tree" aria-label="Changed files" className="noa-file-tree" onKeyDown={onTreeKey}>{changeFiles.length ? fileTree ? changedRows(changeTree(changeFiles), "", 0) : [...changeFiles].sort((a, b) => a.path.localeCompare(b.path)).map((file) => changedFile(file, 0, <MiddlePath path={file.path} />)) : <div className="noa-panel-empty">{!filter && <CheckCircle2 size={20} />}<p>{filter ? "No matching files" : scope === "staged" ? "No staged changes" : scope === "unstaged" ? "No unstaged changes" : "Working tree clean"}</p></div>}</div>
+      {selected ? current && (editing ? <textarea aria-label="Edit file content" className="noa-file-editor" value={draft} onChange={(e) => setDraft(e.target.value)} spellCheck={false} /> : current.kind === "image" ? <div className="noa-image-preview"><img src={current.dataUrl} alt={selected} /></div> : current.kind === "binary" ? <p className="noa-panel-empty">Binary file cannot be previewed</p> : current.truncated ? <p className="noa-panel-empty">Diff too large to display. Open the file in your editor to review it.</p> : <Suspense fallback={<p className="noa-panel-empty">Loading code viewer…</p>}><CodeView focusRequest={lineTarget?.at} focusLine={lineTarget?.line} focusEndLine={lineTarget && "endLine" in lineTarget ? lineTarget.endLine : undefined} gotoRequest={gotoRequest} path={selected} content={current.content ?? ""} diff={view === "diff"} split={sideBySide && canSplit} wrap={view === "diff" ? wordWrap : codeWrap} wordDiff={wordDiff} hideWhitespace={hideWhitespace} hunkScope={scope !== "all" && !readOnly && !selectedChange?.oldPath && !action ? scope : undefined} onHunkAction={gitAction} findRequest={findRequest} onCloseFind={() => setFindRequest(0)} /></Suspense>)
+        : changes ? !currentStatus ? !statusError && <p className="noa-panel-empty" role="status">Loading changes…</p> : currentStatus.isGit === false ? <div className="noa-panel-empty"><p>This folder is not a Git repository</p><button type="button" className={button} disabled={!!action} onClick={() => gitAction("init")}>Create Git repository</button></div> : <div ref={changeList} role="tree" aria-label="Changed files" className={`noa-file-tree${bareNames ? " is-bare-names" : ""}`} onKeyDown={onTreeKey}>{changeFiles.length ? fileTree ? changedRows(changeTree(changeFiles), "", 0) : [...changeFiles].sort((a, b) => a.path.localeCompare(b.path)).map((file) => changedFile(file, 0, <MiddlePath path={file.path} />)) : <div className="noa-panel-empty">{!filter && <CheckCircle2 size={20} />}<p>{filter ? "No matching files" : scope === "staged" ? "No staged changes" : scope === "unstaged" ? "No unstaged changes" : readOnly ? "No differences" : "Working tree clean"}</p></div>}</div>
         : contentMode ? <div role="tree" aria-label="File content matches" className="noa-file-tree" onKeyDown={onTreeKey}>{contentResults}</div>
         : <div role="tree" aria-label="Project files" className="noa-file-tree" onKeyDown={onTreeKey}>{!search && onOpenChanges && status?.isGit && <button type="button" role="treeitem" className="noa-file-row" onClick={() => onOpenChanges()}><span className="noa-file-icon"><ListDetails size={15} /></span><span className="noa-file-name">All changes</span></button>}
           {sectioned && <>{section("@changed", "Changed files")}{!closed.has("@changed") && <div role="group">{changedRows(changeTree(status!.files))}</div>}

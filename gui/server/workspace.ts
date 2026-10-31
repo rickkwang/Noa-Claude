@@ -85,7 +85,48 @@ function numstat(raw: string) {
   return result
 }
 
+// Review sources beyond the working tree: `branch:<ref>` compares HEAD with its merge base against <ref>,
+// `commit:<sha>` shows one commit. Both are read-only, so they never reach the stage and revert actions.
+const isRefScope = (scope: string) => /^(branch|commit):/.test(scope)
+
+async function refRange(cwd: string, scope: string) {
+  const [kind, ...rest] = scope.split(":")
+  const ref = rest.join(":")
+  if (!ref || ref.startsWith("-")) throw new Error("Invalid review source")
+  const resolve = async (name: string) => (await git(cwd, ["rev-parse", "--verify", "--quiet", `${name}^{commit}`], [0, 1])).trim()
+  const target = await resolve(ref)
+  if (!target) throw new Error(`Unknown ${kind === "branch" ? "branch" : "commit"}: ${ref}`)
+  if (kind === "commit") return { base: (await resolve(`${target}^`)) || (await git(cwd, ["hash-object", "-t", "tree", "/dev/null"])).trim(), head: target }
+  const head = await resolve("HEAD")
+  if (!head) throw new Error("This branch has no commits yet")
+  const base = (await git(cwd, ["merge-base", target, head], [0, 1])).trim()
+  if (!base) throw new Error(`No common history with ${ref}`)
+  return { base, head }
+}
+
+async function refChanges(cwd: string, scope: string, only?: string) {
+  const { base, head } = await refRange(cwd, scope)
+  const range = ["--no-ext-diff", "--no-textconv", "--relative", "-M", base, head, "--", "."]
+  const [names, stats, branch] = await Promise.all([
+    git(cwd, ["diff", "--name-status", "-z", ...range]),
+    git(cwd, ["diff", "--numstat", "-z", ...range]),
+    git(cwd, ["branch", "--show-current"]),
+  ])
+  const counts = numstat(stats)
+  const records = names.split("\0").filter(Boolean)
+  const files: { path: string; oldPath?: string; status: string; additions: number; deletions: number; binary: boolean }[] = []
+  for (let i = 0; i < records.length; i++) {
+    const code = records[i]![0]!
+    const oldPath = /[RC]/.test(code) ? records[++i] : undefined
+    const path = records[++i]!
+    if (only !== undefined && path !== only) continue
+    files.push({ path, oldPath, status: `${code} `, ...(counts.get(path) ?? { additions: 0, deletions: 0, binary: false }) })
+  }
+  return { isGit: true, branch: branch.trim() || "Detached HEAD", files, additions: files.reduce((n, f) => n + f.additions, 0), deletions: files.reduce((n, f) => n + f.deletions, 0), range: { base, head } }
+}
+
 async function changes(cwd: string, scope: string, only?: string) {
+  if (isRefScope(scope)) return refChanges(cwd, scope, only)
   if (!(await git(cwd, ["rev-parse", "--is-inside-work-tree"]).catch(() => "" )).trim())
     return { isGit: false, branch: "", files: [], additions: 0, deletions: 0 }
   const hasHead = await git(cwd, ["rev-parse", "--verify", "HEAD"]).then(() => true, () => false)
@@ -237,6 +278,11 @@ async function diff(cwd: string, path: string, scope: string, context: string | 
   const listing = await changes(cwd, scope, path)
   const file = listing.files.find((f) => f.path === path)
   if (!file) return { content: "", snapshot: "", additions: 0, deletions: 0 }
+  if (isRefScope(scope)) {
+    const { base, head } = await refRange(cwd, scope)
+    const content = file.binary ? "Binary file changed" : await git(cwd, ["diff", "--no-ext-diff", "--no-textconv", "--no-color", "--relative", "-M", context === "all" ? "--unified=100000" : "--unified=3", base, head, "--", ...(file.oldPath ? [file.oldPath, path] : [path])])
+    return { ...file, content: content.length > MAX_PREVIEW ? "" : content, snapshot: digest(`${base}${head}${path}`), truncated: content.length > MAX_PREVIEW, binary: file.binary || content.startsWith("Binary file") }
+  }
   const hasHead = await git(cwd, ["rev-parse", "--verify", "HEAD"]).then(() => true, () => false)
   const contents = await (async () => {
     const target = await inside(cwd, path)
@@ -403,6 +449,28 @@ async function grep(cwd: string, query: string, cap: number, signal?: AbortSigna
   return { matches: collector.out.sort((a, b) => a.path.localeCompare(b.path, undefined, { numeric: true }) || a.line - b.line) }
 }
 
+// Recent commits for the Changes tab's commit picker.
+async function commits(cwd: string) {
+  if (!(await git(cwd, ["rev-parse", "--verify", "--quiet", "HEAD"], [0, 1])).trim()) return { commits: [] }
+  const raw = await git(cwd, ["log", "-50", "--no-color", "--format=%H%x1f%h%x1f%s%x1f%cr"])
+  return { commits: raw.split("\n").filter(Boolean).map((line) => { const [sha, short, subject, date] = line.split("\x1f"); return { sha, short, subject, date } }) }
+}
+
+// The whole review source as one patch that `git apply` accepts; untracked files are added as new files.
+async function patch(cwd: string, scope: string) {
+  if (isRefScope(scope)) {
+    const { base, head } = await refRange(cwd, scope)
+    return { patch: await git(cwd, ["diff", "--binary", "--no-ext-diff", "--no-textconv", "--no-color", "--relative", "-M", base, head, "--", "."]) }
+  }
+  const hasHead = await git(cwd, ["rev-parse", "--verify", "HEAD"]).then(() => true, () => false)
+  let text = await git(cwd, ["diff", "--binary", "--no-ext-diff", "--no-textconv", "--no-color", "--relative", ...(scope === "staged" ? ["--cached"] : scope === "all" && hasHead ? ["HEAD"] : []), "--", "."])
+  if (scope !== "staged") {
+    const untracked = (await git(cwd, ["ls-files", "--others", "--exclude-standard", "-z", "--", "."])).split("\0").filter(Boolean)
+    for (const path of untracked) text += await git(cwd, ["diff", "--no-index", "--binary", "--no-color", "--", "/dev/null", path], [0, 1])
+  }
+  return { patch: text }
+}
+
 export async function workspaceRequest(url: URL, cwd: string, body?: unknown, signal?: AbortSignal): Promise<unknown> {
   const path = url.searchParams.get("path") ?? ""
   if (url.pathname === "/api/editors") return { editors: await installedEditors() }
@@ -411,8 +479,11 @@ export async function workspaceRequest(url: URL, cwd: string, body?: unknown, si
   if (url.pathname === "/api/branches") return body === undefined ? branches(cwd) : switchBranch(cwd, body as { action?: unknown; branch?: unknown })
   if (url.pathname === "/api/worktree") return worktreeRequest(cwd, body as { action?: unknown; base?: unknown } | undefined)
   const scope = url.searchParams.get("scope") ?? "all"
-  if (!["all", "staged", "unstaged"].includes(scope)) throw new Error("Invalid changes scope")
+  if (!["all", "staged", "unstaged"].includes(scope) && !isRefScope(scope)) throw new Error("Invalid changes scope")
+  if (url.pathname === "/api/commits") return commits(cwd)
+  if (url.pathname === "/api/patch") return patch(cwd, scope)
   if (url.pathname === "/api/git-action") {
+    if (isRefScope(scope)) throw new Error("This review source is read-only")
     const action = body as { action?: string; path?: string; snapshot?: string; scope?: string; hunk?: number }
     if (action?.action === "init") { await git(cwd, ["init"]); return { ok: true } }
     if (!action?.path || !["stage", "unstage", "revert", "stage-hunk", "unstage-hunk", "revert-hunk"].includes(action.action ?? "")) throw new Error("Invalid Git action")

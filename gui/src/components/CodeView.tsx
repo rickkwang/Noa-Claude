@@ -64,6 +64,14 @@ function wordChanges(before: Line, after: Line) {
   after.html = emphasis(after.html, added)
 }
 
+// The separator above a hunk says how much unchanged text it skips, instead of the patch's raw @@ ranges.
+function unmodifiedBefore(hunks: { oldStart: number; oldLines: number }[], index: number) {
+  const first = (hunk: { oldStart: number; oldLines: number }) => hunk.oldLines === 0 ? hunk.oldStart + 1 : hunk.oldStart
+  const previous = hunks[index - 1]
+  const skipped = first(hunks[index]!) - 1 - (previous ? first(previous) + previous.oldLines - 1 : 0)
+  return skipped > 0 ? `${skipped} unmodified line${skipped === 1 ? "" : "s"}` : ""
+}
+
 export default function CodeView({ path, content, diff = false, split = false, wrap = false, wordDiff = true, hideWhitespace = false, hunkScope, onHunkAction, findRequest = 0, onCloseFind, gotoRequest = 0, focusLine, focusEndLine, focusRequest }: {
   path: string; content: string; diff?: boolean; split?: boolean; wrap?: boolean; wordDiff?: boolean; hideWhitespace?: boolean
   focusLine?: number; focusEndLine?: number; focusRequest?: number; findRequest?: number; onCloseFind?: () => void; gotoRequest?: number
@@ -104,7 +112,7 @@ export default function CodeView({ path, content, diff = false, split = false, w
           }
         }
         // A hunk rewritten to hide whitespace no longer shows everything an action would apply.
-        return { index, label: `@@ -${hunk.oldStart},${hunk.oldLines} +${hunk.newStart},${hunk.newLines} @@`, lines, pairs, complete: displayed.length === hunk.lines.length && !shown.altered }
+        return { index, label: unmodifiedBefore(file.hunks, index), lines, pairs, complete: displayed.length === hunk.lines.length && !shown.altered }
       }))
       return { hunks, whitespaceOnly: hunks.length === 0 && hidden > 0 }
     } catch { return { hunks: [], whitespaceOnly: false } }
@@ -185,7 +193,7 @@ export default function CodeView({ path, content, diff = false, split = false, w
       </div>}
       {content.split("\n").length > 3000 && <p className="noa-panel-notice">Large file: showing up to 3,000 lines. Open the file in your editor to read the remaining lines.</p>}
       {!diff ? source.map((html, i) => <div className="noa-source-line" data-reference-line={referenceLine && i + 1 >= referenceLine && i + 1 <= (referenceEnd ?? referenceLine) ? "true" : undefined} key={i}><span className="noa-code-number">{i + 1}</span><code dangerouslySetInnerHTML={{ __html: html || " " }} /></div>)
-        : hunks.length ? hunks.map((hunk) => <section key={hunk.index} className="noa-diff-hunk"><div className="noa-diff-hunk-header"><span>{hunk.label}</span>{hunkScope && hunk.complete && <span className="noa-hunk-actions"><button type="button" className="noa-panel-button" aria-label={`${hunkScope === "staged" ? "Unstage" : "Stage"} hunk ${hunk.index + 1}`} onClick={() => onHunkAction?.(hunkScope === "staged" ? "unstage-hunk" : "stage-hunk", hunk.index)}>{hunkScope === "staged" ? "Unstage hunk" : "Stage hunk"}</button><button type="button" className="noa-panel-button" aria-label={`Revert hunk ${hunk.index + 1}`} onClick={() => onHunkAction?.("revert-hunk", hunk.index)}>Revert hunk</button></span>}</div>{split ? hunk.pairs.map(([old, next], j) => <div className="noa-diff-pair" key={j}>{cell(old, "old")}{cell(next, "next")}</div>) : hunk.lines.map((line, j) => <div key={j}>{cell(line)}</div>)}</section>)
+        : hunks.length ? hunks.map((hunk) => <section key={hunk.index} className="noa-diff-hunk">{(hunk.label || (hunkScope && hunk.complete)) && <div className="noa-diff-hunk-header"><span>{hunk.label}</span>{hunkScope && hunk.complete && <span className="noa-hunk-actions"><button type="button" className="noa-panel-button" aria-label={`${hunkScope === "staged" ? "Unstage" : "Stage"} hunk ${hunk.index + 1}`} onClick={() => onHunkAction?.(hunkScope === "staged" ? "unstage-hunk" : "stage-hunk", hunk.index)}>{hunkScope === "staged" ? "Unstage hunk" : "Stage hunk"}</button><button type="button" className="noa-panel-button" aria-label={`Revert hunk ${hunk.index + 1}`} onClick={() => onHunkAction?.("revert-hunk", hunk.index)}>Revert hunk</button></span>}</div>}{split ? hunk.pairs.map(([old, next], j) => <div className="noa-diff-pair" key={j}>{cell(old, "old")}{cell(next, "next")}</div>) : hunk.lines.map((line, j) => <div key={j}>{cell(line)}</div>)}</section>)
         : <p className="noa-panel-empty">{whitespaceOnly ? "Whitespace only" : content.includes("Binary") ? "Binary file changed" : content ? "File mode, rename or other metadata change. No text hunks." : "No changes in this view"}</p>}
     </div>
   )

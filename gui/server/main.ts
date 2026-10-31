@@ -70,7 +70,7 @@ function workspaceRoute(path: string, methods: string[]) {
     },
   }
 }
-for (const path of ["/api/files", "/api/changes", "/api/diff", "/api/editors", "/api/grep"]) workspaceRoute(path, ["GET"])
+for (const path of ["/api/files", "/api/changes", "/api/diff", "/api/editors", "/api/grep", "/api/commits", "/api/patch"]) workspaceRoute(path, ["GET"])
 for (const path of ["/api/file", "/api/branches", "/api/worktree"]) workspaceRoute(path, ["GET", "POST"])
 for (const path of ["/api/git-action", "/api/open-in"]) workspaceRoute(path, ["POST"])
 

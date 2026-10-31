@@ -122,6 +122,33 @@ try {
   body = await (await request("changes")).json()
   assert(body.files.some((f: { path: string }) => f.path === "nested/renamed file.txt"))
   check("renamed files and spaces")
+  const sourceRequest = (route: string, scope: string, path = "") => fetch(`${origin}/api/${route}?${new URLSearchParams({ cwd: root, scope, path })}`)
+  const head = (await git("rev-parse", "HEAD")).trim()
+  const homeBranch = (await git("branch", "--show-current")).trim()
+  body = await (await sourceRequest("commits", "all")).json()
+  assert.deepEqual(body.commits.map((c: { sha: string; subject: string }) => [c.sha, c.subject]), [[head, "fixture"]])
+  body = await (await sourceRequest("changes", `commit:${head}`)).json()
+  assert(body.files.length > 0 && body.files.every((f: { status: string }) => f.status === "A "))
+  const committed = body.files[0].path
+  body = await (await sourceRequest("diff", `commit:${head}`, committed)).json()
+  assert.match(body.content, /^diff --git /)
+  assert.equal((await (await sourceRequest("changes", `branch:${homeBranch}`)).json()).files.length, 0)
+  for (const scope of ["branch:--help", "commit:", "branch:no-such-branch", "commit:deadbeef"]) assert.equal((await sourceRequest("changes", scope)).status, 400, scope)
+  const refAction = await fetch(`${origin}/api/git-action?${new URLSearchParams({ cwd: root, scope: `commit:${head}` })}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "revert", path: committed }) })
+  assert.equal(refAction.status, 400)
+  assert.match((await refAction.json()).error, /read-only/)
+  check("branch and commit review sources are read-only and validated")
+  const patch = (await (await sourceRequest("patch", "all")).json()).patch as string
+  assert.match(patch, /renamed file\.txt/)
+  assert.match(patch, /untracked\.txt/)
+  const clone = await mkdtemp(join(tmpdir(), "noa-gui-e2e-clone-"))
+  try {
+    await Bun.spawn(["git", "clone", "-q", root, clone], { stdout: "ignore", stderr: "inherit" }).exited
+    await writeFile(join(clone, "change.patch"), patch)
+    const apply = Bun.spawn(["git", "-C", clone, "apply", "--check", "change.patch"], { stdout: "ignore", stderr: "pipe" })
+    assert.equal(await apply.exited, 0, await new Response(apply.stderr).text())
+  } finally { await rm(clone, { recursive: true, force: true }) }
+  check("exported patch applies to a clean checkout")
   assert.equal((await request("file", "../outside.txt")).status, 400)
   assert.equal((await request("file", ".git/config")).status, 400)
   await symlink("/etc/hosts", join(root, "outside-link"))
