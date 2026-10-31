@@ -257,7 +257,7 @@ export function OverviewPanel({ state, cwd, open, workspaceRefreshKey, endInset,
   }
   const cardClass = (index: number) => docked
     ? "rounded-lg shadow-[0_0_0_1px_var(--border-default)] empty:hidden"
-    : `${index > 0 ? "border-t border-[var(--divider-subtle)] " : ""}empty:hidden`
+    : `${index > 0 ? "rounded-[10px] border-t border-[var(--divider-subtle)] " : ""}empty:hidden`
   const cardEls = visible.map((id, index) => <div key={id} ref={(node) => { if (node) cardRefs.current.set(id, node); else cardRefs.current.delete(id) }}
     className={cardClass(index)}
     style={{ transform: drag ? `translateY(${shiftOf(id)}px)` : undefined, transition: drag && drag.id !== id ? `transform ${SORT_MS}ms ease` : undefined, zIndex: drag?.id === id ? 1 : undefined, position: drag?.id === id ? "relative" : undefined, background: drag?.id === id ? "var(--surface-page, #F9F9F7)" : undefined }}>

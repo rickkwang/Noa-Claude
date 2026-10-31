@@ -3317,6 +3317,8 @@ body.noa-session-dragging * { cursor: grabbing !important; }
 /* Overview popover: layer, panel, fade-in and shadow read from Claude's flat session rail. */
 .noa-overview-layer { position: absolute; inset-block: 0; inset-inline-end: 8px; z-index: 30; display: flex; width: 280px; flex-direction: column; padding-top: 12px; padding-bottom: 8px; pointer-events: none; }
 .noa-overview { pointer-events: auto; display: flex; min-height: 0; flex: 1; flex-direction: column; overflow-y: auto; overscroll-behavior: contain; border: 1px solid var(--divider-subtle); border-radius: 12px; background: var(--bg-card); box-shadow: 0 2px 4px rgba(0, 0, 0, .07), 0 6px 16px rgba(0, 0, 0, .08); animation: noa-overview-in 200ms cubic-bezier(.165, .84, .44, 1); }
+/* On the dark floor the light-theme shadow disappears; deepen it so the card lifts off the page. */
+[data-theme="dark"] .noa-overview { box-shadow: 0 2px 4px rgba(0, 0, 0, .25), 0 6px 16px rgba(0, 0, 0, .35); }
 @keyframes noa-overview-in { from { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .noa-overview { animation: none; } }
 /* Docked overview: a column of ring cards beside the chat; opening and closing are instant, as in Claude. */

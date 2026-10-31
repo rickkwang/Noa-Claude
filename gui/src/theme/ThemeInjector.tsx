@@ -51,7 +51,8 @@ export default function ThemeInjector({ settings }: ThemeInjectorProps) {
     // Opaque sidebar floor; --sidebar-material-color is the separate translucent tint.
     root.style.setProperty('--bg-sidebar', surfaceUnder);
     root.style.setProperty('--sidebar-material-color', surfaces.sidebarMaterial);
-    root.style.setProperty('--bg-card', surfaces.card);
+    // In dark the card shares the sidebar floor; the palette's lighter card read too pale on it.
+    root.style.setProperty('--bg-card', isDark ? surfaceUnder : surfaces.card);
 
     if (isDark) {
       root.setAttribute('data-theme', 'dark');
