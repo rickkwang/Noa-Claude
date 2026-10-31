@@ -2140,6 +2140,8 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
 .noa-panel-button:disabled { opacity: .4; }
 .noa-panel-button:focus-visible, .noa-file-row:focus-visible  { outline: 2px solid var(--accent-color); outline-offset: -2px; }
 .noa-panel-body { flex: 1; min-width: 0; min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+/* A code or diff view keeps an overlay scrollbar in the app's thumb colour; it takes no width, so line colours reach the panel edge. */
+.noa-panel-body.is-code { scrollbar-gutter: auto; scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
 .noa-file-root { padding: 8px 10px 0 16px; }
 .noa-file-root-chip { display: inline-flex; min-width: 0; max-width: 70%; align-items: center; gap: 6px; height: 26px; padding: 0; border-radius: 8px; color: var(--text-primary); }
 .noa-file-root-chip > svg { color: var(--sidebar-text-muted); }
@@ -2326,9 +2328,9 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
 .noa-row-stats { display: inline-flex; flex-shrink: 0; gap: 4px; font-size: 12px; font-variant-numeric: tabular-nums; }
 .noa-row-stats .is-added { color: #168447; } .noa-row-stats .is-removed { color: #C24444; }
 [data-theme="dark"] .noa-row-stats .is-added { color: #68CC74; } [data-theme="dark"] .noa-row-stats .is-removed { color: #F27F57; }
-/* Diff colours: line = 12% of the base over the page, gutter = 9%, inline emphasis = 15% alpha, hunk rows tinted with the info colour, 20px lines. */
+/* Diff colours: line = 12% of the base over the page (20% in dark), gutter = 9% (a darker floor in dark), inline emphasis = 15% alpha (20% in dark), neutral hunk separators. */
 .noa-code-view { --diff-add-base: #0DBE4E; --diff-del-base: #FF2E3F; --code-addition: color-mix(in lab, var(--surface-page, #F9F9F7) 88%, var(--diff-add-base)); --code-deletion: color-mix(in lab, var(--surface-page, #F9F9F7) 88%, var(--diff-del-base)); --code-addition-gutter: color-mix(in lab, var(--surface-page, #F9F9F7) 91%, var(--diff-add-base)); --code-deletion-gutter: color-mix(in lab, var(--surface-page, #F9F9F7) 91%, var(--diff-del-base)); line-height: 1.8; }
-[data-theme="dark"] .noa-code-view { --diff-add-base: #5ECC71; --diff-del-base: #FF6762; --code-addition: color-mix(in lab, var(--surface-page) 80%, var(--diff-add-base)); --code-deletion: color-mix(in lab, var(--surface-page) 80%, var(--diff-del-base)); --code-addition-gutter: color-mix(in lab, var(--surface-page) 85%, var(--diff-add-base)); --code-deletion-gutter: color-mix(in lab, var(--surface-page) 85%, var(--diff-del-base)); }
+[data-theme="dark"] .noa-code-view { --diff-add-base: #5ECC71; --diff-del-base: #FF6762; --code-addition: color-mix(in lab, var(--surface-page) 80%, var(--diff-add-base)); --code-deletion: color-mix(in lab, var(--surface-page) 80%, var(--diff-del-base)); --code-addition-gutter: color-mix(in lab, color-mix(in lab, var(--surface-page) 35%, #000) 85%, var(--diff-add-base)); --code-deletion-gutter: color-mix(in lab, color-mix(in lab, var(--surface-page) 35%, #000) 85%, var(--diff-del-base)); }
 .noa-code-line, .noa-source-line { min-height: 1.8em; }
 .noa-code-number { opacity: 1; color: color-mix(in srgb, var(--text-primary) 40%, transparent); }
 .noa-code-line.is-add .noa-code-number { background: var(--code-addition-gutter); }
@@ -2338,15 +2340,18 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
 .noa-code-view.is-diff .noa-code-sign { display: none; }
 .noa-code-view.is-diff .noa-code-line.is-add .noa-code-number { color: var(--diff-add-base); }
 .noa-code-view.is-diff .noa-code-line.is-remove .noa-code-number { color: var(--diff-del-base); }
-.noa-code-view.is-diff .noa-code-line:is(.is-add, .is-remove) .noa-code-number::before { content: ""; position: absolute; inset: -1px auto 0 0; width: 3px; background: var(--diff-add-base); }
+.noa-code-view.is-diff .noa-code-line:is(.is-add, .is-remove) .noa-code-number::before { content: ""; position: absolute; inset: -1px auto 0 0; width: 4px; background: var(--diff-add-base); }
 .noa-code-view.is-diff .noa-code-line.is-remove .noa-code-number::before { background: var(--diff-del-base); }
 .noa-code-view.is-diff .noa-code-line code { padding-left: 1ch; }
 .noa-code-line.is-add .noa-code-sign { color: var(--diff-add-base); }
 .noa-code-line.is-remove .noa-code-sign { color: var(--diff-del-base); }
-.noa-code-line mark { background: color-mix(in srgb, var(--diff-add-base) 15%, transparent); }
+.noa-code-line mark { border-radius: 3px; box-decoration-break: clone; background: color-mix(in srgb, var(--diff-add-base) 15%, transparent); }
 .noa-code-line.is-remove mark { background: color-mix(in srgb, var(--diff-del-base) 15%, transparent); }
-.noa-diff-hunk-header { padding: 2px 12px; min-height: 28px; border-block: 0; background: color-mix(in srgb, var(--surface-page, #F9F9F7) 94%, #009FFF); color: color-mix(in srgb, var(--text-primary) 55%, transparent); font-family: var(--font-ui); font-size: var(--text-caption); }
-.noa-diff-pair .noa-code-line:first-child { border-right: 1px solid var(--border-default); }
+[data-theme="dark"] .noa-code-line mark { background: color-mix(in srgb, var(--diff-add-base) 20%, transparent); }
+[data-theme="dark"] .noa-code-line.is-remove mark { background: color-mix(in srgb, var(--diff-del-base) 20%, transparent); }
+.noa-diff-hunk-header { padding: 2px 12px; min-height: 32px; border-block: 0; background: color-mix(in lab, var(--surface-page, #F9F9F7) 96%, #000); color: color-mix(in lab, var(--text-primary) 65%, var(--surface-page, #F9F9F7)); font-family: var(--font-ui); font-size: var(--text-caption); }
+[data-theme="dark"] .noa-diff-hunk-header { background: color-mix(in lab, var(--surface-page) 85%, #fff); }
+.noa-diff-pair .noa-code-line:first-child { border-right: 1px solid var(--surface-page); }
 /* Panel alignment grid: leading icons and text sit 16px from the panel edge in every tab. */
 .noa-panel-title { padding-left: 6px; }
 .noa-panel-toolbar > .noa-panel-button:first-child + .noa-panel-title { padding-left: 2px; }
