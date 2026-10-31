@@ -50,6 +50,8 @@ interface MessageListProps {
 
 // Follows the bottom while the user is near it; a scroll away releases the pin.
 const PIN_THRESHOLD = 24
+// Only a scroll the user just caused may release the bottom; the list growing under a follow must not.
+const USER_SCROLL_WINDOW_MS = 800
 const JUMP_THRESHOLD = 24
 const TURN_GAP = 16
 const TURN_OVERSCAN = 2
@@ -64,6 +66,8 @@ export function MessageList({ turns, cwd, onOpenFile, busy, result, readingWidth
   const scrollKey = sessionId ? `${cwd}:${sessionId}` : undefined
   const savedScroll = scrollKey ? scrollPositions.get(scrollKey) : undefined
   const pinnedRef = useRef(savedScroll?.pinned ?? true)
+  const lastPromptId = useRef<string | undefined>(undefined)
+  const userScrollAt = useRef(0)
   const restoredRef = useRef(false)
   const firstTurnRef = useRef(turns[0]?.id)
   const previousLayoutOffset = useRef(0)
@@ -111,6 +115,10 @@ export function MessageList({ turns, cwd, onOpenFile, busy, result, readingWidth
       prependAnchor.current = true
     }
     firstTurnRef.current = turns[0]?.id
+    // Sending a prompt always brings the newest turn into view, wherever the list was scrolled.
+    const prompt = turns.findLast((turn) => turn.role === "user")?.id
+    if (prompt !== undefined && lastPromptId.current !== undefined && prompt !== lastPromptId.current) pinnedRef.current = true
+    lastPromptId.current = prompt
     previousLayoutOffset.current = offset
     if (!restoredRef.current && savedScroll && !savedScroll.pinned) el.scrollTop = savedScroll.top
     restoredRef.current = true
@@ -178,7 +186,8 @@ export function MessageList({ turns, cwd, onOpenFile, busy, result, readingWidth
     if (!el) return
     if (el.scrollTop < 80 && historyBefore && !historyLoading) onLoadEarlier?.()
     const distance = el.scrollHeight - el.scrollTop - el.clientHeight
-    pinnedRef.current = distance <= PIN_THRESHOLD
+    if (distance <= PIN_THRESHOLD) pinnedRef.current = true
+    else if (performance.now() - userScrollAt.current < USER_SCROLL_WINDOW_MS) pinnedRef.current = false
     setShowJump(distance > JUMP_THRESHOLD)
     if (scrollFrame.current === undefined) {
       scrollFrame.current = requestAnimationFrame(() => {
@@ -457,8 +466,10 @@ export function MessageList({ turns, cwd, onOpenFile, busy, result, readingWidth
     <div
       ref={scrollRef}
       onScroll={onScroll}
-      onWheel={() => { pendingPrevious.current = undefined }}
-      onPointerDownCapture={() => { pendingPrevious.current = undefined }}
+      onWheel={(event) => { pendingPrevious.current = undefined; if (event.deltaY < 0) userScrollAt.current = performance.now() }}
+      onTouchMove={() => { userScrollAt.current = performance.now() }}
+      onKeyDown={() => { userScrollAt.current = performance.now() }}
+      onPointerDownCapture={() => { pendingPrevious.current = undefined; userScrollAt.current = performance.now() }}
       onMouseUp={captureSelection}
       onKeyUp={captureSelection}
       onFocusCapture={(event) => {
