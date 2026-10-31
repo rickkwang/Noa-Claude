@@ -217,11 +217,9 @@ app.whenReady().then(async()=>{
     const action=[...sidebar.querySelectorAll('button')].find(button=>button.innerText.trim()==='New task');
     const heading=sidebar.querySelector('.noa-sidebar-toolbar-mask button');
     const project=sidebar.querySelector('.noa-agent-sidebar-row');
-    const searchIcon=sidebar.querySelector('.noa-sidebar-search svg');
     const iconInk=document.querySelector('[aria-label="Right panel"]');
     return {
      surface:getComputedStyle(sidebar).backgroundColor,
-     searchSurface:getComputedStyle(sidebar.querySelector('.noa-sidebar-search')).backgroundColor,
      action:getComputedStyle(action).color,
      actionIcon:getComputedStyle(action.querySelector('svg')).color,
      fontSize:getComputedStyle(action).fontSize,
@@ -230,7 +228,6 @@ app.whenReady().then(async()=>{
      project:getComputedStyle(project).color,
      projectIcon:getComputedStyle(project.querySelector('svg')).color,
      heading:getComputedStyle(heading).color,
-     searchIcon:getComputedStyle(searchIcon).color,
      iconInk:getComputedStyle(iconInk).color,
     };
    };
@@ -238,6 +235,9 @@ app.whenReady().then(async()=>{
     [...document.querySelectorAll('.noa-sidebar-surface button')].find(button=>button.innerText.startsWith('Settings')).click();
     await wait(()=>document.querySelector('[role="dialog"]'));
     [...document.querySelectorAll('[role="dialog"] nav button')].find(button=>button.innerText==='Appearance').click();
+    await wait(()=>[...document.querySelectorAll('[role="dialog"] button')].some(button=>button.innerText.trim()==='Advanced'));
+    const advanced=[...document.querySelectorAll('[role="dialog"] button')].find(button=>button.innerText.trim()==='Advanced');
+    if(advanced.getAttribute('aria-expanded')!=='true')advanced.click();
     await wait(()=>[...document.querySelectorAll('[role="dialog"] span')].some(span=>span.textContent==='Font smoothing'));
     const label=[...document.querySelectorAll('[role="dialog"] span')].find(span=>span.textContent==='Font smoothing');
     const toggle=label.parentElement.parentElement.querySelector('[role="switch"]');
@@ -259,18 +259,16 @@ app.whenReady().then(async()=>{
   if(${sessionsOnly}){fs.writeFileSync(${JSON.stringify(result)},JSON.stringify(checks));app.quit();return}
   const light=await win.webContents.executeJavaScript('window.readSidebarColors()');
   assert.deepEqual(light,{
-    surface:'rgb(247, 247, 245)',
-    searchSurface:'rgba(250, 250, 248, 0.96)',
+    surface:'rgb(241, 241, 239)',
     action:'rgba(45, 45, 43, 0.85)',
     actionIcon:'rgba(45, 45, 43, 0.85)',
     fontSize:'14px',
-    fontWeight:'430',
+    fontWeight:'400',
     lineHeight:'21px',
     project:'rgba(45, 45, 43, 0.85)',
     projectIcon:'rgba(45, 45, 43, 0.85)',
     heading:'rgba(45, 45, 43, 0.494)',
-    searchIcon:'rgba(45, 45, 43, 0.65)',
-    iconInk:'rgba(45, 45, 43, 0.65)',
+    iconInk:'rgba(45, 45, 43, 0.694)',
   });
   fs.writeFileSync('/private/tmp/noa-session-sync-light.png',(await win.webContents.capturePage({x:0,y:0,width:340,height:820})).toPNG());
   nativeTheme.themeSource='dark';
@@ -278,18 +276,16 @@ app.whenReady().then(async()=>{
   await new Promise(resolve=>setTimeout(resolve,250));
   const dark=await win.webContents.executeJavaScript('window.readSidebarColors()');
   assert.deepEqual(dark,{
-    surface:'rgb(48, 48, 47)',
-    searchSurface:'rgba(63, 63, 61, 0.96)',
+    surface:'rgb(38, 38, 36)',
     action:'rgba(249, 249, 247, 0.85)',
     actionIcon:'rgba(249, 249, 247, 0.85)',
     fontSize:'14px',
-    fontWeight:'430',
+    fontWeight:'400',
     lineHeight:'21px',
     project:'rgba(249, 249, 247, 0.85)',
     projectIcon:'rgba(249, 249, 247, 0.85)',
     heading:'rgba(249, 249, 247, 0.498)',
-    searchIcon:'rgba(249, 249, 247, 0.65)',
-    iconInk:'rgba(249, 249, 247, 0.65)',
+    iconInk:'rgba(249, 249, 247, 0.71)',
   });
   fs.writeFileSync('/private/tmp/noa-session-sync-dark.png',(await win.webContents.capturePage({x:0,y:0,width:340,height:820})).toPNG());
   checks.sidebarColors={light,dark};
@@ -314,8 +310,8 @@ app.whenReady().then(async()=>{
   assert.deepEqual(checks, {
     created: true, renamed: true, historyReloaded: true, temporaryFailureRetainedList: true, otherProjectUpdated: true, runStatusUpdated: true, deleted: true, browserStateCleared: true, deletionNavigation: true,
     sidebarColors: {
-      light: { surface: 'rgb(247, 247, 245)', searchSurface: 'rgba(250, 250, 248, 0.96)', action: 'rgba(45, 45, 43, 0.85)', actionIcon: 'rgba(45, 45, 43, 0.85)', fontSize: '14px', fontWeight: '430', lineHeight: '21px', project: 'rgba(45, 45, 43, 0.85)', projectIcon: 'rgba(45, 45, 43, 0.85)', heading: 'rgba(45, 45, 43, 0.494)', searchIcon: 'rgba(45, 45, 43, 0.65)', iconInk: 'rgba(45, 45, 43, 0.65)' },
-      dark: { surface: 'rgb(48, 48, 47)', searchSurface: 'rgba(63, 63, 61, 0.96)', action: 'rgba(249, 249, 247, 0.85)', actionIcon: 'rgba(249, 249, 247, 0.85)', fontSize: '14px', fontWeight: '430', lineHeight: '21px', project: 'rgba(249, 249, 247, 0.85)', projectIcon: 'rgba(249, 249, 247, 0.85)', heading: 'rgba(249, 249, 247, 0.498)', searchIcon: 'rgba(249, 249, 247, 0.65)', iconInk: 'rgba(249, 249, 247, 0.65)' },
+      light: { surface: 'rgb(241, 241, 239)', action: 'rgba(45, 45, 43, 0.85)', actionIcon: 'rgba(45, 45, 43, 0.85)', fontSize: '14px', fontWeight: '400', lineHeight: '21px', project: 'rgba(45, 45, 43, 0.85)', projectIcon: 'rgba(45, 45, 43, 0.85)', heading: 'rgba(45, 45, 43, 0.494)', iconInk: 'rgba(45, 45, 43, 0.694)' },
+      dark: { surface: 'rgb(38, 38, 36)', action: 'rgba(249, 249, 247, 0.85)', actionIcon: 'rgba(249, 249, 247, 0.85)', fontSize: '14px', fontWeight: '400', lineHeight: '21px', project: 'rgba(249, 249, 247, 0.85)', projectIcon: 'rgba(249, 249, 247, 0.85)', heading: 'rgba(249, 249, 247, 0.498)', iconInk: 'rgba(249, 249, 247, 0.71)' },
     },
   })
   console.log(`PASS Electron session sync with live history reload, missing/failed projects, run status, browser-state cleanup, Codex colors, and global font smoothing (${requests} reads)`)

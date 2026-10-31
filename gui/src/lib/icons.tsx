@@ -140,7 +140,6 @@ export const MoreHorizontal = glyph("ellipsis-horizontal");
 export const Network = glyph("node-to-node-path");
 export const Palette = glyph("paint-palette");
 export const Pin = glyph("pin");
-export const PinFilled = glyph("pin-fill");
 export const PanelLeft = glyph("sidebar");
 // Only a left sidebar glyph exists; the right panel toggle is its mirror.
 export const PanelRight = glyph("sidebar", true);
