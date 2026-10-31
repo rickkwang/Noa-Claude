@@ -1293,6 +1293,10 @@ html[data-translucent-sidebar="enabled"] [data-sidebar-container] .noa-sidebar-t
 .noa-sidebar-scroll {
   scrollbar-gutter: stable;
 }
+/* The 8px strip is reserved on the right of the rows, so let the rows run into it: their right gap then equals the left one. */
+.noa-sidebar-scroll > div {
+  margin-right: calc(-1 * var(--noa-scrollbar-strip));
+}
 
 /* Top and bottom edges of the sidebar list, on the shared 28px curve. The list is the timeline's source (see
    .noa-sidebar-fade-scope); its own edges are driven by its own scroll position. At rest the ramp collapses, so the
