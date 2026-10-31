@@ -3,6 +3,7 @@ import { query } from "../api"
 import { useConfirm } from "./ConfirmDialog"
 import { FileMenu, loadEditors, openPath, revealLabel, type Editor, type FileMenuTarget } from "./FileMenu"
 import { useDiffPref } from "../lib/diffPrefs"
+import { rememberFile } from "../lib/recentFiles"
 import { ArrowLeft, ArrowUpRight, CheckCircle2, GitBranch, BrandCss3, BrandHtml5, BrandJavascript, BrandPython, BrandReact, BrandTypescript, ChevronDown, Copy, FileText, Folder, Json, ListDetails, Markdown, MoreHorizontal, Photo, PlusMinus, RefreshCcw, Search, SquarePen } from "../lib/icons"
 
 const CodeView = lazy(() => import("./CodeView"))
@@ -19,7 +20,7 @@ const GLYPHS: Record<string, [typeof FileText, string]> = {
   json: [Json, "#CBB02A"], md: [Markdown, "#7A8AA0"], css: [BrandCss3, "#2965F1"], html: [BrandHtml5, "#E34F26"], py: [BrandPython, "#3776AB"],
   png: [Photo, "#8C7AE6"], jpg: [Photo, "#8C7AE6"], jpeg: [Photo, "#8C7AE6"], gif: [Photo, "#8C7AE6"], webp: [Photo, "#8C7AE6"], svg: [Photo, "#8C7AE6"],
 }
-function FileGlyph({ name }: { name: string }) {
+export function FileGlyph({ name }: { name: string }) {
   const extension = name.split(".").pop()?.toLowerCase() ?? ""
   if (["ts", "mts", "cts"].includes(extension)) return <svg aria-hidden="true" width={16} height={16} viewBox="0 0 16 16" className="noa-glyph-blue"><path fill="currentColor" d="M8 1C2.24 1 1 2.24 1 8s1.24 7 7 7 7-1.24 7-7-1.24-7-7-7" opacity={0.2}/>
   <path fill="currentColor" d="M8.1 9.64h.95c.04.62.28.76 1.28.76s1.2-.14 1.2-.85c0-.66-.2-.85-1.2-1.07-1.79-.38-2.18-.7-2.18-1.86C8.15 5.3 8.54 5 10.31 5c1.67 0 2.04.26 2.07 1.42h-.95c-.02-.43-.23-.53-1.1-.53-1 0-1.22.14-1.22.74 0 .52.22.7 1.24.92 1.76.38 2.15.73 2.15 2 0 1.44-.4 1.75-2.24 1.75-1.8 0-2.18-.3-2.15-1.66m-3 1.57V5.99H3.5v-.9h4.21v.9H6.1v5.22z"/></svg>
@@ -195,6 +196,8 @@ export function WorkspaceFiles({ cwd, changes = false, scope: scopeProp, focus, 
     setLoading(true); setError(undefined)
     const request = selected
       ? load<Preview>(view === "diff" ? "diff" : "file", cwd, { path: selected, scope, context }, controller.signal).then((body) => {
+          if (controller.signal.aborted) return
+          if (view === "file") rememberFile(cwd, selected)
           let recovered: { content: string; revision: string } | undefined
           if (view === "file" && body.kind === "text") {
             try { recovered = JSON.parse(sessionStorage.getItem(`noa-file-draft:${cwd}:${selected}`) ?? "null") ?? undefined } catch { /* Ignore unavailable draft storage. */ }

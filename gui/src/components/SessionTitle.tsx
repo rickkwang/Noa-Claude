@@ -35,7 +35,7 @@ export function SessionTitle({
       <span className="max-w-28 truncate text-caption text-[var(--sidebar-text-muted)]" title={project}>
         {project}
       </span>
-      <ChevronRight size={11} className="shrink-0 text-[var(--sidebar-text-muted)]" />
+      <ChevronRight size={10} className="shrink-0 text-[var(--sidebar-text-muted)]" />
       {editing ? (
         <form
           className="flex min-w-0 items-center gap-1"
@@ -57,7 +57,7 @@ export function SessionTitle({
                 setEditing(false)
               }
             }}
-            className="h-7 w-56 min-w-0 rounded-md border border-[var(--border-default)] bg-[var(--bg-card)] px-2 text-body outline-none focus:border-[var(--accent-color)]"
+            className="h-7 w-56 min-w-0 rounded-md border border-[var(--border-default)] bg-[var(--bg-card)] px-2 text-[length:var(--text-chat-sm)] outline-none focus:border-[var(--accent-color)]"
           />
           <button
             type="submit"
@@ -82,7 +82,7 @@ export function SessionTitle({
             setError(undefined)
             setEditing(true)
           }}
-          className="h-7 max-w-[min(28vw,320px)] truncate rounded-md px-1.5 text-body text-[var(--sidebar-text)] enabled:hover:bg-[var(--fill-hover)]"
+          className="h-7 max-w-[min(28vw,320px)] truncate rounded-md px-1 text-[length:var(--text-chat-sm)] text-[var(--sidebar-text)] enabled:hover:bg-[var(--fill-hover)]"
         >
           {name}
         </button>

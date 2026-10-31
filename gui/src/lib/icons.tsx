@@ -13,7 +13,9 @@ import {
   IconBrandCss3,
   IconBrandHtml5,
   IconBrandPython,
+  IconGauge,
   IconListDetails,
+  IconMessageCircle,
   IconMoon,
   IconSelector,
   IconServer,
@@ -148,6 +150,8 @@ export const PlusMinus = glyph("plus-minus-square");
 export const RefreshCcw = glyph("arrows-clockwise-rotate-lg");
 export const RotateCcw = glyph("arrow-rotate-counterclockwise");
 export const Search = glyph("magnifying-glass-md");
+export const MessageCircle = icon(IconMessageCircle);
+export const Gauge = icon(IconGauge);
 export const Keyboard = glyph("keyboard");
 export const Settings = glyph("gear");
 export const SlidersHorizontal = glyph("sliders");

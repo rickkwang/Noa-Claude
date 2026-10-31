@@ -21,7 +21,6 @@ import {
   FolderPlus,
   MoreHorizontal,
   Pin,
-  PinFilled,
   Plus,
   Search,
   Settings,
@@ -41,6 +40,7 @@ const noDragRegion = { WebkitAppRegion: "no-drag" } as CSSProperties
 // newest-first lists, and the sidebar layers the user's arrangement over them.
 type SessionPrefs = {
   pinned: Record<string, Record<string, true>>
+  pinnedOrder: string[]
   order: Record<string, string[]>
   // Project paths in the user's drag order.
   projects: string[]
@@ -67,9 +67,9 @@ function loadRecentsPrefs(): RecentsPrefs {
 function loadSessionPrefs(): SessionPrefs {
   try {
     const raw = JSON.parse(localStorage.getItem(SESSION_PREFS_KEY) ?? "{}") as Partial<SessionPrefs>
-    return { pinned: raw.pinned ?? {}, order: raw.order ?? {}, projects: raw.projects ?? [] }
+    return { pinned: raw.pinned ?? {}, pinnedOrder: raw.pinnedOrder ?? [], order: raw.order ?? {}, projects: raw.projects ?? [] }
   } catch {
-    return { pinned: {}, order: {}, projects: [] }
+    return { pinned: {}, pinnedOrder: [], order: {}, projects: [] }
   }
 }
 
@@ -118,6 +118,7 @@ interface SidebarProps {
   onRemoveProject: (path: string) => void
   onRevealProject: (path: string) => void
   onDeleteSession: (cwd: string, id: string, title: string) => void
+  onSearch: () => void
   onSettings: () => void
 }
 
@@ -136,12 +137,13 @@ export function Sidebar({
   onRemoveProject,
   onRevealProject,
   onDeleteSession,
+  onSearch,
   onSettings,
 }: SidebarProps) {
-  const [query, setQuery] = useState("")
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set())
   const [unfolded, setUnfolded] = useState<ReadonlySet<string>>(new Set())
   const [projectsOpen, setProjectsOpen] = useState(true)
+  const [pinsOpen, setPinsOpen] = useState(true)
   const [prefs, setPrefs] = useState<SessionPrefs>(loadSessionPrefs)
   const [recentsPrefs, setRecentsPrefs] = useState<RecentsPrefs>(loadRecentsPrefs)
   const [recentsUnfolded, setRecentsUnfolded] = useState(false)
@@ -151,7 +153,6 @@ export function Sidebar({
   const suppressClickRef = useRef(false)
   const [dragging, setDragging] = useState<DragState>()
   const [dropTarget, setDropTarget] = useState<{ kind: DragKind; path: string; id: string; edge: "before" | "after" }>()
-  const q = query.trim().toLowerCase()
 
   useEffect(() => {
     try {
@@ -190,7 +191,7 @@ export function Sidebar({
           }
         }
       }
-      return changed ? { ...current, pinned, order } : current
+      return changed ? { ...current, pinned, order, pinnedOrder: current.pinnedOrder.filter(id => Object.values(pinned).some(group => group[id])) } : current
     })
   }, [loadedProjects, projects, sessions])
 
@@ -208,25 +209,29 @@ export function Sidebar({
     const key = recentsPrefs.sort === "created" ? "createdAt" : "updatedAt"
     return projects
       .filter((project) => recentsProject === null || project.path === recentsProject)
-      .flatMap((project) => (sessions[project.path] ?? []).map((session) => ({ project, session })))
+      .flatMap((project) => (sessions[project.path] ?? []).filter(session => !prefs.pinned[project.path]?.[session.id]).map((session) => ({ project, session })))
       .sort((a, b) => b.session[key] - a.session[key])
-  }, [projects, sessions, recentsProject, recentsPrefs.sort])
+  }, [projects, sessions, recentsProject, recentsPrefs.sort, prefs.pinned])
 
   // Drop the global drag cursor if the sidebar unmounts mid-drag.
   useEffect(() => () => document.body.classList.remove("noa-session-dragging"), [])
 
   const sortedProjects = useMemo(() => orderedProjects(prefs, projects), [prefs, projects])
+  const pinnedSessions = useMemo(() => {
+    const index = new Map(prefs.pinnedOrder.map((id, position) => [id, position]))
+    return sortedProjects.flatMap(project => orderedSessions(prefs, project.path, sessions[project.path] ?? [])
+      .filter(session => prefs.pinned[project.path]?.[session.id])
+      .map(session => ({ project, session })))
+      .sort((a, b) => (index.get(a.session.id) ?? index.size) - (index.get(b.session.id) ?? index.size))
+  }, [sortedProjects, sessions, prefs])
 
-  // While searching, every project with a match opens so the hits are visible.
   const groups = useMemo(
     () =>
       sortedProjects.map((project) => {
-        const all = orderedSessions(prefs, project.path, sessions[project.path] ?? [])
-        const matches = q ? all.filter((s) => s.title.toLowerCase().includes(q)) : all
-        const nameMatches = q !== "" && project.name.toLowerCase().includes(q)
-        return { project, visible: nameMatches ? all : matches }
+        const all = orderedSessions(prefs, project.path, sessions[project.path] ?? []).filter(session => !prefs.pinned[project.path]?.[session.id])
+        return { project, visible: all }
       }),
-    [sortedProjects, sessions, q, prefs],
+    [sortedProjects, sessions, prefs],
   )
 
   const isPinned = (path: string, id: string) => !!prefs.pinned[path]?.[id]
@@ -236,48 +241,44 @@ export function Sidebar({
   }
 
   function togglePin(path: string, id: string) {
-    const order = resolveOrder(prefs, path, sessions[path] ?? [])
-    const pinned = { ...prefs.pinned[path] }
-    if (pinned[id]) delete pinned[id]
-    else {
-      pinned[id] = true
-      // A freshly pinned task joins the top of the pinned block.
-      const from = order.indexOf(id)
-      if (from >= 0) order.splice(from, 1)
-      order.unshift(id)
+    if (!isPinned(path, id)) {
+      setPinsOpen(true)
+      requestAnimationFrame(() => document.querySelector(`[aria-label="Pinned"] [data-session-id="${CSS.escape(id)}"]`)?.scrollIntoView({ block: "nearest" }))
     }
-    setPrefs((current) => ({
-      ...current,
-      pinned: { ...current.pinned, [path]: pinned },
-      order: { ...current.order, [path]: order },
-    }))
+    setPrefs((current) => {
+      const pinned = { ...current.pinned[path] }
+      const pinnedOrder = current.pinnedOrder.filter(key => key !== id)
+      if (pinned[id]) delete pinned[id]
+      else {
+        pinned[id] = true
+        pinnedOrder.unshift(id)
+      }
+      return { ...current, pinned: { ...current.pinned, [path]: pinned }, pinnedOrder }
+    })
   }
 
   function reorder(path: string, fromId: string, toId: string, edge: "before" | "after") {
     if (fromId === toId) return
-    const order = resolveOrder(prefs, path, sessions[path] ?? [])
+    const pinned = isPinned(path, fromId)
+    const order = pinned ? pinnedSessions.map(({ session }) => session.id) : resolveOrder(prefs, path, sessions[path] ?? [])
     const from = order.indexOf(fromId)
     if (from < 0) return
     order.splice(from, 1)
     const to = order.indexOf(toId)
     if (to < 0) return
     order.splice(edge === "before" ? to : to + 1, 0, fromId)
-    saveOrder(path, order)
+    if (pinned) setPrefs(current => ({ ...current, pinnedOrder: order }))
+    else saveOrder(path, order)
   }
 
   // Alt+↑/↓ moves a task inside its own block (pinned or recent).
   function moveBy(path: string, id: string, direction: -1 | 1) {
-    const all = sessions[path] ?? []
-    const group = orderedSessions(prefs, path, all).filter((session) => isPinned(path, session.id) === isPinned(path, id))
+    const group = isPinned(path, id) ? pinnedSessions.map(({ session }) => session)
+      : orderedSessions(prefs, path, sessions[path] ?? []).filter(session => !isPinned(path, session.id))
     const position = group.findIndex((session) => session.id === id)
     const target = group[position + direction]
     if (!target) return
-    const order = resolveOrder(prefs, path, all)
-    const a = order.indexOf(id)
-    const b = order.indexOf(target.id)
-    if (a < 0 || b < 0) return
-    ;[order[a], order[b]] = [order[b]!, order[a]!]
-    saveOrder(path, order)
+    reorder(path, id, target.id, direction < 0 ? "before" : "after")
   }
 
   function reorderProject(fromPath: string, toPath: string, edge: "before" | "after") {
@@ -326,11 +327,12 @@ export function Sidebar({
       return { kind: start.kind, path: "", id: path, edge: y < rect.top + rect.height / 2 ? "before" as const : "after" as const }
     }
     const row = under?.closest<HTMLElement>("[data-session-id]")
-    if (!row || row.dataset.sessionPath !== start.path || row.dataset.sessionId === start.id) return undefined
+    if (!row || row.dataset.sessionId === start.id) return undefined
     // Pinned and recent blocks stay separate; a cross-block drop would snap back.
     if ((row.dataset.sessionPinned === "true") !== isPinned(start.path, start.id)) return undefined
+    if (!isPinned(start.path, start.id) && row.dataset.sessionPath !== start.path) return undefined
     const rect = row.getBoundingClientRect()
-    return { kind: start.kind, path: start.path, id: row.dataset.sessionId!, edge: y < rect.top + rect.height / 2 ? "before" as const : "after" as const }
+    return { kind: start.kind, path: row.dataset.sessionPath!, id: row.dataset.sessionId!, edge: y < rect.top + rect.height / 2 ? "before" as const : "after" as const }
   }
 
   function moveDrag(event: PointerEvent<HTMLElement>) {
@@ -371,7 +373,7 @@ export function Sidebar({
     setDropTarget(undefined)
     if (!target || target.kind !== start.kind) return
     if (start.kind === "project") reorderProject(start.id, target.id, target.edge)
-    else if (target.path === start.path) reorder(start.path, start.id, target.id, target.edge)
+    else if (target.path === start.path || isPinned(start.path, start.id)) reorder(start.path, start.id, target.id, target.edge)
   }
 
   function cancelDrag() {
@@ -414,32 +416,20 @@ export function Sidebar({
   return (
     <div className="noa-sidebar-surface noa-sidebar-fade-scope w-full h-full min-h-0 flex flex-col shrink-0 relative">
       {/* Titlebar band: the traffic lights and sidebar toggle sit over it, so it stays draggable. At 40px the
-          search field sits as far below the traffic lights as the first row's text sits below the field. */}
+          Search action sits below the traffic lights, aligned with New task. */}
       <div className="h-10 shrink-0" style={dragRegion} />
 
-      <div className="noa-sidebar-search mx-2 mb-2 flex h-[26px] shrink-0 cursor-text items-center gap-px rounded-[6px]">
-        <span
-          aria-hidden="true"
-          className="flex size-7 shrink-0 items-center justify-center text-[var(--sidebar-text-muted,#898781)]"
-        >
-          <Search size={16} />
-        </span>
-        <input
-          type="text"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Escape") {
-              e.preventDefault()
-              setQuery("")
-              e.currentTarget.blur()
-            }
-          }}
-          placeholder="Search"
-          aria-label="Search tasks"
-          className="noa-sidebar-search-input min-w-0 flex-1 bg-transparent text-body font-ui outline-none"
-        />
-      </div>
+      <button
+        type="button"
+        onClick={onSearch}
+        aria-label="Search"
+        aria-haspopup="dialog"
+        aria-keyshortcuts={isMac ? "Meta+K" : "Control+K"}
+        className="noa-sidebar-search noa-sidebar-tree-item noa-sidebar-tree-row noa-sidebar-hover-surface-subtle mx-2 mb-1 flex h-[30px] shrink-0 items-center gap-2 rounded-lg pl-[7px] pr-2 text-body"
+      >
+        <Search size={14} className="shrink-0" />
+        Search
+      </button>
 
       <button
         type="button"
@@ -450,29 +440,67 @@ export function Sidebar({
         New task
       </button>
 
-      <div className="group/projects noa-sidebar-toolbar-mask h-8 flex items-center pl-[10px] pr-2 gap-0.5 shrink-0 z-10 overflow-visible">
-        <button
-          type="button"
-          aria-expanded={projectsOpen}
-          onClick={() => setProjectsOpen((open) => !open)}
-          className="flex min-w-0 flex-1 items-center gap-1 pl-[5px] text-chat-sm text-[var(--text-tertiary,#898781)] font-ui"
-        >
-          Projects
-          <ChevronRight
-            size={12}
-            className={`shrink-0 transition-transform duration-150 ${projectsOpen ? "rotate-90" : ""}`}
-          />
-        </button>
-        {/* Hidden until the header is hovered or focused. */}
-        <span className="flex opacity-0 group-hover/projects:opacity-100 focus-within:opacity-100">
-          <IconButton title="Add project folder" label="Add project" onClick={onAddProject}>
-            <FolderPlus size={14} />
-          </IconButton>
-        </span>
-      </div>
-
       <div className="noa-sidebar-scroll scrollbar-on-scroll noa-sidebar-scroll-fade group/tree flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
-        <div className="pt-1 pb-2">
+        <div className="pb-2">
+          {pinnedSessions.length > 0 && (
+            <section aria-label="Pinned" className="mb-2">
+              <div className="h-8 flex items-center pl-[10px] pr-2">
+                <button
+                  type="button"
+                  aria-expanded={pinsOpen}
+                  onClick={() => setPinsOpen(open => !open)}
+                  className="flex min-w-0 flex-1 items-center gap-1 pl-[5px] text-chat-sm text-[var(--text-tertiary,#898781)] font-ui"
+                >
+                  Pinned
+                  <ChevronRight size={12} className={`shrink-0 transition-transform duration-150 ${pinsOpen ? "rotate-90" : ""}`} />
+                </button>
+              </div>
+              {(pinsOpen) && pinnedSessions.map(({ project, session }) => (
+                <SessionRow
+                  key={`${project.path}\0${session.id}`}
+                  id={session.id}
+                  path={project.path}
+                  title={session.title}
+                  updatedAt={session.updatedAt}
+                  projectName={project.name}
+                  worktree={worktreeName(session, project)}
+                  status={session.status}
+                  active={active.cwd === (session.cwd ?? project.path) && session.id === active.id}
+                  pinned
+                  dragging={dragging?.kind === "session" && dragging.id === session.id}
+                  dropEdge={dropTarget?.kind === "session" && dropTarget.id === session.id ? dropTarget.edge : undefined}
+                  onClick={() => selectSession(session.cwd ?? project.path, session.id)}
+                  onTogglePin={() => togglePin(project.path, session.id)}
+                  onDelete={() => onDeleteSession(session.cwd ?? project.path, session.id, session.title)}
+                  onMove={direction => moveBy(project.path, session.id, direction)}
+                  onPointerDown={event => startDrag(event, "session", project.path, session.id, session.title)}
+                  onPointerMove={moveDrag}
+                  onPointerUp={endDrag}
+                  onPointerCancel={cancelDrag}
+                />
+              ))}
+            </section>
+          )}
+          <div className="group/projects noa-sidebar-toolbar-mask h-8 flex items-center pl-[10px] pr-2 gap-0.5 shrink-0 z-10 mb-1 overflow-visible">
+            <button
+              type="button"
+              aria-expanded={projectsOpen}
+              onClick={() => setProjectsOpen((open) => !open)}
+              className="flex min-w-0 flex-1 items-center gap-1 pl-[5px] text-chat-sm text-[var(--text-tertiary,#898781)] font-ui"
+            >
+              Projects
+              <ChevronRight
+                size={12}
+                className={`shrink-0 transition-transform duration-150 ${projectsOpen ? "rotate-90" : ""}`}
+              />
+            </button>
+            {/* Hidden until the header is hovered or focused. */}
+            <span className="flex opacity-0 group-hover/projects:opacity-100 focus-within:opacity-100">
+              <IconButton title="Add project folder" label="Add project" onClick={onAddProject}>
+                <FolderPlus size={14} />
+              </IconButton>
+            </span>
+          </div>
           {projects.length === 0 && (
             <button
               type="button"
@@ -484,7 +512,7 @@ export function Sidebar({
           )}
           {projectsOpen &&
             groups.map(({ project, visible }) => {
-              const isOpen = q !== "" || expanded.has(project.path)
+              const isOpen = expanded.has(project.path)
               return (
                 <div
                   key={project.path}
@@ -500,7 +528,7 @@ export function Sidebar({
                     dragging={dragging?.kind === "project" && dragging.id === project.path}
                     onToggle={() => toggle(project.path)}
                     onMove={(direction) => moveProjectBy(project.path, direction)}
-                    onPointerDown={q === "" ? (event) => startDrag(event, "project", "", project.path, project.name) : undefined}
+                    onPointerDown={(event) => startDrag(event, "project", "", project.path, project.name)}
                     onPointerMove={moveDrag}
                     onPointerUp={endDrag}
                     onPointerCancel={cancelDrag}
@@ -511,7 +539,7 @@ export function Sidebar({
                   />
                   {isOpen && (
                     <>
-                      {(q !== "" || unfolded.has(project.path) ? visible : visible.slice(0, TASK_PREVIEW)).map((session) => (
+                      {(unfolded.has(project.path) ? visible : visible.slice(0, TASK_PREVIEW)).map((session) => (
                         <SessionRow
                           key={session.id}
                           id={session.id}
@@ -540,7 +568,7 @@ export function Sidebar({
                           onPointerCancel={cancelDrag}
                         />
                       ))}
-                      {q === "" && visible.length > TASK_PREVIEW && (
+                      {visible.length > TASK_PREVIEW && (
                         <button
                           type="button"
                           onClick={() => toggleUnfolded(project.path)}
@@ -550,17 +578,12 @@ export function Sidebar({
                           {unfolded.has(project.path) ? "Show less" : "Show more"}
                         </button>
                       )}
-                      {visible.length === 0 && q !== "" && (
-                        <div className="pl-[37px] py-1 text-caption text-[var(--sidebar-text-muted,#898781)]">
-                          No tasks match
-                        </div>
-                      )}
                     </>
                   )}
                 </div>
               )
             })}
-          {projects.length > 0 && q === "" && (
+          {projects.length > 0 && (
             <section aria-label="Recents" className="mt-2">
               <div className="group/recents h-8 flex items-center pl-[10px] pr-2 gap-0.5">
                 <button
@@ -1030,25 +1053,9 @@ function SessionRow({
         style={{ paddingLeft: indent ? "29px" : "7px" }}
       >
         {dropEdge && <DropIndicator edge={dropEdge} indented={indent} className="inset-x-0" />}
-        <MarqueeText className={pinned || status ? "" : "-mr-2 group-hover:mr-6 group-focus-within:mr-6"}>{title}</MarqueeText>
-        <span className={`${pinned || status ? "ml-2 flex shrink-0" : "absolute inset-y-0 right-2 flex"} items-center gap-1`}>
+        <MarqueeText className={status ? "" : "-mr-2 group-hover:mr-6 group-focus-within:mr-6"}>{title}</MarqueeText>
+        <span className={`${status ? "ml-2 flex shrink-0" : "absolute inset-y-0 right-2 flex"} items-center gap-1`}>
           {status && <span role="status" aria-label={status === "waiting" ? "Approval required" : status === "running" ? "Running" : "Queued"} title={status} className={`size-1.5 shrink-0 rounded-full ${status === "waiting" ? "bg-amber-500" : "animate-pulse bg-[var(--accent-color)]"}`} />}
-          {pinned && (
-            <button
-              type="button"
-              data-session-action
-              aria-label={`Unpin ${title}`}
-              aria-pressed
-              title="Unpin task"
-              onClick={(event) => {
-                event.stopPropagation()
-                onTogglePin?.()
-              }}
-              className="flex size-6 items-center justify-center rounded-md text-[var(--sidebar-text-muted,#898781)] hover:text-[var(--text-primary,#2D2D2B)] noa-press"
-            >
-              <PinFilled size={13} />
-            </button>
-          )}
           <button
             type="button"
             data-session-action
@@ -1062,8 +1069,8 @@ function SessionRow({
               setMenu((current) => (current ? undefined : { anchor: anchorBelow(trigger), trigger }))
             }}
             className={`flex size-6 items-center justify-center rounded-md text-[var(--sidebar-text-muted,#898781)] hover:text-[var(--text-primary,#2D2D2B)] noa-press ${
-              pinned || status
-                // Collapsed to nothing while hidden so the status dot and pin sit at the row's edge, not left of an invisible button.
+              status
+                // Collapsed to nothing while hidden so the status dot sits at the row's edge, not left of an invisible button.
                 ? "-ml-1 w-0 overflow-hidden opacity-0 group-hover:ml-0 group-hover:w-6 group-hover:opacity-100 group-focus-within:ml-0 group-focus-within:w-6 group-focus-within:opacity-100 aria-expanded:ml-0 aria-expanded:w-6 aria-expanded:opacity-100"
                 : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100 aria-expanded:opacity-100"
             }`}

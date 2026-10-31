@@ -34,6 +34,7 @@ import { migrateAppearance } from "./lib/appearanceMigration"
 import { defaultSettings } from "./theme/settings"
 import { SettingsDialog } from "./components/SettingsDialog"
 import { SessionTitle } from "./components/SessionTitle"
+import { SearchDialog } from "./components/SearchDialog"
 import { RateLimitNotice } from "./components/RateLimitNotice"
 import { ListDetails, PanelRight } from "./lib/icons"
 
@@ -128,6 +129,7 @@ function Workspace({ cwd }: { cwd: string }) {
   const [loadedProjects, setLoadedProjects] = useState<ReadonlySet<string>>(() => new Set())
   const [refreshTick, setRefreshTick] = useState(0)
   const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [searchOpen, setSearchOpen] = useState(false)
   // The translucent veil animates only for the sidebar's own dock motion (never on first paint, when the flag is still off). The flag is derived
   // while rendering, so it lands in the same commit as the new material width; set from an effect it would arrive a
   // frame late and the veil would snap to its destination instead of transitioning.
@@ -485,6 +487,11 @@ function Workspace({ cwd }: { cwd: string }) {
   }
   const [focusChange, setFocusChange] = useState<{ path: string; at: number }>()
   const [focusFile, setFocusFile] = useState<{ path: string; at: number; line?: number; endLine?: number }>()
+  const openFile = (path: string, line?: number, endLine?: number) => {
+    setRightOpen(true)
+    setRightTab("files")
+    setFocusFile({ path, line, endLine, at: Date.now() })
+  }
   const showWorkspacePane = (tab: "files" | "changes", path?: string) => {
     setRightOpen(true)
     setRightTab(tab)
@@ -529,15 +536,16 @@ function Workspace({ cwd }: { cwd: string }) {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "n") {
         e.preventDefault()
+        setSearchOpen(false)
         newSession()
       }
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault()
-        setSidebarOpen(true)
-        requestAnimationFrame(() => document.querySelector<HTMLInputElement>('[aria-label="Search tasks"]')?.focus())
+        setSearchOpen(open => !open)
       }
       if ((e.metaKey || e.ctrlKey) && e.key === ",") {
         e.preventDefault()
+        setSearchOpen(false)
         setSettingsOpen(true)
       }
       if (
@@ -741,6 +749,7 @@ function Workspace({ cwd }: { cwd: string }) {
             onRemoveProject={removeProjectPath}
             onRevealProject={revealProject}
             onDeleteSession={removeSession}
+            onSearch={() => setSearchOpen(true)}
             onSettings={() => setSettingsOpen(true)}
           />
         </div>
@@ -880,7 +889,7 @@ function Workspace({ cwd }: { cwd: string }) {
               historyBefore={state.historyBefore}
               historyLoading={state.historyLoading}
               onLoadEarlier={loadEarlier}
-              onOpenFile={(path, line, endLine) => { setRightOpen(true); setRightTab("files"); setFocusFile({ path, line, endLine, at: Date.now() }) }}
+              onOpenFile={openFile}
               turns={state.turns}
               busy={state.busy}
               result={state.result}
@@ -974,7 +983,7 @@ function Workspace({ cwd }: { cwd: string }) {
                   onPaused={setQueuePaused}
                 />
               )}
-              {state.rateLimit && <RateLimitNotice info={state.rateLimit} />}
+              {<RateLimitNotice info={state.rateLimit ?? { status: "allowed_warning", rateLimitType: "seven_day", utilization: 0.92, resetsAt: 1793000000 }} />} {/*TMPSHOT*/}
               {state.notice && <p role="status" className="m-0 px-1 text-caption text-[var(--sidebar-text-muted)]">{state.notice}</p>}
               {state.error && !state.turns.some(turn => turn.role === "assistant" && turn.error === state.error) && (
                 <p role="alert" className="m-0 break-words px-1 text-caption text-[#C24444]">
@@ -1015,8 +1024,7 @@ function Workspace({ cwd }: { cwd: string }) {
                 onCommand={(action) => {
                   if (action === "new") newSession()
                   else if (action === "resume") {
-                    setSidebarOpen(true)
-                    requestAnimationFrame(() => document.querySelector<HTMLInputElement>('[aria-label="Search tasks"]')?.focus())
+                    setSearchOpen(true)
                   } else if (action === "settings") setSettingsOpen(true)
                   else if (action === "context") { if (!overviewVisible) toggleOverview(); refreshContext() }
                   else if (action === "activity") { setRightOpen(true); setRightTab("activity") }
@@ -1049,6 +1057,7 @@ function Workspace({ cwd }: { cwd: string }) {
       </div>
 
       {addingProject && <AddProjectDialog onAdd={addProjectPaths} onClose={() => setAddingProject(false)} />}
+      {searchOpen && <SearchDialog cwd={session.cwd} projects={projects} sessions={sessionsByProject} onNewSession={() => newSession()} onOpenFolder={() => { setEditingProject(undefined); setAddingProject(true) }} onSelectSession={selectSession} onOpenFile={openFile} onClose={() => setSearchOpen(false)} />}
       {confirmDialog}
       {editingProject && (
         <AddProjectDialog
