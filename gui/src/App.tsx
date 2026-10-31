@@ -161,6 +161,7 @@ function Workspace({ cwd }: { cwd: string }) {
   const [editingProject, setEditingProject] = useState<ProjectInfo>()
   const [quote, setQuote] = useState<{ text: string; key: number }>()
   const [reference, setReference] = useState<{ path: string; key: number }>()
+  const [prefill, setPrefill] = useState<{ text: string; key: number }>()
   const [editDraft, setEditDraft] = useState<{ text: string; images: ImageAttachment[]; key: number }>()
   const [queueEditId, setQueueEditId] = useState<string>()
   const [changes, setChanges] = useState<{ count: number; additions: number; deletions: number; branch: string; files: { path: string; additions: number; deletions: number; binary: boolean }[] }>()
@@ -1006,6 +1007,8 @@ function Workspace({ cwd }: { cwd: string }) {
                 reference={reference}
                 quote={quote}
                 onQuoteConsumed={() => setQuote(undefined)}
+                prefill={prefill}
+                onPrefillConsumed={() => setPrefill(undefined)}
                 editDraft={editDraft ? { ...editDraft, queued: !!queueEditId, label: queueEditId ? "Edit queued message" : "Edit and resend" } : undefined}
                 onCancelEdit={() => {
                   setEditDraft(undefined)
@@ -1103,12 +1106,13 @@ function Workspace({ cwd }: { cwd: string }) {
           onRefreshSettings={refreshSettings}
           onRefreshMcp={refreshMcp}
           onChangeMcp={changeMcp}
-          onReloadCommands={reloadCommands}
+          onReloadCommands={() => reloadCommands(true)}
           onModel={setModel}
           onEffort={setEffort}
           onMode={setPermissionMode}
           onChange={setSettings}
           onClose={() => setSettingsOpen(false)}
+          onTrySkill={(name) => setPrefill({ text: `/${name} `, key: Date.now() })}
           account={state.account}
           auth={state.auth}
           onStartAuthentication={startAuthentication}

@@ -38,6 +38,7 @@ type ResponseKind =
   | "startup_settings"
   | "effort"
   | "commands"
+  | "commands-quiet"
   | { model: string }
   | { mode: PermissionMode }
 
@@ -257,9 +258,11 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
         } else { modeRef.current = kind.mode; dispatch({ type: "permission-mode-set", mode: kind.mode }) }
         return
       }
-      if (kind === "commands") {
+      if (kind === "commands" || kind === "commands-quiet") {
         const commands = (response as { commands?: SlashCommand[] })?.commands ?? []
         dispatch({ type: "control", payload: { kind: "commands", commands } })
+        // Reloads that follow a settings change update the lists without announcing themselves in the composer.
+        if (kind === "commands-quiet") return
         const errors = (response as { error_count?: number })?.error_count ?? 0
         dispatch({ type: "notice", text: `Reloaded ${commands.filter((command) => !command.hidden).length} commands and skills${errors ? ` · ${errors} plugin errors` : ""}` })
         return
@@ -401,7 +404,7 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
   const steerQueued = useCallback((id: string) => { write({ type: "queue_steer", id }) }, [write])
   const setQueuePaused = useCallback((paused: boolean) => { write({ type: "queue_pause", paused }) }, [write])
   const runQueued = useCallback(() => { write({ type: "queue_run" }) }, [write])
-  const reloadCommands = useCallback(() => control({ subtype: "reload_plugins" }, "commands"), [control])
+  const reloadCommands = useCallback((quiet = false) => control({ subtype: "reload_plugins" }, quiet ? "commands-quiet" : "commands"), [control])
   const stopTask = useCallback((taskId: string) => control({ subtype: "stop_task", task_id: taskId }), [control])
   const turnDiffAction = useCallback(
     (turnIndex: number, action: "undo" | "reapply") => write({ type: "turn_diff_action", turnIndex, action }),

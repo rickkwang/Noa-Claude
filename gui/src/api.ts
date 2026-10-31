@@ -53,6 +53,87 @@ export async function revealProject(path: string): Promise<void> {
   })
 }
 
+export interface MarketplaceInfo {
+  name: string
+  source: string
+  repo?: string
+  url?: string
+  path?: string
+  installLocation?: string
+}
+
+export interface MarketplacePlugin {
+  pluginId: string
+  name: string
+  description?: string
+  marketplaceName: string
+  installCount?: number
+  source?: string | { source?: string; url?: string; repo?: string; path?: string }
+}
+
+export interface InstalledPlugin {
+  id: string
+  version: string
+  scope: string
+  enabled: boolean
+  mcpServers?: Record<string, unknown>
+  description?: string
+  homepage?: string
+}
+
+export interface PluginCatalog {
+  marketplaces: MarketplaceInfo[]
+  installed: InstalledPlugin[]
+  available: MarketplacePlugin[]
+}
+
+export async function fetchPlugins(): Promise<PluginCatalog> {
+  const response = await fetch("/api/plugins")
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}))
+    throw new Error(body.error ?? `Could not load plugins (HTTP ${response.status})`)
+  }
+  return (await response.json()) as PluginCatalog
+}
+
+export type PluginAction = "marketplace-add" | "marketplace-remove" | "marketplace-update" | "install" | "uninstall" | "enable" | "disable"
+
+// Throws with the CLI's message when the command fails.
+export async function runPluginAction(action: PluginAction, target?: string, sparse?: string, scope?: string): Promise<void> {
+  const response = await fetch("/api/plugins", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ action, target, sparse, scope }),
+  })
+  const body = await response.json().catch(() => ({}))
+  if (!response.ok) throw new Error(body.error ?? `HTTP ${response.status}`)
+}
+
+export interface SkillsState {
+  modes: Record<string, string>
+  // Skills in the user's own skills folder: the only ones the bridge can read, reveal and remove. Listed
+  // here too because a skill that is switched off is dropped from the CLI's command list.
+  userSkills: { name: string; description: string }[]
+}
+
+export async function fetchSkillsState(): Promise<SkillsState> {
+  const response = await fetch("/api/skills")
+  if (!response.ok) throw new Error(`Could not load skills (HTTP ${response.status})`)
+  return (await response.json()) as SkillsState
+}
+
+// Resolves with the response body, or throws with the bridge's message.
+export async function runSkillAction(action: "mode" | "read" | "reveal" | "uninstall", name: string, mode?: "on" | "off"): Promise<{ content?: string }> {
+  const response = await fetch("/api/skills", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ action, name, mode }),
+  })
+  const body = await response.json().catch(() => ({}))
+  if (!response.ok) throw new Error(body.error ?? `HTTP ${response.status}`)
+  return body
+}
+
 export function query(cwd: string | undefined): string {
   return cwd ? `?cwd=${encodeURIComponent(cwd)}` : ""
 }

@@ -62,6 +62,9 @@ interface ComposerProps {
   quote?: { text: string; key: number }
   onQuoteConsumed?: () => void
   // Loads an existing user message back into the composer when the user clicks Edit.
+  // Text dropped into the draft from outside, e.g. a skill invocation chosen in settings.
+  prefill?: { text: string; key: number }
+  onPrefillConsumed?: () => void
   editDraft?: { text: string; images: ImageAttachment[]; key: number; label?: string; queued?: boolean }
   onCancelEdit?: () => void
   effort?: string
@@ -105,6 +108,8 @@ export function Composer({
   reference,
   quote,
   onQuoteConsumed,
+  prefill,
+  onPrefillConsumed,
   editDraft,
   onCancelEdit,
   effort,
@@ -249,6 +254,26 @@ export function Composer({
       element.setSelectionRange(element.value.length, element.value.length)
     })
   }, [quote?.key])
+
+  useEffect(() => {
+    // Waits until the composer can take input, so the text is not dropped while it is still connecting.
+    if (!prefill || disabled) return
+    setText((current) => {
+      const draft = current.trim()
+      if (!draft) return prefill.text
+      // A draft that is only a slash command is replaced; any other draft keeps its text after the new command.
+      if (/^\/\S*$/.test(draft)) return prefill.text
+      return `${prefill.text}${current.replace(/^\s+/, "")}`
+    })
+    requestAnimationFrame(() => {
+      const el = textareaRef.current
+      if (!el) return
+      el.focus()
+      el.setSelectionRange(el.value.length, el.value.length)
+    })
+    // Consumed once, so a later remount for another task does not insert it again.
+    onPrefillConsumed?.()
+  }, [prefill?.key, disabled])
 
   // Editing a sent message replaces the draft with its text and images.
   useEffect(() => {

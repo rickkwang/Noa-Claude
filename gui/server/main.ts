@@ -4,6 +4,8 @@ import { resolve, sep } from "node:path"
 import { SESSION_ID, deleteSession, listSessions, loadHistory, renameSession } from "./sessions"
 import { addProject, listProjects, removeProject } from "./projects"
 import { isManagedWorktree, mediaResponse, projectWorktrees, workspaceRequest } from "./workspace"
+import { listPlugins, pluginAction } from "./plugins"
+import { skillAction, skillsState } from "./skills"
 import { attachAgent, agentMessage, detachAgent, listAgentRuns, releaseSessionRuns, SPAWN_PERMISSION_MODES, type SocketData } from "./agents"
 
 const REPO_ROOT = resolve(import.meta.dir, "../..")
@@ -192,6 +194,24 @@ Bun.serve<SocketData>({
     if (url.pathname === "/api/projects/reveal") {
       if (req.method !== "POST") return json({ error: "Method not allowed" }, 405)
       return revealProject(req)
+    }
+    if (url.pathname === "/api/plugins") {
+      if (req.method === "GET") {
+        try {
+          return json(await listPlugins(REPO_ROOT))
+        } catch (e) {
+          return json({ error: e instanceof Error ? e.message : String(e) }, 502)
+        }
+      }
+      if (req.method !== "POST") return json({ error: "Method not allowed" }, 405)
+      const result = await pluginAction(REPO_ROOT, await req.json().catch(() => null))
+      return json(result.body, result.status)
+    }
+    if (url.pathname === "/api/skills") {
+      if (req.method === "GET") return json(await skillsState())
+      if (req.method !== "POST") return json({ error: "Method not allowed" }, 405)
+      const result = await skillAction(await req.json().catch(() => null))
+      return json(result.body, result.status)
     }
     if (url.pathname === "/api/runs") return json(listAgentRuns())
     if (url.pathname === "/api/info") {
