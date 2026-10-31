@@ -30,7 +30,14 @@ setTimeout(()=>render(turns),50);
 const {app,BrowserWindow}=require('electron'),fs=require('fs');
 app.setPath('userData',${JSON.stringify(join(temp, "profile"))});
 app.whenReady().then(async()=>{const w=new BrowserWindow({width:1100,height:800,show:false,webPreferences:{sandbox:true,backgroundThrottling:false}});await w.loadFile(${JSON.stringify(join(temp, "index.html"))});await new Promise(r=>setTimeout(r,1000));
+const thumb=await w.webContents.executeJavaScript("(()=>{const r=document.querySelector('.noa-agent-scroll').getBoundingClientRect();return {x:Math.round(r.right-4),y:Math.round(r.bottom-5),endY:Math.round(r.top+r.height/2)}})()");
+w.webContents.sendInputEvent({type:'mouseDown',button:'left',clickCount:1,x:thumb.x,y:thumb.y});
+await new Promise(resolve=>setTimeout(resolve,1100));
+w.webContents.sendInputEvent({type:'mouseMove',x:thumb.x,y:thumb.endY});
+w.webContents.sendInputEvent({type:'mouseUp',button:'left',clickCount:1,x:thumb.x,y:thumb.endY});
+const nativeDrag=await w.webContents.executeJavaScript("new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>{const e=document.querySelector('.noa-agent-scroll'),bounds=e.getBoundingClientRect();const visible=[...e.querySelectorAll('[data-virtual-turn-id]')].filter(row=>{const r=row.getBoundingClientRect();return r.bottom>bounds.top&&r.top<bounds.bottom}).length;resolve({top:e.scrollTop,distance:e.scrollHeight-e.clientHeight-e.scrollTop,visible})})))");
 const result=await w.webContents.executeJavaScript(\`new Promise(resolve=>{const e=document.querySelector('.noa-agent-scroll');const samples=[];const start=performance.now();e.dispatchEvent(new WheelEvent('wheel',{deltaY:-120,bubbles:true}));e.scrollTop=e.scrollHeight*0.5;const requested=e.scrollTop;function tick(){const bounds=e.getBoundingClientRect();const row=[...e.querySelectorAll('[data-virtual-turn-id]')].find(n=>{const r=n.getBoundingClientRect();return r.bottom>bounds.top&&r.top<bounds.bottom});samples.push({scroll:e.scrollTop,id:row?.dataset.virtualTurnId,top:row?.getBoundingClientRect().top});if(performance.now()-start<500)requestAnimationFrame(tick);else{const rows=[...e.querySelectorAll('[data-virtual-turn-id]')].map(n=>n.getBoundingClientRect()).sort((a,b)=>a.top-b.top);const overlap=Math.max(0,...rows.slice(1).map((r,i)=>rows[i].bottom-r.top));resolve({requested,samples,overlap,rows:rows.length})}}requestAnimationFrame(tick)})\`);
+result.nativeDrag=nativeDrag;
 fs.writeFileSync(${JSON.stringify(result)},JSON.stringify(result));app.quit()}).catch(e=>{console.error(e);app.exit(1)});
 `)
   const child = Bun.spawn([electron, join(temp, "main.cjs")], { stdout: "ignore", stderr: "inherit" })
@@ -38,7 +45,8 @@ fs.writeFileSync(${JSON.stringify(result)},JSON.stringify(result));app.quit()}).
   const exit = await child.exited
   clearTimeout(timer)
   if (exit !== 0) throw new Error(`Electron exited with ${exit}`)
-  const { requested, samples, overlap, rows } = await Bun.file(result).json() as { requested: number; samples: { scroll: number; id?: string; top?: number }[]; overlap: number; rows: number }
+  const { requested, samples, overlap, rows, nativeDrag } = await Bun.file(result).json() as { requested: number; samples: { scroll: number; id?: string; top?: number }[]; overlap: number; rows: number; nativeDrag: { top: number; distance: number; visible: number } }
+  if (nativeDrag.top < 1000 || nativeDrag.distance < 1000 || !nativeDrag.visible) throw new Error(`Held scrollbar drag failed: ${JSON.stringify(nativeDrag)}`)
   const visible = samples.filter(sample => sample.id)
   const maxJump = Math.max(0, ...samples.slice(1).map((sample, index) => Math.abs(sample.scroll - samples[index]!.scroll)))
   if (requested < 1000 || visible.length < 2 || maxJump > 200) throw new Error(`Requested ${Math.round(requested)}px; scroll jumped ${Math.round(maxJump)}px; visible samples: ${visible.length}`)

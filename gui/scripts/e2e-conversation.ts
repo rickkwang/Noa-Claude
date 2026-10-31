@@ -11,6 +11,7 @@ const source = (name: string) => JSON.stringify(join(gui, name))
 const renderer = `
 import {createElement as h} from ${source("node_modules/react/index.js")};
 import {createRoot} from ${source("node_modules/react-dom/client.js")};
+import {flushSync} from ${source("node_modules/react-dom/index.js")};
 import {App} from ${source("src/App.tsx")};
 import {useAgent} from ${source("src/agent/useAgent.ts")};
 import {Markdown,OutputContext} from ${source("src/components/Markdown.tsx")};
@@ -46,6 +47,12 @@ window.runChecks=async()=>{
  setValue(document.querySelector('input[name=label]'),'Keep this answer');document.querySelector('input[name=label]').dispatchEvent(new Event('change',{bubbles:true}));await pause();
  await show(null);await show(h(ElicitationCard,{request,onAnswer(){},draft:formDraft,onDraftChange:value=>formDraft=value}));
  results.elicitationDraft=document.querySelector('input[name=label]')?.value==='Keep this answer';
+ const enumOptions=[{const:'east',title:'East location'},{const:'west',title:'West location'}];let enumAnswer;
+ await show(h(ElicitationCard,{request:{...request,requested_schema:{properties:{location:{type:'string',oneOf:enumOptions},regions:{type:'array',items:{anyOf:enumOptions}}},required:['location','regions']}},onAnswer:(_id,_action,content)=>enumAnswer=content}));
+ document.querySelector('select[name=location]').value='east';
+ document.querySelector('select[name=regions] option[value=west]').selected=true;
+ document.querySelector('form').requestSubmit();await pause();
+ results.modernEnums=enumAnswer?.location==='east'&&enumAnswer?.regions?.join(',')==='west';
  const turns=Array.from({length:18},(_,i)=>[{role:'user',id:'u'+i,text:'Request '+i},{role:'assistant',id:'a'+i,streaming:false,blocks:[{kind:'text',done:true,text:('Response '+i+'\\n\\n').repeat(10)}]}]).flat();
  const transcript=()=>h('div',{style:{display:'flex',height:480}},h(MessageList,{turns,busy:false,readingWidth:800,sessionId:'scroll-check',cwd:'/fixture'}));
  await show(transcript());await pause(250);let scroller=document.querySelector('.noa-agent-scroll');scroller.dispatchEvent(new WheelEvent('wheel',{deltaY:-120,bubbles:true}));scroller.scrollTop=300;scroller.dispatchEvent(new Event('scroll'));await pause(250);const top=scroller.scrollTop;
@@ -53,6 +60,26 @@ window.runChecks=async()=>{
 
  const slash=String.fromCharCode(92);const richMath='Inline '+slash+'(x^2'+slash+') and a fraction.\\n\\n$$\\n'+slash+'frac{a}{b} + '+slash+'sqrt{c}\\n$$';
  const fence=String.fromCharCode(96).repeat(3);const diagram=fence+'mermaid\\ngraph LR\\n  Events --> State --> Rendering\\n'+fence;
+ const newline=String.fromCharCode(10);const longLine='x'.repeat(16385);
+ await show(h(Markdown,{text:['# Heading','',fence+'json',longLine,fence,'','**Formatted**'].join(newline),streaming:true}));
+ results.longLineMarkdown=document.querySelector('h1')?.textContent==='Heading'&&document.querySelector('strong')?.textContent==='Formatted'&&document.querySelector('pre code')?.textContent===longLine;
+ await show(null);const brackets='['.repeat(100000);
+ flushSync(()=>root.render(h(Markdown,{text:brackets})));
+ let updateStart=performance.now();flushSync(()=>root.render(h(Markdown,{text:brackets})));const sameUpdateMs=performance.now()-updateStart;
+ updateStart=performance.now();flushSync(()=>root.render(h(Markdown,{text:brackets+'x'})));const appendUpdateMs=performance.now()-updateStart;
+ results.longLineUpdates=sameUpdateMs<1000&&appendUpdateMs<1000&&document.getElementById('root').textContent===brackets+'x';
+ if(!results.longLineUpdates)results.longLineUpdateDiagnostics={sameUpdateMs,appendUpdateMs};
+ let redactedState=initialState;const redactSend=message=>redactedState=reducer(redactedState,{type:'agent',message});
+ const redactStream=event=>redactSend({type:'stream_event',parent_tool_use_id:null,event});
+ redactStream({type:'message_start',message:{id:'redacted'}});
+ for(const [index,block] of [{type:'redacted_thinking',data:'encrypted'},{type:'text',text:'Visible after hidden thinking'}].entries()){
+  redactStream({type:'content_block_start',index,content_block:block});redactSend({type:'assistant',parent_tool_use_id:null,message:{id:'redacted',content:[block]}});redactStream({type:'content_block_stop',index});
+ }
+ redactStream({type:'message_stop'});
+ await show(h('div',{style:{display:'flex',height:400}},h(MessageList,{turns:redactedState.turns,busy:false,readingWidth:800})));
+ for(const deadline=performance.now()+2000;performance.now()<deadline&&document.querySelector('[data-response-content]')?.textContent!=='Visible after hidden thinking';)await pause(25);
+ results.redactedThinking=document.querySelector('[data-response-content]')?.textContent==='Visible after hidden thinking'&&!document.body.textContent.includes('encrypted');
+ if(!results.redactedThinking)results.redactedDiagnostics={text:document.querySelector('[data-response-content]')?.textContent,body:document.getElementById('root').textContent,turns:redactedState.turns};
  await show(h(Markdown,{text:richMath}));results.math=!!document.querySelector('.katex .mfrac')&&!!document.querySelector('.katex .sqrt');
  await show(h(Markdown,{text:diagram}));for(let i=0;i<80&&!document.querySelector('.noa-diagram svg')&&!document.body.textContent.includes('Diagram unavailable');i++)await pause(100);results.diagram=!!document.querySelector('.noa-diagram svg');
  let clipboard;
@@ -92,7 +119,7 @@ window.runChecks=async()=>{
  localStorage.clear();localStorage.setItem('noa-agent.current',JSON.stringify({cwd:'/fixture',resume:sessionA,runtimeId:'20000000-0000-4000-8000-000000000001'}));window.WebSocket=AppSocket;await show(h(App));await pause(250);
  const custom=document.querySelector('input[placeholder="Or enter your answer…"]');if(custom)setValue(custom,'Keep this session answer');const search=document.querySelector('[aria-label="Search tasks"]');if(search)setValue(search,'Chat');await pause(150);
  const instruction=document.querySelector('[aria-label="Task instruction"]');if(instruction){Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(instruction,'Existing draft');instruction.dispatchEvent(new Event('input',{bubbles:true}))}await pause();const response=document.querySelector('[data-response-content] p');if(response){const range=document.createRange();range.selectNodeContents(response);window.getSelection().removeAllRanges();window.getSelection().addRange(range);document.querySelector('.noa-agent-scroll').dispatchEvent(new MouseEvent('mouseup',{bubbles:true}));await pause();[...document.querySelectorAll('button')].find(button=>button.textContent==='Quote selection')?.click();await pause()}
- const quoteBeforeNavigation=document.querySelector('[aria-label="Task instruction"]')?.value;document.querySelector('[title="Chat B"]')?.click();await pause(200);const draftB=document.querySelector('[aria-label="Task instruction"]')?.value||'';document.querySelector('[title="Chat A"]')?.click();await pause(200);results.appDraftRoundTrip=document.querySelector('input[placeholder="Or enter your answer…"]')?.value==='Keep this session answer';let draftA=document.querySelector('[aria-label="Task instruction"]')?.value||'';results.quoteSessionScope=!draftB.includes('Reply A')&&(draftA.match(/> Reply A/g)||[]).length===1;
+ const quoteBeforeNavigation=document.querySelector('[aria-label="Task instruction"]')?.value;[...document.querySelectorAll('.noa-sidebar-tree-row')].find(row=>row.querySelector('.noa-marquee-content')?.textContent==='Chat B').click();await pause(200);const draftB=document.querySelector('[aria-label="Task instruction"]')?.value||'';[...document.querySelectorAll('.noa-sidebar-tree-row')].find(row=>row.querySelector('.noa-marquee-content')?.textContent==='Chat A').click();await pause(200);results.appDraftRoundTrip=document.querySelector('input[placeholder="Or enter your answer…"]')?.value==='Keep this session answer';let draftA=document.querySelector('[aria-label="Task instruction"]')?.value||'';results.quoteSessionScope=!draftB.includes('Reply A')&&(draftA.match(/> Reply A/g)||[]).length===1;
  appSocket.onclose?.({});await pause();[...document.querySelectorAll('button')].find(button=>button.textContent==='Reconnect')?.click();await pause(200);draftA=document.querySelector('[aria-label="Task instruction"]')?.value||'';results.quoteConsumed=(draftA.match(/> Reply A/g)||[]).length===1;if(!results.quoteSessionScope||!results.quoteConsumed)results.quoteDiagnostics={before:quoteBeforeNavigation,a:draftA,b:draftB,response:response?.textContent,selectionButton:!![...document.querySelectorAll('button')].find(button=>button.textContent==='Quote selection')};await show(null);window.fetch=originalFetch;window.WebSocket=originalSocket;
  await show(h('div',{className:'fixture-grid'},
  panel('Math rendering',h(Markdown,{text:richMath})),

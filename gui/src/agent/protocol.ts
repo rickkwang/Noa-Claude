@@ -29,6 +29,7 @@ export type ContentBlock =
   | ImageBlock
   | { type: "text"; text: string }
   | { type: "thinking"; thinking: string }
+  | { type: "redacted_thinking"; data: string }
   | { type: "tool_use"; id: string; name: string; input: Record<string, unknown> }
   | { type: "tool_result"; tool_use_id: string; content: unknown; is_error?: boolean; tool_use_result?: unknown }
 
@@ -38,7 +39,7 @@ export type StreamEvent =
   | {
       type: "content_block_start"
       index?: number
-      content_block: { type: "text" } | { type: "thinking" } | { type: "tool_use"; id: string; name: string }
+      content_block: { type: "text" } | { type: "thinking" } | { type: "redacted_thinking"; data: string } | { type: "tool_use"; id: string; name: string }
     }
   | {
       type: "content_block_delta"

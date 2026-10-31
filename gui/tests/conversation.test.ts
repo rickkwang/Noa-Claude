@@ -19,6 +19,48 @@ const agent = (state: AgentState, message: object) => reducer(state, { type: "ag
 const directory = mkdtempSync(join(tmpdir(), "noa-conversation-"))
 afterAll(() => rmSync(directory, { recursive: true, force: true }))
 
+test("redacted thinking leaves valid text and tool streams intact", () => {
+  let state = initialState
+  const stream = (event: object) => { state = agent(state, { type: "stream_event", parent_tool_use_id: null, event }) }
+  stream({ type: "message_start", message: { id: "redacted" } })
+  for (const [index, block] of [
+    { type: "redacted_thinking", data: "encrypted" },
+    { type: "text", text: "Visible reply" },
+    { type: "tool_use", id: "read", name: "Read", input: { file_path: "a.ts" } },
+  ].entries()) {
+    stream({ type: "content_block_start", index, content_block: block })
+    state = agent(state, { type: "assistant", parent_tool_use_id: null, message: { id: "redacted", content: [block] } })
+    stream({ type: "content_block_stop", index })
+  }
+  stream({ type: "message_stop" })
+  const turn = state.turns[0]!
+  expect(turn).toMatchObject({ blocks: [{ kind: "text", text: "Visible reply" }, { kind: "tool", id: "read", name: "Read" }] })
+})
+
+test("long code and paragraph lines preserve surrounding Markdown structure", () => {
+  for (const middle of ["```json\n" + "x".repeat(16_385) + "\n```", "x".repeat(16_385)]) {
+    const html = render(createElement(Markdown, { text: "# Heading\n\n" + middle + "\n\n**Formatted**" }))
+    expect(html).toContain("<h1>Heading</h1>")
+    expect(html).toContain("<strong>Formatted</strong>")
+    expect(html).toContain("x".repeat(16_385))
+    if (middle.startsWith("```")) expect(html).toContain("<pre")
+  }
+})
+
+test("MCP enum forms display modern and legacy option values and labels", () => {
+  for (const field of [
+    { type: "string", enum: ["east", "west"], enumNames: ["East location", "West location"] },
+    { type: "string", oneOf: [{ const: "east", title: "East location" }, { const: "west", title: "West location" }] },
+    { type: "array", items: { anyOf: [{ const: "east", title: "East location" }, { const: "west", title: "West location" }] } },
+  ]) {
+    const html = render(createElement(ElicitationCard, { request: { requestId: "enum", subtype: "elicitation", mcp_server_name: "fixture", message: "Choose", requested_schema: { properties: { location: field } } }, onAnswer() {} }))
+    expect(html).toContain('<select name="location"')
+    expect(html).toContain('<option value="east">East location</option>')
+    expect(html).toContain('<option value="west">West location</option>')
+    expect(html).not.toContain("unsupported form")
+  }
+})
+
 test("math renders without interpreting currency or trusting TeX HTML", () => {
   const html = render(createElement(Markdown, { text: "Inline \\(x^2\\) and \\(y+1\\).\n\n$$\n\\frac{a}{b}\n$$" }))
   expect((html.match(/class="katex"/g) ?? []).length).toBe(3)

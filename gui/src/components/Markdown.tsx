@@ -1,6 +1,6 @@
 import { Children, Fragment, cloneElement, isValidElement, createContext, memo, useContext, useEffect, useMemo, useRef, useState, type AnimationEvent, type ReactNode } from "react"
 import { type Token, type Tokens } from "marked"
-import { parseBlocks, parseInline, parseStreaming, type MarkdownPrefix } from "./markdownGrammar"
+import { MAX_INLINE_LINE, parseBlocks, parseInline, parseStreaming, type MarkdownPrefix } from "./markdownGrammar"
 import { Diagram, MarkdownTable, MathText, PreviewDialog } from "./RichContent"
 export { parseBlocks } from "./markdownGrammar"
 import { Lightbox, type LightboxItem } from "./Lightbox"
@@ -9,7 +9,6 @@ import { Check, Copy, Terminal } from "../lib/icons"
 
 // Parse the existing Markdown grammar as a tree; render React children, never raw HTML.
 export const OutputContext = createContext<{ cwd?: string; onOpenFile?: (path: string, line?: number, endLine?: number) => void; onOpenImages?: (items: LightboxItem[], index: number) => void }>({})
-const MAX_PARSER_LINE = 16_384
 const MAX_HIGHLIGHT_SIZE = 65_536
 const MAX_HIGHLIGHT_LINE = 1_024
 
@@ -221,13 +220,12 @@ function streamInline(nodes: ReactNode[], key: string, counter: { node: number }
 }
 
 export function Markdown({ text, tone = "default", streaming = false, streamKey, className, preserveUserText = false }: { text: string; tone?: "default" | "muted"; streaming?: boolean; streamKey?: string; className?: string; preserveUserText?: boolean }) {
-  const plainLine = text.split("\n").some(line => line.length > MAX_PARSER_LINE)
   const prefix = useRef<MarkdownPrefix>({ text: "", tokens: [] })
-  const blocks = useMemo(() => plainLine ? [] : streaming ? parseStreaming(text, prefix.current) : parseBlocks(text), [text, plainLine, streaming])
+  const blocks = useMemo(() => streaming ? parseStreaming(text, prefix.current) : parseBlocks(text), [text, streaming])
   const color = tone === "muted" ? "text-[var(--sidebar-text-muted,#898781)]" : "text-[var(--text-primary,#2D2D2B)]"
   return (
     <div className={`noa-output-markdown noa-selectable prose prose-neutral max-w-none ${color}${className ? ` ${className}` : ""}`}>
-      {plainLine ? text : blocks.map((block, i) => (
+      {blocks.map((block, i) => (
         <BlockView key={i} block={block} streaming={streaming} streamKey={streamKey ? `${streamKey}:b${i}` : undefined} preserveUserText={preserveUserText} />
       ))}
     </div>
@@ -239,7 +237,7 @@ export function Markdown({ text, tone = "default", streaming = false, streamKey,
 const REFERENCE_LINK = /\[[^\]\n]+\](?!\()/
 const BlockView = memo(BlockViewImpl, (a, b) =>
   // A reference definition that streams in later changes how an unchanged block renders.
-  !REFERENCE_LINK.test(a.block.raw) && a.block.type === b.block.type && a.block.raw === b.block.raw && a.streaming === b.streaming && a.streamKey === b.streamKey && a.preserveUserText === b.preserveUserText)
+  a.block.raw.length <= MAX_INLINE_LINE && !REFERENCE_LINK.test(a.block.raw) && a.block.type === b.block.type && a.block.raw === b.block.raw && a.streaming === b.streaming && a.streamKey === b.streamKey && a.preserveUserText === b.preserveUserText)
 function BlockViewImpl({ block, streaming, streamKey, preserveUserText }: { block: Token; streaming?: boolean; streamKey?: string; preserveUserText?: boolean }) {
   const children = (tokens: Token[] = []) => tokens.map((child, i) => <BlockView key={i} block={child} streaming={streaming} streamKey={streamKey ? `${streamKey}:${i}` : undefined} preserveUserText={preserveUserText} />)
   const inline = (tokens: Token[] = []) => {

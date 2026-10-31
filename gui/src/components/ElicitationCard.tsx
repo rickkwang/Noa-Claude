@@ -6,7 +6,8 @@ type Field = {
   description?: string
   enum?: (string | number)[]
   enumNames?: string[]
-  items?: { type?: string; enum?: string[]; enumNames?: string[] }
+  oneOf?: { const: string; title?: string }[]
+  items?: { type?: string; enum?: string[]; enumNames?: string[]; anyOf?: { const: string; title?: string }[] }
   minItems?: number
   maxItems?: number
   default?: unknown
@@ -29,7 +30,12 @@ export function ElicitationCard({
   onAnswer: (id: string, action: "accept" | "decline" | "cancel", content?: Record<string, unknown>) => void
 }) {
   const schema = request.requested_schema
-  const fields = Object.entries((schema?.properties ?? {}) as Record<string, Field>)
+  const fields = Object.entries((schema?.properties ?? {}) as Record<string, Field>).map(([name, field]): [string, Field] => {
+    const choices = field.type === "array" ? field.items?.anyOf : field.oneOf
+    if (!choices) return [name, field]
+    const options = { enum: choices.map(choice => choice.const), enumNames: choices.map(choice => choice.title ?? choice.const) }
+    return [name, field.type === "array" ? { ...field, items: { ...field.items, ...options } } : { ...field, ...options }]
+  })
   const required = (schema?.required ?? []) as string[]
   const supported = fields.every(
     ([, field]) =>

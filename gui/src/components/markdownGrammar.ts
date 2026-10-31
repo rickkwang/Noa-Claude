@@ -1,5 +1,7 @@
 import { Lexer, Marked, type Token } from "marked"
 
+export const MAX_INLINE_LINE = 16_384
+
 function attributes(source: string): Record<string, string> {
   const result: Record<string, string> = {}
   for (const match of source.matchAll(/([\w-]+)=("(?:\\.|[^"\\])*"|[^\s}]+)/g)) {
@@ -105,14 +107,28 @@ const markdown = new Marked({ gfm: true, breaks: true, tokenizer: {
   },
 ] })
 
-export const parseBlocks = (text: string) => markdown.lexer(text)
-export const parseInline = (text: string) => Lexer.lexInline(text, markdown.defaults)
+function createLexer(): Lexer {
+  const lexer = new Lexer(markdown.defaults)
+  const inlineTokens = lexer.inlineTokens.bind(lexer)
+  lexer.inlineTokens = (text, tokens = []) => {
+    if (text.split("\n").some(line => line.length > MAX_INLINE_LINE)) {
+      tokens.push({ type: "text", raw: text, text })
+      return tokens
+    }
+    return inlineTokens(text, tokens)
+  }
+  return lexer
+}
+
+export const parseBlocks = (text: string) => createLexer().lex(text)
+export const parseInline = (text: string) => createLexer().inlineTokens(text)
 
 export interface MarkdownPrefix { text: string; tokens: Token[] }
 
 // Retain the final two tokens: a paragraph can still become a table or setext heading.
 // Reference-style links can be defined later, so those messages always use the full lexer.
 export function parseStreaming(text: string, cache: MarkdownPrefix): Token[] {
+  if (text.split("\n").some(line => line.length > MAX_INLINE_LINE)) return parseBlocks(text)
   if (/^(?: {0,3}(?:[-+*]|\d+[.)])\s| {0,3}>| {4}|\t)/m.test(text) || /<details\b/i.test(text) || text.includes("\r") || text.includes("$$") || text.includes("\\[") || /\[[^\]\n]+\](?!\()/.test(text)) return parseBlocks(text)
   if (!text.startsWith(cache.text)) { cache.text = ""; cache.tokens = [] }
   const tail = text.slice(cache.text.length)

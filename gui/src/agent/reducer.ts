@@ -430,6 +430,7 @@ function applyAgentMessage(state: AgentState, m: AgentMessage): AgentState {
     }
 
     case "assistant": {
+      if (!m.message.content.some(block => block.type === "text" || block.type === "thinking" || block.type === "tool_use")) return state
       const turns = settleRetry(state.turns)
       const index = streamingIndex(turns)
       const turn = index === -1 ? undefined : turns[index] as Extract<Turn, { role: "assistant" }>
@@ -525,11 +526,12 @@ function applyStreamEvent(turns: Turn[], event: StreamEvent): Turn[] {
   if (event.type === "message_stop") return closeStreaming(turns)
 
   if (event.type === "content_block_start") {
+    const block = event.content_block
+    if (block.type !== "text" && block.type !== "thinking" && block.type !== "tool_use") return turns
     if (index === -1) {
       next = [...turns, { role: "assistant", id: crypto.randomUUID(), blocks: [], streaming: true, startedAt: Date.now() }]
       index = next.length - 1
     }
-    const block = event.content_block
     const created: Block =
       block.type === "text"
         ? { kind: "text", text: "", done: false, startedAt: Date.now() }
@@ -562,6 +564,7 @@ function applyStreamEvent(turns: Turn[], event: StreamEvent): Turn[] {
   }
 
   if (event.type === "content_block_stop") {
+    if (event.index !== undefined && !(next[index] as Extract<Turn, { role: "assistant" }>).blocks.some(block => isStreamBlock(block) && "streamIndex" in block && block.streamIndex === event.index)) return turns
     const stopped = withAssistant(next, index, (blocks) => {
       let lastIndex = event.index === undefined ? blocks.length - 1 : blocks.findIndex(block => isStreamBlock(block) && "streamIndex" in block && block.streamIndex === event.index)
       if (event.index === undefined) while (lastIndex >= 0 && !isStreamBlock(blocks[lastIndex]!)) lastIndex--
@@ -580,6 +583,8 @@ function applyStreamEvent(turns: Turn[], event: StreamEvent): Turn[] {
 // The complete assistant message is authoritative: it replaces whatever the
 // stream accumulated, and keeps tool results that already arrived.
 function finalizeAssistant(turns: Turn[], content: ContentBlock[], messageId?: string): Turn[] {
+  content = content.filter(block => block.type === "text" || block.type === "thinking" || block.type === "tool_use")
+  if (!content.length) return turns
   const index = streamingIndex(turns)
   // A redelivered message must not append a second copy of blocks already shown.
   if (index === -1 && messageId && content.length > 0 && content.every(block => hasDelivered(turns, messageId, block))) return turns

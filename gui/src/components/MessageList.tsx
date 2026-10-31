@@ -68,6 +68,7 @@ export function MessageList({ turns, cwd, onOpenFile, busy, result, readingWidth
   const pinnedRef = useRef(savedScroll?.pinned ?? true)
   const lastPromptId = useRef<string | undefined>(undefined)
   const userScrollAt = useRef(0)
+  const userPointerDown = useRef(false)
   const restoredRef = useRef(false)
   const firstTurnRef = useRef(turns[0]?.id)
   const previousLayoutOffset = useRef(0)
@@ -88,6 +89,21 @@ export function MessageList({ turns, cwd, onOpenFile, busy, result, readingWidth
   const [preview, setPreview] = useState<{ items: LightboxItem[]; index: number }>()
   const [viewport, setViewport] = useState({ top: savedScroll?.top ?? 0, height: 0 })
   const [measured, setMeasured] = useState(0)
+
+  useEffect(() => {
+    const release = () => {
+      if (userPointerDown.current) userScrollAt.current = performance.now()
+      userPointerDown.current = false
+    }
+    window.addEventListener("pointerup", release, true)
+    window.addEventListener("pointercancel", release, true)
+    window.addEventListener("blur", release)
+    return () => {
+      window.removeEventListener("pointerup", release, true)
+      window.removeEventListener("pointercancel", release, true)
+      window.removeEventListener("blur", release)
+    }
+  }, [])
 
   useLayoutEffect(() => {
     const scroll = scrollRef.current
@@ -187,7 +203,7 @@ export function MessageList({ turns, cwd, onOpenFile, busy, result, readingWidth
     if (el.scrollTop < 80 && historyBefore && !historyLoading) onLoadEarlier?.()
     const distance = el.scrollHeight - el.scrollTop - el.clientHeight
     if (distance <= PIN_THRESHOLD) pinnedRef.current = true
-    else if (performance.now() - userScrollAt.current < USER_SCROLL_WINDOW_MS) pinnedRef.current = false
+    else if (userPointerDown.current || performance.now() - userScrollAt.current < USER_SCROLL_WINDOW_MS) pinnedRef.current = false
     setShowJump(distance > JUMP_THRESHOLD)
     if (scrollFrame.current === undefined) {
       scrollFrame.current = requestAnimationFrame(() => {
@@ -469,7 +485,7 @@ export function MessageList({ turns, cwd, onOpenFile, busy, result, readingWidth
       onWheel={(event) => { pendingPrevious.current = undefined; if (event.deltaY < 0) userScrollAt.current = performance.now() }}
       onTouchMove={() => { userScrollAt.current = performance.now() }}
       onKeyDown={() => { userScrollAt.current = performance.now() }}
-      onPointerDownCapture={() => { pendingPrevious.current = undefined; userScrollAt.current = performance.now() }}
+      onPointerDownCapture={(event) => { pendingPrevious.current = undefined; userScrollAt.current = performance.now(); userPointerDown.current = event.button === 0 }}
       onMouseUp={captureSelection}
       onKeyUp={captureSelection}
       onFocusCapture={(event) => {
