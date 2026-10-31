@@ -164,6 +164,11 @@ function* scanEntries(file: string, offset = 0): Generator<Entry> {
 
 function readEntries(file: string): Entry[] { return [...scanEntries(file)] }
 
+function entryTime(entry: Entry): number | undefined {
+  const time = entry.timestamp ? Date.parse(entry.timestamp) : NaN
+  return Number.isFinite(time) ? time : undefined
+}
+
 function userText(entry: Entry): string | null {
   if (entry.type !== "user" || entry.isMeta || entry.isCompactSummary || entry.isSidechain) return null
   const content = entry.message?.content
@@ -306,7 +311,7 @@ async function conversationChain(file: string, includeSidechain = false): Promis
 // History items use the same shapes as live stream-json messages, so the
 // client feeds them through the same reducer.
 export type HistoryItem =
-  | { kind: "user"; id?: string; text: string; images?: ImageBlock[] }
+  | { kind: "user"; id?: string; text: string; images?: ImageBlock[]; sentAt?: number }
   | { kind: "turn-duration"; durationMs: number; interrupted?: boolean; error?: string }
   | { kind: "compaction"; trigger: "manual" | "auto" }
   | { kind: "turn-diff"; diff: TurnDiff }
@@ -471,7 +476,7 @@ export async function loadHistory(cwd: string, id: string): Promise<HistoryItem[
       else if (entry.content.startsWith("/")) {
         if (currentUserMessageId === undefined) turnNumber++
         currentUserMessageId = entry.uuid ?? currentUserMessageId
-        items.push({ kind: "user", id: userId, text: entry.content })
+        items.push({ kind: "user", id: userId, text: entry.content, sentAt: entryTime(entry) })
       }
       continue
     }
@@ -508,7 +513,7 @@ export async function loadHistory(cwd: string, id: string): Promise<HistoryItem[
       if (currentUserMessageId !== undefined) flushTurnDiff()
       if (currentUserMessageId === undefined) turnNumber++
       currentUserMessageId = entry.uuid ?? currentUserMessageId
-      items.push({ kind: "user", id: userId, text: text ?? "", images: Array.isArray(content) ? content.filter((b: any) => b?.type === "image") : undefined })
+      items.push({ kind: "user", id: userId, sentAt: entryTime(entry), text: text ?? "", images: Array.isArray(content) ? content.filter((b: any) => b?.type === "image") : undefined })
       continue
     }
 

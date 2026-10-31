@@ -352,7 +352,7 @@ export function SettingsDialog({
             className="min-w-0 flex-1 bg-transparent text-[var(--text-primary)] outline-none placeholder:text-[var(--sidebar-text-muted)]"
           />
         </label>
-        <div className="scrollbar-on-hover mt-2 min-h-0 flex-1 overflow-y-auto">
+        <div className="scrollbar-on-scroll mt-2 min-h-0 flex-1 overflow-y-auto">
           {query.trim() ? (
             <>
               <button
@@ -409,7 +409,7 @@ export function SettingsDialog({
       </nav>
 
       {navResizeHandle}
-      <main className="noa-settings-main scrollbar-on-hover min-w-0 flex-1 overflow-y-auto bg-[var(--bg-primary,#FCFCFB)] px-5 pt-[120px] pb-5">
+      <main className="noa-settings-main scrollbar-on-scroll min-w-0 flex-1 overflow-y-auto bg-[var(--bg-primary,#FCFCFB)] px-5 pt-[120px] pb-5">
         <div key={page} className="mx-auto flex max-w-3xl flex-col gap-10">
           <h1 className="text-[26px] leading-8 font-normal">{current?.label}</h1>
 

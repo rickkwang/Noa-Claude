@@ -274,7 +274,7 @@ function EditApprovalPreview({ file, oldText, newText }: { file: string; oldText
       onMouseLeave={event => { if (document.activeElement !== trigger.current && !preview.current?.contains(document.activeElement) && !(event.relatedTarget instanceof Node && trigger.current?.contains(event.relatedTarget))) setOpen(false) }}
       onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); close() } }}>
       <div className="flex min-w-0 shrink-0 items-center gap-2 border-b border-[var(--divider-subtle)] px-3 py-2 text-body"><span className="min-w-0 flex-1"><MiddlePath path={file} /></span>{counts}<button type="button" aria-label="Close diff preview" onClick={close}><X size={14} /></button></div>
-      <div className="noa-panel-body scrollbar-on-hover"><CodeView path={file} content={patch} diff /></div>
+      <div className="noa-panel-body scrollbar-on-scroll"><CodeView path={file} content={patch} diff /></div>
     </div>}
   </div>
 }

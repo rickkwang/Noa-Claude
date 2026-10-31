@@ -168,7 +168,7 @@ function Section({ title, count, open, children }: { title: string; count?: stri
 
 function ActivityTab({ state, onStopTask }: { state: AgentState; onStopTask: (id: string) => void }) {
   const statusKind = state.connection === "closed" ? "closed" : state.connection === "connecting" ? "connecting" : state.permissions.length || state.elicitations.length ? "waiting" : state.busy ? "running" : "ready"
-  return <div className="noa-panel-details scrollbar-on-hover">
+  return <div className="noa-panel-details scrollbar-on-scroll">
     <section className="noa-activity-status" data-kind={statusKind}>
       <span className="noa-activity-dot" />
       <div className="min-w-0 flex-1">

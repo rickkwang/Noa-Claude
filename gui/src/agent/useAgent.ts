@@ -183,7 +183,7 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
           dispatch({ type: "history", items: envelope.items, before: envelope.before, prepend: envelope.prepend })
           break
         case "user":
-          dispatch({ type: "user-sent", id: envelope.id, content: envelope.content })
+          dispatch({ type: "user-sent", id: envelope.id, content: envelope.content, sentAt: envelope.at })
           break
         case "queue":
           dispatch({ type: "queue", messages: envelope.messages, paused: envelope.paused })

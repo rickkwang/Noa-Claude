@@ -429,6 +429,7 @@ export function MessageList({ turns, cwd, onOpenFile, busy, result, readingWidth
           <MessageActions
             text={prose}
             kind="user"
+            sentAt={segment.sentAt}
             onEdit={onEdit && index === lastUserIndex ? () => onEdit(segment.text, segment.images) : undefined}
           />
         </div>
@@ -464,7 +465,7 @@ export function MessageList({ turns, cwd, onOpenFile, busy, result, readingWidth
         const turn = event.target instanceof Element ? event.target.closest<HTMLElement>("[data-virtual-turn-id]") : null
         if (turn?.dataset.virtualTurnId) focusedTurn.current = turn.dataset.virtualTurnId
       }}
-      className="noa-agent-scroll scrollbar-on-hover noa-scroll-fade relative flex-1 min-h-0 overflow-y-auto overscroll-contain"
+      className="noa-agent-scroll scrollbar-on-scroll noa-scroll-fade relative flex-1 min-h-0 overflow-y-auto overscroll-contain"
     >
       {/* 48px around the transcript column is reserved so the rail lives in the
           gutter and its expanded tick never crosses the text on narrow windows. */}
@@ -941,7 +942,7 @@ function ActivityGroup({ blocks, tasks, onStopTask, onOpenTask }: {
         <ChevronRight size={14} className={`shrink-0 opacity-0 transition-[transform,opacity] duration-300 group-hover/activity:opacity-100 group-focus-visible/activity:opacity-100 ${open ? "rotate-90" : ""}`} />
       </button>
       <Collapsible open={open}>
-        <div ref={activityRef} onScroll={(event) => { const e = event.currentTarget; following.current = e.scrollHeight - e.clientHeight - e.scrollTop <= 24 }} className="noa-activity-scroll scrollbar-on-hover mt-2 flex max-h-56 flex-col gap-1 overflow-x-hidden overflow-y-auto overscroll-contain focus-visible:outline-auto" role="region" aria-label="Tool activity" tabIndex={open ? 0 : -1}>
+        <div ref={activityRef} onScroll={(event) => { const e = event.currentTarget; following.current = e.scrollHeight - e.clientHeight - e.scrollTop <= 24 }} className="noa-activity-scroll scrollbar-on-scroll mt-2 flex max-h-56 flex-col gap-1 overflow-x-hidden overflow-y-auto overscroll-contain focus-visible:outline-auto" role="region" aria-label="Tool activity" tabIndex={open ? 0 : -1}>
           {tools.map((block, i) => (
               <ToolCard
                 key={`tool-${block.id}-${i}`}
@@ -1070,18 +1071,32 @@ function Working() {
   return <div className="noa-shimmer py-1 text-[length:var(--font-text-md-size)] leading-5">Thinking</div>
 }
 
-function MessageActions({ text, kind = "assistant", onEdit, complete = true }: {
+// Today shows the time, the past week the weekday and time, anything older the date and time.
+function formatSentAt(sentAt: number, now = new Date()): string {
+  const date = new Date(sentAt)
+  const time: Intl.DateTimeFormatOptions = { hour: "numeric", minute: "2-digit" }
+  const startOfDay = (value: Date) => new Date(value.getFullYear(), value.getMonth(), value.getDate()).getTime()
+  const days = Math.round((startOfDay(date) - startOfDay(now)) / 864e5)
+  if (days >= 0) return date.toLocaleString(undefined, time)
+  if (days < 0 && days > -7) return date.toLocaleString(undefined, { ...time, weekday: "long" })
+  return date.toLocaleString(undefined, { ...time, month: "short", day: "numeric" })
+}
+
+function MessageActions({ text, kind = "assistant", onEdit, complete = true, sentAt }: {
   text: string
   kind?: "user" | "assistant"
   onEdit?: () => void
   complete?: boolean
+  sentAt?: number
 }) {
   const [copied, setCopied] = useState(false)
   const [copyError, setCopyError] = useState(false)
   if (!text || !complete) return null
   const copyLabel = kind === "user" ? "Copy message" : "Copy response"
   return (
-    <div className={`${kind === "assistant" ? "-ml-1 mt-0.5 min-h-5 gap-0.5" : "mx-0.5 mb-1 gap-2"} flex leading-4 opacity-0 transition-opacity group-hover/message:opacity-100 focus-within:opacity-100`}>
+    <div className={`${kind === "assistant" ? "-ml-1 mt-0.5 min-h-5 gap-0.5" : "mx-1 items-center gap-2"} flex leading-4 opacity-0 transition-opacity group-hover/message:opacity-100 focus-within:opacity-100`}>
+      {kind === "user" && sentAt !== undefined && <time dateTime={new Date(sentAt).toISOString()} className="text-xs text-[var(--text-tertiary)]">{formatSentAt(sentAt)}</time>}
+      <div className={kind === "user" ? "flex items-center" : "contents"}>
       <button
         type="button"
         onClick={async event => {
@@ -1093,24 +1108,25 @@ function MessageActions({ text, kind = "assistant", onEdit, complete = true }: {
           setCopied(true)
           setTimeout(() => setCopied(false), 2000)
         }}
-        className={`${kind === "assistant" ? "size-5" : "size-6"} flex items-center justify-center rounded-md text-[var(--text-secondary,#5D5D5D)] hover:bg-[var(--fill-hover)] hover:text-[var(--text-primary,#2D2D2B)] noa-press`}
+        className={`${kind === "assistant" ? "size-5" : "size-7"} flex items-center justify-center rounded-md text-[var(--text-secondary,#5D5D5D)] hover:bg-[var(--fill-hover)] hover:text-[var(--text-primary,#2D2D2B)] noa-press`}
         aria-label={copied ? "Copied" : copyLabel}
         title={copied ? "Copied" : copyLabel}
       >
-        {copied ? <Check size={kind === "assistant" ? 16 : 12} /> : <Copy size={kind === "assistant" ? 16 : 12} />}
+        {copied ? <Check size={kind === "assistant" ? 16 : 14} /> : <Copy size={kind === "assistant" ? 16 : 14} />}
       </button>
       {copyError && <span role="status" className="self-center text-caption text-[#C24444]">Could not copy. Try again.</span>}
       {onEdit && (
         <button
           type="button"
           onClick={onEdit}
-          className="flex size-6 items-center justify-center rounded-md text-[var(--text-secondary,#5D5D5D)] hover:bg-[var(--fill-hover)] hover:text-[var(--text-primary,#2D2D2B)] noa-press"
+          className="flex size-7 items-center justify-center rounded-md text-[var(--text-secondary,#5D5D5D)] hover:bg-[var(--fill-hover)] hover:text-[var(--text-primary,#2D2D2B)] noa-press"
           aria-label="Edit message"
-          title="Edit and resend"
+          title="Edit message"
         >
-          <Edit2 size={12} />
+          <Edit2 size={14} />
         </button>
       )}
+      </div>
     </div>
   )
 }

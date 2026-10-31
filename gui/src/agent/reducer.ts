@@ -49,7 +49,7 @@ export type Block =
   | ToolBlock
 
 export type Turn =
-  | { role: "user"; id: string; text: string; images?: ImageBlock[] }
+  | { role: "user"; id: string; text: string; images?: ImageBlock[]; sentAt?: number }
   | {
       role: "assistant"
       id: string
@@ -144,8 +144,8 @@ export type Action =
   | { type: "reset" }
   | { type: "queue"; messages: QueuedMessage[]; paused?: boolean }
   | { type: "connection"; status: AgentState["connection"] }
-  | { type: "user-sent"; id: string; text?: string; content?: UserContent }
-  | { type: "history-user"; id: string; text: string; images?: ImageBlock[] }
+  | { type: "user-sent"; id: string; text?: string; content?: UserContent; sentAt?: number }
+  | { type: "history-user"; id: string; text: string; images?: ImageBlock[]; sentAt?: number }
   | { type: "turn-duration"; durationMs: number; interrupted?: boolean; error?: string }
   | { type: "exit"; code: number | null }
   | { type: "compaction"; trigger: "manual" | "auto" }
@@ -193,7 +193,7 @@ export function reducer(state: AgentState, action: Action): AgentState {
     case "history": {
       let restored = initialState
       for (const item of action.items) {
-        if (item.kind === "user") restored = reducer(restored, { type: "history-user", id: item.id ?? crypto.randomUUID(), text: item.text, images: item.images })
+        if (item.kind === "user") restored = reducer(restored, { type: "history-user", id: item.id ?? crypto.randomUUID(), text: item.text, images: item.images, sentAt: item.sentAt })
         else if (item.kind === "turn-duration") restored = reducer(restored, { ...item, type: "turn-duration" })
         else if (item.kind === "compaction") restored = reducer(restored, { type: "compaction", trigger: item.trigger })
         else if (item.kind === "turn-diff") restored = reducer(restored, { type: "turn-diff", diff: item.diff })
@@ -270,10 +270,10 @@ export function reducer(state: AgentState, action: Action): AgentState {
         notice: undefined,
         liveDiff: undefined,
         // A message sent while the agent is busy is a steer: the in-flight message keeps streaming above it.
-        turns: [...(state.busy ? state.turns : closeStreaming(state.turns)), userTurn(action.id, action.content ?? action.text ?? "")],
+        turns: [...(state.busy ? state.turns : closeStreaming(state.turns)), userTurn(action.id, action.content ?? action.text ?? "", action.sentAt)],
       }
     case "history-user":
-      return { ...state, turns: [...state.turns, { role: "user", id: action.id, text: action.text, images: action.images }] }
+      return { ...state, turns: [...state.turns, { role: "user", id: action.id, text: action.text, images: action.images, sentAt: action.sentAt }] }
     case "turn-duration":
       return {
         ...state,
@@ -834,8 +834,8 @@ function splitToolContent(content: unknown, toolUseResult?: unknown): {
   }
 }
 
-function userTurn(id: string, content: UserContent): Turn {
-  return { role: "user", id, text: typeof content === "string" ? content : content.filter((b) => b.type === "text").map((b) => b.text).join("\n"), images: typeof content === "string" ? undefined : content.filter((b): b is ImageBlock => b.type === "image") }
+function userTurn(id: string, content: UserContent, sentAt?: number): Turn {
+  return { role: "user", id, sentAt, text: typeof content === "string" ? content : content.filter((b) => b.type === "text").map((b) => b.text).join("\n"), images: typeof content === "string" ? undefined : content.filter((b): b is ImageBlock => b.type === "image") }
 }
 
 function completeResult(turns: Turn[], result?: string): Turn[] {

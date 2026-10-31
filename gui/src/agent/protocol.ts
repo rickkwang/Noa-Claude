@@ -12,7 +12,8 @@ export interface ImageAttachment {
 
 export type UserContent = string | (Extract<ContentBlock, { type: "text" }> | ImageBlock)[]
 export interface ImageBlock { type: "image"; source: { type: "base64"; media_type: string; data: string } }
-export interface QueuedMessage { id: string; content: UserContent }
+// `at` is when the user queued the message, which may be well before it is written to the agent.
+export interface QueuedMessage { id: string; content: UserContent; at?: number }
 
 export interface ElicitationRequest {
   subtype: "elicitation"
@@ -219,7 +220,7 @@ export type Envelope =
   | { kind: "interrupt" }
   | { kind: "attached"; runtimeId: string; mode?: PermissionMode }
   | { kind: "history"; items: HistoryItem[]; before?: number; prepend?: boolean }
-  | { kind: "user"; id: string; content: UserContent }
+  | { kind: "user"; id: string; content: UserContent; at?: number }
   | { kind: "queue"; messages: QueuedMessage[]; paused?: boolean }
   | { kind: "agent"; message: AgentMessage }
   | { kind: "turn-diff"; diff: TurnDiff; updateOnly?: boolean }
@@ -278,7 +279,7 @@ export type ControlRequest =
 
 // Shape of the bridge's /api/sessions/:id response.
 export type HistoryItem =
-  | { kind: "user"; id?: string; text: string; images?: ImageBlock[] }
+  | { kind: "user"; id?: string; text: string; images?: ImageBlock[]; sentAt?: number }
   | { kind: "turn-duration"; durationMs: number; interrupted?: boolean; error?: string }
   | { kind: "compaction"; trigger: "manual" | "auto" }
   | { kind: "turn-diff"; diff: TurnDiff; updateOnly?: boolean }

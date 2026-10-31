@@ -468,7 +468,7 @@ export function Sidebar({
         </span>
       </div>
 
-      <div className="noa-sidebar-scroll scrollbar-on-hover noa-sidebar-scroll-fade group/tree flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
+      <div className="noa-sidebar-scroll scrollbar-on-scroll noa-sidebar-scroll-fade group/tree flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
         <div className="pt-1 pb-2">
           {projects.length === 0 && (
             <button

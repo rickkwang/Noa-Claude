@@ -228,7 +228,7 @@ async function startNextSerialized(run: AgentRun) {
     return
   }
   emit(run, queueEnvelope(run))
-  emit(run, { kind: "user", id: next.id, content: next.content })
+  emit(run, { kind: "user", id: next.id, content: next.content, at: next.at ?? Date.now() })
 }
 
 function trackTurnResult(run: AgentRun, message: AgentMessage) {
@@ -576,7 +576,7 @@ export async function agentMessage(ws: ServerWebSocket<SocketData>, raw: string 
               .join(" ")
         ).slice(0, 80) || "Image task"
     if (!run.busy) run.queuePaused = false
-    run.queue.push({ id: crypto.randomUUID(), content })
+    run.queue.push({ id: crypto.randomUUID(), content, at: Date.now() })
     emit(run, queueEnvelope(run))
     void startNext(run)
   } else if (message.type === "queue_remove") {
@@ -601,7 +601,7 @@ export async function agentMessage(ws: ServerWebSocket<SocketData>, raw: string 
     if (item && run.busy) {
       run.queue.splice(index, 1)
       emit(run, queueEnvelope(run))
-      emit(run, { kind: "user", id: item.id, content: item.content })
+      emit(run, { kind: "user", id: item.id, content: item.content, at: item.at ?? Date.now() })
       write(run, { type: "user", message: { role: "user", content: item.content }, parent_tool_use_id: null, uuid: item.id })
     }
   } else if (message.type === "queue_pause") {

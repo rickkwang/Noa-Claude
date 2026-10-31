@@ -1376,44 +1376,29 @@ html[data-capture-redact="true"] [data-capture-redact]::after {
 }
 
 
-/* Scrollbars are invisible until the container is hovered or holds keyboard focus, then an 8px round thumb on the heavy border
-   tier (so it follows Contrast). The standard properties go transparent first and hand over to the WebKit pseudo
-   elements where those exist (:has(:focus-visible) rather than :focus-within, so a row clicked with the mouse does not pin the bar open), which is what lets the thumb be styled and hidden. Containers opt in with this class;
-   everything else keeps the platform's own overlay scrollbar. The 8px matches --noa-scrollbar-strip. */
-.scrollbar-on-hover {
-  scrollbar-color: transparent transparent !important;
+/* Scrollbars stay invisible until the container scrolls: trackScrollActivity marks it with data-scrolling
+   and drops the mark a second after the last scroll event, so the thumb fades in and out like the platform's
+   overlay bar. The thumb is an 8px round track (1px transparent border leaves a 6px thumb) on the heavy border tier,
+   so it follows Contrast. The 8px matches --noa-scrollbar-strip. */
+.scrollbar-on-scroll::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
 }
-.scrollbar-on-hover:hover,
-.scrollbar-on-hover:has(:focus-visible) {
-  scrollbar-color: var(--border-strong) transparent !important;
+.scrollbar-on-scroll::-webkit-scrollbar-track {
+  background-color: transparent;
 }
-@supports selector(::-webkit-scrollbar) {
-  .scrollbar-on-hover {
-    scrollbar-width: auto;
-  }
-  .scrollbar-on-hover,
-  .scrollbar-on-hover:hover,
-  .scrollbar-on-hover:has(:focus-visible) {
-    scrollbar-color: auto !important;
-  }
-  .scrollbar-on-hover::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
-  }
-}
-/* The track stays the reference's 8px; a 1px transparent border leaves a 6px round thumb. */
-.scrollbar-on-hover::-webkit-scrollbar-thumb {
+.scrollbar-on-scroll::-webkit-scrollbar-thumb {
   border: 1px solid transparent;
   border-radius: 9999px;
   background-color: transparent;
   background-clip: padding-box;
+  transition: background-color 300ms ease-out;
 }
-.scrollbar-on-hover:hover::-webkit-scrollbar-thumb,
-.scrollbar-on-hover:has(:focus-visible)::-webkit-scrollbar-thumb {
+.scrollbar-on-scroll[data-scrolling]::-webkit-scrollbar-thumb,
+.scrollbar-on-scroll::-webkit-scrollbar-thumb:hover,
+.scrollbar-on-scroll::-webkit-scrollbar-thumb:active {
   background-color: var(--border-strong);
-}
-.scrollbar-on-hover::-webkit-scrollbar-track {
-  background-color: transparent;
+  transition: none;
 }
 .hide-scrollbar {
   scrollbar-width: none;
