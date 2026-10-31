@@ -4,7 +4,8 @@ import { composerCommands, findComposerCommand, filterComposerCommands, slashAtC
 import { loadImageDraft, saveImageDraft } from "../agent/imageDrafts"
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from "react"
 import { startEffortMaxFill } from "./effortMaxFill"
-import type { ContextUsage, ImageAttachment, UserContent, ModelInfo, PermissionMode, SlashCommand } from "../agent/protocol"
+import type { ContextUsage, ImageAttachment, RateLimitInfo, UserContent, ModelInfo, PermissionMode, SlashCommand } from "../agent/protocol"
+import { RateLimitNotice } from "./RateLimitNotice"
 import { Check, Edit2, FileText, List, RotateCcw, X } from "../lib/icons"
 import { Lightbox } from "./Lightbox"
 import { useConfirm } from "./ConfirmDialog"
@@ -82,6 +83,9 @@ interface ComposerProps {
   // Full access is hidden from the permission menu until the user opts in from settings.
   showFullAccess?: boolean
   contextUsage?: ContextUsage
+  // Usage-limit notice: shown in the environment strip for new tasks, above the composer otherwise.
+  rateLimit?: RateLimitInfo
+  onDismissRateLimit?: () => void
 }
 
 // Noa-styled composer: a rounded card with a hairline ring, slash menu, model and mode pickers.
@@ -117,6 +121,8 @@ export function Composer({
   contextUsage,
   sendShortcut = "enter",
   showFullAccess = false,
+  rateLimit,
+  onDismissRateLimit,
 }: ComposerProps) {
   const disabled = connection !== "ready"
   const [text, setText] = useState(() => localStorage.getItem(draftKey) ?? "")
@@ -542,6 +548,7 @@ export function Composer({
     <div ref={composerRef} className="noa-agent-composer relative">
       {newTask && (
         <div className="noa-agent-environment flex items-center gap-2 text-chat-sm">
+          {rateLimit && onDismissRateLimit ? <RateLimitNotice info={rateLimit} inline onDismiss={onDismissRateLimit} /> : <>
           <Picker
             align="left"
             hideChevron
@@ -566,6 +573,12 @@ export function Composer({
             This computer
           </span>
           <EnvironmentMenu cwd={cwd} branch={branch} onBranchChange={onBranchChange} worktree={!!worktreeOf} canToggleWorktree={newTask} onWorktree={onWorktree} />
+          </>}
+        </div>
+      )}
+      {!newTask && rateLimit && onDismissRateLimit && (
+        <div className="mb-2">
+          <RateLimitNotice info={rateLimit} onDismiss={onDismissRateLimit} />
         </div>
       )}
       {mentionPresence.mounted && (

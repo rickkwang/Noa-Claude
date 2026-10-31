@@ -35,7 +35,7 @@ import { defaultSettings } from "./theme/settings"
 import { SettingsDialog } from "./components/SettingsDialog"
 import { SessionTitle } from "./components/SessionTitle"
 import { SearchDialog } from "./components/SearchDialog"
-import { RateLimitNotice } from "./components/RateLimitNotice"
+import { rateLimitKey } from "./components/RateLimitNotice"
 import { ListDetails, PanelRight } from "./lib/icons"
 
 // Noa's default layout widths.
@@ -177,6 +177,8 @@ function Workspace({ cwd }: { cwd: string }) {
       runtimeId: session.runtimeId,
       defaultPermissionMode: settings.agent.permissionDefault === "inherit" ? undefined : settings.agent.permissionDefault,
     })
+  const [dismissedRateLimit, setDismissedRateLimit] = useState<string>()
+  const visibleRateLimit = state.rateLimit && rateLimitKey(state.rateLimit) !== dismissedRateLimit ? state.rateLimit : undefined
   const activeId = state.sessionId ?? session.resume
   const activeSessionKey = activeId ? sessionUpdateKey(session.cwd, activeId) : undefined
   const activeSessionRef = useRef({ cwd: session.cwd, id: activeId, runtimeId: session.runtimeId })
@@ -990,7 +992,6 @@ function Workspace({ cwd }: { cwd: string }) {
                   onPaused={setQueuePaused}
                 />
               )}
-              {<RateLimitNotice info={state.rateLimit ?? { status: "allowed_warning", rateLimitType: "seven_day", utilization: 0.92, resetsAt: 1793000000 }} />} {/*TMPSHOT*/}
               {state.notice && <p role="status" className="m-0 px-1 text-caption text-[var(--sidebar-text-muted)]">{state.notice}</p>}
               {state.error && !state.turns.some(turn => turn.role === "assistant" && turn.error === state.error) && (
                 <p role="alert" className="m-0 break-words px-1 text-caption text-[#C24444]">
@@ -999,6 +1000,8 @@ function Workspace({ cwd }: { cwd: string }) {
               )}
               <Composer
                 key={session.key}
+                rateLimit={visibleRateLimit}
+                onDismissRateLimit={() => state.rateLimit && setDismissedRateLimit(rateLimitKey(state.rateLimit))}
                 draftKey={`noa-agent.draft:${session.cwd}:${activeId ?? session.runtimeId}`}
                 reference={reference}
                 quote={quote}
