@@ -753,6 +753,8 @@ html[data-translucent-sidebar="enabled"] [data-settings-surface="true"] {
 .noa-settings-main {
   border-left: 0.5px solid var(--border-default, rgba(45,45,43,0.078));
   border-radius: var(--noa-surface-radius) 0 0 var(--noa-surface-radius);
+  /* Opening Advanced makes the page scroll; without a reserved gutter the centered column shifts by the scrollbar's width. */
+  scrollbar-gutter: stable both-edges;
 }
 
 /* Titlebar goes transparent so the shell veil shows through; no veil of its own (it would re-rasterize icon strokes). */
