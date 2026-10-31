@@ -4,6 +4,7 @@ export type GuiCommandAction =
   | "new"
   | "resume"
   | "model"
+  | "provider"
   | "effort"
   | "permissions"
   | "plan"
@@ -42,6 +43,13 @@ const guiCommands: ComposerCommand[] = [
     description: "Choose the model for this chat",
     argumentHint: "[model]",
     action: "model",
+    group: "Commands",
+  },
+  {
+    name: "provider",
+    description: "Switch the model provider",
+    argumentHint: "[provider]",
+    action: "provider",
     group: "Commands",
   },
   {

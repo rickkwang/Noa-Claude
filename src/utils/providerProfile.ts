@@ -455,6 +455,17 @@ export async function updateProviderProfile(
   })
 }
 
+export async function removeProviderProfile(id: string): Promise<boolean> {
+  return mutateProviderProfiles(profiles => {
+    const target = profiles.find(p => p.id === id)
+    if (!target) return { result: false }
+    if (target.active) {
+      throw new Error('Switch to another provider before removing the active one')
+    }
+    return { next: profiles.filter(p => p.id !== id), result: true }
+  })
+}
+
 /**
  * Makes a model saved as the default in /model the active profile's default
  * too, so from the next session it is what the Default row shows and the tier

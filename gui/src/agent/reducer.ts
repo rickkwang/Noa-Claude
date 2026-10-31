@@ -12,6 +12,7 @@ import type {
   ControlPayload,
   McpServerStatus,
   ModelInfo,
+  ProviderInfo,
   RateLimitInfo,
   PermissionMode,
   PermissionRequest,
@@ -97,6 +98,8 @@ export interface AgentState {
   // Unknown until the agent reports it in system/init.
   permissionMode?: PermissionMode
   models: ModelInfo[]
+  providers: ProviderInfo[]
+  providerPending: boolean
   commands: SlashCommand[]
   account?: AccountInfo
   auth?: {
@@ -156,6 +159,7 @@ export type Action =
   | { type: "agent"; message: AgentMessage }
   | { type: "control"; payload: ControlPayload }
   | { type: "model-set"; model: string }
+  | { type: "provider-pending"; pending: boolean }
   | { type: "effort-set"; effort?: string }
   | { type: "permission-mode-set"; mode: PermissionMode }
   | { type: "log"; text: string }
@@ -172,6 +176,8 @@ export type Action =
 export const initialState: AgentState = {
   connection: "connecting",
   models: [],
+  providers: [],
+  providerPending: false,
   commands: [],
   turns: [],
   busy: false,
@@ -330,6 +336,8 @@ export function reducer(state: AgentState, action: Action): AgentState {
       return { ...state, auth: undefined }
     case "permission-answered":
       return { ...state, permissions: state.permissions.filter((p) => p.requestId !== action.requestId), elicitations: state.elicitations.filter((p) => p.requestId !== action.requestId) }
+    case "provider-pending":
+      return { ...state, providerPending: action.pending }
     case "model-set":
       return { ...state, model: action.model }
     case "effort-set":
@@ -346,8 +354,20 @@ export function reducer(state: AgentState, action: Action): AgentState {
         return {
           ...state,
           models: action.payload.models,
+          providers: action.payload.providers ?? [],
           commands: action.payload.commands,
           account: action.payload.account ?? state.account,
+        }
+      }
+      if (action.payload.kind === "provider") {
+        return {
+          ...state,
+          models: action.payload.models,
+          providers: action.payload.providers,
+          account: action.payload.account ?? state.account,
+          model: action.payload.model ?? state.model,
+          contextUsage: undefined,
+          providerPending: false,
         }
       }
       return { ...state, contextUsage: action.payload.usage, contextLoading: false, contextError: undefined, contextUpdatedAt: Date.now() }

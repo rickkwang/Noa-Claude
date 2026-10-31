@@ -170,7 +170,7 @@ function Workspace({ cwd }: { cwd: string }) {
   const [rightTab, setRightTab] = useState<PanelTab>("files")
   useEffect(() => { setTurnDiff(undefined) }, [session.key])
 
-  const { state, sendMessage, reloadCommands, loadEarlier, interrupt, answerPermission, answerElicitation, removeQueued, moveQueued, updateQueued, steerQueued, setQueuePaused, runQueued, stopTask, setModel, setPermissionMode, setEffort, refreshSettings, changeMcp, refreshContext, refreshMcp, turnDiffAction, clearDiffAction, startAuthentication, waitForAuthentication, submitAuthenticationCode, closeAuthentication } =
+  const { state, sendMessage, reloadCommands, loadEarlier, interrupt, answerPermission, answerElicitation, removeQueued, moveQueued, updateQueued, steerQueued, setQueuePaused, runQueued, stopTask, setModel, setProvider, saveProvider, deleteProvider, setPermissionMode, setEffort, refreshSettings, changeMcp, refreshContext, refreshMcp, turnDiffAction, clearDiffAction, startAuthentication, waitForAuthentication, submitAuthenticationCode, closeAuthentication } =
     useAgent({
       cwd: session.cwd,
       resume: session.resume,
@@ -1031,6 +1031,8 @@ function Workspace({ cwd }: { cwd: string }) {
                 connection={state.connection}
                 busy={state.busy}
                 models={state.models}
+                providers={state.providers}
+                onProvider={setProvider}
                 model={state.model}
                 mode={state.permissionMode}
                 commands={state.commands}
@@ -1108,6 +1110,9 @@ function Workspace({ cwd }: { cwd: string }) {
           onChangeMcp={changeMcp}
           onReloadCommands={() => reloadCommands(true)}
           onModel={setModel}
+          onProvider={setProvider}
+          onSaveProvider={saveProvider}
+          onDeleteProvider={deleteProvider}
           onEffort={setEffort}
           onMode={setPermissionMode}
           onChange={setSettings}

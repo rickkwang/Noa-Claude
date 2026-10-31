@@ -4,7 +4,7 @@ import { composerCommands, findComposerCommand, filterComposerCommands, slashAtC
 import { loadImageDraft, saveImageDraft } from "../agent/imageDrafts"
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from "react"
 import { startEffortMaxFill } from "./effortMaxFill"
-import type { ContextUsage, ImageAttachment, RateLimitInfo, UserContent, ModelInfo, PermissionMode, SlashCommand } from "../agent/protocol"
+import type { ContextUsage, ImageAttachment, RateLimitInfo, UserContent, ModelInfo, ProviderInfo, PermissionMode, SlashCommand } from "../agent/protocol"
 import { RateLimitNotice } from "./RateLimitNotice"
 import { Check, Edit2, FileText, List, RotateCcw, X } from "../lib/icons"
 import { Lightbox } from "./Lightbox"
@@ -49,6 +49,7 @@ interface ComposerProps {
   connection: AgentState["connection"]
   busy: boolean
   models: ModelInfo[]
+  providers?: ProviderInfo[]
   model?: string
   mode?: PermissionMode
   commands: SlashCommand[]
@@ -56,6 +57,7 @@ interface ComposerProps {
   onCommand: (action: GuiCommandAction) => void
   onInterrupt: () => void
   onModel: (model: string) => void
+  onProvider?: (providerId: string) => void
   onMode: (mode: PermissionMode) => void
   draftKey: string
   reference?: { path: string; key: number }
@@ -96,6 +98,7 @@ export function Composer({
   connection,
   busy,
   models,
+  providers = [],
   model,
   mode,
   commands,
@@ -103,6 +106,7 @@ export function Composer({
   onCommand,
   onInterrupt,
   onModel,
+  onProvider,
   onMode,
   draftKey,
   reference,
@@ -322,14 +326,16 @@ export function Composer({
   const effortLevels = currentModel?.supportsEffort ? (currentModel.supportedEffortLevels ?? []) : []
   const allCommands = useMemo(() => composerCommands(commands).map((command) => ({
     ...command,
-    disabled: command.action === "stop" ? !busy : ["model", "effort", "permissions", "plan", "reload"].includes(command.action ?? "") ? disabled || busy : command.action ? false : disabled,
+    disabled: command.action === "stop" ? !busy : ["model", "provider", "effort", "permissions", "plan", "reload"].includes(command.action ?? "") ? disabled || busy : command.action ? false : disabled,
   })), [commands, disabled, busy])
   const slash = slashAtCaret(text, caret)
   const argumentCommand = slash?.argument !== undefined ? findComposerCommand(allCommands, slash.query) : undefined
-  const submenu = browserAction ?? (argumentCommand?.action && ["model", "effort", "permissions"].includes(argumentCommand.action) ? argumentCommand.action : undefined)
+  const submenu = browserAction ?? (argumentCommand?.action && ["model", "provider", "effort", "permissions"].includes(argumentCommand.action) ? argumentCommand.action : undefined)
   const slashQuery = browserOpen ? browserSearch : submenu ? slash?.argument ?? "" : slash?.argument === undefined ? slash?.query : undefined
   const choices: ComposerCommand[] = submenu === "model"
     ? models.map((m) => ({ name: m.displayName, value: m.value, aliases: [m.value], description: m.description, argumentHint: "", action: "model", group: "Models", active: m.value === currentModel?.value, disabled: disabled || busy }))
+    : submenu === "provider"
+    ? providers.map((p) => ({ name: p.name, value: p.id, aliases: [p.id], description: p.typeLabel ?? p.type, argumentHint: "", action: "provider" as const, group: "Providers", active: p.active, disabled: disabled || busy }))
     : submenu === "effort"
       ? [{ name: "Default", value: "default", description: "Use the model default", argumentHint: "", action: "effort", group: "Reasoning effort", active: !effort, disabled: disabled || busy }, ...effortLevels.map((level) => ({ name: level, value: level, description: "", argumentHint: "", action: "effort" as const, group: "Reasoning effort", active: level === effort, disabled: disabled || busy }))]
       : submenu === "permissions"
@@ -337,7 +343,7 @@ export function Composer({
         : allCommands.filter((command) => !browserFilter || command.group === browserFilter)
   const menuItems = filterComposerCommands(choices, slashQuery ?? "")
   const menuOpen = !menuDismissed && (browserOpen || (!browserAction && inputFocused && slashQuery !== undefined))
-  const menuTitle = submenu === "model" ? "Model" : submenu === "effort" ? "Reasoning effort" : submenu === "permissions" ? "Permissions" : browserFilter
+  const menuTitle = submenu === "model" ? "Model" : submenu === "provider" ? "Provider" : submenu === "effort" ? "Reasoning effort" : submenu === "permissions" ? "Permissions" : browserFilter
   const mention = inputFocused ? mentionAtCaret(text, caret) : undefined
   const mentionOpen = !!mention && !mentionDismissed && !menuOpen && !disabled
   const mentionPresence = usePresence(mentionOpen)
@@ -433,13 +439,17 @@ export function Composer({
     if (command.disabled) { setAttachmentError(busy ? "Stop the current turn before changing this setting." : "Noa is still connecting."); return }
     setAttachmentError(undefined)
     const action = command.action!
-    if (["model", "effort", "permissions"].includes(action) && !value) {
+    if (["model", "provider", "effort", "permissions"].includes(action) && !value) {
       setBrowserSearch("")
       if (slash) { replaceSlash(`/${command.name} `); setBrowserOpen(false) }
       else { setBrowserAction(action); setBrowserOpen(true) }
       textareaRef.current?.focus(); return
     }
     if (action === "model") onModel(value)
+    else if (action === "provider") {
+      if (!providers.some((p) => p.id === value)) { setAttachmentError("Choose a configured provider."); return }
+      onProvider?.(value)
+    }
     else if (action === "effort") {
       if (value !== "default" && !effortLevels.includes(value)) { setAttachmentError("Choose one of this model’s supported effort levels."); return }
       onEffort(value === "default" ? null : value)
@@ -568,6 +578,16 @@ export function Composer({
     onSelect: () => onModel(m.value),
     heading: i === 0 ? "Select model" : undefined,
   }))
+  const providerItems: PickerItem[] = providers.length > 1 && onProvider
+    ? providers.map((p, i) => ({
+        key: `provider:${p.id}`,
+        title: p.name,
+        description: p.typeLabel ?? p.type,
+        active: p.active,
+        onSelect: () => onProvider(p.id),
+        heading: i === 0 ? "Provider" : undefined,
+      }))
+    : []
 
   return (
     <div ref={composerRef} className="noa-agent-composer relative">
@@ -900,7 +920,7 @@ export function Composer({
                 </>
               }
               disabled={disabled || busy || models.length === 0}
-              items={modelItems}
+              items={[...modelItems, ...providerItems]}
               header={effortLevels.length > 0 ? (toggleModels, active) => (
                 <EffortSlider
                   levels={effortLevels}

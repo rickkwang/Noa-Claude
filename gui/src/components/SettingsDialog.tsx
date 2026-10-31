@@ -2,9 +2,9 @@ import { Children, useEffect, useRef, useState, type CSSProperties, type Keyboar
 import { createPortal } from "react-dom"
 import type { AppSettings, ThemeFontFace, ThemeFonts } from "../types"
 import type { AgentState } from "../agent/reducer"
-import type { PermissionMode, AccountInfo } from "../agent/protocol"
+import type { PermissionMode, AccountInfo, ProviderInfo } from "../agent/protocol"
 import { fetchPlugins, fetchSkillsState, runPluginAction, runSkillAction, type SkillsState, type PluginAction, type PluginCatalog } from "../api"
-import { ArrowLeft, ChevronDown, ChevronLeft, ChevronRight, Download, Trash2, X, Keyboard, Palette, Search, Settings, Plug, SlidersHorizontal, List, RefreshCcw } from "../lib/icons"
+import { ArrowLeft, ChevronDown, ChevronLeft, ChevronRight, Download, Eye, Trash2, X, Keyboard, Palette, Search, Settings, Plug, SlidersHorizontal, List, RefreshCcw } from "../lib/icons"
 import { SYSTEM_DEFAULT_FONT, CONTENT_SAME_AS_UI } from "../lib/fontFamily"
 import { faceStyle, isRegularFace, loadFontFamilies, type LocalFontFamily } from "../lib/localFonts"
 import { clampContrast } from "../lib/contrast"
@@ -15,11 +15,12 @@ import { defaultSettings } from "../theme/settings"
 import { AuthDialog } from "./AuthDialog"
 import { useConfirm } from "./ConfirmDialog"
 import { Markdown } from "./Markdown"
+import { PROVIDER_CATALOG, type ProviderDraft } from "../lib/providerCatalog"
 
 const dragRegion = { WebkitAppRegion: "drag" } as CSSProperties
 const noDragRegion = { WebkitAppRegion: "no-drag" } as CSSProperties
 
-type Page = "general" | "appearance" | "shortcuts" | "configuration" | "mcp" | "hooks" | "skills"
+type Page = "general" | "appearance" | "shortcuts" | "configuration" | "providers" | "mcp" | "hooks" | "skills"
 type Theme = AppSettings["appearance"]["theme"]
 type DefaultMode = AppSettings["agent"]["permissionDefault"]
 
@@ -67,6 +68,7 @@ const pages: { key: Page; label: string; group: string; icon: ReactNode; rows: s
     icon: <SlidersHorizontal size={16} />,
     rows: ["Model", "Reasoning effort", "Current permissions", "Configuration sources", "Permission rules"],
   },
+  { key: "providers", label: "Providers", group: "Coding", icon: <Plug size={16} />, rows: ["Providers", "API key", "Base URL"] },
   { key: "hooks", label: "Hooks", group: "Coding", icon: <List size={16} />, rows: ["Configured hooks"] },
   { key: "mcp", label: "MCP servers", group: "Integrations", icon: <Plug size={16} />, rows: ["Connected servers"] },
   {
@@ -120,6 +122,9 @@ export function SettingsDialog({
   onChangeMcp,
   onReloadCommands,
   onModel,
+  onProvider,
+  onSaveProvider,
+  onDeleteProvider,
   onEffort,
   onMode,
   onChange,
@@ -143,6 +148,9 @@ export function SettingsDialog({
   onChangeMcp: (name: string, enabled?: boolean) => void
   onReloadCommands: () => void
   onModel: (model: string) => void
+  onProvider: (providerId: string) => void
+  onSaveProvider: (draft: ProviderDraft) => void
+  onDeleteProvider: (providerId: string) => void
   onEffort: (effort: string | null) => void
   onMode: (mode: PermissionMode) => void
   onChange: (settings: AppSettings) => void
@@ -793,6 +801,17 @@ export function SettingsDialog({
               </Section>
             </>
           )}
+          {page === "providers" && (
+            <ProvidersPage
+              providers={agent.providers}
+              busy={agent.busy}
+              pending={agent.providerPending}
+              onUse={onProvider}
+              onSave={onSaveProvider}
+              onDelete={onDeleteProvider}
+            />
+          )}
+
           {page === "mcp" && (
             <Section title="Connected servers">
               {!agent.mcpServers?.length ? (
@@ -1421,6 +1440,201 @@ function PluginsPage({ skills: promptCommands, onReloadCommands, onOpenMcp, onTr
         <p role="alert" className="noa-selectable m-0 whitespace-pre-wrap rounded-xl bg-[color-mix(in_srgb,#C24444_10%,transparent)] px-3 py-2 text-body text-[#C24444]">{error}</p>
       )}
       {body}
+      {dialog}
+    </>
+  )
+}
+
+const providerField =
+  "h-9 w-full rounded-xl border border-[var(--border-default)] bg-transparent px-3 text-body text-[var(--text-primary)] outline-none placeholder:text-[var(--sidebar-text-muted)] disabled:opacity-50"
+const providerButton =
+  "h-8 shrink-0 rounded-lg border border-[var(--border-default)] bg-[var(--bg-card)] px-3 text-body text-[var(--text-primary)] hover:bg-[var(--settings-fill-hover)] disabled:opacity-40"
+
+function hostOf(url?: string): string | undefined {
+  if (!url) return undefined
+  try {
+    return new URL(url).host
+  } catch {
+    return url
+  }
+}
+
+function ProviderForm({
+  initial,
+  provider,
+  keyless,
+  pending,
+  submitLabel,
+  onSubmit,
+  onDelete,
+}: {
+  initial: ProviderDraft
+  provider?: ProviderInfo
+  keyless?: boolean
+  pending: boolean
+  submitLabel: string
+  onSubmit: (draft: ProviderDraft) => void
+  onDelete?: () => void
+}) {
+  const [draft, setDraft] = useState(initial)
+  const [reveal, setReveal] = useState(false)
+  const set = (patch: Partial<ProviderDraft>) => setDraft((d) => ({ ...d, ...patch }))
+  const changed = !provider || draft.name !== initial.name || draft.baseUrl !== initial.baseUrl || draft.model !== initial.model || draft.apiKey !== ""
+  const canSubmit = changed && !pending && draft.name.trim() !== "" && (provider || keyless || draft.apiKey.trim() !== "")
+  return (
+    <div className="flex flex-col gap-3 px-4 pb-4">
+      <label className="flex flex-col gap-1.5 text-chat-sm">
+        Name
+        <input className={providerField} value={draft.name} onChange={(e) => set({ name: e.target.value })} />
+      </label>
+      <label className="flex flex-col gap-1.5 text-chat-sm">
+        API key
+        <span className="flex gap-2">
+          <input
+            className={providerField}
+            type={reveal ? "text" : "password"}
+            autoComplete="off"
+            spellCheck={false}
+            value={draft.apiKey}
+            placeholder={provider?.hasKey ? "Saved. Type to replace" : keyless ? "Optional" : "Paste your API key"}
+            onChange={(e) => set({ apiKey: e.target.value })}
+          />
+          <button type="button" className={`${providerButton} px-2`} aria-label={reveal ? "Hide API key" : "Show API key"} onClick={() => setReveal((r) => !r)}>
+            <Eye size={16} />
+          </button>
+        </span>
+      </label>
+      <label className="flex flex-col gap-1.5 text-chat-sm">
+        Base URL
+        <input className={providerField} value={draft.baseUrl} spellCheck={false} onChange={(e) => set({ baseUrl: e.target.value })} />
+      </label>
+      <label className="flex flex-col gap-1.5 text-chat-sm">
+        Default model
+        <input className={providerField} value={draft.model} spellCheck={false} placeholder="Provider default" onChange={(e) => set({ model: e.target.value })} />
+      </label>
+      <div className="flex items-center gap-2">
+        {onDelete && (
+          <button type="button" className={`${providerButton} flex items-center gap-1.5`} disabled={pending} onClick={onDelete}>
+            <Trash2 size={14} />
+            Remove
+          </button>
+        )}
+        <span className="flex-1" />
+        <button type="button" className={providerButton} disabled={!canSubmit} onClick={() => onSubmit(draft)}>
+          {pending ? "Saving…" : submitLabel}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function ProvidersPage({
+  providers,
+  busy,
+  pending,
+  onUse,
+  onSave,
+  onDelete,
+}: {
+  providers: ProviderInfo[]
+  busy: boolean
+  pending: boolean
+  onUse: (id: string) => void
+  onSave: (draft: ProviderDraft) => void
+  onDelete: (id: string) => void
+}) {
+  const [open, setOpen] = useState<string>()
+  const toggle = (key: string) => setOpen((current) => (current === key ? undefined : key))
+  const { confirm, dialog } = useConfirm()
+  const remove = async (p: ProviderInfo) => {
+    if (await confirm({ title: `Remove ${p.name}?`, description: "Its saved API key is deleted too.", confirmLabel: "Remove", danger: true })) onDelete(p.id)
+  }
+  // A save or removal answers with the refreshed list; collapse the form once it lands.
+  const wasPending = useRef(false)
+  useEffect(() => {
+    if (wasPending.current && !pending) setOpen(undefined)
+    wasPending.current = pending
+  }, [pending])
+  const configuredTypes = new Set(providers.map((p) => p.type))
+  const available = PROVIDER_CATALOG.filter((entry) => !configuredTypes.has(entry.type))
+  return (
+    <>
+      <Section title="Configured">
+        {providers.map((p) => {
+          const detail = [p.typeLabel ?? p.type, p.model, hostOf(p.baseUrl)].filter(Boolean).join(" · ")
+          const editable = p.id !== "__anthropic__"
+          return (
+            <div key={p.id}>
+              <Row label={p.name} description={detail}>
+                <div className="flex shrink-0 items-center gap-2">
+                  {editable && (
+                    <button type="button" className={providerButton} aria-expanded={open === p.id} onClick={() => toggle(p.id)}>
+                      Edit
+                    </button>
+                  )}
+                  {p.active ? (
+                    <span className="flex h-8 items-center rounded-lg bg-[var(--settings-fill-hover)] px-3 text-body">In use</span>
+                  ) : (
+                    <button type="button" className={providerButton} disabled={busy || pending} title={busy ? "Wait for the current turn to finish" : undefined} onClick={() => onUse(p.id)}>
+                      Use
+                    </button>
+                  )}
+                </div>
+              </Row>
+              {editable && open === p.id && (
+                <ProviderForm
+                  initial={{ id: p.id, type: p.type, name: p.name, baseUrl: p.baseUrl ?? "", apiKey: "", model: p.model ?? "" }}
+                  provider={p}
+                  pending={pending}
+                  submitLabel="Save"
+                  onSubmit={onSave}
+                  onDelete={p.active ? undefined : () => void remove(p)}
+                />
+              )}
+            </div>
+          )
+        })}
+      </Section>
+      {providers.some((p) => p.active && p.id !== "__anthropic__") && busy && (
+        <p className="-mt-6 text-caption text-[var(--sidebar-text-muted)]">
+          While a turn is running, edits to the provider in use are saved but only reach this chat after you switch away and back.
+        </p>
+      )}
+      <Section title="Available providers">
+        {available.map((entry) => (
+          <div key={entry.type}>
+            <Row label={entry.label} description={entry.description}>
+              <button type="button" className={providerButton} aria-expanded={open === `new:${entry.type}`} onClick={() => toggle(`new:${entry.type}`)}>
+                Set up
+              </button>
+            </Row>
+            {open === `new:${entry.type}` && (
+              <ProviderForm
+                initial={{ type: entry.type, name: entry.label, baseUrl: entry.baseUrl, apiKey: "", model: "" }}
+                keyless={entry.keyless}
+                pending={pending}
+                submitLabel="Add"
+                onSubmit={onSave}
+              />
+            )}
+          </div>
+        ))}
+        <div>
+          <Row label="Custom endpoint" description="Any OpenAI-compatible server">
+            <button type="button" className={providerButton} aria-expanded={open === "new:custom"} onClick={() => toggle("new:custom")}>
+              Set up
+            </button>
+          </Row>
+          {open === "new:custom" && (
+            <ProviderForm
+              initial={{ type: "openai", name: "Custom", baseUrl: "", apiKey: "", model: "" }}
+              pending={pending}
+              submitLabel="Add"
+              onSubmit={onSave}
+            />
+          )}
+        </div>
+      </Section>
       {dialog}
     </>
   )

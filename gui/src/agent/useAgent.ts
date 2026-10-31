@@ -9,6 +9,7 @@ import type {
   AgentMessage,
   UserContent,
   ModelInfo,
+  ProviderInfo,
   Outgoing,
   PermissionMode,
   SlashCommand,
@@ -37,6 +38,7 @@ type ResponseKind =
   | "settings"
   | "startup_settings"
   | "effort"
+  | "provider"
   | "commands"
   | "commands-quiet"
   | { model: string }
@@ -208,6 +210,7 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
                 const error = message.response.error ?? "Agent rejected the request"
                 if (kind === "context_usage") dispatch({ type: "context-error", error })
                 else if (kind === "auth_urls" || kind === "auth_complete") dispatch({ type: "auth-error", error })
+                else if (kind === "provider") { dispatch({ type: "provider-pending", pending: false }); dispatch({ type: "error", text: error }) }
                 else dispatch({ type: "error", text: error })
                 if (kind === "initialize") socket.close()
               } else routeResponse(kind, message.response.response)
@@ -280,6 +283,22 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
         control({ subtype: "get_settings" }, "settings")
         return
       }
+      if (kind === "provider") {
+        const body = (response ?? {}) as Record<string, unknown>
+        dispatch({
+          type: "control",
+          payload: {
+            kind: "provider",
+            models: (body.models as ModelInfo[] | undefined) ?? [],
+            providers: (body.providers as ProviderInfo[] | undefined) ?? [],
+            account: body.account as AccountInfo | undefined,
+            model: body.model as string | undefined,
+          },
+        })
+        control({ subtype: "get_settings" }, "settings")
+        control({ subtype: "get_context_usage" }, "context_usage")
+        return
+      }
       if (kind === "effort") {
         control({ subtype: "get_settings" }, "settings")
         return
@@ -302,6 +321,7 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
             models: (body.models as ModelInfo[] | undefined) ?? [],
             commands: (body.commands as SlashCommand[] | undefined) ?? [],
             account: body.account as AccountInfo | undefined,
+            providers: body.providers as ProviderInfo[] | undefined,
           },
         })
       } else if (kind === "settings" || kind === "startup_settings") {
@@ -345,6 +365,30 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
   const setModel = useCallback(
     (model: string) => {
       control({ subtype: "set_model", model }, { model })
+    },
+    [control],
+  )
+
+  const setProvider = useCallback(
+    (providerId: string) => {
+      dispatch({ type: "provider-pending", pending: true })
+      control({ subtype: "set_provider", providerId }, "provider")
+    },
+    [control],
+  )
+
+  const saveProvider = useCallback(
+    (draft: { id?: string; type?: string; name: string; baseUrl: string; apiKey: string; model: string }) => {
+      dispatch({ type: "provider-pending", pending: true })
+      control({ subtype: "provider_save", ...draft }, "provider")
+    },
+    [control],
+  )
+
+  const deleteProvider = useCallback(
+    (providerId: string) => {
+      dispatch({ type: "provider-pending", pending: true })
+      control({ subtype: "provider_delete", providerId }, "provider")
     },
     [control],
   )
@@ -435,7 +479,7 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
   }, [control])
   const closeAuthentication = useCallback(() => dispatch({ type: "auth-close" }), [])
 
-  return { state: ownerRef.current === runtimeId ? state : initialState, sendMessage, reloadCommands, loadEarlier, answerElicitation, removeQueued, moveQueued, updateQueued, steerQueued, setQueuePaused, runQueued, stopTask, interrupt, answerPermission, setModel, setPermissionMode, setEffort, refreshSettings, changeMcp, refreshContext, refreshMcp, turnDiffAction, clearDiffAction, startAuthentication, waitForAuthentication, submitAuthenticationCode, closeAuthentication }
+  return { state: ownerRef.current === runtimeId ? state : initialState, sendMessage, reloadCommands, loadEarlier, answerElicitation, removeQueued, moveQueued, updateQueued, steerQueued, setQueuePaused, runQueued, stopTask, interrupt, answerPermission, setModel, setProvider, saveProvider, deleteProvider, setPermissionMode, setEffort, refreshSettings, changeMcp, refreshContext, refreshMcp, turnDiffAction, clearDiffAction, startAuthentication, waitForAuthentication, submitAuthenticationCode, closeAuthentication }
 }
 
 export function parseAuthorizationCode(raw: string): { authorizationCode: string; state: string } | undefined {

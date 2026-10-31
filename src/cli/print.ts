@@ -291,7 +291,23 @@ import { modelSupportsAdaptiveThinking } from 'src/utils/thinking.js'
 import { modelSupportsAutoMode } from 'src/utils/betas.js'
 import { ensureModelStringsInitialized } from 'src/utils/model/modelStrings.js'
 import {
+  addProviderProfile,
+  applyActiveProviderProfileEnv,
+  loadProviderProfiles,
+  PROVIDER_TYPE_LABELS,
+  refreshActiveProviderModels,
+  removeProviderProfile,
+  setActiveProviderProfile,
+  updateProviderProfile,
+  type ProviderType,
+  switchToAnthropicAccount,
+} from 'src/utils/providerProfile.js'
+import { clearProviderSwitchCaches } from 'src/utils/providerSwitch.js'
+import { resetUserCache } from 'src/utils/user.js'
+import { getGlobalConfig } from 'src/utils/config.js'
+import {
   getSessionId,
+  resetCostState,
   setMainLoopModelOverride,
   setMainThreadAgentType,
   switchSession,
@@ -1246,30 +1262,32 @@ function runHeadlessStreaming(
     })
   }
 
-  const modelOptions = getModelOptions()
-  const modelInfos = modelOptions.map(option => {
-    const modelId = option.value === null ? 'default' : option.value
-    const resolvedModel =
-      modelId === 'default'
-        ? getDefaultMainLoopModel()
-        : parseUserSpecifiedModel(modelId)
-    const hasEffort = modelSupportsEffort(resolvedModel)
-    const hasAdaptiveThinking = modelSupportsAdaptiveThinking(resolvedModel)
-    const hasFastMode = isFastModeSupportedByModel(option.value)
-    const hasAutoMode = modelSupportsAutoMode(resolvedModel)
-    return {
-      value: modelId,
-      displayName: option.label,
-      description: option.description,
-      ...(hasEffort && {
-        supportsEffort: true,
-        supportedEffortLevels: getSupportedEffortLevelsForModel(resolvedModel),
-      }),
-      ...(hasAdaptiveThinking && { supportsAdaptiveThinking: true }),
-      ...(hasFastMode && { supportsFastMode: true }),
-      ...(hasAutoMode && { supportsAutoMode: true }),
-    }
-  })
+  const buildModelInfos = (): ModelInfo[] =>
+    getModelOptions().map(option => {
+      const modelId = option.value === null ? 'default' : option.value
+      const resolvedModel =
+        modelId === 'default'
+          ? getDefaultMainLoopModel()
+          : parseUserSpecifiedModel(modelId)
+      const hasEffort = modelSupportsEffort(resolvedModel)
+      const hasAdaptiveThinking = modelSupportsAdaptiveThinking(resolvedModel)
+      const hasFastMode = isFastModeSupportedByModel(option.value)
+      const hasAutoMode = modelSupportsAutoMode(resolvedModel)
+      return {
+        value: modelId,
+        displayName: option.label,
+        description: option.description,
+        ...(hasEffort && {
+          supportsEffort: true,
+          supportedEffortLevels: getSupportedEffortLevelsForModel(resolvedModel),
+        }),
+        ...(hasAdaptiveThinking && { supportsAdaptiveThinking: true }),
+        ...(hasFastMode && { supportsFastMode: true }),
+        ...(hasAutoMode && { supportsAutoMode: true }),
+      }
+    })
+  let modelInfos = buildModelInfos()
+
   let activeUserSpecifiedModel = options.userSpecifiedModel
 
   function injectModelSwitchBreadcrumbs(
@@ -2827,6 +2845,28 @@ function runHeadlessStreaming(
     })
   }
 
+  // Shared reply for every provider request: the lists and account the GUI
+  // needs to redraw after the active provider or a profile changed.
+  const sendProviderState = async (
+    message: Parameters<typeof sendControlResponseSuccess>[0],
+  ) => {
+    modelInfos = buildModelInfos()
+    const accountInfo = getAccountInformation()
+    sendControlResponseSuccess(message, {
+      models: modelInfos,
+      providers: await listProviderChoices(),
+      model: getMainLoopModel(),
+      account: {
+        email: accountInfo?.email,
+        organization: accountInfo?.organization,
+        subscriptionType: accountInfo?.subscription,
+        tokenSource: accountInfo?.tokenSource,
+        apiKeySource: accountInfo?.apiKeySource,
+        apiProvider: getAPIProvider(),
+      },
+    })
+  }
+
   // Handle unexpected permission responses by looking up the unresolved tool
   // call in the transcript and executing it
   const handledOrphanedToolUseIds = new Set<string>()
@@ -3008,6 +3048,77 @@ function runHeadlessStreaming(
           injectModelSwitchBreadcrumbs(requestedModel, model)
 
           sendControlResponseSuccess(message)
+        } else if (message.request.subtype === 'set_provider') {
+          try {
+            if (running) {
+              throw new Error('Cannot switch provider while a turn is running')
+            }
+            const providerId = message.request.providerId
+            if (providerId === ANTHROPIC_PROVIDER_ID) {
+              await switchToAnthropicAccount()
+            } else {
+              const activated = await setActiveProviderProfile(providerId)
+              if (!activated) {
+                throw new Error(`provider profile ${providerId} no longer exists`)
+              }
+              await applyActiveProviderProfileEnv()
+              void refreshActiveProviderModels().catch(() => {})
+            }
+            // Same cascade as the TUI picker (onProviderSwitch): signature
+            // blocks are bound to the previous credentials, and the session
+            // model override belongs to the previous provider.
+            clearProviderSwitchCaches()
+            resetUserCache()
+            resetCostState()
+            setMainLoopModelOverride(undefined)
+            activeUserSpecifiedModel = undefined
+            options.userSpecifiedModel = undefined
+            mutableMessages.splice(
+              0,
+              mutableMessages.length,
+              ...stripSignatureBlocks(mutableMessages),
+            )
+            await sendProviderState(message)
+          } catch (error) {
+            sendControlResponseError(message, errorMessage(error))
+          }
+        } else if (message.request.subtype === 'provider_save') {
+          try {
+            const { id, type, name, baseUrl, apiKey, model } = message.request
+            const fields = {
+              ...(name !== undefined && { name }),
+              ...(baseUrl !== undefined && { baseUrl: baseUrl || undefined }),
+              ...(apiKey ? { apiKey } : {}),
+              ...(model !== undefined && { model: model || undefined }),
+            }
+            if (id) {
+              const updated = await updateProviderProfile(id, fields)
+              if (!updated) throw new Error(`provider profile ${id} no longer exists`)
+              if (updated.active && !running) {
+                // The running session still holds the old endpoint and key.
+                await applyActiveProviderProfileEnv()
+                clearProviderSwitchCaches()
+              }
+            } else {
+              if (!type || !name) throw new Error('A new provider needs a type and a name')
+              if (!Object.hasOwn(PROVIDER_TYPE_LABELS, type) || type === 'anthropic') {
+                throw new Error(`Unsupported provider type: ${type}`)
+              }
+              await addProviderProfile({ type: type as ProviderType, name, ...fields })
+            }
+            await sendProviderState(message)
+          } catch (error) {
+            sendControlResponseError(message, errorMessage(error))
+          }
+        } else if (message.request.subtype === 'provider_delete') {
+          try {
+            if (!(await removeProviderProfile(message.request.providerId))) {
+              throw new Error('provider profile no longer exists')
+            }
+            await sendProviderState(message)
+          } catch (error) {
+            sendControlResponseError(message, errorMessage(error))
+          }
         } else if (message.request.subtype === 'set_max_thinking_tokens') {
           if (message.request.max_thinking_tokens === null) {
             options.thinkingConfig = undefined
@@ -4455,6 +4566,51 @@ export function getCanUseToolFn(
   }
 }
 
+const ANTHROPIC_PROVIDER_ID = '__anthropic__'
+
+// Choices for the GUI provider picker: saved profiles plus the stored
+// Anthropic account, whose OAuth tokens outlive a profile switch.
+async function listProviderChoices(): Promise<
+  {
+    id: string
+    name: string
+    type: string
+    typeLabel: string
+    active: boolean
+    baseUrl?: string
+    model?: string
+    hasKey?: boolean
+  }[]
+> {
+  const profiles = await loadProviderProfiles()
+  const activeProfile = profiles.find(p => p.active)
+  const email = getGlobalConfig().oauthAccount?.emailAddress
+  const hasAccount = Boolean(getGlobalConfig().oauthAccount)
+  return [
+    ...(hasAccount
+      ? [
+          {
+            id: ANTHROPIC_PROVIDER_ID,
+            name: email ? `Anthropic (${email})` : 'Anthropic',
+            type: 'anthropic',
+            typeLabel: 'Anthropic',
+            active: !activeProfile,
+          },
+        ]
+      : []),
+    ...profiles.map(p => ({
+      id: p.id,
+      name: p.name,
+      type: p.type,
+      typeLabel: PROVIDER_TYPE_LABELS[p.type],
+      active: Boolean(p.active),
+      baseUrl: p.baseUrl,
+      model: p.model,
+      hasKey: Boolean(p.apiKey),
+    })),
+  ]
+}
+
 async function handleInitializeRequest(
   request: SDKControlInitializeRequest,
   requestId: string,
@@ -4597,6 +4753,7 @@ async function handleInitializeRequest(
     output_style: outputStyle,
     available_output_styles: Object.keys(availableOutputStyles),
     models: modelInfos,
+    providers: await listProviderChoices(),
     account: {
       email: accountInfo?.email,
       organization: accountInfo?.organization,

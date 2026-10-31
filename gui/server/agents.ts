@@ -468,6 +468,12 @@ export function attachAgent(ws: ServerWebSocket<SocketData>, root: string) {
           const original = current.initialization.response.response as Record<string, unknown>
           current.initialization = { ...current.initialization, response: { ...current.initialization.response, response: { ...original, commands: refreshedCommands } } }
         }
+        const switched = message.response.response as { models?: unknown; providers?: unknown; account?: unknown } | undefined
+        if (message.response.subtype === "success" && Array.isArray(switched?.providers) && Array.isArray(switched?.models) && current.initialization) {
+          // A provider switch changes the model list and account the cached initialize response reports.
+          const original = current.initialization.response.response as Record<string, unknown>
+          current.initialization = { ...current.initialization, response: { ...current.initialization.response, response: { ...original, models: switched.models, providers: switched.providers, account: switched.account ?? original.account } } }
+        }
         if (message.response.request_id === current.initializationRequest) {
           if (message.response.subtype === "success") current.initialization = message
           for (const [client, requestId] of current.initializeWaiters)

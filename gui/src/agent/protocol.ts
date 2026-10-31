@@ -71,6 +71,17 @@ export interface ModelInfo {
   supportsAutoMode?: boolean
 }
 
+export interface ProviderInfo {
+  id: string
+  name: string
+  type: string
+  typeLabel?: string
+  active: boolean
+  baseUrl?: string
+  model?: string
+  hasKey?: boolean
+}
+
 export interface AccountInfo {
   email?: string
   organization?: string
@@ -130,7 +141,8 @@ export interface CliSettings {
 
 // Responses to requests the GUI sent, keyed by request_id on the client.
 export type ControlPayload =
-  | { kind: "initialize"; models: ModelInfo[]; commands: SlashCommand[]; account?: AccountInfo }
+  | { kind: "initialize"; models: ModelInfo[]; commands: SlashCommand[]; account?: AccountInfo; providers?: ProviderInfo[] }
+  | { kind: "provider"; models: ModelInfo[]; providers: ProviderInfo[]; account?: AccountInfo; model?: string }
   | { kind: "context_usage"; usage: ContextUsage }
   | { kind: "mcp_status"; servers: McpServerStatus[] }
   | { kind: "commands"; commands: SlashCommand[] }
@@ -266,6 +278,9 @@ export type ControlRequest =
   | { subtype: "interrupt" }
   | { subtype: "stop_task"; task_id: string }
   | { subtype: "set_model"; model: string }
+  | { subtype: "set_provider"; providerId: string }
+  | { subtype: "provider_save"; id?: string; type?: string; name: string; baseUrl: string; apiKey: string; model: string }
+  | { subtype: "provider_delete"; providerId: string }
   | { subtype: "set_permission_mode"; mode: PermissionMode }
   | { subtype: "get_context_usage" }
   | { subtype: "mcp_status" }
