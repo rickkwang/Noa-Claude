@@ -12,6 +12,7 @@ export type PopupMenuEntry =
       icon?: ComponentType<{ size?: number; className?: string }>
       checked?: boolean
       disabled?: boolean
+      danger?: boolean
       onSelect?: () => void
       submenu?: PopupMenuEntry[]
     }
@@ -120,6 +121,7 @@ export function PopupMenu({
               aria-haspopup={hasSubmenu ? "menu" : undefined}
               aria-expanded={hasSubmenu ? open === index : undefined}
               disabled={entry.disabled}
+              data-danger={entry.danger ? "" : undefined}
               onClick={() => {
                 if (hasSubmenu) setOpen(open === index ? undefined : index)
                 else {

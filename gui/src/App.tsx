@@ -11,10 +11,12 @@ import {
   removeProject,
   revealProject,
   renameSession,
+  deleteSession,
   type ProjectInfo,
   type SessionSummary,
 } from "./api"
 import { AddProjectDialog } from "./components/AddProjectDialog"
+import { useConfirm } from "./components/ConfirmDialog"
 import { Composer } from "./components/Composer"
 import { EmptyState } from "./components/EmptyState"
 import { MessageList } from "./components/MessageList"
@@ -493,6 +495,32 @@ function Workspace({ cwd }: { cwd: string }) {
     setProjects(await addProject(paths, name))
   }
 
+  const { confirm, dialog: confirmDialog } = useConfirm()
+  async function removeSession(cwd: string, id: string, title: string) {
+    const confirmed = await confirm({
+      title: "Delete this task?",
+      description: `"${title}" and its conversation will be permanently removed from this computer.`,
+      confirmLabel: "Delete",
+      danger: true,
+    })
+    if (!confirmed) return
+    try {
+      await deleteSession(cwd, id)
+    } catch (error) {
+      await confirm({ title: "Could not delete the task", description: (error as Error).message, confirmLabel: "OK", cancelLabel: "Close" })
+      return
+    }
+    removeSessionBrowserState(cwd, id)
+    const owner = projects.find((project) => sessionsByProject[project.path]?.some((item) => item.id === id))?.path ?? cwd
+    const updated = await fetchSessions(owner).catch(() => undefined)
+    if (updated) setSessionsByProject((all) => ({ ...all, [owner]: updated }))
+    const active = activeSessionRef.current
+    if (id === active.id && cwd === active.cwd) newSession(owner)
+    setHistory((h) => h ? {
+      entries: h.entries.filter((entry) => entry.resume !== id),
+      index: h.entries.slice(0, h.index).filter((entry) => entry.resume !== id).length,
+    } : h)
+  }
   async function removeProjectPath(path: string) {
     setProjects(await removeProject(path))
   }
@@ -712,6 +740,7 @@ function Workspace({ cwd }: { cwd: string }) {
             }}
             onRemoveProject={removeProjectPath}
             onRevealProject={revealProject}
+            onDeleteSession={removeSession}
             onSettings={() => setSettingsOpen(true)}
           />
         </div>
@@ -1020,6 +1049,7 @@ function Workspace({ cwd }: { cwd: string }) {
       </div>
 
       {addingProject && <AddProjectDialog onAdd={addProjectPaths} onClose={() => setAddingProject(false)} />}
+      {confirmDialog}
       {editingProject && (
         <AddProjectDialog
           project={editingProject}

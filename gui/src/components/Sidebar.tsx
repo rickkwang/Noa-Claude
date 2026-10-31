@@ -26,6 +26,7 @@ import {
   Search,
   Settings,
   SquarePen,
+  Trash2,
 } from "../lib/icons"
 
 // Tasks shown per project before "Show more".
@@ -116,6 +117,7 @@ interface SidebarProps {
   onEditProject: (project: ProjectInfo) => void
   onRemoveProject: (path: string) => void
   onRevealProject: (path: string) => void
+  onDeleteSession: (cwd: string, id: string, title: string) => void
   onSettings: () => void
 }
 
@@ -133,6 +135,7 @@ export function Sidebar({
   onEditProject,
   onRemoveProject,
   onRevealProject,
+  onDeleteSession,
   onSettings,
 }: SidebarProps) {
   const [query, setQuery] = useState("")
@@ -529,6 +532,7 @@ export function Sidebar({
                           }
                           onClick={() => selectSession(session.cwd ?? project.path, session.id)}
                           onTogglePin={() => togglePin(project.path, session.id)}
+                          onDelete={() => onDeleteSession(session.cwd ?? project.path, session.id, session.title)}
                           onMove={(direction) => moveBy(project.path, session.id, direction)}
                           onPointerDown={(event) => startDrag(event, "session", project.path, session.id, session.title)}
                           onPointerMove={moveDrag}
@@ -663,6 +667,7 @@ export function Sidebar({
                       pinned={isPinned(project.path, session.id)}
                       onClick={() => selectSession(session.cwd ?? project.path, session.id)}
                       onTogglePin={() => togglePin(project.path, session.id)}
+                      onDelete={() => onDeleteSession(session.cwd ?? project.path, session.id, session.title)}
                     />
                   ))}
                   {recents.length > RECENTS_PREVIEW && (
@@ -953,6 +958,7 @@ function SessionRow({
   dropEdge,
   onClick,
   onTogglePin,
+  onDelete,
   onMove,
   onPointerDown,
   onPointerMove,
@@ -974,6 +980,7 @@ function SessionRow({
   dropEdge?: "before" | "after"
   onClick?: () => void
   onTogglePin?: () => void
+  onDelete?: () => void
   onMove?: (direction: -1 | 1) => void
   onPointerDown?: (event: PointerEvent<HTMLElement>) => void
   onPointerMove?: (event: PointerEvent<HTMLElement>) => void
@@ -993,6 +1000,7 @@ function SessionRow({
     }
   }
   const hoverCard = useSessionHoverCard({ title, updatedAt, project: projectName, worktree }, !dragging)
+  const [menu, setMenu] = useState<{ anchor: PopupMenuAnchor; trigger?: Element }>()
   return (
     <div className="font-ui mb-0.5 noa-sidebar-tree-item">
       <div
@@ -1004,6 +1012,10 @@ function SessionRow({
         tabIndex={0}
         onClick={onClick}
         onKeyDown={onKeyDown}
+        onContextMenu={(event) => {
+          event.preventDefault()
+          setMenu({ anchor: { left: event.clientX, top: event.clientY + 4, bottom: event.clientY - 4 } })
+        }}
         onPointerEnter={hoverCard.triggerProps.onPointerEnter}
         onPointerLeave={hoverCard.triggerProps.onPointerLeave}
         onFocus={hoverCard.triggerProps.onFocus}
@@ -1021,28 +1033,59 @@ function SessionRow({
         <MarqueeText className={pinned || status ? "" : "-mr-2 group-hover:mr-6 group-focus-within:mr-6"}>{title}</MarqueeText>
         <span className={`${pinned || status ? "ml-2 flex shrink-0" : "absolute inset-y-0 right-2 flex"} items-center gap-1`}>
           {status && <span role="status" aria-label={status === "waiting" ? "Approval required" : status === "running" ? "Running" : "Queued"} title={status} className={`size-1.5 shrink-0 rounded-full ${status === "waiting" ? "bg-amber-500" : "animate-pulse bg-[var(--accent-color)]"}`} />}
+          {pinned && (
+            <button
+              type="button"
+              data-session-action
+              aria-label={`Unpin ${title}`}
+              aria-pressed
+              title="Unpin task"
+              onClick={(event) => {
+                event.stopPropagation()
+                onTogglePin?.()
+              }}
+              className="flex size-6 items-center justify-center rounded-md text-[var(--sidebar-text-muted,#898781)] hover:text-[var(--text-primary,#2D2D2B)] noa-press"
+            >
+              <PinFilled size={13} />
+            </button>
+          )}
           <button
             type="button"
             data-session-action
-            aria-label={pinned ? `Unpin ${title}` : `Pin ${title}`}
-            aria-pressed={pinned}
-            title={pinned ? "Unpin task" : "Pin task"}
+            aria-label="Task options"
+            aria-haspopup="menu"
+            aria-expanded={!!menu}
+            title="Task options"
             onClick={(event) => {
               event.stopPropagation()
-              onTogglePin?.()
+              const trigger = event.currentTarget
+              setMenu((current) => (current ? undefined : { anchor: anchorBelow(trigger), trigger }))
             }}
             className={`flex size-6 items-center justify-center rounded-md text-[var(--sidebar-text-muted,#898781)] hover:text-[var(--text-primary,#2D2D2B)] noa-press ${
-              pinned ? "" : status
-                // Collapsed to nothing while hidden so the status dot sits at the row's edge, not left of an invisible button.
-                ? "-ml-1 w-0 overflow-hidden opacity-0 group-hover:ml-0 group-hover:w-6 group-hover:opacity-100 group-focus-within:ml-0 group-focus-within:w-6 group-focus-within:opacity-100"
-                : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+              pinned || status
+                // Collapsed to nothing while hidden so the status dot and pin sit at the row's edge, not left of an invisible button.
+                ? "-ml-1 w-0 overflow-hidden opacity-0 group-hover:ml-0 group-hover:w-6 group-hover:opacity-100 group-focus-within:ml-0 group-focus-within:w-6 group-focus-within:opacity-100 aria-expanded:ml-0 aria-expanded:w-6 aria-expanded:opacity-100"
+                : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100 aria-expanded:opacity-100"
             }`}
           >
-            {pinned ? <PinFilled size={13} /> : <Pin size={13} />}
+            <MoreHorizontal size={14} />
           </button>
         </span>
       </div>
       {hoverCard.card}
+      {menu && (
+        <PopupMenu
+          label="Task options"
+          anchor={menu.anchor}
+          trigger={menu.trigger}
+          onClose={() => setMenu(undefined)}
+          entries={[
+            { label: pinned ? "Unpin" : "Pin", icon: Pin, onSelect: onTogglePin },
+            { kind: "separator" },
+            { label: "Delete", icon: Trash2, danger: true, onSelect: onDelete },
+          ]}
+        />
+      )}
     </div>
   )
 }

@@ -1,10 +1,10 @@
 // Local HTTP and WebSocket bridge for the Noa CLI.
 import { existsSync, statSync } from "node:fs"
 import { resolve, sep } from "node:path"
-import { SESSION_ID, listSessions, loadHistory, renameSession } from "./sessions"
+import { SESSION_ID, deleteSession, listSessions, loadHistory, renameSession } from "./sessions"
 import { addProject, listProjects, removeProject } from "./projects"
 import { isManagedWorktree, mediaResponse, projectWorktrees, workspaceRequest } from "./workspace"
-import { attachAgent, agentMessage, detachAgent, listAgentRuns, SPAWN_PERMISSION_MODES, type SocketData } from "./agents"
+import { attachAgent, agentMessage, detachAgent, listAgentRuns, releaseSessionRuns, SPAWN_PERMISSION_MODES, type SocketData } from "./agents"
 
 const REPO_ROOT = resolve(import.meta.dir, "../..")
 const DIST_DIR = resolve(import.meta.dir, "../dist")
@@ -117,6 +117,15 @@ async function sessionRequest(req: Request, cwd: string, id: string): Promise<Re
       return json({ error: (error as Error).message }, 400)
     }
   }
+  if (req.method === "DELETE") {
+    if (!releaseSessionRuns(cwd, id)) return json({ error: "Stop the task before deleting it" }, 409)
+    try {
+      deleteSession(cwd, id)
+      return json({ ok: true })
+    } catch (error) {
+      return json({ error: (error as Error).message }, 400)
+    }
+  }
   const items = await loadHistory(cwd, id)
   return items ? json(items) : json({ error: "session not found" }, 404)
 }
@@ -192,7 +201,7 @@ Bun.serve<SocketData>({
 
     const historyMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)$/)
     if (historyMatch) {
-      if (req.method !== "GET" && req.method !== "PATCH") return json({ error: "Method not allowed" }, 405)
+      if (!["GET", "PATCH", "DELETE"].includes(req.method)) return json({ error: "Method not allowed" }, 405)
       const cwd = resolveCwd(url.searchParams.get("cwd"))
       if (!cwd) return json({ error: "cwd is not a directory" }, 400)
       if (!inListedProject(cwd)) return json({ error: "Only listed projects are accessible" }, 403)

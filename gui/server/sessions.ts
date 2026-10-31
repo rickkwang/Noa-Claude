@@ -1,6 +1,6 @@
 // Reads the agent's transcripts (<config>/projects/<sanitized cwd>/<id>.jsonl)
 // so the GUI can list past sessions and rebuild their history.
-import { appendFileSync, closeSync, openSync, readSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs"
+import { appendFileSync, closeSync, openSync, readSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync } from "node:fs"
 import { StringDecoder } from "node:string_decoder"
 import { homedir } from "node:os"
 import { dirname, join } from "node:path"
@@ -30,7 +30,7 @@ export interface SessionSummary {
   createdAt: number
 }
 
-function canonicalCwd(cwd: string): string {
+export function canonicalCwd(cwd: string): string {
   return (existsSync(cwd) ? realpathSync(cwd) : cwd).normalize("NFC")
 }
 
@@ -289,6 +289,20 @@ export function renameSession(cwd: string, id: string, title: string): void {
   const owner = entries.find((entry) => typeof entry.cwd === "string")?.cwd
   if (owner && canonicalCwd(owner) !== canonicalCwd(cwd)) throw new Error("Task not found")
   appendFileSync(file, `${JSON.stringify({ type: "custom-title", customTitle: name, sessionId: id })}\n`)
+}
+
+// Removes the transcript with the GUI's per-session sidecars and the folder holding its subagent transcripts.
+export function deleteSession(cwd: string, id: string): void {
+  if (!SESSION_ID.test(id)) throw new Error("Invalid task id")
+  const dir = projectDir(cwd)
+  const file = join(dir, `${id}.jsonl`)
+  if (!existsSync(file)) throw new Error("Task not found")
+  const owner = readEntries(file).find((entry) => typeof entry.cwd === "string")?.cwd
+  if (owner && canonicalCwd(owner) !== canonicalCwd(cwd)) throw new Error("Task not found")
+  for (const suffix of [".turn-diffs.jsonl", ".turn-results.jsonl", ".gui-events.jsonl"]) rmSync(join(dir, `${id}${suffix}`), { force: true })
+  rmSync(join(dir, id), { recursive: true, force: true })
+  rmSync(file)
+  sessionSummaryCaches.get(dir)?.delete(file)
 }
 
 async function conversationChain(file: string, includeSidechain = false): Promise<Entry[]> {

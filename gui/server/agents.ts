@@ -1,6 +1,6 @@
 import type { ServerWebSocket, Subprocess } from "bun"
 import { join } from "node:path"
-import { SESSION_ID, appendTimelineEvent, appendTurnResult, appendTurnDiff, countUserTurns, findTurnDiff, findTurnUserMessage, historyPage, loadHistory, readTurnDiffs, setTurnDiffReverted, transcriptPath } from "./sessions"
+import { SESSION_ID, appendTimelineEvent, appendTurnResult, appendTurnDiff, canonicalCwd, countUserTurns, findTurnDiff, findTurnUserMessage, historyPage, loadHistory, readTurnDiffs, setTurnDiffReverted, transcriptPath } from "./sessions"
 import { projectAdditionalDirectories } from "./projects"
 import {
   applyTurnDiff,
@@ -671,6 +671,17 @@ export function listAgentRuns() {
       waiting: r.waiting.size > 0,
       queued: r.queue.length,
     }))
+}
+// Stops the idle CLI process holding a task so its files can be deleted; false while the task is still working.
+export function releaseSessionRuns(cwd: string, sessionId: string): boolean {
+  const owner = canonicalCwd(cwd)
+  const held = [...runs.values()].filter((run) => run.sessionId === sessionId && !run.exited && canonicalCwd(run.cwd) === owner)
+  if (held.some((run) => run.busy || run.queue.length || run.waiting.size || run.activeTasks?.size)) return false
+  for (const run of held) {
+    run.proc.kill()
+    runs.delete(run.id)
+  }
+  return true
 }
 function shutdown() {
   for (const run of runs.values()) if (!run.exited) run.proc.kill()

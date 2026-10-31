@@ -1,5 +1,5 @@
 import assert from "node:assert/strict"
-import { existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, writeFileSync, rmSync } from "node:fs"
+import { existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, writeFileSync, rmSync, symlinkSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { initialState, reducer } from "../src/agent/reducer"
@@ -7,10 +7,12 @@ import type { ControlRequest, Envelope, Outgoing } from "../src/agent/protocol"
 
 const directory = mkdtempSync(join(tmpdir(), "noa-gui-runtime-"))
 const cwd = join(directory, "workspace")
+const aliasCwd = join(directory, "workspace-alias")
 const plainCwd = join(directory, "plain")
 const extraCwd = join(directory, "extra-source")
 const config = join(directory, "config")
 mkdirSync(cwd)
+symlinkSync(cwd, aliasCwd)
 mkdirSync(plainCwd)
 mkdirSync(extraCwd)
 mkdirSync(config)
@@ -26,7 +28,7 @@ writeFileSync(
 )
 writeFileSync(
   join(config, "gui-projects.json"),
-  JSON.stringify({ projects: [{ path: cwd, sources: [cwd, extraCwd] }, { path: plainCwd }] }),
+  JSON.stringify({ projects: [{ path: cwd, sources: [cwd, extraCwd] }, { path: plainCwd }, { path: aliasCwd }] }),
 )
 const mcpScript = join(directory, "mcp.ts")
 writeFileSync(
@@ -817,6 +819,18 @@ try {
   await steering.initialize()
   steering.send({ type: "user", message: { role: "user", content: "GUI_STEER steering" }, parent_tool_use_id: null })
   await wait(() => steering.events.some((e) => e.kind === "user"), "steering active turn")
+  let runningId: string | undefined
+  await wait(async () => {
+    const runs = await (await fetch(`http://127.0.0.1:${port}/api/runs`)).json() as { title?: string; sessionId?: string; busy: boolean }[]
+    runningId = runs.find((run) => run.title === "GUI_STEER steering" && run.busy)?.sessionId
+    return !!runningId
+  }, "running task session id")
+  for (const path of [cwd, aliasCwd]) {
+    const url = `http://127.0.0.1:${port}/api/sessions/${runningId}?${new URLSearchParams({ cwd: path })}`
+    assert.equal((await fetch(url, { method: "DELETE" })).status, 409, "Running tasks cannot be deleted through a directory alias")
+    assert.equal((await fetch(url)).status, 200)
+  }
+  console.log("PASS deleting a running task is refused through both its real path and directory alias")
   steering.send({ type: "user", message: { role: "user", content: "Steer this now" }, parent_tool_use_id: null })
   await wait(
     () => steering.events.some((e) => e.kind === "queue" && e.messages.some((message) => message.content === "Steer this now")),
@@ -833,6 +847,16 @@ try {
   )
   assert.equal(steering.events.find((e) => e.kind === "user" && e.id === steerId)?.content, "Steer this now")
   console.log("PASS steering removes the queued message and writes it back into the live transcript")
+  const deleteId = commandResult.message.session_id as string
+  const deleteUrl = `http://127.0.0.1:${port}/api/sessions/${deleteId}?${new URLSearchParams({ cwd })}`
+  const leftovers = () => readdirSync(join(config, "projects")).flatMap((dir) => readdirSync(join(config, "projects", dir))).filter((name) => name.startsWith(deleteId))
+  assert.ok(leftovers().includes(`${deleteId}.jsonl`))
+  await wait(async () => !((await (await fetch(`http://127.0.0.1:${port}/api/runs`)).json()) as { sessionId?: string; busy: boolean }[]).some((run) => run.sessionId === deleteId && run.busy), "task idle before delete")
+  assert.equal((await fetch(deleteUrl, { method: "DELETE" })).status, 200)
+  assert.deepEqual(leftovers(), [])
+  assert.equal((await fetch(deleteUrl)).status, 404)
+  assert.equal((await fetch(deleteUrl, { method: "DELETE" })).status, 400)
+  console.log("PASS deleting a task removes its transcript and files")
 } finally {
   for (const socket of sockets) socket.close()
   bridge.kill("SIGTERM")

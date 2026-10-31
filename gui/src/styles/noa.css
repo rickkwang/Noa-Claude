@@ -2291,6 +2291,8 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
 .noa-popup-menu .noa-context-menu-entry > button:hover,
 .noa-popup-menu .noa-context-menu-entry > button:focus-visible,
 .noa-popup-menu .noa-context-menu-entry > button[aria-expanded="true"] { background: color-mix(in srgb, var(--text-primary) 5%, transparent); outline: none; }
+.noa-popup-menu .noa-context-menu-entry > button[data-danger] { color: #C24444; }
+[data-theme="dark"] .noa-popup-menu .noa-context-menu-entry > button[data-danger] { color: #EE8A8A; }
 .noa-popup-menu .noa-context-menu-entry > button:disabled { opacity: 0.4; pointer-events: none; }
 /* A disabled menu row dims as a whole; a switch row dims only its switch. */
 .noa-popup-menu .noa-context-menu-entry > button[role="switch"]:disabled { opacity: 1; pointer-events: auto; cursor: not-allowed; }

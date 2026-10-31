@@ -57,6 +57,11 @@ export function query(cwd: string | undefined): string {
   return cwd ? `?cwd=${encodeURIComponent(cwd)}` : ""
 }
 
+export async function deleteSession(cwd: string, id: string): Promise<void> {
+  const response = await fetch(`/api/sessions/${encodeURIComponent(id)}${query(cwd)}`, { method: "DELETE" })
+  if (!response.ok) throw new Error(((await response.json()) as { error?: string }).error ?? "Could not delete task")
+}
+
 export async function renameSession(cwd: string, id: string, title: string): Promise<SessionSummary[]> {
   const response = await fetch(`/api/sessions/${encodeURIComponent(id)}${query(cwd)}`, {
     method: "PATCH",

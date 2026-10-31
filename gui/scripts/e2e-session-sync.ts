@@ -6,6 +6,7 @@ import electron from "electron"
 import { historyPage, listSessions, loadHistory, projectDir } from "../server/sessions"
 
 const gui = resolve(import.meta.dir, "..")
+const sessionsOnly = process.argv.includes("--sessions-only")
 const build = Bun.spawn([process.execPath, "run", "build"], { cwd: gui, stdout: "ignore", stderr: "inherit" })
 assert.equal(await build.exited, 0, "GUI build failed")
 const temporary = mkdtempSync(join(tmpdir(), "noa-session-sync-e2e-"))
@@ -42,6 +43,10 @@ const server = Bun.serve({
       if (url.searchParams.get("cwd") === otherCwd) return Response.json(listSessions(otherCwd))
       return unavailable ? Response.json({ error: "Temporarily unavailable" }, { status: 503 }) : Response.json(listSessions(cwd))
     }
+    if (request.method === "DELETE" && url.pathname === `/api/sessions/${id}`) {
+      rmSync(file)
+      return Response.json({ ok: true })
+    }
     if (url.pathname === "/ws") {
       const resume = url.searchParams.get("resume")
       if (!resume) return new Response("missing resume", { status: 400 })
@@ -76,7 +81,7 @@ const server = Bun.serve({
     open(ws) {
       const resume = (ws.data as { resume?: string }).resume
       if (!resume) return
-      void loadHistory(cwd, resume).then((items) => {
+      void loadHistory(resume === otherId ? otherCwd : cwd, resume).then((items) => {
         if (items) ws.send(JSON.stringify({ kind: "history", ...historyPage(items) }))
       })
     },
@@ -111,13 +116,14 @@ app.whenReady().then(async()=>{
   const checks=await win.webContents.executeJavaScript(\`(async()=>{
    const pause=ms=>new Promise(r=>setTimeout(r,ms));
    const text=()=>document.body.innerText;
+   const taskRow=title=>[...document.querySelectorAll('.noa-sidebar-tree-row')].find(row=>row.querySelector('.noa-marquee-content')?.textContent===title);
    const wait=async check=>{for(let i=0;i<80;i++){if(check())return;await pause(100)}throw new Error('Sidebar did not synchronize: '+text())};
    await wait(()=>text().includes('Sync fixture'));
    await wait(()=>text().includes('SYNC_OTHER_SAVED'));
    await pause(300);
    await fetch('/fixture/create');
    await wait(()=>text().includes('SYNC_CREATED'));
-   document.querySelector('[title="SYNC_CREATED"]').click();
+   taskRow('SYNC_CREATED').click();
    await wait(()=>text().includes('SYNC_ORIGINAL'));
    await fetch('/fixture/append');
    await wait(()=>text().includes('SYNC_HISTORY'));
@@ -127,7 +133,7 @@ app.whenReady().then(async()=>{
    await fetch('/fixture/unavailable');
    await wait(()=>text().includes('SYNC_OTHER_UPDATED'));
    if(!text().includes('SYNC_RENAMED'))throw new Error('Transient failure cleared the sidebar');
-   if(document.querySelector('[title="SYNC_RENAMED"] [role="status"]')?.getAttribute('aria-label')!=='Running')throw new Error('Failed project list blocked live run status');
+   if(taskRow('SYNC_RENAMED')?.querySelector('[role="status"]')?.getAttribute('aria-label')!=='Running')throw new Error('Failed project list blocked live run status');
    const draftKey='noa-agent.draft:'+${JSON.stringify(cwd)}+':'+${JSON.stringify(id)};
    const bookmarkKey='noa-agent.bookmarks.v2.'+${JSON.stringify(id)};
    localStorage.setItem(draftKey,'stale draft');
@@ -137,6 +143,75 @@ app.whenReady().then(async()=>{
    await wait(()=>!localStorage.getItem(draftKey)&&!localStorage.getItem(bookmarkKey));
    const current=JSON.parse(localStorage.getItem('noa-agent.current')||'null');
    if(current?.resume===${JSON.stringify(id)})throw new Error('Deleted session remained current');
+   const deleteTask=async (title,beforeComplete)=>{
+    taskRow(title).dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,clientX:100,clientY:200}));
+    await wait(()=>document.querySelector('[role="menu"]'));
+    [...document.querySelectorAll('[role="menuitem"]')].find(button=>button.innerText==='Delete').click();
+    await wait(()=>document.querySelector('[role="dialog"]'));
+    [...document.querySelectorAll('[role="dialog"] button')].find(button=>button.innerText==='Delete').click();
+    await beforeComplete?.();
+    await wait(()=>!taskRow(title));
+   };
+   const navigate=async direction=>{
+    const button=document.querySelector('[aria-label="'+direction+'"]');
+    if(!button.disabled){button.click();await pause(200)}
+    const selected=JSON.parse(localStorage.getItem('noa-agent.current')||'null');
+    if(selected?.resume===${JSON.stringify(id)})throw new Error('Navigation reopened a deleted task');
+   };
+   await fetch('/fixture/create');
+   window.dispatchEvent(new Event('focus'));
+   await wait(()=>text().includes('SYNC_CREATED'));
+   taskRow('SYNC_CREATED').click();
+   await wait(()=>text().includes('SYNC_ORIGINAL'));
+   await deleteTask('SYNC_CREATED');
+   await navigate('Back');
+   await navigate('Forward');
+   taskRow('SYNC_OTHER_UPDATED').click();
+   await wait(()=>JSON.parse(localStorage.getItem('noa-agent.current')||'null')?.resume===${JSON.stringify(otherId)});
+   await fetch('/fixture/create');
+   window.dispatchEvent(new Event('focus'));
+   await wait(()=>text().includes('SYNC_CREATED'));
+   taskRow('SYNC_CREATED').click();
+   await wait(()=>JSON.parse(localStorage.getItem('noa-agent.current')||'null')?.resume===${JSON.stringify(id)});
+   taskRow('SYNC_OTHER_UPDATED').click();
+   await wait(()=>JSON.parse(localStorage.getItem('noa-agent.current')||'null')?.resume===${JSON.stringify(otherId)});
+   await deleteTask('SYNC_CREATED');
+   await navigate('Back');
+   await navigate('Forward');
+   await fetch('/fixture/create');
+   window.dispatchEvent(new Event('focus'));
+   await wait(()=>taskRow('SYNC_CREATED'));
+   taskRow('SYNC_CREATED').click();
+   await wait(()=>JSON.parse(localStorage.getItem('noa-agent.current')||'null')?.resume===${JSON.stringify(id)});
+   localStorage.setItem(draftKey,'retained draft');
+   localStorage.setItem(draftKey+':references','["retained reference"]');
+   localStorage.setItem(bookmarkKey,'["retained bookmark"]');
+   const imageDraft=write=>new Promise((resolve,reject)=>{
+    const open=indexedDB.open('noa-agent-drafts',1);
+    open.onerror=()=>reject(open.error);
+    open.onsuccess=()=>{
+     const db=open.result,tx=db.transaction('images',write?'readwrite':'readonly'),store=tx.objectStore('images');
+     const request=write?store.put([{name:'retained.png'}],draftKey):store.get(draftKey);
+     tx.oncomplete=()=>{db.close();resolve(request.result)};
+     tx.onerror=()=>reject(tx.error);
+    };
+   });
+   await imageDraft(true);
+   if(!(await imageDraft(false))?.length)throw new Error('Image draft fixture was not saved');
+   const originalFetch=window.fetch.bind(window);
+   let releaseDelete;
+   window.fetch=(...args)=>args[1]?.method==='DELETE'?new Promise(resolve=>{releaseDelete=()=>resolve(originalFetch(...args))}):originalFetch(...args);
+   await deleteTask('SYNC_CREATED',async()=>{
+    await wait(()=>releaseDelete);
+    taskRow('SYNC_OTHER_UPDATED').click();
+    await wait(()=>JSON.parse(localStorage.getItem('noa-agent.current')||'null')?.resume===${JSON.stringify(otherId)});
+    releaseDelete();
+   });
+   window.fetch=originalFetch;
+   await pause(200);
+   const retained={draft:!!localStorage.getItem(draftKey),references:!!localStorage.getItem(draftKey+':references'),bookmarks:!!localStorage.getItem(bookmarkKey),images:!!(await imageDraft(false))?.length};
+   const switchedAway=JSON.parse(localStorage.getItem('noa-agent.current')||'null')?.resume!==${JSON.stringify(otherId)};
+   if(Object.values(retained).some(Boolean)||switchedAway)throw new Error('Deletion cleanup/race: '+JSON.stringify({retained,switchedAway}));
    window.readSidebarColors=()=>{
     const sidebar=document.querySelector('.noa-sidebar-surface');
     const action=[...sidebar.querySelectorAll('button')].find(button=>button.innerText.trim()==='New task');
@@ -179,8 +254,9 @@ app.whenReady().then(async()=>{
     document.querySelector('[aria-label="Back to app"]').click();
     return samples;
    };
-   return {created:true,renamed:true,historyReloaded:true,temporaryFailureRetainedList:true,otherProjectUpdated:true,runStatusUpdated:true,deleted:true,browserStateCleared:true};
-  })()\`);
+   return {created:true,renamed:true,historyReloaded:true,temporaryFailureRetainedList:true,otherProjectUpdated:true,runStatusUpdated:true,deleted:true,browserStateCleared:true,deletionNavigation:true};
+  })().catch(error=>{throw new Error(error.stack)})\`);
+  if(${sessionsOnly}){fs.writeFileSync(${JSON.stringify(result)},JSON.stringify(checks));app.quit();return}
   const light=await win.webContents.executeJavaScript('window.readSidebarColors()');
   assert.deepEqual(light,{
     surface:'rgb(247, 247, 245)',
@@ -228,17 +304,22 @@ app.whenReady().then(async()=>{
   assert.equal(exit, 0, "Electron fixture failed")
   const checks = JSON.parse(readFileSync(result, "utf8"))
   assert.ok(requests >= 4, `Only ${requests} session reads ran`)
+  if (sessionsOnly) {
+    assert.equal(checks.deletionNavigation, true)
+    console.log("PASS Electron session sync and deletion navigation for current and previously visited tasks")
+  } else {
   assert.deepEqual(checks.fontSmoothing.map((sample: { enabled: boolean }) => sample.enabled), [true, false, true])
   assert.ok(checks.fontSmoothing.every((sample: { elements: number }) => sample.elements >= 100))
   delete checks.fontSmoothing
   assert.deepEqual(checks, {
-    created: true, renamed: true, historyReloaded: true, temporaryFailureRetainedList: true, otherProjectUpdated: true, runStatusUpdated: true, deleted: true, browserStateCleared: true,
+    created: true, renamed: true, historyReloaded: true, temporaryFailureRetainedList: true, otherProjectUpdated: true, runStatusUpdated: true, deleted: true, browserStateCleared: true, deletionNavigation: true,
     sidebarColors: {
       light: { surface: 'rgb(247, 247, 245)', searchSurface: 'rgba(250, 250, 248, 0.96)', action: 'rgba(45, 45, 43, 0.85)', actionIcon: 'rgba(45, 45, 43, 0.85)', fontSize: '14px', fontWeight: '430', lineHeight: '21px', project: 'rgba(45, 45, 43, 0.85)', projectIcon: 'rgba(45, 45, 43, 0.85)', heading: 'rgba(45, 45, 43, 0.494)', searchIcon: 'rgba(45, 45, 43, 0.65)', iconInk: 'rgba(45, 45, 43, 0.65)' },
       dark: { surface: 'rgb(48, 48, 47)', searchSurface: 'rgba(63, 63, 61, 0.96)', action: 'rgba(249, 249, 247, 0.85)', actionIcon: 'rgba(249, 249, 247, 0.85)', fontSize: '14px', fontWeight: '430', lineHeight: '21px', project: 'rgba(249, 249, 247, 0.85)', projectIcon: 'rgba(249, 249, 247, 0.85)', heading: 'rgba(249, 249, 247, 0.498)', searchIcon: 'rgba(249, 249, 247, 0.65)', iconInk: 'rgba(249, 249, 247, 0.65)' },
     },
   })
   console.log(`PASS Electron session sync with live history reload, missing/failed projects, run status, browser-state cleanup, Codex colors, and global font smoothing (${requests} reads)`)
+  }
 } finally {
   server.stop(true)
   if (originalConfig === undefined) delete process.env.CLAUDE_CONFIG_DIR
