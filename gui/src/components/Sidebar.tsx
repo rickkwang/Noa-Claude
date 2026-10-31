@@ -1032,7 +1032,10 @@ function SessionRow({
               onTogglePin?.()
             }}
             className={`flex size-6 items-center justify-center rounded-md text-[var(--sidebar-text-muted,#898781)] hover:text-[var(--text-primary,#2D2D2B)] noa-press ${
-              pinned ? "" : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+              pinned ? "" : status
+                // Collapsed to nothing while hidden so the status dot sits at the row's edge, not left of an invisible button.
+                ? "-ml-1 w-0 overflow-hidden opacity-0 group-hover:ml-0 group-hover:w-6 group-hover:opacity-100 group-focus-within:ml-0 group-focus-within:w-6 group-focus-within:opacity-100"
+                : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
             }`}
           >
             {pinned ? <PinFilled size={13} /> : <Pin size={13} />}
