@@ -1068,8 +1068,9 @@ function formatDuration(ms: number): string {
 }
 
 function Working() {
-  // Sits outside the turn items, so it carries the conversation typeface itself to match the rows above.
-  return <div className="noa-shimmer text-[length:var(--font-text-md-size)] leading-5" style={{ fontFamily: "var(--font-content, var(--font-ui))" }}>Thinking</div>
+  // Sits outside the turn items, so it carries the conversation typeface itself to match the rows above, and is
+  // inset by the activity icon's own side bearing (1.8px of 16) so its first letter lines up with the icon's outline.
+  return <div className="noa-shimmer text-[length:var(--font-text-md-size)] leading-5" style={{ fontFamily: "var(--font-content, var(--font-ui))", paddingInlineStart: "1.8px" }}>Thinking</div>
 }
 
 // Today shows the time, the past week the weekday and time, anything older the date and time.

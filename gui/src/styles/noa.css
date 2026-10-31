@@ -2433,7 +2433,7 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
 .noa-conversation-footer > * { min-height: 0; width: 100%; pointer-events: auto; }
 /* Loading shimmer: a stable base with a narrow highlight band that sweeps on a cadence. */
 .noa-shimmer {
-  --noa-shimmer-foreground: var(--text-secondary, #5D5D5D);
+  --noa-shimmer-foreground: color-mix(in srgb, var(--text-primary, #2D2D2B) 60%, transparent);
   --noa-shimmer-base: var(--noa-shimmer-foreground);
   --noa-shimmer-highlight: rgba(255, 255, 255, 0.75);
   color: var(--noa-shimmer-foreground);
@@ -2460,7 +2460,7 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
 
 /* One 1s sweep every 4s, the first after 0.6s, stepped; the rest of the cycle holds the band off the text. */
 @keyframes noa-shimmer { 0% { background-position: -100% 0; } 25%, 100% { background-position: 250% 0; } }
-@media (prefers-reduced-motion: reduce) { .noa-shimmer { animation: none; color: var(--text-secondary, #5D5D5D); background: none; -webkit-text-fill-color: currentColor; } }
+@media (prefers-reduced-motion: reduce) { .noa-shimmer { animation: none; color: var(--noa-shimmer-foreground); background: none; -webkit-text-fill-color: currentColor; } }
 
 /* New live text and block decorations fade in as they arrive over 0.4s. */
 .noa-stream-seg,
