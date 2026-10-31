@@ -755,7 +755,7 @@ export function Composer({
           aria-label="Task instruction"
           disabled={disabled}
           rows={1}
-          className="w-full min-h-[44px] max-h-[min(25dvh,var(--composer-editor-max-height,25dvh))] resize-none border-none bg-transparent px-3 py-0 text-body leading-5 outline-none placeholder:text-[color-mix(in_srgb,var(--text-primary)_50%,transparent)]"
+          className="w-full min-h-[44px] max-h-[min(25dvh,var(--composer-editor-max-height,25dvh))] resize-none border-none bg-transparent px-3 py-0 text-[13px] leading-5 outline-none placeholder:text-[color-mix(in_srgb,var(--text-primary)_50%,transparent)]"
         />
         {argumentCommand?.argumentHint && !submenu && <p className="m-0 px-3 pb-1 text-caption text-[var(--sidebar-text-muted)]">/{argumentCommand.name} {argumentCommand.argumentHint}</p>}
         <div className="noa-agent-footer mb-2 mt-1 flex min-h-7 items-center justify-between gap-[5px] px-2">
@@ -849,10 +849,10 @@ export function Composer({
                 </svg>
                 <span
                   role="tooltip"
-                  className="pointer-events-none absolute bottom-full right-0 z-40 mb-2 hidden w-44 flex-col gap-0.5 rounded-panel bg-[var(--bg-card)] px-2.5 py-2 text-left text-caption tabular-nums text-[var(--text-primary)] shadow-[var(--shadow-dialog)] group-hover/context:flex group-focus/context:flex"
+                  className="pointer-events-none absolute bottom-full left-1/2 z-40 mb-2.5 hidden -translate-x-1/2 flex-col items-center gap-1.5 whitespace-nowrap rounded-[14px] bg-[var(--bg-card)] px-4 py-3 text-center text-caption tabular-nums text-[var(--text-primary)] shadow-[var(--shadow-dialog)] group-hover/context:flex group-focus/context:flex"
                 >
                   <span className="text-[var(--sidebar-text-muted)]">Context window:</span>
-                  <span>
+                  <span className="font-medium">
                     {Math.round(contextUsage.percentage)}% used ({Math.max(0, 100 - Math.round(contextUsage.percentage))}% left)
                   </span>
                   <span className="text-[var(--sidebar-text-muted)]">
@@ -1355,7 +1355,7 @@ function Picker({
           setShowingModels(false)
           setOpen((o) => !o)
         }}
-        className={`flex h-7 min-w-0 items-center gap-1 whitespace-nowrap rounded-full ${iconOnly ? "w-7 justify-center p-0" : compactPadding ? "px-1.5" : "px-2"} text-[13px] font-normal leading-[18px] transition-colors hover:bg-[var(--fill-hover)] disabled:opacity-40 ${
+        className={`flex h-7 min-w-0 items-center gap-1 whitespace-nowrap rounded-full ${iconOnly ? "w-7 justify-center p-0" : compactPadding ? "px-1.5" : "px-2"} text-[12px] font-normal leading-[18px] transition-colors hover:bg-[var(--fill-hover)] disabled:opacity-40 ${
           tone === "danger" ? "text-[#C24444]" : "text-[var(--sidebar-text,#52514E)]"
         }`}
       >
