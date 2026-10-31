@@ -240,7 +240,7 @@ export type Envelope =
 // Messages the GUI writes to the agent's stdin.
 export type Outgoing =
   | { type: "history_before"; before: number }
-  | { type: "user"; message: { role: "user"; content: UserContent }; parent_tool_use_id: null; uuid?: string }
+  | { type: "user"; message: { role: "user"; content: UserContent }; parent_tool_use_id: null; uuid?: string; delivery?: "queue" | "steer" }
   | { type: "queue_remove"; id: string }
   | { type: "queue_move"; id: string; toIndex: number }
   | { type: "queue_update"; id: string; content: UserContent }

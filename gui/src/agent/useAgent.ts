@@ -329,7 +329,8 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
   }, [cwd, resume, sessionKey, runtimeId, control])
 
   const sendMessage = useCallback(
-    (content: UserContent) => write({ type: "user", message: { role: "user", content }, parent_tool_use_id: null }),
+    (content: UserContent, delivery?: "queue" | "steer") =>
+      write({ type: "user", message: { role: "user", content }, parent_tool_use_id: null, ...(delivery ? { delivery } : {}) }),
     [write],
   )
 

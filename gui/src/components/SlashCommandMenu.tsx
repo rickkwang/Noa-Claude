@@ -1,51 +1,31 @@
 import { useEffect, useRef, type KeyboardEvent } from "react"
 import type { ComposerCommand } from "../agent/commands"
 import { Check, ChevronRight } from "../lib/icons"
-import {
-  IconActivity,
-  IconBrain,
-  IconBug,
-  IconChartPie,
-  IconCircleDashed,
-  IconCirclePlus,
-  IconCpu,
-  IconFileText,
-  IconGauge,
-  IconHelpCircle,
-  IconHistory,
-  IconMap,
-  IconPlayerStop,
-  IconRefresh,
-  IconSearch,
-  IconServer,
-  IconSettings,
-  IconShield,
-  IconSparkles,
-  IconUsers,
-} from "@tabler/icons-react"
+import type { CodexIconName } from "../lib/codexIcons"
+import { CodexIcon } from "./CodexIcon"
 
 function CommandIcon({ command, size = 18 }: { command: ComposerCommand; size?: number }) {
   const name = command.name.toLowerCase()
-  const Icon =
-    command.action === "new" ? IconCirclePlus
-      : command.action === "resume" ? IconHistory
-        : command.action === "model" ? IconCpu
-          : command.action === "effort" ? IconGauge
-            : command.action === "permissions" ? IconShield
-              : command.action === "plan" ? IconMap
-                : command.action === "settings" ? IconSettings
-                  : command.action === "context" ? IconChartPie
-                    : command.action === "activity" ? IconActivity
-                      : command.action === "help" ? IconHelpCircle
-                        : command.action === "stop" ? IconPlayerStop
-                          : command.action === "reload" ? IconRefresh
-                            : name.includes("review") ? IconBug
-                              : name.includes("compact") ? IconCircleDashed
-                                : name.includes("mcp") ? IconServer
-                                  : name.includes("memor") ? IconBrain
-                                    : name.includes("agent") ? IconUsers
-                                      : command.group === "Skills" ? IconSparkles : IconFileText
-  return <Icon size={size} stroke={1.5} className="shrink-0 text-[var(--sidebar-text-muted)]" />
+  const icon: CodexIconName =
+    command.action === "new" ? "plus-circle"
+      : command.action === "resume" ? "history"
+        : command.action === "model" ? "sparkles"
+          : command.action === "effort" ? "gauge"
+            : command.action === "permissions" ? "shield"
+              : command.action === "plan" ? "map"
+                : command.action === "settings" ? "sliders"
+                  : command.action === "context" ? "chart"
+                    : command.action === "activity" ? "activity"
+                      : command.action === "help" ? "help"
+                        : command.action === "stop" ? "stop"
+                          : command.action === "reload" ? "refresh"
+                            : name.includes("review") ? "bug"
+                              : name.includes("compact") ? "dashed"
+                                : name.includes("mcp") ? "server"
+                                  : name.includes("memor") ? "brain"
+                                    : name.includes("agent") ? "person-group"
+                                      : command.group === "Skills" ? "sparkle-fill" : "text-page"
+  return <CodexIcon name={icon} size={size} className="shrink-0 text-[var(--sidebar-text-muted)]" />
 }
 
 export function SlashCommandMenu({
@@ -79,7 +59,7 @@ export function SlashCommandMenu({
     <div data-state={closing ? "closing" : "open"} className="noa-slash-menu noa-floating-panel absolute bottom-full left-0 right-0 z-30 mb-2 overflow-hidden rounded-panel bg-[var(--bg-card)]">
       {title && onQuery ? (
         <div className="flex h-9 items-center gap-2 px-3 text-[var(--sidebar-text-muted)]">
-          <IconSearch size={15} stroke={1.5} className="shrink-0" />
+          <CodexIcon name="search" size={15} className="shrink-0" />
           <input
             autoFocus
             role="combobox"

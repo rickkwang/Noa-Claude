@@ -10,4 +10,7 @@ contextBridge.exposeInMainWorld('noaDesktop', {
     setSidebarTranslucency: (enabled, surfaceColor, theme) =>
       ipcRenderer.invoke('noa:set-sidebar-translucency', enabled, surfaceColor, theme),
   },
+  notifications: {
+    configure: (settings) => ipcRenderer.invoke('noa:configure-notifications', settings),
+  },
 })

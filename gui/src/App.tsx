@@ -97,6 +97,7 @@ function Workspace({ cwd }: { cwd: string }) {
         },
         agent,
         composer: { ...defaultSettings.composer, ...JSON.parse(localStorage.getItem("noa-agent.composer") ?? "{}") },
+        notifications: { ...defaultSettings.notifications, ...JSON.parse(localStorage.getItem("noa-agent.notifications") ?? "{}") },
       }
     } catch {
       return defaultSettings
@@ -114,7 +115,12 @@ function Workspace({ cwd }: { cwd: string }) {
     localStorage.setItem("noa-agent.appearance", JSON.stringify(settings.appearance))
     localStorage.setItem("noa-agent.agent", JSON.stringify(settings.agent))
     localStorage.setItem("noa-agent.composer", JSON.stringify(settings.composer))
+    localStorage.setItem("noa-agent.notifications", JSON.stringify(settings.notifications))
   }, [settings])
+  // The desktop main process decides when to notify, so it needs the current choices.
+  useEffect(() => {
+    window.noaDesktop?.notifications?.configure(settings.notifications).catch(() => undefined)
+  }, [settings.notifications])
   const readingWidth = settings.appearance.maxWidth
   // cwd travels with resume: a session belongs to the project it was started in.
   const [session, setSession] = useState<{ cwd: string; resume?: string; runtimeId: string; key: number }>(() => {
@@ -611,7 +617,8 @@ function Workspace({ cwd }: { cwd: string }) {
     }
   }, [queueEditId, state.queue])
   function sendComposer(content: UserContent) {
-    const sent = queueEditId ? updateQueued(queueEditId, content) : sendMessage(content)
+    const steer = state.busy && settings.composer.followUpMode === "steer"
+    const sent = queueEditId ? updateQueued(queueEditId, content) : sendMessage(content, steer ? "steer" : undefined)
     if (!sent) return false
     if (!queueEditId && activeId) localBusySessionRef.current = sessionUpdateKey(session.cwd, activeId)
     setQueueEditId(undefined)
@@ -1014,6 +1021,7 @@ function Workspace({ cwd }: { cwd: string }) {
                 newTask={!hasTurns}
                 contextUsage={settings.composer.showContextUsage ? state.contextUsage : undefined}
                 sendShortcut={settings.composer.sendShortcut}
+                showFullAccess={settings.composer.showFullAccess}
                 connection={state.connection}
                 busy={state.busy}
                 models={state.models}

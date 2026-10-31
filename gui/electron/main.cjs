@@ -9,6 +9,7 @@ const http = require('http')
 const net = require('net')
 const os = require('os')
 const path = require('path')
+const { createNotifier } = require('./notifications.cjs')
 
 const GUI_DIR = path.join(__dirname, '..')
 const DIST_DIR = path.join(GUI_DIR, 'dist')
@@ -21,6 +22,17 @@ let checkingQuit = false
 let bridgePort
 // Every bridge request must carry this; other local processes do not know it.
 const BRIDGE_TOKEN = randomBytes(32).toString('hex')
+const notifier = createNotifier({
+  listRuns: async () => {
+    const response = await fetch(`http://127.0.0.1:${bridgePort}/api/runs`, {
+      headers: { authorization: `Bearer ${BRIDGE_TOKEN}` },
+      signal: AbortSignal.timeout(2000),
+    })
+    if (!response.ok) throw new Error('Could not read task status')
+    return response.json()
+  },
+  getWindow: () => win,
+})
 // NOA_GUI_DEV=1 serves the UI from Vite with hot reload instead of the built dist/.
 const DEV = process.env.NOA_GUI_DEV === '1'
 const VITE_PORT = 5173
@@ -200,6 +212,7 @@ function createWindow(port) {
       void requestQuit()
     }
   })
+  win.on('focus', () => notifier.clearBadge())
   win.on('closed', () => {
     win = null
   })
@@ -237,6 +250,10 @@ function applySidebarTranslucency(enabled, surfaceColor, theme) {
 ipcMain.handle('noa:set-sidebar-translucency', (event, enabled, surfaceColor, theme) => {
   if (!win || event.sender !== win.webContents || !THEME_SOURCES.has(theme)) return
   applySidebarTranslucency(enabled === true, typeof surfaceColor === 'string' ? surfaceColor : '#FCFCFB', theme)
+})
+ipcMain.handle('noa:configure-notifications', (event, settings) => {
+  if (!win || event.sender !== win.webContents) return
+  notifier.configure(settings)
 })
 ipcMain.handle('noa:select-project-directories', (event) => selectProjectDirectories(event, true))
 ipcMain.handle('noa:select-project-directory', async (event) =>
@@ -279,6 +296,7 @@ if (primaryInstance) app.whenReady().then(async () => {
   }
   try {
     createWindow(await startBridge())
+    notifier.start()
   } catch (err) {
     dialog.showErrorBox('Noa Agent could not start', String(err.message ?? err))
     app.quit()

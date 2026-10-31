@@ -31,6 +31,13 @@ export interface SocketData {
   mode?: string
   run?: AgentRun
 }
+// What a pending control request waits on; the desktop notifies per kind.
+type WaitKind = "permission" | "question" | "elicitation" | "other"
+function waitKind(request: { subtype: string; tool_name?: string }): WaitKind {
+  if (request.subtype === "elicitation") return "elicitation"
+  if (request.subtype === "can_use_tool") return request.tool_name === "AskUserQuestion" ? "question" : "permission"
+  return "other"
+}
 interface AgentRun {
   id: string
   cwd: string
@@ -60,7 +67,7 @@ interface AgentRun {
     liveAt?: number
     finalizing?: Promise<void>
   }
-  waiting: Set<string>
+  waiting: Map<string, WaitKind>
   activeTasks: Set<string>
   title?: string
   initialization?: Extract<AgentMessage, { type: "control_response" }>
@@ -425,7 +432,7 @@ export function attachAgent(ws: ServerWebSocket<SocketData>, root: string) {
       queue: retainedQueue,
       busy: false,
       turnCounter: priorTurn,
-      waiting: new Set(),
+      waiting: new Map(),
       activeTasks: new Set(),
       initializeWaiters: new Map(),
       historyReady: Promise.resolve(),
@@ -491,7 +498,7 @@ export function attachAgent(ws: ServerWebSocket<SocketData>, root: string) {
         }
       }
       if (message.type === "system" && message.subtype === "init") current.sessionId = message.session_id
-      if (message.type === "control_request") current.waiting.add(message.request_id)
+      if (message.type === "control_request") current.waiting.set(message.request_id, waitKind(message.request))
       if (message.type === "control_cancel_request") current.waiting.delete(message.request_id)
       trackTurnResult(current, message)
       emit(current, { kind: "agent", message })
@@ -576,9 +583,11 @@ export async function agentMessage(ws: ServerWebSocket<SocketData>, raw: string 
               .join(" ")
         ).slice(0, 80) || "Image task"
     if (!run.busy) run.queuePaused = false
-    run.queue.push({ id: crypto.randomUUID(), content, at: Date.now() })
+    const queued = { id: crypto.randomUUID(), content, at: Date.now() }
+    run.queue.push(queued)
     emit(run, queueEnvelope(run))
-    void startNext(run)
+    if (message.delivery === "steer" && run.busy) steerQueued(run, queued.id)
+    else void startNext(run)
   } else if (message.type === "queue_remove") {
     run.queue = run.queue.filter((m) => m.id !== message.id)
     emit(run, queueEnvelope(run))
@@ -596,14 +605,7 @@ export async function agentMessage(ws: ServerWebSocket<SocketData>, raw: string 
       emit(run, queueEnvelope(run))
     }
   } else if (message.type === "queue_steer") {
-    const index = run.queue.findIndex((item) => item.id === message.id)
-    const item = index === -1 ? undefined : run.queue[index]
-    if (item && run.busy) {
-      run.queue.splice(index, 1)
-      emit(run, queueEnvelope(run))
-      emit(run, { kind: "user", id: item.id, content: item.content, at: item.at ?? Date.now() })
-      write(run, { type: "user", message: { role: "user", content: item.content }, parent_tool_use_id: null, uuid: item.id })
-    }
+    steerQueued(run, message.id)
   } else if (message.type === "queue_pause") {
     run.queuePaused = message.paused
     emit(run, queueEnvelope(run))
@@ -641,6 +643,17 @@ export async function agentMessage(ws: ServerWebSocket<SocketData>, raw: string 
     write(run, message)
   }
 }
+// Writes a queued message into the running turn instead of waiting for it to finish.
+function steerQueued(run: AgentRun, id: string) {
+  const index = run.queue.findIndex((item) => item.id === id)
+  const item = index === -1 ? undefined : run.queue[index]
+  if (!item || !run.busy) return
+  run.queue.splice(index, 1)
+  emit(run, queueEnvelope(run))
+  emit(run, { kind: "user", id: item.id, content: item.content, at: item.at ?? Date.now() })
+  write(run, { type: "user", message: { role: "user", content: item.content }, parent_tool_use_id: null, uuid: item.id })
+}
+
 export function detachAgent(ws: ServerWebSocket<SocketData>) {
   const run = ws.data.run
   if (!run) return
@@ -669,6 +682,9 @@ export function listAgentRuns() {
       title: r.title,
       busy: r.busy,
       waiting: r.waiting.size > 0,
+      waitingKinds: [...new Set(r.waiting.values())],
+      interrupted: r.turn?.interrupted === true,
+      failed: r.turnSucceeded === false,
       queued: r.queue.length,
     }))
 }

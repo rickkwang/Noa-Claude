@@ -20,8 +20,9 @@ export const defaultSettings: AppSettings = {
     codeFontSize: 12,
     fontSmoothing: true,
   },
-  composer: { sendShortcut: 'enter', showContextUsage: true },
+  composer: { sendShortcut: 'enter', followUpMode: 'queue', showFullAccess: false, showContextUsage: true },
   agent: {
     permissionDefault: 'inherit',
   },
+  notifications: { turnMode: 'unfocused', sound: 'default', permissions: true, questions: true, dot: true },
 };

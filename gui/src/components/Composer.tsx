@@ -22,13 +22,14 @@ import {
 import type { ReactNode } from "react"
 import type { ProjectInfo } from "../api"
 import type { AgentState } from "../agent/reducer"
+import type { AppSettings } from "../types"
 
 export const MODE_OPTIONS: { value: PermissionMode; label: string; description: string }[] = [
   { value: "auto", label: "Auto", description: "Noa handles permission decisions" },
   { value: "default", label: "Manual", description: "Always ask before making changes" },
   { value: "acceptEdits", label: "Accept edits", description: "Automatically accept all file edits" },
   { value: "plan", label: "Plan", description: "Create a plan before making changes" },
-  { value: "bypassPermissions", label: "Bypass permissions", description: "Noa can modify or delete files without asking" },
+  { value: "bypassPermissions", label: "Full access", description: "Noa can edit any file and run commands without asking" },
 ]
 
 type MentionEntry = { name: string; path: string; directory: boolean }
@@ -77,7 +78,9 @@ interface ComposerProps {
   onWorktree: (on: boolean) => Promise<void>
   onFiles: () => void
   newTask: boolean
-  sendShortcut?: "enter" | "modifier-enter"
+  sendShortcut?: AppSettings["composer"]["sendShortcut"]
+  // Full access is hidden from the permission menu until the user opts in from settings.
+  showFullAccess?: boolean
   contextUsage?: ContextUsage
 }
 
@@ -113,6 +116,7 @@ export function Composer({
   newTask,
   contextUsage,
   sendShortcut = "enter",
+  showFullAccess = false,
 }: ComposerProps) {
   const disabled = connection !== "ready"
   const [text, setText] = useState(() => localStorage.getItem(draftKey) ?? "")
@@ -262,7 +266,8 @@ export function Composer({
   const autoUnsupported = !!currentModel && !currentModel.supportsAutoMode
   const permissionModes = MODE_OPTIONS.filter(
     (option) =>
-      option.value !== "auto" || currentModel !== undefined || mode === "auto",
+      (option.value !== "auto" || currentModel !== undefined || mode === "auto") &&
+      (option.value !== "bypassPermissions" || showFullAccess || mode === "bypassPermissions"),
   )
   const { confirm, dialog } = useConfirm()
   // Bypass skips every approval, so entering it needs an explicit confirmation.
@@ -516,7 +521,9 @@ export function Composer({
       return
     }
 
-    if (e.key === "Enter" && !e.shiftKey && (sendShortcut === "enter" || e.metaKey || e.ctrlKey)) {
+    // "modifier-enter-multiline": a single-line draft sends on plain Enter; once it spans lines, Enter needs the modifier.
+    const plainEnterSends = sendShortcut === "enter" || (sendShortcut === "modifier-enter-multiline" && !text.includes("\n"))
+    if (e.key === "Enter" && !e.shiftKey && (plainEnterSends || e.metaKey || e.ctrlKey)) {
       e.preventDefault()
       submit()
     }

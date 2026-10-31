@@ -397,7 +397,8 @@ try {
   const diskHistory = await (await fetch(`http://127.0.0.1:${port}/api/sessions/${initMessage.message.session_id}?${new URLSearchParams({ cwd })}`)).json() as any[]
   assert.ok(diskHistory.some(item => item.kind === "user" && item.id === acknowledged.id), "Live user identity must survive disk restoration")
   second.socket.close()
-  const third = connect(crypto.randomUUID(), initMessage.message.session_id)
+  const thirdRuntime = crypto.randomUUID()
+  const third = connect(thirdRuntime, initMessage.message.session_id)
   await third.initialize()
   // Reopening during finalization reuses the CLI; after settling it is reclaimed.
   // Assert the resulting process is released, not an intermediate PID transition.
@@ -423,6 +424,8 @@ try {
       ),
     "question approval",
   )
+  const pendingRuns = await (await fetch(`http://127.0.0.1:${port}/api/runs`)).json() as { runtimeId: string; waitingKinds?: string[] }[]
+  assert.deepEqual(pendingRuns.find((run) => run.runtimeId === thirdRuntime)?.waitingKinds, ["question"], "A pending AskUserQuestion is reported as a question for desktop notifications")
   const permission = third.events.findLast((e) => e.kind === "agent" && e.message.type === "control_request") as any
   third.send({
     type: "control_response",
@@ -694,6 +697,11 @@ try {
   })
   await wait(() => third.events.some((e) => e.kind === "queue" && e.messages.length === 1), "queued before stop")
   third.send({ type: "control_request", request_id: crypto.randomUUID(), request: { subtype: "interrupt" } })
+  await wait(
+    async () => (await (await fetch(`http://127.0.0.1:${port}/api/runs`)).json() as { runtimeId: string; interrupted?: boolean }[])
+      .find((run) => run.runtimeId === thirdRuntime)?.interrupted === true,
+    "stop flagged for notifications",
+  )
   await wait(() => third.results().length > beforeInterrupt, "interrupted result")
   await Bun.sleep(100)
   assert.equal(third.events.filter((e) => e.kind === "user").length, thirdUserBase + 6)
@@ -708,6 +716,18 @@ try {
   assert.equal(stopped.result?.isError, false)
   assert.ok(stopped.logs.some((line) => line.includes("[ede_diagnostic]")))
   console.log("PASS real CLI interruption terminates the active turn and pauses queued follow-ups")
+  const steerDelivery = connect(crypto.randomUUID())
+  await steerDelivery.initialize()
+  steerDelivery.send({ type: "user", message: { role: "user", content: "GUI_SLOW steer base" }, parent_tool_use_id: null })
+  await wait(() => steerDelivery.events.some((e) => e.kind === "user" && e.content === "GUI_SLOW steer base"), "steer base turn started")
+  const steerResultBase = steerDelivery.results().length
+  steerDelivery.send({ type: "user", message: { role: "user", content: "STEER_FOLLOW_UP" }, parent_tool_use_id: null, delivery: "steer" })
+  await wait(() => steerDelivery.events.some((e) => e.kind === "user" && e.content === "STEER_FOLLOW_UP"), "steer delivered")
+  assert.equal(steerDelivery.results().length, steerResultBase, "Steer must land in the running turn, not after it")
+  const lastQueue = steerDelivery.events.filter((e) => e.kind === "queue").at(-1) as any
+  assert.ok(!lastQueue?.messages.some((m: any) => m.content === "STEER_FOLLOW_UP"), "Steered message must not stay in the queue")
+  steerDelivery.socket.close()
+  console.log("PASS steer delivery writes a follow-up into the running turn instead of queueing it")
   const crashRuntime = crypto.randomUUID()
   const crashing = connect(crashRuntime)
   const crashInit = await crashing.initialize()

@@ -2392,7 +2392,7 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
 .noa-turn-diff-card { container-type: inline-size; margin-top: 2px; overflow: hidden; border-radius: 10px; background: color-mix(in srgb, var(--bg-card) 70%, transparent); box-shadow: 0 0 0 .5px var(--border-strong); }
 .noa-live-diff { display: inline-flex; max-width: 100%; align-items: center; gap: 6px; align-self: center; padding: 2px 6px; border-radius: 6px; color: var(--sidebar-text-muted); font-size: var(--text-caption); }
 .noa-live-diff:hover { color: var(--text-primary); background: var(--fill-hover); }
-.noa-turn-diff-headrow { display: flex; align-items: center; gap: 8px; padding-right: 12px; }
+.noa-turn-diff-headrow { position: relative; display: flex; align-items: center; gap: 8px; padding-right: 12px; }
 .noa-turn-diff-icon { display: flex; width: 40px; height: 40px; align-items: center; justify-content: center; flex-shrink: 0; border-radius: 10px; background: color-mix(in srgb, var(--text-primary) 3%, transparent); color: var(--text-secondary); }
 .noa-turn-diff-heading { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 2px; }
 .noa-turn-diff-view { flex-shrink: 0; padding: 5px 9px; border: 1px solid var(--divider-subtle); border-radius: 10px; font-size: var(--text-caption); color: var(--text-primary); white-space: nowrap; }
@@ -2406,12 +2406,15 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
   .noa-turn-diff-header { flex-basis: 100%; }
   .noa-turn-diff-action, .noa-turn-diff-header + .noa-turn-diff-view { margin-left: auto; }
 }
-.noa-turn-diff-header:hover { background: var(--fill-hover); }
+/* The hover fill and subtitle swap cover the whole header row, including the Undo and View changes buttons, as in Codex. */
+.noa-turn-diff-headrow::before { content: ""; position: absolute; inset: 0; border-radius: 10px; pointer-events: none; }
+.noa-turn-diff-headrow:hover::before { background: var(--fill-hover); }
+.noa-turn-diff-action, .noa-turn-diff-view { position: relative; }
 .noa-turn-diff-default { display: inline-flex; flex-shrink: 0; font-size: var(--text-chat-sm); }
 .noa-turn-diff-hover { display: none; flex-shrink: 0; font-size: var(--text-chat-sm); align-items: center; gap: 2px; color: var(--text-secondary); }
-.noa-turn-diff-header:hover .noa-turn-diff-default,
+.noa-turn-diff-headrow:hover .noa-turn-diff-default,
 .noa-turn-diff-header:focus-visible .noa-turn-diff-default { display: none; }
-.noa-turn-diff-header:hover .noa-turn-diff-hover,
+.noa-turn-diff-headrow:hover .noa-turn-diff-hover,
 .noa-turn-diff-header:focus-visible .noa-turn-diff-hover { display: inline-flex; }
 .noa-turn-diff-list { display: flex; flex-direction: column; border-top: 1px solid var(--divider-subtle); }
 .noa-turn-diff-row { display: flex; width: 100%; min-width: 0; min-height: 36px; align-items: center; gap: 8px; padding: 4px 12px; text-align: left; color: var(--text-primary); }

@@ -12,6 +12,7 @@ import { useIsDark } from "../hooks/useIsDark"
 import { findModel } from "../lib/models"
 import { defaultSettings } from "../theme/settings"
 import { AuthDialog } from "./AuthDialog"
+import { useConfirm } from "./ConfirmDialog"
 
 const dragRegion = { WebkitAppRegion: "drag" } as CSSProperties
 const noDragRegion = { WebkitAppRegion: "no-drag" } as CSSProperties
@@ -26,7 +27,7 @@ const pages: { key: Page; label: string; group: string; icon: ReactNode; rows: s
     label: "General",
     group: "Personal",
     icon: <Settings size={16} />,
-    rows: ["Account", "Default permissions", "Send shortcut", "Show context window usage"],
+    rows: ["Account", "Default permissions", "Send shortcut", "Show context window usage", "Turn notifications", "Notification sound", "Permission requests", "Questions", "Dock badge"],
   },
   {
     key: "appearance",
@@ -165,6 +166,8 @@ export function SettingsDialog({
     dark: activeTranslucency(appearance.translucentSidebar, true),
   }
   const permissionMode = settings.agent.permissionDefault
+  const modifierLabel = navigator.platform.includes("Mac") ? "⌘" : "Ctrl"
+  const { confirm, dialog } = useConfirm()
   const providerLabel = account?.apiProvider ? providerDisplayName(account.apiProvider) : undefined
   const change = (patch: Partial<AppSettings["appearance"]>) =>
     onChange({ ...settings, appearance: { ...appearance, ...patch } })
@@ -441,27 +444,60 @@ export function SettingsDialog({
               <Section title="Permissions">
               <Row
                 label="Default permissions"
-                description="The mode new tasks start in. Follow Noa settings uses permissions.defaultMode from settings.json."
+                description="By default, Noa can read and edit files in its workspace. It can ask for additional access when needed. Follow Noa settings uses permissions.defaultMode from settings.json."
               >
                 <Select
                   value={permissionMode}
-                  options={permissionOptions}
+                  options={permissionOptions.filter(([mode]) => mode !== "auto" || activeModel?.supportsAutoMode !== false || permissionMode === "auto")}
                   onChange={(value) => setPermission(value as DefaultMode)}
+                />
+              </Row>
+              <Row
+                label="Full access"
+                description="When Noa runs with full access, it can edit any file on your computer and run commands with network, without your approval. This significantly increases the risk of data loss, leaks, or unexpected behavior."
+              >
+                <Toggle
+                  checked={settings.composer.showFullAccess}
+                  onChange={async (showFullAccess) => {
+                    if (showFullAccess && !(await confirm({
+                      title: "Make Full access available?",
+                      description: "When selected, Noa can access the internet and read and edit files without asking for approval, including potentially destructive commands. Turning this on adds Full access to the permissions menu. It does not turn Full access on.",
+                      confirmLabel: "Confirm",
+                      danger: true,
+                    }))) return
+                    onChange({ ...settings, composer: { ...settings.composer, showFullAccess } })
+                  }}
                 />
               </Row>
               </Section>
               <Section title="Composer">
-                <Row label="Send shortcut" description="Choose when Enter sends a message or inserts a new line.">
+                <Row label="Send shortcut" description="Choose when Enter sends a prompt or inserts a new line.">
                   <Select
                     value={settings.composer.sendShortcut}
                     options={[
                       ["enter", "Enter"],
-                      ["modifier-enter", `${navigator.platform.includes("Mac") ? "⌘" : "Ctrl"} + Enter`],
+                      ["modifier-enter", `${modifierLabel} + Enter always`],
+                      ["modifier-enter-multiline", `${modifierLabel} + Enter for multiline prompts`],
                     ]}
                     onChange={(value) =>
                       onChange({
                         ...settings,
                         composer: { ...settings.composer, sendShortcut: value as AppSettings["composer"]["sendShortcut"] },
+                      })
+                    }
+                  />
+                </Row>
+                <Row label="Follow-up behavior" description="Queue follow-ups while Noa runs, or steer the current run with them.">
+                  <Select
+                    value={settings.composer.followUpMode}
+                    options={[
+                      ["queue", "Queue"],
+                      ["steer", "Steer"],
+                    ]}
+                    onChange={(value) =>
+                      onChange({
+                        ...settings,
+                        composer: { ...settings.composer, followUpMode: value as AppSettings["composer"]["followUpMode"] },
                       })
                     }
                   />
@@ -472,6 +508,59 @@ export function SettingsDialog({
                     onChange={(showContextUsage) =>
                       onChange({ ...settings, composer: { ...settings.composer, showContextUsage } })
                     }
+                  />
+                </Row>
+              </Section>
+              <Section title="Notifications">
+                <Row label="Turn notifications" description="When a finished task shows a desktop notification.">
+                  <Select
+                    value={settings.notifications.turnMode}
+                    options={[
+                      ["off", "Off"],
+                      ["unfocused", "When Noa is in the background"],
+                      ["always", "Always"],
+                    ]}
+                    onChange={(value) =>
+                      onChange({
+                        ...settings,
+                        notifications: { ...settings.notifications, turnMode: value as AppSettings["notifications"]["turnMode"] },
+                      })
+                    }
+                  />
+                </Row>
+                <Row label="Notification sound" description="Sound played with desktop notifications.">
+                  <Select
+                    value={settings.notifications.sound}
+                    options={[
+                      ["default", "Default"],
+                      ["classic", "Classic"],
+                      ["none", "None"],
+                      ["Basso", "Basso"],
+                      ["Glass", "Glass"],
+                      ["Ping", "Ping"],
+                      ["Pop", "Pop"],
+                      ["Purr", "Purr"],
+                      ["Tink", "Tink"],
+                    ]}
+                    onChange={(sound) => onChange({ ...settings, notifications: { ...settings.notifications, sound } })}
+                  />
+                </Row>
+                <Row label="Permission requests" description="Notify when a tool needs your approval.">
+                  <Toggle
+                    checked={settings.notifications.permissions}
+                    onChange={(permissions) => onChange({ ...settings, notifications: { ...settings.notifications, permissions } })}
+                  />
+                </Row>
+                <Row label="Questions" description="Notify when Noa or an MCP server asks you for input.">
+                  <Toggle
+                    checked={settings.notifications.questions}
+                    onChange={(questions) => onChange({ ...settings, notifications: { ...settings.notifications, questions } })}
+                  />
+                </Row>
+                <Row label="Dock badge" description="Show a dot on the Dock icon while a notification is waiting.">
+                  <Toggle
+                    checked={settings.notifications.dot}
+                    onChange={(dot) => onChange({ ...settings, notifications: { ...settings.notifications, dot } })}
                   />
                 </Row>
               </Section>
@@ -628,7 +717,7 @@ export function SettingsDialog({
                     value={agent.permissionMode ?? "default"}
                     options={[
                       ...(agent.permissionMode && !permissionOptions.some(([mode]) => mode === agent.permissionMode)
-                        ? [[agent.permissionMode, agent.permissionMode] as [string, string]]
+                        ? [[agent.permissionMode, agent.permissionMode === "bypassPermissions" ? "Full access" : agent.permissionMode] as [string, string]]
                         : []),
                       ...permissionOptions.filter(
                         ([mode]) =>
@@ -832,6 +921,7 @@ export function SettingsDialog({
           )}
         </div>
       </main>
+      {dialog}
       {authOpen && auth && (
         <AuthDialog
           auth={auth}

@@ -36,12 +36,27 @@ export interface AppSettings {
     fontSmoothing: boolean;
   };
   composer: {
-    sendShortcut: 'enter' | 'modifier-enter';
+    sendShortcut: 'enter' | 'modifier-enter' | 'modifier-enter-multiline';
+    /** Whether a follow-up sent during a running turn queues behind it or steers into it. */
+    followUpMode: 'queue' | 'steer';
+    /** Shows Full access in the composer's permission menu. Off by default. */
+    showFullAccess: boolean;
     showContextUsage: boolean;
   };
   agent: {
     // 'inherit' starts sessions in the mode from Noa's settings.json instead of overriding it.
     permissionDefault: 'inherit' | 'default' | 'acceptEdits' | 'plan' | 'auto';
+  };
+  notifications: {
+    /** Finished turns: never, only while the window is not focused, or always. */
+    turnMode: 'off' | 'unfocused' | 'always';
+    /** macOS system sound name, 'default', 'classic' (plays the default), or 'none' (silent). */
+    sound: string;
+    permissions: boolean;
+    /** Covers both questions Noa asks and input an MCP server requests. */
+    questions: boolean;
+    /** Badge on the Dock icon while a notification is waiting and the window is not focused. */
+    dot: boolean;
   };
 }
 
@@ -54,6 +69,9 @@ declare global {
       appearance?: {
         supportsSidebarTranslucency?: boolean;
         setSidebarTranslucency?: (enabled: boolean, surfaceColor: string, theme: string) => Promise<void>;
+      };
+      notifications?: {
+        configure: (settings: AppSettings['notifications']) => Promise<void>;
       };
     };
   }

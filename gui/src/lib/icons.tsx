@@ -1,8 +1,7 @@
-// Central icon mapping: filled 16px glyphs where one exists, Tabler Icons (plus a hand-drawn
-// ChevronsDownUp) for the rest, exported under the legacy lucide-react names so call sites are unchanged.
-// To swap a shape, change its mapping here only.
+// Central icon mapping: Codex's internal icons where one exists, filled 16px glyphs next, and Tabler Icons
+// (plus a hand-drawn ChevronsDownUp) for the rest, exported under the legacy lucide-react names so call sites
+// are unchanged. To swap a shape, change its mapping here only.
 import {
-  IconCircleArrowUp,
   IconDatabase,
   IconDice5,
   IconBrandTypescript,
@@ -13,22 +12,39 @@ import {
   IconBrandCss3,
   IconBrandHtml5,
   IconBrandPython,
-  IconGauge,
-  IconListDetails,
-  IconMessageCircle,
-  IconMoon,
-  IconSelector,
   IconServer,
+  IconMoon,
   IconZoomIn,
   IconZoomOut,
 } from '@tabler/icons-react';
 import type { Icon, IconProps } from '@tabler/icons-react';
 import { GLYPHS } from './glyphs';
+import { codexIcons, type CodexIconName } from './codexIcons';
 
 // Default to 24px with a 1.5 stroke; call sites that need a heavier glyph pass their own stroke.
 function icon(Cmp: Icon) {
   return function WrappedIcon(props: IconProps) {
     return <Cmp size={24} stroke={1.5} {...props} />;
+  };
+}
+
+// Codex icons carry their own viewBox; the size defaults to 16px to match the glyphs.
+function codex(name: CodexIconName) {
+  const { viewBox, body } = codexIcons[name];
+  return function CodexGlyph({ size = 16, className, style }: IconProps) {
+    return (
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        width={size}
+        height={size}
+        viewBox={viewBox}
+        fill="currentColor"
+        className={className}
+        style={style}
+        aria-hidden="true"
+        dangerouslySetInnerHTML={{ __html: body }}
+      />
+    );
   };
 }
 
@@ -69,7 +85,7 @@ export const CheckSquare = glyph("checkmark-square");
 export const ChevronDown = glyph("chevron-down-md");
 export const ChevronLeft = glyph("chevron-left-md");
 export const ChevronRight = glyph("chevron-right-md");
-export const ChevronsUpDown = icon(IconSelector);
+export const ChevronsUpDown = codex("arrow-up-arrow-down");
 // Inward twin of ChevronsUpDown ("collapse all folders"), drawn by hand because
 // Tabler has no such glyph: same 256 grid, 16-unit stroke (1.5 at 24px), carets flipped.
 export function ChevronsDownUp({ size = 24, className, style }: IconProps) {
@@ -94,7 +110,7 @@ export function ChevronsDownUp({ size = 24, className, style }: IconProps) {
   );
 }
 export const ChevronUp = glyph("chevron-up-md");
-export const CircleArrowUp = icon(IconCircleArrowUp);
+export const CircleArrowUp = codex("arrow-up-circle");
 // The editor's outline and edit-mode toggles.
 export const Outline = glyph("list-bullet");
 export const Edit2 = glyph("pencil");
@@ -117,7 +133,7 @@ export const BrandCss3 = icon(IconBrandCss3);
 export const BrandHtml5 = icon(IconBrandHtml5);
 export const BrandPython = icon(IconBrandPython);
 export const Photo = glyph("photo");
-export const ListDetails = icon(IconListDetails);
+export const ListDetails = codex("list-bullet");
 export const Filter = glyph("filter");
 export const Folder = glyph("folder");
 export const FolderPlus = glyph("folder-badge-plus");
@@ -149,8 +165,8 @@ export const PlusMinus = glyph("plus-minus-square");
 export const RefreshCcw = glyph("arrows-clockwise-rotate-lg");
 export const RotateCcw = glyph("arrow-rotate-counterclockwise");
 export const Search = glyph("magnifying-glass-md");
-export const MessageCircle = icon(IconMessageCircle);
-export const Gauge = icon(IconGauge);
+export const MessageCircle = codex("chat-bubble");
+export const Gauge = codex("gauge");
 export const Keyboard = glyph("keyboard");
 export const Settings = glyph("gear");
 export const SlidersHorizontal = glyph("sliders");

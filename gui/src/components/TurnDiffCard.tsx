@@ -1,8 +1,8 @@
 import { useState } from "react"
-import { IconFileDiff } from "@tabler/icons-react"
 import type { TurnDiff, TurnDiffActionResult, TurnDiffFile } from "../agent/protocol"
 import { ChevronDown, ChevronRight, ChevronUp, RotateCcw } from "../lib/icons"
 import { useConfirm } from "./ConfirmDialog"
+import { CodexIcon } from "./CodexIcon"
 
 export function TurnDiffCard({ diff, onOpen, onAction, pending }: {
   diff: TurnDiff
@@ -15,7 +15,7 @@ export function TurnDiffCard({ diff, onOpen, onAction, pending }: {
   const single = diff.files.length === 1
   const shown = expanded ? diff.files : diff.files.slice(0, 3)
   const hidden = diff.files.length - shown.length
-  const title = single ? `Workspace change: ${basename(diff.files[0]!.path)}` : `Workspace changes: ${diff.files.length} files`
+  const title = single ? `Edited ${basename(diff.files[0]!.path)}` : `Edited ${diff.files.length} files`
   const action = diff.reverted ? "reapply" : "undo"
   const canAct = onAction !== undefined && diff.turnIndex !== undefined && diff.undoable !== false
 
@@ -28,7 +28,7 @@ export function TurnDiffCard({ diff, onOpen, onAction, pending }: {
           onClick={() => onOpen(single ? diff.files[0]!.path : undefined)}
           aria-label={`${title}. View changes`}
         >
-          <span className="noa-turn-diff-icon"><IconFileDiff size={22} aria-hidden="true" /></span>
+          <span className="noa-turn-diff-icon"><CardIcon /></span>
           <span className="noa-turn-diff-heading">
             <span className="truncate text-body font-medium text-[var(--text-primary)]">{title}</span>
             <span className="noa-turn-diff-default">
@@ -61,7 +61,7 @@ export function TurnDiffCard({ diff, onOpen, onAction, pending }: {
             title={action === "undo" ? "Undo" : "Reapply"}
           >
             {pending ? (action === "reapply" ? "Reapplying…" : "Undoing…") : action === "reapply" ? "Reapply" : "Undo"}
-            <RotateCcw size={14} aria-hidden="true" className={action === "reapply" ? "-scale-x-100" : undefined} />
+            <RotateCcw size={12} aria-hidden="true"className={action === "reapply" ? "-scale-x-100" : undefined} />
           </button>
         )}
         <button type="button" className="noa-turn-diff-view" onClick={() => onOpen(single ? diff.files[0]!.path : undefined)}>View changes</button>
@@ -95,6 +95,17 @@ export function TurnDiffCard({ diff, onOpen, onAction, pending }: {
   )
 }
 
+// Codex's square-plus-minus glyph (24px monochrome); the card uses it instead of a file-diff document.
+function CardIcon() {
+  return (
+    <svg width={24} height={24} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M14.5 15.25C14.9142 15.25 15.25 15.5858 15.25 16C15.25 16.4142 14.9142 16.75 14.5 16.75H9.5C9.08579 16.75 8.75 16.4142 8.75 16C8.75 15.5858 9.08579 15.25 9.5 15.25H14.5Z" fill="currentColor" />
+      <path d="M12 6.75C12.4142 6.75 12.75 7.08579 12.75 7.5V9.25H14.5C14.9142 9.25 15.25 9.58579 15.25 10C15.25 10.4142 14.9142 10.75 14.5 10.75H12.75V12.5C12.75 12.9142 12.4142 13.25 12 13.25C11.5858 13.25 11.25 12.9142 11.25 12.5V10.75H9.5C9.08579 10.75 8.75 10.4142 8.75 10C8.75 9.58579 9.08579 9.25 9.5 9.25H11.25V7.5C11.25 7.08579 11.5858 6.75 12 6.75Z" fill="currentColor" />
+      <path d="M17.2002 3.25C19.1607 3.25011 20.7499 4.83935 20.75 6.7998V17.2002C20.7499 19.1607 19.1607 20.7499 17.2002 20.75H6.7998C4.83935 20.7499 3.25011 19.1607 3.25 17.2002V6.7998C3.25011 4.83935 4.83935 3.25011 6.7998 3.25H17.2002ZM6.7998 4.75C5.66778 4.75011 4.75011 5.66778 4.75 6.7998V17.2002C4.75011 18.3322 5.66778 19.2499 6.7998 19.25H17.2002C18.3322 19.2499 19.2499 18.3322 19.25 17.2002V6.7998C19.2499 5.66778 18.3322 4.75011 17.2002 4.75H6.7998Z" fillRule="evenodd" clipRule="evenodd" fill="currentColor" />
+    </svg>
+  )
+}
+
 /** In-progress row above the composer: files changed while the turn runs. */
 export function LiveDiffSummary({ diff, onOpen }: { diff: TurnDiff; onOpen: () => void }) {
   const count = diff.files.length
@@ -106,7 +117,7 @@ export function LiveDiffSummary({ diff, onOpen }: { diff: TurnDiff; onOpen: () =
       onClick={onOpen}
       aria-label={`${count} ${count === 1 ? "file" : "files"} changed. View changes`}
     >
-      <IconFileDiff size={14} className="shrink-0" aria-hidden="true" />
+      <CodexIcon name="square-plus-minus" size={14} className="shrink-0" />
       <span className="noa-shimmer">{count} {count === 1 ? "file" : "files"} changed</span>
       <Stats file={diff} />
     </button>
