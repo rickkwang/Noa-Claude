@@ -35,10 +35,9 @@ export default function ThemeInjector({ settings }: ThemeInjectorProps) {
     // Ghost hover is the control surface's hover tier, which moves with contrast; the pressed tier is a
     // fixed 12%/16% wash, so it does not.
     const fillHover = alpha(isDark ? 0.06 + contrast * 0.03 : 0.04 + contrast * 0.03);
-    const surfaceRgb = isDark ? '45,45,43' : '249,249,247';
-    // Floor behind the content card: in light the surface mixes toward the ink, in dark toward black, so the
-    // card's rounded edge reads in both variants.
-    const surfaceUnder = `rgb(${mixRgb(surfaceRgb, isDark ? '0,0,0' : ink, isDark ? 0.16 + (raw - CONTRAST_DEFAULTS.dark) * 0.0015 : 0.04 + (raw - CONTRAST_DEFAULTS.light) * 0.0012)})`;
+    // Dark floor behind the content card: the surface mixed toward black, more so as contrast rises. Light uses the
+    // fixed sidebar colour from the palette instead.
+    const surfaceUnder = `rgb(${mixRgb('45,45,43', '0,0,0', 0.14 + (raw - CONTRAST_DEFAULTS.dark) * 0.0015)})`;
     // theme-bootstrap.js paints <html> opaque for the pre-React frame; once body and the shell
     // take over it must go, or it covers the native material under the translucent sidebar.
     root.style.removeProperty('background-color');
@@ -49,7 +48,7 @@ export default function ThemeInjector({ settings }: ThemeInjectorProps) {
     root.style.setProperty('--ink-on-dark', '#F9F9F7');
     root.style.setProperty('--bg-secondary', surfaces.secondary);
     // Opaque sidebar floor; --sidebar-material-color is the separate translucent tint.
-    root.style.setProperty('--bg-sidebar', surfaceUnder);
+    root.style.setProperty('--bg-sidebar', isDark ? surfaceUnder : surfaces.sidebarMaterial);
     root.style.setProperty('--sidebar-material-color', surfaces.sidebarMaterial);
     // In dark the card shares the sidebar floor; the palette's lighter card read too pale on it.
     root.style.setProperty('--bg-card', isDark ? surfaceUnder : surfaces.card);

@@ -6,7 +6,7 @@ export const THEME_SURFACES = {
     // Codex's Absolutely Light derives these from #F9F9F7 surface + #2D2D2B ink.
     primary: '#F9F9F7',
     secondary: '#F2F2F0',
-    sidebarMaterial: '#FAFAF8',
+    sidebarMaterial: '#F6F6F4',
     card: '#FAFAF9',
   },
   dark: {
