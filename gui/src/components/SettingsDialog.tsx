@@ -424,6 +424,8 @@ export function SettingsDialog({
       </nav>
 
       {navResizeHandle}
+      {/* The content card has no titlebar of its own, so this strip keeps the top of the window draggable. */}
+      <div aria-hidden className="absolute inset-x-0 top-0 z-10 h-11" style={{ ...dragRegion, left: navWidth }} />
       <main className="noa-settings-main scrollbar-on-scroll min-w-0 flex-1 overflow-y-auto bg-[var(--bg-primary,#FCFCFB)] px-5 pt-[120px] pb-5">
         <div key={page} className="mx-auto flex max-w-3xl flex-col gap-10">
           {page !== "skills" && <h1 className="text-[26px] leading-8 font-normal">{current?.label}</h1>}
@@ -1463,6 +1465,7 @@ function ProviderForm({
   initial,
   provider,
   keyless,
+  signIn,
   pending,
   submitLabel,
   onSubmit,
@@ -1471,6 +1474,8 @@ function ProviderForm({
   initial: ProviderDraft
   provider?: ProviderInfo
   keyless?: boolean
+  // Signs in through /login: no key, endpoint or model to edit, only removal.
+  signIn?: boolean
   pending: boolean
   submitLabel: string
   onSubmit: (draft: ProviderDraft) => void
@@ -1478,11 +1483,35 @@ function ProviderForm({
 }) {
   const [draft, setDraft] = useState(initial)
   const [reveal, setReveal] = useState(false)
-  const set = (patch: Partial<ProviderDraft>) => setDraft((d) => ({ ...d, ...patch }))
+  const [touched, setTouched] = useState(false)
+  const set = (patch: Partial<ProviderDraft>) => {
+    setTouched(true)
+    setDraft((d) => ({ ...d, ...patch }))
+  }
   const changed = !provider || draft.name !== initial.name || draft.baseUrl !== initial.baseUrl || draft.model !== initial.model || draft.apiKey !== ""
-  const canSubmit = changed && !pending && draft.name.trim() !== "" && (provider || keyless || draft.apiKey.trim() !== "")
+  const key = draft.apiKey.trim()
+  // Same bar as the CLI's /login: a key that short or all digits is a paste mistake, not a credential.
+  const problem =
+    draft.baseUrl.includes("YOUR-") ? "Replace the placeholder in the Base URL with your own resource."
+    : draft.model.trim() === "" && (!provider || initial.model !== "") ? "Enter a model; the endpoint is asked for it by name."
+    : key !== "" && !keyless && (key.length < 8 || /^\d+$/.test(key)) ? "That does not look like an API key."
+    : undefined
+  const canSubmit = changed && !pending && !problem && draft.name.trim() !== "" && (provider || keyless || key !== "")
+  // Inset outlined panel, so the open form reads as detail of its row instead of another list row.
+  if (signIn)
+    return (
+      <div className="mx-3 mb-3 flex items-center gap-3 rounded-xl border border-[var(--border-default)] p-4">
+        <p className="m-0 flex-1 text-caption text-[var(--sidebar-text-muted)]">This plan signs in with your ChatGPT account through /login, so it has no key or endpoint to edit.</p>
+        {onDelete && (
+          <button type="button" className={`${providerButton} flex items-center gap-1.5`} disabled={pending} onClick={onDelete}>
+            <Trash2 size={14} />
+            Remove
+          </button>
+        )}
+      </div>
+    )
   return (
-    <div className="flex flex-col gap-3 px-4 pb-4">
+    <div className="mx-3 mb-3 flex flex-col gap-3 rounded-xl border border-[var(--border-default)] p-4">
       <label className="flex flex-col gap-1.5 text-chat-sm">
         Name
         <input className={providerField} value={draft.name} onChange={(e) => set({ name: e.target.value })} />
@@ -1510,8 +1539,9 @@ function ProviderForm({
       </label>
       <label className="flex flex-col gap-1.5 text-chat-sm">
         Default model
-        <input className={providerField} value={draft.model} spellCheck={false} placeholder="Provider default" onChange={(e) => set({ model: e.target.value })} />
+        <input className={providerField} value={draft.model} spellCheck={false} placeholder="Model name" onChange={(e) => set({ model: e.target.value })} />
       </label>
+      {problem && touched && <p className="m-0 text-caption text-[#C24444]">{problem}</p>}
       <div className="flex items-center gap-2">
         {onDelete && (
           <button type="button" className={`${providerButton} flex items-center gap-1.5`} disabled={pending} onClick={onDelete}>
@@ -1585,6 +1615,7 @@ function ProvidersPage({
                 <ProviderForm
                   initial={{ id: p.id, type: p.type, name: p.name, baseUrl: p.baseUrl ?? "", apiKey: "", model: p.model ?? "" }}
                   provider={p}
+                  signIn={p.type === "chatgpt"}
                   pending={pending}
                   submitLabel="Save"
                   onSubmit={onSave}
@@ -1610,7 +1641,7 @@ function ProvidersPage({
             </Row>
             {open === `new:${entry.type}` && (
               <ProviderForm
-                initial={{ type: entry.type, name: entry.label, baseUrl: entry.baseUrl, apiKey: "", model: "" }}
+                initial={{ type: entry.type, name: entry.label, baseUrl: entry.baseUrl, apiKey: "", model: entry.model }}
                 keyless={entry.keyless}
                 pending={pending}
                 submitLabel="Add"
