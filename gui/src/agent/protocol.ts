@@ -162,7 +162,7 @@ export type AgentMessage =
   | { type: "tool_progress"; tool_use_id: string; tool_name: string; parent_tool_use_id: string | null; elapsed_time_seconds: number; heartbeat?: boolean }
   | { type: "system"; subtype: "compact_boundary"; compact_metadata: { trigger: "manual" | "auto"; pre_tokens?: number } }
   | { type: "system"; subtype: "api_retry"; attempt: number; max_retries: number; retry_delay_ms: number; error_status?: number | null }
-  | { type: "system"; subtype: "task_started" | "task_progress" | "task_notification"; task_id: string; tool_use_id?: string; description?: string; summary?: string; status?: "completed" | "failed" | "stopped" | "unknown"; last_tool_name?: string; output_file?: string; usage?: { total_tokens: number; tool_uses: number; duration_ms: number } }
+  | { type: "system"; subtype: "task_started" | "task_progress" | "task_notification"; task_id: string; task_type?: string; uuid?: string; tool_use_id?: string; description?: string; summary?: string; status?: "completed" | "failed" | "stopped" | "unknown"; last_tool_name?: string; output_file?: string; usage?: { total_tokens: number; tool_uses: number; duration_ms: number } }
   | { type: "system"; subtype: "status" | "session_state_changed"; status?: string | null; permissionMode?: PermissionMode; state?: "idle" | "running" | "requires_action" }
   | {
       type: "system"

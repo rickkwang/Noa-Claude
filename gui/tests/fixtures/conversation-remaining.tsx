@@ -16,7 +16,7 @@ import { defaultSettings } from "../../src/theme/settings"
 import { WorkspaceFiles } from "../../src/components/WorkspaceFiles"
 import { TurnReview } from "../../src/components/TurnReview"
 import { useAgent } from "../../src/agent/useAgent"
-import { RightPanel } from "../../src/components/RightPanel"
+import { RightPanel, type PanelTab } from "../../src/components/RightPanel"
 
 declare global { interface Window { [key: string]: any } }
 const visualTheme = new URLSearchParams(location.search).get("theme") === "dark" ? "dark" : "light"
@@ -29,6 +29,18 @@ const wait = async (predicate: () => boolean, timeout = 1500) => {
   return predicate()
 }
 const show = async (node: any) => { root.render(node); await new Promise(requestAnimationFrame); await new Promise(requestAnimationFrame) }
+const selectReviewSource = async (label: string) => {
+  document.querySelector<HTMLButtonElement>('button[aria-label="Review source"]')!.click()
+  await wait(() => !!document.querySelector('[role="menu"][aria-label="Review source"]'))
+  Array.from(document.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]')).find(button => button.textContent === label)!.click()
+}
+const setDiffOption = async (label: string) => {
+  const menu = document.querySelector<HTMLDetailsElement>('#panel-changes .noa-review-menu')!
+  if (!menu.open) menu.querySelector<HTMLElement>('summary')!.click()
+  Array.from(menu.querySelectorAll<HTMLLabelElement>('label')).find(item => item.textContent?.startsWith(label))!.click()
+  menu.open = false
+  await new Promise(requestAnimationFrame)
+}
 const tools = data.replay.turns.flatMap((turn: any) => turn.blocks ?? [])
 const hooks = data.hooks.turns.flatMap((turn: any) => (turn.blocks ?? []).filter((block: any) => block.name === "Hook"))
 const update = { kind: "tool", id: "update", name: "TaskUpdate", input: { taskId: "7", subject: "Updated title" }, partialJson: "", status: "done", rawResult: { success: true, taskId: "7", updatedFields: ["subject"] } } as any
@@ -44,8 +56,8 @@ function ContextProbe() {
 }
 
 function WorkspacePanelProbe() {
-  const [tab, setTab] = useState<"files" | "changes" | "activity">("changes")
-  return <div style={{ width: 500, height: 500 }}><RightPanel state={{ ...initialState, connection: "ready" }} cwd="/fixture" tab={tab} onTab={setTab} onStopTask={() => {}} onRefreshContext={() => {}} onLoadEarlier={() => {}} onReference={() => {}} workspaceRefreshKey={0} /></div>
+  const [tab, setTab] = useState<PanelTab>("changes")
+  return <div style={{ width: 700, height: 500 }}><RightPanel state={{ ...initialState, connection: "ready" }} cwd="/fixture" tab={tab} onTab={setTab} onStopTask={() => {}} onRefreshContext={() => {}} onLoadEarlier={() => {}} onReference={() => {}} workspaceRefreshKey={0} /></div>
 }
 
 function Comparison() {
@@ -72,7 +84,7 @@ const initial = Array.from({ length: 4 }, (_, i) => ({ id: `old${i}`, label: `Or
 window.runChecks = async () => {
   await show(<Comparison />)
   results.parallelReplay = tools.some((block: any) => block.id === "t1") && document.querySelectorAll('[data-case="replay"] [data-tool-activity]').length === 2
-  results.agentTerminal = data.task.tasks[0]?.status === "completed" && document.querySelector('[data-case="task"]')!.textContent!.includes("completed")
+  results.agentTerminal = data.task.tasks[0]?.status === "completed" && !!document.querySelector('[data-case="task"] [data-subagent-state="completed"]')
   results.shellVariables = document.querySelector('[data-case="math"]')!.textContent!.includes("$HOME/$USER")
   results.mathFence = !!document.querySelector("[data-math-fence] .katex")
   results.planCard = !!document.querySelector('[data-case="plan"] [data-plan-card] ol')
@@ -176,21 +188,22 @@ window.runChecks = async () => {
   localStorage.setItem("noa-diff-wrap", "false")
   localStorage.removeItem("noa-diff-wrap-v2")
   localStorage.setItem("noa-diff-layout", "unified")
-  await show(<div style={{ width: 320, height: 400 }}><WorkspaceFiles key="diff" cwd="/fixture" changes refreshKey={0} onReference={() => {}} /></div>)
+  await show(<WorkspacePanelProbe />)
   await wait(() => !!document.querySelector('[title="changed.txt"]'))
-  const scopeBar = document.querySelector<HTMLElement>('[aria-label="Changes scope"]')!
+  const scopeBar = document.querySelector<HTMLElement>('button[aria-label="Review source"]')!
   const scopeTop = scopeBar.getBoundingClientRect().top
-  ;(Array.from(scopeBar.querySelectorAll("button")).find(button => button.textContent === "Staged"))?.click()
+  await selectReviewSource("Staged")
   await wait(() => !!resolveStaged)
-  results.changesScopeStable = document.querySelector('[aria-label="Changes scope"]') === scopeBar && scopeBar.getBoundingClientRect().top === scopeTop && !document.querySelector('[title="changed.txt"]')
+  results.changesScopeStable = document.querySelector('button[aria-label="Review source"]') === scopeBar && scopeBar.getBoundingClientRect().top === scopeTop && !document.querySelector('[title="changed.txt"]')
   resolveStaged?.(new Response(JSON.stringify({ isGit: true, branch: "main", files: [], additions: 0, deletions: 0 })))
   await wait(() => document.body.textContent?.includes("No staged changes") === true)
-  ;(Array.from(scopeBar.querySelectorAll("button")).find(button => button.textContent === "All"))?.click()
+  await selectReviewSource("Uncommitted")
   await wait(() => !!document.querySelector('[title="changed.txt"]'))
   ;(document.querySelector('[title="changed.txt"]') as HTMLElement)?.click()
-  results.workingDiffScrollsByDefault = await wait(() => !!document.querySelector(".noa-code-view.is-diff")) && (() => { const body = document.querySelector<HTMLElement>(".noa-panel-body")!, code = document.querySelector<HTMLElement>(".noa-code-line.is-add code")!; return !document.querySelector(".noa-code-view.is-wrapped") && body.scrollWidth > body.clientWidth + 1 && code.getBoundingClientRect().height < 40 })()
-  ;(Array.from(document.querySelectorAll<HTMLButtonElement>('[aria-label="Diff layout"] button')).find(button => button.textContent === "Split"))?.click()
-  results.splitDiffWraps = await wait(() => !!document.querySelector(".noa-code-view.is-split")) && (() => { const body = document.querySelector<HTMLElement>(".noa-panel-body")!, code = document.querySelector<HTMLElement>(".noa-code-line.is-add code")!; return body.scrollWidth <= body.clientWidth + 1 && code.getBoundingClientRect().height > 40 })()
+  results.workingDiffScrollsByDefault = await wait(() => !!document.querySelector(".noa-code-view.is-diff")) && (() => { const body = document.querySelector<HTMLElement>("#panel-changes .noa-panel-body")!, code = document.querySelector<HTMLElement>("#panel-changes .noa-code-line.is-add code")!; return !document.querySelector(".noa-code-view.is-wrapped") && body.scrollWidth > body.clientWidth + 1 && code.getBoundingClientRect().height < 40 })()
+  await setDiffOption("Side by side")
+  await setDiffOption("Word wrap")
+  results.splitDiffWraps = await wait(() => !!document.querySelector(".noa-code-view.is-split")) && (() => { const body = document.querySelector<HTMLElement>("#panel-changes .noa-panel-body")!, code = document.querySelector<HTMLElement>("#panel-changes .noa-code-line.is-add code")!; return body.scrollWidth <= body.clientWidth + 1 && code.getBoundingClientRect().height > 40 })()
   ;(document.querySelector('[aria-label="Review actions"]') as HTMLElement)?.click()
   ;(Array.from(document.querySelectorAll<HTMLButtonElement>("button")).find(button => button.textContent === "Stage file"))?.click()
   const actionFailed = await wait(() => !!document.querySelector('[role="alert"]')?.textContent?.includes("Fixture action failed"))
@@ -208,7 +221,8 @@ window.runChecks = async () => {
   await show(<TurnReview diff={{ ...reviewDiff }} focusPath="a.txt" focusKey={2} />)
   results.turnReviewFocusRequest = document.querySelector('[role="option"][title="a.txt"]')?.getAttribute("aria-selected") === "true"
   const longDiff = { ...reviewDiff, files: [reviewDiff.files[0]], patch: `--- a/a.txt\n+++ b/a.txt\n@@ -0,0 +1,1 @@\n+${"long_identifier_".repeat(80)}\n` }
-  localStorage.setItem("noa-turn-diff-wrap", "false")
+  localStorage.setItem("noa-diff-wrap-v2", "false")
+  localStorage.setItem("noa-diff-side-by-side", "false")
   localStorage.removeItem("noa-turn-diff-wrap-v2")
   await show(<div style={{ width: 320, height: 400 }}><TurnReview diff={longDiff} /></div>)
   const reviewBody = document.querySelector<HTMLElement>(".noa-panel-body")!
@@ -217,7 +231,7 @@ window.runChecks = async () => {
   await show(<div style={{ width: 320, height: 400 }}><CodeView path="a.ts" content={markedPatch} diff wrap /></div>)
   const addedRow = document.querySelector<HTMLElement>(".noa-code-line.is-add")!, removedRow = document.querySelector<HTMLElement>(".noa-code-line.is-remove")!
   results.diffSingleGutter = addedRow.querySelectorAll(".noa-code-number").length === 1 && removedRow.querySelectorAll(".noa-code-number").length === 1 && addedRow.querySelector(".noa-code-number")?.textContent === "10" && removedRow.querySelector(".noa-code-number")?.textContent === "10"
-  results.diffMarkers = getComputedStyle(addedRow.querySelector(".noa-code-number")!, "::before").width === "3px" && getComputedStyle(removedRow.querySelector(".noa-code-number")!, "::before").width === "3px"
+  results.diffMarkers = getComputedStyle(addedRow.querySelector(".noa-code-number")!, "::before").width === "4px" && getComputedStyle(removedRow.querySelector(".noa-code-number")!, "::before").width === "4px"
   const originalSocket = window.WebSocket
   const requests: any[] = []
   let contextSocket: any
@@ -256,8 +270,8 @@ window.runChecks = async () => {
   }
   localStorage.setItem("noa-diff-layout", "unified")
   await show(<WorkspacePanelProbe />)
-  await wait(() => !!document.querySelector('[aria-label="Changes scope"]'))
-  ;(Array.from(document.querySelectorAll<HTMLButtonElement>('[aria-label="Changes scope"] button')).find(button => button.textContent === "Staged"))?.click()
+  await wait(() => !!document.querySelector('button[aria-label="Review source"]'))
+  await selectReviewSource("Staged")
   await wait(() => document.body.textContent?.includes("No staged changes") === true)
   ;(document.querySelector('[data-tab="files"]') as HTMLElement)?.click()
   await wait(() => !!document.querySelector('#panel-files [title="deleted.txt"]'))
@@ -269,9 +283,10 @@ window.runChecks = async () => {
   await show(<WorkspacePanelProbe />)
   await wait(() => !!document.querySelector('#panel-changes [title="tracked.ts"]'))
   ;(document.querySelector('#panel-changes [title="tracked.ts"]') as HTMLElement)?.click()
-  await wait(() => !!document.querySelector('#panel-changes [aria-label="Diff layout"]'))
-  ;(Array.from(document.querySelectorAll<HTMLButtonElement>('#panel-changes [aria-label="Diff layout"] button')).find(button => button.textContent === "Split"))?.click()
-  await wait(() => localStorage.getItem("noa-diff-layout") === "split")
+  await wait(() => !!document.querySelector('#panel-changes [aria-label="Diff options"]'))
+  const sideBySide = localStorage.getItem("noa-diff-side-by-side") === "true"
+  if (!sideBySide) await setDiffOption("Side by side")
+  await wait(() => localStorage.getItem("noa-diff-side-by-side") === "true")
   ;(document.querySelector('[data-tab="files"]') as HTMLElement)?.click()
   await wait(() => !!document.querySelector('#panel-files [title="tracked.ts"]'))
   ;(document.querySelector('#panel-files [title="tracked.ts"]') as HTMLElement)?.click()
@@ -279,7 +294,7 @@ window.runChecks = async () => {
   ;(Array.from(document.querySelectorAll<HTMLButtonElement>('#panel-files button')).find(button => button.textContent === "Wrap"))?.click()
   await new Promise(requestAnimationFrame)
   await new Promise(requestAnimationFrame)
-  results.fileWrapKeepsDiffLayout = localStorage.getItem("noa-diff-layout") === "split"
+  results.fileWrapKeepsDiffLayout = localStorage.getItem("noa-diff-side-by-side") === "true"
   await show(null)
   window.fetch = panelFetch
   const largePatch = `--- a/large.txt\n+++ b/large.txt\n@@ -0,0 +1,3001 @@\n${"+line\n".repeat(3001)}`
@@ -353,7 +368,7 @@ window.runLifecycleChecks = async () => {
   checks.processChecklistFolds = !scope("fold").querySelector('[aria-label="Task checklist"]')
   checks.completedTodoStops = !scope("done-todo").querySelector(".noa-shimmer")
   checks.completedChildStops = !scope("finished-child").querySelector(".noa-shimmer,.noa-status-running") && finished.turns.every((turn: any) => !turn.streaming)
-  checks.backgroundContinues = !!scope("background").querySelector(".noa-shimmer,.noa-status-running") && background.status === "running" && scope("background").getAnimations({ subtree: true }).some(animation => animation.playState === "running")
+  checks.backgroundContinues = background.status === "running" && !!scope("background").querySelector('[data-subagent-state="running"]')
   const buttons = Array.from(scope("diff-card").querySelectorAll("button"))
   const view = buttons.find(b => b.textContent === "View changes")
   checks.completedDiffActionVisible = !!view && getComputedStyle(view).display !== "none" && scope("diff-card").querySelectorAll(".noa-turn-diff-row").length === 3
@@ -381,6 +396,11 @@ window.runLifecycleChecks = async () => {
 }
 
 window.runVisualChecks = async () => {
+  const borderProbe = document.createElement("span")
+  borderProbe.style.borderTop = "1px solid var(--border-light)"
+  document.body.append(borderProbe)
+  const borderColor = getComputedStyle(borderProbe).borderTopColor
+  borderProbe.remove()
   const diff = { files: ["gui/src/components/Markdown.tsx", "gui/src/components/RichContent.tsx", "gui/src/components/markdownGrammar.ts"].map((path, i) => ({ path, additions: [24, 5, 19][i], deletions: [10, 2, 4][i] })), additions: 48, deletions: 16, turnIndex: 0 } as any
   const edit = { kind: "tool", id: "visual-edit", name: "Edit", input: { file_path: "src/components/long-directory-name/ConversationRendering.tsx", old_string: "const value = 1", new_string: "const value = 2\nreturn value" }, partialJson: "", status: "done" } as any
   const code = "```ts\n// Syntax should remain readable in both themes.\nconst pattern = /conversation/gi;\nconst title = 'Rendering';\nfunction render(value: number) { return value + 42 }\n```"
@@ -411,7 +431,7 @@ window.runVisualChecks = async () => {
     narrowDiffWithoutUndo: (() => { const card = document.querySelector('[data-case="diff-without-undo"] .noa-turn-diff-card')!; const title = card.querySelector<HTMLElement>(".noa-turn-diff-heading > span")!; const view = card.querySelector<HTMLElement>(".noa-turn-diff-view")!; return title.clientWidth >= 100 && view.getBoundingClientRect().top >= title.getBoundingClientRect().bottom && view.getBoundingClientRect().right <= card.getBoundingClientRect().right })(),
     wideDiffSingleRow: (() => { const card = document.querySelector('[data-case="diff-wide"] .noa-turn-diff-card')!; const header = card.querySelector<HTMLElement>(".noa-turn-diff-header")!; const view = card.querySelector<HTMLElement>(".noa-turn-diff-view")!; return view.getBoundingClientRect().top < header.getBoundingClientRect().bottom && view.getBoundingClientRect().right <= card.getBoundingClientRect().right })(),
     pendingDiffTitleReadable: (() => { const card = document.querySelector<HTMLElement>('[data-case="diff-pending"] .noa-turn-diff-card')!; const title = card.querySelector<HTMLElement>(".noa-turn-diff-heading > span")!; const passed = [321, 360, 400, 440, 441, 460].every(width => { card.parentElement!.style.width = `${width}px`; return title.clientWidth >= 100 }); card.parentElement!.style.width = "321px"; return passed })(),
-    codeBorder: style('[data-case="visual-code"] .noa-code-block').borderTopWidth === "1px" && style('[data-case="visual-code"] .noa-code-block').borderTopColor === (visualTheme === "dark" ? "rgba(255, 255, 255, 0.06)" : "rgba(13, 13, 13, 0.05)"),
+    codeBorder: style('[data-case="visual-code"] .noa-code-block').borderTopWidth === "1px" && style('[data-case="visual-code"] .noa-code-block').borderTopColor === borderColor,
     diffHairline: style('[data-case="visual-diff"] .noa-turn-diff-card').boxShadow.includes("0.5px") && style('[data-case="visual-diff"] .noa-turn-diff-card').borderTopWidth === "0px",
     themeSurface: colors.page === (visualTheme === "dark" ? "rgb(45, 45, 43)" : "rgb(249, 249, 247)"),
     themeText: colors.text === (visualTheme === "dark" ? "rgb(249, 249, 247)" : "rgb(45, 45, 43)"),
@@ -494,11 +514,11 @@ window.inspectAppBoundary = async () => {
   const tablist = document.querySelector('[aria-label="Panel tabs"]')!
   tablist.dispatchEvent(new KeyboardEvent("keydown", { key: "End", bubbles: true }))
   await new Promise(requestAnimationFrame)
-  const activity = document.querySelector('[data-tab="activity"]')!
+  const activity = tablist.querySelector('[data-tab]:last-child')!
   const reachable = activity.getAttribute("aria-selected") === "true" && activity.getBoundingClientRect().right <= tabs.right + 1
   tablist.dispatchEvent(new KeyboardEvent("keydown", { key: "Home", bubbles: true }))
   await new Promise(requestAnimationFrame)
-  const checks = { conversationMinimumWidth: scroller.clientWidth >= 352, diffTitleReadable: header.querySelector<HTMLElement>(".noa-turn-diff-heading > span")!.clientWidth >= 100, panelTabScrollbarHidden: getComputedStyle(tablist).scrollbarWidth === "none", panelTabKeyboardReachable: reachable, panelTabsClearOfToggle: tabs.right <= toggle.left - 7, horizontalContentContained: scroller.scrollWidth <= scroller.clientWidth + 1, diffAboveComposer: card.bottom <= footer.top + 33, answerAboveComposer: response.bottom <= footer.top + 33, composerInsideWindow: input.bottom <= innerHeight && input.left >= 0 && input.right <= innerWidth, controlsInsideCard: Array.from(header.querySelectorAll("button")).every(button => button.getBoundingClientRect().right <= card.right + 1), shellInsideWindow: shell.width <= innerWidth && shell.height <= innerHeight }
+  const checks = { conversationMinimumWidth: scroller.getBoundingClientRect().width >= 352, diffTitleReadable: header.querySelector<HTMLElement>(".noa-turn-diff-heading > span")!.clientWidth >= 100, panelTabScrollbarHidden: getComputedStyle(tablist).scrollbarWidth === "none", panelTabKeyboardReachable: reachable, panelTabsClearOfToggle: tabs.right <= toggle.left - 7, horizontalContentContained: scroller.scrollWidth <= scroller.clientWidth + 1, diffAboveComposer: card.bottom <= footer.top + 33, answerAboveComposer: response.bottom <= footer.top + 33, composerInsideWindow: input.bottom <= innerHeight && input.left >= 0 && input.right <= innerWidth, controlsInsideCard: Array.from(header.querySelectorAll("button")).every(button => button.getBoundingClientRect().right <= card.right + 1), shellInsideWindow: shell.width <= innerWidth && shell.height <= innerHeight }
   return { width: innerWidth, theme: visualTheme, checks, pass: Object.values(checks).every(Boolean), sizes: { contentWidth: scroller.clientWidth, contentScrollWidth: scroller.scrollWidth, footerTop: footer.top, cardBottom: card.bottom, responseBottom: response.bottom } }
 }
 
@@ -555,7 +575,9 @@ window.runApprovalPreviewChecks = async () => {
   const checks = { approvalSummary: summary, approvalPreviewVisible: opened && painted, approvalPreviewBounds: !!rect && rect.height > 0 && rect.width > 0 && rect.left >= 0 && rect.right <= innerWidth && rect.top >= 0 && rect.bottom <= innerHeight && rect.height <= 420, approvalPreviewDiff: diff, previewEscapeDoesNotApproveOrDeny: false }
   window.checkApprovalResizeDismissal = async () => {
     trigger.blur(); trigger.focus()
-    await wait(() => !!document.querySelector("[data-approval-diff-preview]"))
+    const opened = await wait(() => !!document.querySelector("[data-approval-diff-preview]:popover-open"))
+    if (!opened) return false
+    await new Promise(requestAnimationFrame); await new Promise(requestAnimationFrame)
     trigger.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }))
     window.dispatchEvent(new Event("resize"))
     const dismissed = await wait(() => !document.querySelector("[data-approval-diff-preview]"))

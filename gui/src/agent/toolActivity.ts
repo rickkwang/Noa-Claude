@@ -1,4 +1,4 @@
-import type { Block, ToolBlock } from "./reducer"
+import type { Block, ToolBlock, SubagentBlock } from "./reducer"
 
 export interface ToolActivityLabel {
   action: string
@@ -23,6 +23,7 @@ export type ActivityUnit =
   | { kind: "status"; block: Extract<Block, { kind: "compaction" | "retry" }> }
   | { kind: "tools"; blocks: ToolBlock[] }
   | { kind: "thinking"; block: ThinkingBlock }
+  | { kind: "subagent"; block: SubagentBlock }
   | { kind: "text"; block: Extract<Block, { kind: "text" }> }
 
 // One collapsible activity group per run of reasoning and tool
@@ -30,6 +31,8 @@ export type ActivityUnit =
 export type ActivityRun =
   | { kind: "status"; block: Extract<Block, { kind: "compaction" | "retry" }> }
   | { kind: "standalone"; block: ToolBlock }
+  | { kind: "agents"; blocks: ToolBlock[] }
+  | { kind: "subagents"; blocks: SubagentBlock[] }
   | { kind: "activity"; blocks: (ToolBlock | ThinkingBlock)[] }
   | { kind: "text"; block: Extract<Block, { kind: "text" }> }
 
@@ -44,9 +47,19 @@ export function groupActivityRuns(units: ActivityUnit[]): ActivityRun[] {
     if (unit.kind === "text" || unit.kind === "status") {
       flush()
       runs.push(unit)
+    } else if (unit.kind === "subagent") {
+      flush()
+      const previous = runs.at(-1)
+      if (previous?.kind === "subagents" && previous.blocks[0]?.status === unit.block.status) previous.blocks.push(unit.block)
+      else runs.push({ kind: "subagents", blocks: [unit.block] })
     } else if (unit.kind === "thinking") blocks.push(unit.block)
     else for (const block of unit.blocks) {
-      if (isStandaloneActivity(block)) { flush(); runs.push({ kind: "standalone", block }) }
+      if (block.name === "Agent" || block.name === "Task") {
+        flush()
+        const previous = runs.at(-1)
+        if (previous?.kind === "agents") previous.blocks.push(block)
+        else runs.push({ kind: "agents", blocks: [block] })
+      } else if (isStandaloneActivity(block)) { flush(); runs.push({ kind: "standalone", block }) }
       else blocks.push(block)
     }
   }
@@ -353,6 +366,7 @@ export function groupActivityBlocks(blocks: Block[]): ActivityUnit[] {
   }
 
   for (const block of blocks) {
+    if (block.kind === "subagent") { flush(); units.push({ kind: "subagent", block }); continue }
     if (block.kind === "compaction" || block.kind === "retry") { flush(); units.push({ kind: "status", block }); continue }
     if (block.kind === "tool" && !isStandaloneActivity(block)) {
       tools.push(block)
@@ -364,11 +378,8 @@ export function groupActivityBlocks(blocks: Block[]): ActivityUnit[] {
       continue
     }
     if (block.kind === "thinking") {
-      // Reasoning shows only as a live "Thinking" status; finished reasoning has no row.
-      if (!block.done) {
-        flush()
-        units.push({ kind: "thinking", block })
-      }
+      flush()
+      units.push({ kind: "thinking", block })
       continue
     }
     if (!block.text.trim()) continue

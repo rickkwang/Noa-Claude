@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react"
-import type { AgentState } from "../agent/reducer"
+import type { AgentState, AgentTask } from "../agent/reducer"
 import type { TurnDiff } from "../agent/protocol"
 import { ChevronRight, MoreHorizontal } from "../lib/icons"
 import { query } from "../api"
@@ -8,8 +8,9 @@ import { PopupMenu, anchorBelow, type PopupMenuAnchor } from "./PopupMenu"
 import { ToolCard } from "./ToolCard"
 import { TurnReview } from "./TurnReview"
 import { WorkspaceFiles } from "./WorkspaceFiles"
+import { SubagentsPanel } from "./SubagentsPanel"
 
-export type PanelTab = "files" | "changes" | "activity"
+export type PanelTab = "files" | "changes" | "activity" | "subagents"
 
 // The panel sits in a no-drag column; its tab row drags the window again, except on the tabs themselves.
 const dragRegion = { WebkitAppRegion: "drag" } as CSSProperties
@@ -21,6 +22,7 @@ const TABS: { id: PanelTab; label: string }[] = [
   { id: "files", label: "Files" },
   { id: "changes", label: "Changes" },
   { id: "activity", label: "Activity" },
+  { id: "subagents", label: "Subagents" },
 ]
 
 interface RightPanelProps {
@@ -35,10 +37,14 @@ interface RightPanelProps {
   focusChange?: { path: string; at: number }
   focusFile?: { path: string; at: number; line?: number; endLine?: number }
   turnDiff?: { diff: TurnDiff; path?: string; key: number }
+  focusTask?: { id?: string; key: number }
 }
 
 // Right column: one pane under a tab strip.
-export function RightPanel({ state, onStopTask, cwd, tab, onTab, onReference, onWorkspaceChange, workspaceRefreshKey, focusChange, focusFile, turnDiff }: RightPanelProps) {
+export function RightPanel({ state, onStopTask, cwd, tab, onTab, onReference, onWorkspaceChange, workspaceRefreshKey, focusChange, focusFile, turnDiff, focusTask }: RightPanelProps) {
+  const [selectedTask, setSelectedTask] = useState<string>()
+  useEffect(() => { setSelectedTask(focusTask?.id) }, [focusTask, state.sessionId])
+  const subagents = state.tasks.filter(task => !task.taskType || task.taskType === "local_agent" || task.taskType === "remote_agent" || task.taskType === "in_process_teammate")
   const [fileChange, setFileChange] = useState<{ cwd: string; path: string; at: number; scope: "all" }>()
   // One review source: the last turn's patch or a slice of the working tree.
   const [source, setSource] = useState<"turn" | "all" | "unstaged" | "staged" | "branch" | "commit">("all")
@@ -226,7 +232,10 @@ export function RightPanel({ state, onStopTask, cwd, tab, onTab, onReference, on
         )}
       </div>
       <div id="panel-activity" role="tabpanel" aria-labelledby="panel-tab-activity" className="min-h-0 flex-1 flex-col overflow-hidden" style={{ display: tab === "activity" ? "flex" : "none" }}>
-        <ActivityTab state={state} onStopTask={onStopTask} />
+        <ActivityTab state={state} subagents={subagents} onStopTask={onStopTask} />
+      </div>
+      <div id="panel-subagents" role="tabpanel" aria-labelledby="panel-tab-subagents" className="min-h-0 flex-1 flex-col overflow-hidden" style={{ display: tab === "subagents" ? "flex" : "none" }}>
+        <SubagentsPanel tasks={subagents} selectedId={selectedTask} onSelect={setSelectedTask} onStopTask={onStopTask} />
       </div>
     </div>
   )
@@ -239,7 +248,8 @@ function Section({ title, count, open, children }: { title: string; count?: stri
   </details>
 }
 
-function ActivityTab({ state, onStopTask }: { state: AgentState; onStopTask: (id: string) => void }) {
+function ActivityTab({ state, subagents, onStopTask }: { state: AgentState; subagents: AgentTask[]; onStopTask: (id: string) => void }) {
+  const backgroundTasks = state.tasks.filter(task => !subagents.includes(task))
   const statusKind = state.connection === "closed" ? "closed" : state.connection === "connecting" ? "connecting" : state.permissions.length || state.elicitations.length ? "waiting" : state.busy ? "running" : "ready"
   return <div className="noa-panel-details scrollbar-on-scroll">
     <section className="noa-activity-status" data-kind={statusKind}>
@@ -249,10 +259,10 @@ function ActivityTab({ state, onStopTask }: { state: AgentState; onStopTask: (id
         {state.result && <p className="noa-panel-muted tabular-nums">{state.result.interrupted ? "Stopped" : state.result.isError ? "Finished with an error" : "Last run completed"} · {(state.result.durationMs / 1000).toFixed(1)}s{state.result.costUsd !== undefined && ` · $${state.result.costUsd.toFixed(4)}`}</p>}
       </div>
     </section>
-    {state.tasks.length > 0 && (
+    {backgroundTasks.length > 0 && (
       <div className="noa-panel-sections">
-        <Section title="Background tasks" count={state.tasks.length} open>
-          {state.tasks.map((task) => (
+        <Section title="Background tasks" count={backgroundTasks.length} open>
+          {backgroundTasks.map((task) => (
             <details key={task.id} className="rounded-lg border border-[var(--border-default)] p-2 text-body">
               <summary className="cursor-pointer">
                 <span className={task.status === "running" ? "noa-shimmer" : ""}>{task.description}</span>

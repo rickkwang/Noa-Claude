@@ -103,10 +103,10 @@ test("activity grouping follows Codex boundaries", () => {
   ])
 })
 
-test("thinking only renders while it streams", () => {
+test("returned thinking stays available after it finishes", () => {
   const thought = { kind: "thinking" as const, text: "Inspecting", done: false }
   expect(groupActivityBlocks([thought])).toMatchObject([{ kind: "thinking" }])
-  expect(groupActivityBlocks([{ ...thought, done: true }])).toEqual([])
+  expect(groupActivityBlocks([{ ...thought, done: true }])).toMatchObject([{ kind: "thinking" }])
 })
 
 test("activity runs group consecutive reasoning and tool calls", () => {

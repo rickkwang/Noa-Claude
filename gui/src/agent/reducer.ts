@@ -41,9 +41,11 @@ export type ToolBlock = {
 
 export type CompactionBlock = { kind: "compaction"; status: "running" | "done" | "stopped" | "unknown"; startedAt?: number; trigger?: "manual" | "auto" }
 export type RetryBlock = { kind: "retry"; attempt: number; maxRetries: number; delayMs: number; errorStatus?: number | null; done?: boolean }
+export type SubagentBlock = { kind: "subagent"; id: string; taskId: string; description: string; status: AgentTask["status"] }
 export type Block =
   | CompactionBlock
   | RetryBlock
+  | SubagentBlock
   // startedAt marks text produced in this session; history and replays carry none.
   | { kind: "text"; text: string; done?: boolean; streamIndex?: number; startedAt?: number }
   | { kind: "thinking"; text: string; done: boolean; startedAt?: number; streamIndex?: number }
@@ -80,6 +82,7 @@ export interface Permission {
 
 export interface AgentTask {
   id: string
+  taskType?: string
   toolUseId?: string
   description: string
   status: "running" | "completed" | "failed" | "stopped" | "unknown"
@@ -216,6 +219,11 @@ export function reducer(state: AgentState, action: Action): AgentState {
           if (turn.role !== "assistant") return turn
           let resolved = false
           const blocks = turn.blocks.flatMap((block): Block[] => {
+            if (block.kind === "subagent") {
+              if (seen.has(block.id)) return []
+              seen.add(block.id)
+              return [block]
+            }
             if (block.kind !== "tool" || block.name !== "Hook") return [block]
             if (seen.has(block.id)) return []
             seen.add(block.id)
@@ -409,9 +417,10 @@ function applyAgentMessage(state: AgentState, m: AgentMessage): AgentState {
         const existing = state.tasks.find((t) => t.id === m.task_id || (m.tool_use_id !== undefined && (t.id === m.tool_use_id || t.toolUseId === m.tool_use_id)))
         const task: AgentTask = {
           id: m.task_id,
+          taskType: m.task_type ?? existing?.taskType,
           toolUseId: m.tool_use_id ?? existing?.toolUseId,
           description: m.description ?? existing?.description ?? "Background task",
-          status: m.status === "unknown" && existing && ["completed", "failed", "stopped"].includes(existing.status) ? existing.status : m.status ?? existing?.status ?? "running",
+          status: m.subtype === "task_started" ? "running" : m.status === "unknown" && existing && ["completed", "failed", "stopped"].includes(existing.status) ? existing.status : m.status ?? existing?.status ?? "running",
           summary: m.summary ?? existing?.summary,
           outputFile: m.output_file ?? existing?.outputFile,
           lastTool: m.last_tool_name ?? existing?.lastTool,
@@ -420,7 +429,14 @@ function applyAgentMessage(state: AgentState, m: AgentMessage): AgentState {
             ? settlePending(existing?.turns ?? [], "stopped")
             : existing?.turns ?? [],
         }
-        return { ...state, tasks: [...state.tasks.filter((t) => t !== existing), task] }
+        let turns = state.turns
+        const isAgent = !task.taskType || task.taskType === "local_agent" || task.taskType === "remote_agent" || task.taskType === "in_process_teammate"
+        if (isAgent && (m.subtype === "task_started" || m.subtype === "task_notification" && task.status !== existing?.status)) {
+          const id = `subagent:${m.uuid ?? `${task.id}:${task.status}`}`
+          if (!turns.some(turn => turn.role === "assistant" && turn.blocks.some(block => block.kind === "subagent" && block.id === id)))
+            turns = appendNotice(turns, { kind: "subagent", id, taskId: task.id, description: task.description, status: task.status })
+        }
+        return { ...state, turns, tasks: [...state.tasks.filter((t) => t !== existing), task] }
       }
       if (m.subtype === "compact_boundary") return { ...state, status: undefined, turns: updateCompaction(state.turns, "done", m.compact_metadata.trigger) }
       if (m.subtype === "api_retry") return { ...state, turns: appendNotice(settleRetry(state.turns), { kind: "retry", attempt: m.attempt, maxRetries: m.max_retries, delayMs: m.retry_delay_ms, errorStatus: m.error_status }) }

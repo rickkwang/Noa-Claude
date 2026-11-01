@@ -1,12 +1,14 @@
 import { useContext, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react"
 import { createPortal } from "react-dom"
-import type { AgentTask, Block, ToolBlock, Turn } from "../agent/reducer"
+import type { AgentTask, Block, ToolBlock } from "../agent/reducer"
 import { formatElapsed, toolActivityLabel, toolDiffStats, toolElapsedMs } from "../agent/toolActivity"
 import { BookOpen, Check, ChevronRight, ChevronUp, Copy, Edit2, List, Photo, Search, Stop, Terminal, Tool, Users, X } from "../lib/icons"
 import { diffLines } from "diff"
 import { Collapsible } from "./Collapsible"
 import { Lightbox, type LightboxItem } from "./Lightbox"
 import { CodeBlock, Markdown, OutputContext } from "./Markdown"
+import { SubagentActivity } from "./SubagentActivity"
+import { ThinkingActivity } from "./ThinkingActivity"
 
 // A tool call as a quiet activity line; body details stay collapsed until requested.
 export function ToolCard({ block, defaultOpen = false, active = block.status === "running", task, tasks, onStopTask, onOpenTask }: {
@@ -16,7 +18,7 @@ export function ToolCard({ block, defaultOpen = false, active = block.status ===
   task?: AgentTask
   tasks?: AgentTask[]
   onStopTask?: (id: string) => void
-  onOpenTask?: () => void
+  onOpenTask?: (id?: string) => void
 }) {
   const { onOpenImages } = useContext(OutputContext)
   const baseLabel = toolActivityLabel(block)
@@ -52,6 +54,8 @@ export function ToolCard({ block, defaultOpen = false, active = block.status ===
     const timer = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(timer)
   }, [live])
+
+  if (block.name === "Agent" || block.name === "Task") return <SubagentActivity blocks={[block]} tasks={tasks ?? (task ? [task] : [])} onOpenTask={onOpenTask} details={!onOpenTask && task ? <TaskDetail task={task} tasks={tasks} onStopTask={onStopTask} /> : undefined} />
 
   return (
     <div className="group/tool not-prose text-body" data-tool-activity={block.id}>
@@ -98,30 +102,36 @@ export function ToolCard({ block, defaultOpen = false, active = block.status ===
   )
 }
 
-function TaskDetail({ task, tasks, onStopTask, onOpenTask }: {
+export function TaskDetail({ task, tasks, onStopTask, onOpenTask }: {
   task: AgentTask
   tasks?: AgentTask[]
   onStopTask?: (id: string) => void
-  onOpenTask?: () => void
+  onOpenTask?: (id?: string) => void
 }) {
+  const completed = task.status === "completed"
+  const blocks = task.turns.flatMap(turn => turn.role === "assistant" ? turn.blocks : [])
+  const resultIndex = completed ? blocks.findLastIndex(block => block.kind === "text" && block.text.trim().length > 0) : -1
+  const result = blocks[resultIndex]
+  const resultText = result?.kind === "text" ? result.text : undefined
+  const activity = blocks.filter((_, index) => index !== resultIndex)
+  const hasRunningChild = activity.some(block => block.kind === "tool" && (block.name === "Agent" || block.name === "Task") && tasks?.some(child => child.status === "running" && (child.id === block.id || child.toolUseId === block.id)))
+  const summary = task.summary?.trim()
   return (
-    <div className="flex flex-col gap-1 rounded-lg border border-[var(--border-default)] bg-[var(--bg-secondary)] px-2.5 py-2 text-caption">
-      <div className="flex items-center gap-2">
+    <div className="flex flex-col gap-3 px-2 py-1">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-caption text-[var(--text-secondary)]">
         <span className={`size-1.5 rounded-full ${task.status === "failed" ? "bg-[#C24444]" : task.status === "running" ? "bg-[var(--accent-color)] noa-status-running" : task.status === "completed" ? "bg-[#168447]" : "bg-[var(--sidebar-text-muted)]"}`} />
         <span className="font-medium capitalize text-[var(--text-secondary)]">{task.status}</span>
-        {task.lastTool && <span className="min-w-0 truncate text-[var(--sidebar-text-muted)]">· {task.lastTool}</span>}
+        {task.status !== "completed" && task.lastTool && <span className="min-w-0 truncate">· {task.lastTool}</span>}
+        {task.usage && <span className="tabular-nums">· {task.usage.tool_uses} tools · {task.usage.total_tokens.toLocaleString()} tokens{(!completed || !activity.length) && ` · ${formatElapsed(task.usage.duration_ms)}`}</span>}
       </div>
-      {task.summary && <p className="m-0 whitespace-pre-wrap break-words text-[var(--text-secondary)]">{task.summary}</p>}
-      {task.usage && (
-        <span className="tabular-nums text-[var(--sidebar-text-muted)]">
-          {task.usage.tool_uses} tools · {(task.usage.duration_ms / 1000).toFixed(1)}s · {task.usage.total_tokens.toLocaleString()} tokens
-        </span>
-      )}
-      {task.turns.length > 0 && <TaskTranscript turns={task.turns} tasks={tasks} active={task.status === "running"} />}
+      {summary && summary !== task.description.trim() && summary !== resultText?.trim() && <p className="m-0 whitespace-pre-wrap break-words text-body text-[var(--text-secondary)]">{task.summary}</p>}
+      {!!activity.length && <TaskTranscript key={task.id} blocks={activity} tasks={tasks} active={task.status === "running" || hasRunningChild} completed={completed} durationMs={task.usage?.duration_ms} />}
+      {resultText && <div data-task-result className="text-body"><Markdown text={resultText} /></div>}
+      {task.outputFile && <p className="m-0 break-all text-caption text-[var(--text-tertiary)]">Output: {task.outputFile}</p>}
       {(onOpenTask || (onStopTask && task.status === "running" && task.id !== task.toolUseId)) && (
         <div className="mt-1 flex gap-2 border-t border-[var(--divider-subtle)] pt-2">
           {onOpenTask && (
-            <button type="button" onClick={onOpenTask} className="rounded-md border border-[var(--border-default)] px-2 py-1 text-caption">
+            <button type="button" onClick={() => onOpenTask(task.id)} className="rounded-md border border-[var(--border-default)] px-2 py-1 text-caption">
               Open in Activity
             </button>
           )}
@@ -136,18 +146,31 @@ function TaskDetail({ task, tasks, onStopTask, onOpenTask }: {
   )
 }
 
-function TaskTranscript({ turns, tasks, active }: { turns: Turn[]; tasks?: AgentTask[]; active: boolean }) {
+function TaskTranscript({ blocks, tasks, active, completed, durationMs }: { blocks: Block[]; tasks?: AgentTask[]; active: boolean; completed: boolean; durationMs?: number }) {
+  const collapsedByDefault = completed && !active
+  const [open, setOpen] = useState(!collapsedByDefault)
+  const toggled = useRef(false)
+  useEffect(() => { if (!toggled.current) setOpen(!collapsedByDefault) }, [collapsedByDefault])
+  const label = completed && !active && durationMs !== undefined ? `Worked for ${formatElapsed(durationMs)}` : active ? "Working" : "Activity"
   return (
-    <div className="noa-task-transcript mt-1 flex max-h-80 flex-col gap-2 overflow-y-auto border-t border-[var(--divider-subtle)] pt-2">
-      {turns.map((turn) => turn.role === "assistant" ? (
-        turn.blocks.map((block, index) => <TaskBlock key={`${turn.id}:${index}`} block={block} tasks={tasks} active={active} />)
-      ) : null)}
+    <div data-task-process className="noa-task-transcript min-w-0">
+      <button type="button" aria-expanded={open} onClick={() => { toggled.current = true; setOpen(value => !value) }} className="group/task-process flex w-full min-w-0 items-center gap-2 text-left text-[length:var(--font-text-md-size)] leading-5 text-[var(--text-tertiary)] hover:text-[var(--text-primary)]">
+        <span className={`shrink-0 ${active ? "noa-shimmer" : ""}`}>{label}</span>
+        <ChevronRight size={12} className={`shrink-0 ${open ? "rotate-90" : ""}`} />
+        <span className="min-w-0 flex-1 border-t border-[var(--divider-subtle)]" />
+      </button>
+      <Collapsible open={open}>
+        <div className="noa-activity-scroll scrollbar-on-scroll mt-2 flex max-h-56 flex-col gap-1 overflow-x-hidden overflow-y-auto leading-5">
+          {blocks.map((block, index) => <TaskBlock key={index} block={block} tasks={tasks} active={active} />)}
+        </div>
+      </Collapsible>
     </div>
   )
 }
 
 function TaskBlock({ block, tasks, active }: { block: Block; tasks?: AgentTask[]; active: boolean }) {
   if (block.kind === "text") return <Markdown text={block.text} />
+  if (block.kind === "thinking") return <ThinkingActivity block={block} />
   if (block.kind === "tool") return <ToolCard block={block} active={active} tasks={tasks} task={tasks?.find(task => task.id === block.id || task.toolUseId === block.id)} />
   return null
 }
@@ -257,7 +280,7 @@ function ToolBody({ block, active, onRaw, onCollapse }: { block: ToolBlock; acti
     case "Write":
       return (
         <>
-          <CodeBlock lang={basename(str(i.file_path))} code={str(i.content)} />
+          <CodeBlock title={basename(str(i.file_path))} lang={str(i.file_path).split(".").pop() ?? ""} code={str(i.content)} />
           {output}
         </>
       )

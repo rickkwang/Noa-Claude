@@ -359,6 +359,8 @@ Conversation rendering includes local math and Mermaid diagrams, code previews a
 
 The new-task “Work in” menu shows “This computer” as selected. Cloud execution is unavailable in Noa Claude; the Cloud option is disabled with an explanation.
 
+Subagent creation is grouped into a collapsed summary with named activity rows. The Subagents panel separates Active and Done tasks, opens the selected agent, and keeps its stop action and transcript. Verify with `bun run --cwd gui scripts/e2e-subagents.ts`. Activity keeps overall status, background shell tasks and diagnostics; subagents have one dedicated list. Subagent lifecycle rows follow SDK event order and survive history replay. Returned thinking text has a disclosure, multi-question input supports previous/next navigation, and file-write previews detect syntax from the extension.
+
 The built desktop GUI uses `http://127.0.0.1:18787` so browser settings and drafts remain available across launches. A second launch focuses the existing window; the desktop bridge requires port 18787 to be free.
 
 Editing a queued message pauses the queue; saving or cancelling leaves it paused until you continue. Closing the desktop app asks for confirmation when tasks are running or messages are queued. Queued messages are discarded on exit, not restored on relaunch. An explicit `?cwd=` workspace takes precedence over the last saved task.

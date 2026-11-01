@@ -299,7 +299,7 @@ function BlockViewImpl({ block, streaming, streamKey, preserveUserText }: { bloc
   }
 }
 
-export function CodeBlock({ lang, code, complete = true }: { lang: string; code: string; complete?: boolean }) {
+export function CodeBlock({ lang, code, complete = true, title }: { lang: string; code: string; complete?: boolean; title?: string }) {
   const [copied, setCopied] = useState(false)
   const [copyError, setCopyError] = useState(false)
   const [wrap, setWrap] = useState(false)
@@ -331,7 +331,7 @@ export function CodeBlock({ lang, code, complete = true }: { lang: string; code:
     <div className="noa-code-block not-prose my-3 min-w-0 overflow-hidden rounded-[20px] border">
       <div data-copy-exclude className="flex min-h-12 items-center gap-2 py-1.5 ps-5 pe-1.5 font-ui text-[length:var(--text-chat-sm)] font-medium text-[var(--text-primary)]">
         <Terminal size={16} className="shrink-0" aria-hidden="true" />
-        <span className="min-w-0 flex-1 truncate">{lang || "text"}</span>
+        <span className="min-w-0 flex-1 truncate">{title ?? (lang || "text")}</span>
         <button type="button" aria-label="Toggle code wrapping" aria-pressed={wrap} onClick={() => setWrap(value => !value)} className="px-2 text-caption">Wrap</button>
         {complete && ["html", "svg"].includes(lang.toLowerCase()) && <button type="button" onClick={() => setPreview(true)} className="px-2 text-caption">Preview</button>}
         {complete && <button type="button" onClick={copy} aria-label={copied ? "Copied" : "Copy code"} title={copyError ? "Copy failed. Try again." : copied ? "Copied" : "Copy code"} className="flex size-8 shrink-0 items-center justify-center rounded-lg text-[var(--text-secondary)] hover:bg-[var(--fill-hover)] hover:text-[var(--text-primary)]">

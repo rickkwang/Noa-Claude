@@ -168,6 +168,8 @@ function Workspace({ cwd }: { cwd: string }) {
   const [turnDiff, setTurnDiff] = useState<{ diff: TurnDiff; path?: string; key: number }>()
   const [pendingDiffAction, setPendingDiffAction] = useState<number>()
   const [rightTab, setRightTab] = useState<PanelTab>("files")
+  const [focusTask, setFocusTask] = useState<{ id?: string; key: number }>()
+  useEffect(() => { setFocusTask(undefined) }, [session.key])
   useEffect(() => { setTurnDiff(undefined) }, [session.key])
 
   const { state, sendMessage, reloadCommands, loadEarlier, interrupt, answerPermission, answerElicitation, removeQueued, moveQueued, updateQueued, steerQueued, setQueuePaused, runQueued, stopTask, setModel, setProvider, saveProvider, deleteProvider, setPermissionMode, setEffort, refreshSettings, changeMcp, refreshContext, refreshMcp, turnDiffAction, clearDiffAction, startAuthentication, waitForAuthentication, submitAuthenticationCode, closeAuthentication } =
@@ -851,6 +853,7 @@ function Workspace({ cwd }: { cwd: string }) {
             workspaceRefreshKey={refreshTick}
             focusChange={focusChange}
             focusFile={focusFile}
+            focusTask={focusTask}
             turnDiff={turnDiff}
           />
         </div>
@@ -940,9 +943,10 @@ function Workspace({ cwd }: { cwd: string }) {
               onQuote={text => setQuote({ text, key: Date.now() })}
               tasks={state.tasks}
               onStopTask={stopTask}
-              onOpenTask={() => {
+              onOpenTask={(id) => {
                 setRightOpen(true)
-                setRightTab("activity")
+                setRightTab("subagents")
+                setFocusTask({ id, key: Date.now() })
               }}
             />
           ) : (

@@ -20,6 +20,8 @@ import { copyContent } from "./RichContent"
 import { Markdown, OutputContext } from "./Markdown"
 import { MessageRail, type MessageRailItem } from "./MessageRail"
 import { ToolCard } from "./ToolCard"
+import { ThinkingActivity } from "./ThinkingActivity"
+import { SubagentActivity, SubagentStatus } from "./SubagentActivity"
 import { splitReferences } from "../lib/references"
 import { contextCardFor } from "./ContextCard"
 import { stripAnsi } from "../lib/contextOutput"
@@ -41,7 +43,7 @@ interface MessageListProps {
   onQuote?: (text: string) => void
   tasks?: AgentTask[]
   onStopTask?: (id: string) => void
-  onOpenTask?: () => void
+  onOpenTask?: (id?: string) => void
   sessionId?: string
   historyBefore?: number
   historyLoading?: boolean
@@ -231,7 +233,7 @@ export function MessageList({ turns, cwd, onOpenFile, busy, result, readingWidth
     onOpenImages: (items: LightboxItem[], index: number) => setPreview({ items, index }),
   }), [cwd])
   const stableStopTask = useCallback((id: string) => handlers.current.onStopTask?.(id), [])
-  const stableOpenTask = useCallback(() => handlers.current.onOpenTask?.(), [])
+  const stableOpenTask = useCallback((id?: string) => handlers.current.onOpenTask?.(id), [])
   const stableTurnDiff = useCallback((diff: TurnDiff, path?: string) => handlers.current.onTurnDiff?.(diff, path), [])
   const stableTurnDiffAction = useCallback((diff: TurnDiff, action: "undo" | "reapply") => handlers.current.onTurnDiffAction?.(diff, action), [])
   const segmentCache = useRef<SegmentCache>(new Map())
@@ -748,13 +750,14 @@ function AssistantSegmentView({ segment, busy, durationMs, interrupted, liveDiff
   liveDiff?: TurnDiff
   tasks?: AgentTask[]
   onStopTask?: (id: string) => void
-  onOpenTask?: () => void
+  onOpenTask?: (id?: string) => void
   onTurnDiff?: (diff: TurnDiff, path?: string) => void
   onTurnDiffAction?: (diff: TurnDiff, action: "undo" | "reapply") => void
   diffActionPending?: number
 }) {
   const units = groupActivityBlocks(segment.blocks)
   const runs = groupActivityRuns(units)
+  const trackedTaskIds = new Set(segment.blocks.flatMap(block => block.kind === "subagent" ? [block.taskId] : []))
   const [now, setNow] = useState(Date.now())
   useEffect(() => {
     if (!segment.streaming) return
@@ -762,9 +765,9 @@ function AssistantSegmentView({ segment, busy, durationMs, interrupted, liveDiff
     const timer = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(timer)
   }, [segment.streaming])
-  const hasActivity = runs.some((run) => run.kind === "activity" || run.kind === "standalone")
+  const hasActivity = runs.some((run) => run.kind === "activity" || run.kind === "standalone" || run.kind === "agents" || run.kind === "subagents")
   const finalTextIndex = runs.map((run) => run.kind).lastIndexOf("text")
-  const lastActivityIndex = runs.map((run) => run.kind === "standalone" ? "activity" : run.kind).lastIndexOf("activity")
+  const lastActivityIndex = runs.map((run) => run.kind === "standalone" || run.kind === "agents" || run.kind === "subagents" ? "activity" : run.kind).lastIndexOf("activity")
   const finalRun = finalTextIndex > lastActivityIndex ? runs[finalTextIndex] : undefined
   const finalTextStarted = finalRun?.kind === "text" && finalRun.block.text.trim().length > 0
   const [finalStartedAt, setFinalStartedAt] = useState<number>()
@@ -778,14 +781,13 @@ function AssistantSegmentView({ segment, busy, durationMs, interrupted, liveDiff
   // Everything that happened before the final answer collapses into one disclosure. Noa's
   // protocol has no final-channel flag, so the last text run is the final answer.
   const finalIndex = runs.map((run) => run.kind).lastIndexOf("text")
-  // Trailing tool calls after the final answer still fold into the turn; it
-  // collapses as soon as the final assistant message has started.
+  // Without a final-channel marker, fold automatically only after the turn ends.
   const canCollapse = !busy && !segment.streaming && !interrupted && !segment.error && !segment.incomplete && finalIndex > 0 && runs.slice(0, finalIndex).some(run => run.kind !== "status")
   const collapsedCount = finalIndex > 0
     ? runs.reduce(
         (count, run, index) => index === finalIndex
           ? count
-          : count + (run.kind === "activity" ? run.blocks.length : run.kind === "text" || run.kind === "standalone" ? 1 : 0),
+          : count + (run.kind === "activity" || run.kind === "agents" || run.kind === "subagents" ? run.blocks.length : run.kind === "text" || run.kind === "standalone" ? 1 : 0),
         0,
       )
     : 0
@@ -839,6 +841,11 @@ function AssistantSegmentView({ segment, busy, durationMs, interrupted, liveDiff
     return <ToolCard key={`standalone-${index}`} block={block} active={busy} defaultOpen={!!block.images?.length || block.name === "Agent" || block.name === "Task" || block.name === "Hook" || block.name === "ExitPlanMode" || block.name === "AskUserQuestion" || block === latestTodo} tasks={tasks} task={tasks?.find(task => task.id === block.id || task.toolUseId === block.id)} onStopTask={onStopTask} onOpenTask={onOpenTask} />
   }
 
+  function renderSubagents(run: Extract<ActivityRun, { kind: "subagents" }>, index: number, runningOnly = false) {
+    const members = [...new Map(run.blocks.filter(block => !runningOnly || block.status === "running" && tasks?.some(task => task.id === block.taskId && task.status === "running")).map(block => [block.taskId, { id: block.taskId, description: block.description }])).values()]
+    return <SubagentStatus key={`subagents-${index}`} members={members} status={run.blocks[0]!.status} onOpenTask={onOpenTask} />
+  }
+
   const turnDiff = segment.diff && onTurnDiff
     ? (
         <TurnDiffCard
@@ -853,7 +860,7 @@ function AssistantSegmentView({ segment, busy, durationMs, interrupted, liveDiff
   if (canCollapse && activityCollapsed) {
     return (
       <div className="group flex flex-col gap-3">
-        {runs.map((run, i) => run.kind === "status" ? <StatusBlock key={`status-${i}`} block={run.block} /> : run.kind === "standalone" && (run.block.name === "ExitPlanMode" || tasks?.some(task => task.status === "running" && (task.id === run.block.id || task.toolUseId === run.block.id))) ? renderStandalone(run.block, i) : null)}
+        {runs.map((run, i) => run.kind === "status" ? <StatusBlock key={`status-${i}`} block={run.block} /> : run.kind === "subagents" ? renderSubagents(run, i, true) : run.kind === "agents" && run.blocks.some(block => tasks?.some(task => task.status === "running" && (task.id === block.id || task.toolUseId === block.id))) ? <SubagentActivity key={`agents-${i}`} blocks={run.blocks} tasks={tasks} trackedTaskIds={trackedTaskIds} onOpenTask={onOpenTask} /> : run.kind === "standalone" && (run.block.name === "ExitPlanMode" || tasks?.some(task => task.status === "running" && (task.id === run.block.id || task.toolUseId === run.block.id))) ? renderStandalone(run.block, i) : null)}
         <WorkedFor
           durationMs={durationMs}
           count={durationMs === undefined ? collapsedCount : undefined}
@@ -884,6 +891,8 @@ function AssistantSegmentView({ segment, busy, durationMs, interrupted, liveDiff
         if (run.kind === "text") return renderText(run, index, workedFor)
         if (run.kind === "status") return <StatusBlock key={index} block={run.block} />
         if (run.kind === "standalone") return renderStandalone(run.block, index)
+        if (run.kind === "subagents") return renderSubagents(run, index)
+        if (run.kind === "agents") return <SubagentActivity key={`agents-${index}`} blocks={run.blocks} tasks={tasks} trackedTaskIds={trackedTaskIds} onOpenTask={onOpenTask} />
         return (
           <ActivityGroup
             key={index}
@@ -914,7 +923,7 @@ function ActivityGroup({ blocks, tasks, onStopTask, onOpenTask }: {
   blocks: (ToolBlock | ThinkingBlockData)[]
   tasks?: AgentTask[]
   onStopTask?: (id: string) => void
-  onOpenTask?: () => void
+  onOpenTask?: (id?: string) => void
 }) {
   const [open, setOpen] = useState(false)
   const activityRef = useRef<HTMLDivElement>(null)
@@ -954,6 +963,8 @@ function ActivityGroup({ blocks, tasks, onStopTask, onOpenTask }: {
             : summary?.kind === "web" ? Search
               : Tool
 
+  if (!tools.length) return <>{blocks.map((block, index) => block.kind === "thinking" ? <ThinkingActivity key={index} block={block} /> : null)}</>
+
   return (
     <div className="not-prose" data-work-activity={live ? "live" : "done"}>
       <button
@@ -970,7 +981,7 @@ function ActivityGroup({ blocks, tasks, onStopTask, onOpenTask }: {
       </button>
       <Collapsible open={open}>
         <div ref={activityRef} onScroll={(event) => { const e = event.currentTarget; following.current = e.scrollHeight - e.clientHeight - e.scrollTop <= 24 }} className="noa-activity-scroll scrollbar-on-scroll mt-2 flex max-h-56 flex-col gap-1 overflow-x-hidden overflow-y-auto overscroll-contain focus-visible:outline-auto" role="region" aria-label="Tool activity" tabIndex={open ? 0 : -1}>
-          {tools.map((block, i) => (
+          {blocks.map((block, i) => block.kind === "thinking" ? <ThinkingActivity key={`thinking-${i}`} block={block} /> : (
               <ToolCard
                 key={`tool-${block.id}-${i}`}
                 block={block}

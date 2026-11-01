@@ -292,6 +292,8 @@ type Question = {
 
 function QuestionCard({ permission, onAnswer, draft, onDraftChange }: PermissionCardProps) {
   const questions = permission.input.questions as Question[]
+  const [questionIndex, setQuestionIndex] = useState(0)
+  useEffect(() => { setQuestionIndex(0) }, [permission.requestId])
   const [selected, setSelected] = useState<Record<string, string[]>>(draft?.selected ?? {})
   const [custom, setCustom] = useState<Record<string, string>>(draft?.custom ?? {})
   useEffect(() => { onDraftChange?.({ selected, custom }) }, [selected, custom, onDraftChange])
@@ -306,11 +308,18 @@ function QuestionCard({ permission, onAnswer, draft, onDraftChange }: Permission
       aria-label="Agent needs your input"
       onSubmit={(e) => {
         e.preventDefault()
+        if (!answers[questions[questionIndex]!.question]) return
+        if (questionIndex < questions.length - 1) { setQuestionIndex(index => index + 1); return }
+        if (Object.values(answers).some(answer => !answer)) return
         onAnswer(permission, true, false, { ...permission.input, answers })
       }}
       className="noa-approval-card flex max-h-[50vh] shrink-0 flex-col gap-3 overflow-auto rounded-3xl border border-[var(--border-default)] p-4"
     >
-      {questions.map((q) => (
+      {questions.length > 1 && <div className="flex items-center justify-between text-caption text-[var(--text-secondary)]">
+        <span>Question {questionIndex + 1} of {questions.length}</span>
+        <button type="button" aria-label="Previous question" disabled={questionIndex === 0} onClick={() => setQuestionIndex(index => index - 1)} className={`${button} disabled:opacity-40`}>Previous</button>
+      </div>}
+      {questions.slice(questionIndex, questionIndex + 1).map((q) => (
         <fieldset key={q.question} className="flex min-w-0 flex-col gap-1.5">
           <legend className="mb-2 text-body">{q.question}</legend>
           {q.options.map((option) => (
@@ -359,10 +368,10 @@ function QuestionCard({ permission, onAnswer, draft, onDraftChange }: Permission
         </button>
         <button
           type="submit"
-          disabled={Object.values(answers).some((answer) => !answer)}
+          disabled={!answers[questions[questionIndex]!.question] || questionIndex === questions.length - 1 && Object.values(answers).some(answer => !answer)}
           className={`${button} bg-[var(--text-primary)] text-[var(--surface-page)] disabled:opacity-40`}
         >
-          Continue task
+          {questionIndex < questions.length - 1 ? "Next" : "Submit"}
         </button>
       </div>
     </form>

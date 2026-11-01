@@ -74,10 +74,10 @@ test("MCP structured-only results remain readable", () => {
   expect(html).toContain("Raw result")
 })
 
-test("canonical Agent renders as a standalone subagent", async () => {
+test("canonical Agent renders as a grouped subagent creation", async () => {
   const { groupActivityBlocks, groupActivityRuns, toolActivityLabel } = await import("../src/agent/toolActivity")
   const block = { ...bash, name: "Agent", input: { description: "Inspect files" } }
-  expect(groupActivityRuns(groupActivityBlocks([block]))[0]?.kind).toBe("standalone")
+  expect(groupActivityRuns(groupActivityBlocks([block]))[0]?.kind).toBe("agents")
   expect(toolActivityLabel(block)).toEqual({ action: "Starting subagent:", detail: "Inspect files" })
 })
 
