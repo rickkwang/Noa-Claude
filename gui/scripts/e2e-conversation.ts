@@ -13,6 +13,7 @@ import {createElement as h} from ${source("node_modules/react/index.js")};
 import {createRoot} from ${source("node_modules/react-dom/client.js")};
 import {flushSync} from ${source("node_modules/react-dom/index.js")};
 import {App} from ${source("src/App.tsx")};
+import {Composer} from ${source("src/components/Composer.tsx")};
 import {useAgent} from ${source("src/agent/useAgent.ts")};
 import {Markdown,OutputContext} from ${source("src/components/Markdown.tsx")};
 import {ToolCard} from ${source("src/components/ToolCard.tsx")};
@@ -126,6 +127,40 @@ window.runChecks=async()=>{
  window.dispatchEvent(new KeyboardEvent('keydown',{key:'k',metaKey:true,bubbles:true}));await pause();const searchBox=document.querySelector('dialog[aria-label="Search Noa"] input');results.searchShortcut=searchOpened&&searchClosed&&document.activeElement===searchBox;
  setValue(searchBox,'Chat B');await pause(200);searchBox.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));await pause(200);results.searchTaskNavigation=JSON.parse(localStorage.getItem('noa-agent.current')||'null')?.resume===sessionB&&!document.querySelector('dialog[aria-label="Search Noa"][open]');
  await show(null);window.fetch=originalFetch;window.WebSocket=originalSocket;
+ let startupSocket;const startupRequests=[];
+ class StartupSocket{static OPEN=1;readyState=1;constructor(){startupSocket=this;queueMicrotask(()=>this.onopen?.())}send(raw){startupRequests.push(JSON.parse(raw))}reply(subtype,response={}){const request=startupRequests.findLast(item=>item.request?.subtype===subtype);this.onmessage?.({data:JSON.stringify({kind:'agent',message:{type:'control_response',response:{subtype:'success',request_id:request.request_id,response}}})})}close(){this.readyState=3}}
+ function StartupProbe(){window.__startupAgent=useAgent({cwd:'/startup',runtimeId:'startup',sessionKey:0});return null}
+ window.WebSocket=StartupSocket;await show(h(StartupProbe));startupSocket.reply('initialize',{models:[],commands:[]});await pause();
+ results.startupRequestOrder=startupRequests[1]?.request.subtype==='get_settings'&&startupRequests[2]?.request.subtype==='get_context_usage';
+ results.startupContextSummary=startupRequests.find(item=>item.request?.subtype==='get_context_usage')?.request.detail==='summary';
+ results.startupWaitsForSettings=window.__startupAgent.state.connection==='connecting';startupSocket.reply('get_settings',{applied:{model:'fixture-model'},effective:{permissions:{defaultMode:'plan'}}});await pause();results.startupSettingsReady=window.__startupAgent.state.connection==='ready'&&window.__startupAgent.state.model==='fixture-model'&&window.__startupAgent.state.permissionMode==='plan';
+ window.__startupAgent.refreshContext();window.__startupAgent.refreshContext();await pause();results.contextUpgradeWaits=startupRequests.filter(item=>item.request?.subtype==='get_context_usage').length===1;
+ startupSocket.onmessage({data:JSON.stringify({kind:'agent',message:{type:'result',subtype:'success',duration_ms:1}})});await pause();
+ startupSocket.reply('get_context_usage',{});await pause();results.contextUpgradeRetained=startupRequests.filter(item=>item.request?.subtype==='get_context_usage').length===2&&startupRequests.findLast(item=>item.request?.subtype==='get_context_usage')?.request.detail==='full';
+ startupSocket.reply('get_context_usage',{});await pause();results.contextUpgradeSettled=startupRequests.filter(item=>item.request?.subtype==='get_context_usage').length===2;
+ window.__startupAgent.refreshContext();await pause();results.explicitContextFull=startupRequests.findLast(item=>item.request?.subtype==='get_context_usage')?.request.detail==='full';await show(null);window.WebSocket=originalSocket;
+ const pinId='10000000-0000-4000-8000-000000000003';let releaseSlowProject;
+ localStorage.clear();localStorage.setItem('noa-agent.current',JSON.stringify({cwd:'/fixture',resume:pinId,runtimeId:'20000000-0000-4000-8000-000000000003'}));localStorage.setItem('noa-agent.sessionPrefs',JSON.stringify({pinned:{'/fixture':{[pinId]:true}},pinnedOrder:[pinId],order:{'/fixture':[pinId]},projects:[]}));
+ window.fetch=async input=>{const url=new URL(String(input),location.href);let body={};if(url.pathname==='/api/info')body={cwd:'/fixture'};else if(url.pathname==='/api/projects')body=[{path:'/fixture',name:'Fixture',sources:['/fixture'],missing:false},{path:'/slow',name:'Slow',sources:['/slow'],missing:false}];else if(url.pathname==='/api/runs')body=[{cwd:'/fixture',sessionId:pinId,title:'RUN_ONLY',busy:true,waiting:false,queued:0}];else if(url.pathname==='/api/sessions'){if(url.searchParams.get('cwd')==='/slow')await new Promise(resolve=>{releaseSlowProject=resolve});body=[]}else if(url.pathname==='/api/changes')body={files:[],additions:0,deletions:0,branch:'main',isGit:true};else if(url.pathname==='/api/files')body={entries:[]};else if(url.pathname==='/api/worktree')body={origin:null};return Response.json(body)};
+ window.WebSocket=AppSocket;await show(h(App));await pause(200);const pinnedRun=()=>{const prefs=JSON.parse(localStorage.getItem('noa-agent.sessionPrefs'));return prefs?.pinned['/fixture']?.[pinId]&&prefs.pinnedOrder.includes(pinId)&&prefs.order['/fixture']?.includes(pinId)};
+ results.runningSessionPinDuringLoad=!!releaseSlowProject&&!!pinnedRun()&&document.body.textContent.includes('RUN_ONLY');releaseSlowProject?.();await pause(200);results.runningSessionPinAfterLoad=!!pinnedRun()&&document.body.textContent.includes('RUN_ONLY');await show(null);window.fetch=originalFetch;window.WebSocket=originalSocket;
+ let locationSent;const noop=()=>{};
+ await show(h(Composer,{connection:'ready',busy:false,models:[],commands:[],onSend:content=>{locationSent=content;return true},onCommand:noop,onInterrupt:noop,onModel:noop,onMode:noop,draftKey:'location-fixture',onEffort:noop,cwd:'/fixture',projects:[],onProject:noop,onBranchChange:noop,onWorktree:async()=>{},onFiles:noop,newTask:true}));
+ const locationTrigger=document.querySelector('[aria-label="Work in"]');locationTrigger?.click();await pause();
+ const locationMenu=()=>[...document.querySelectorAll('.noa-approval-menu')].find(menu=>menu.querySelector('.noa-approval-title')?.textContent==='Work in');
+ const locationOptions=locationMenu()?.querySelectorAll('button');
+ results.workLocationMenu=!!locationTrigger&&locationOptions?.length===2&&locationOptions[0].textContent==='This computer'&&locationOptions[0].getAttribute('aria-pressed')==='true'&&!!locationOptions[0].querySelector('.noa-approval-check');
+ results.workLocationCloudUnavailable=!!locationOptions?.[1].disabled&&locationOptions[1].textContent.includes('Cloud execution is not available in Noa Claude');
+ locationOptions?.[1].click();await pause();results.workLocationCloudNoop=!!locationMenu()&&locationSent===undefined&&locationTrigger?.textContent==='This computer';
+ document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));await pause(200);results.workLocationEscape=!!locationTrigger&&!locationMenu()&&locationTrigger.getAttribute('aria-expanded')==='false';
+ locationTrigger?.click();await pause();document.body.dispatchEvent(new MouseEvent('mousedown',{bubbles:true}));await pause(200);results.workLocationOutside=!!locationTrigger&&!locationMenu();
+ const locationDraft=document.querySelector('[aria-label="Task instruction"]');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(locationDraft,'Run locally');locationDraft.dispatchEvent(new Event('input',{bubbles:true}));await pause();
+ locationTrigger?.click();await pause();locationMenu()?.querySelector('button').click();await pause(200);results.workLocationLocal=!!locationTrigger&&!locationMenu()&&locationDraft.value==='Run locally'&&locationSent===undefined;
+ locationDraft.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));await pause();results.workLocationSend=locationSent==='Run locally';
+ const previewProps={connection:'ready',busy:false,models:[{value:'preview',displayName:'Cached model',description:''}],model:'preview',commands:[],onSend:()=>true,onCommand:noop,onInterrupt:noop,onModel:noop,onMode:noop,draftKey:'model-preview',onEffort:noop,cwd:'/preview',projects:[],onProject:noop,onBranchChange:noop,onWorktree:async()=>{},onFiles:noop,newTask:true};
+ await show(h(Composer,previewProps));await show(null);await show(h(Composer,{...previewProps,connection:'connecting',models:[],model:undefined}));let modelPreview=document.querySelector('[aria-label="Model and reasoning effort"]');results.modelPreviewRestored=modelPreview?.textContent==='Cached model'&&modelPreview.disabled;
+ await show(h(Composer,{...previewProps,connection:'connecting',models:[],model:undefined,cwd:'/different-project'}));results.modelPreviewProjectScoped=document.querySelector('[aria-label="Model and reasoning effort"]')?.textContent==='Model';
+ await show(h(Composer,{...previewProps,models:[{value:'new',displayName:'Actual model',description:''}],model:'new'}));results.modelPreviewReconciled=document.querySelector('[aria-label="Model and reasoning effort"]')?.textContent==='Actual model'&&localStorage.getItem('noa-agent.modelLabel:/preview')==='Actual model';
  await show(h('div',{className:'fixture-grid'},
  panel('Math rendering',h(Markdown,{text:richMath})),
  panel('Mermaid diagram',h(Markdown,{text:diagram})),

@@ -56,7 +56,7 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
   const pendingRef = useRef(new Map<string, ResponseKind>())
   const mcpTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const contextTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
-  const contextRefreshAfterRef = useRef(false)
+  const contextRefreshAfterRef = useRef<"summary" | "full" | undefined>(undefined)
 
   const write = useCallback((message: Outgoing) => {
     const socket = socketRef.current
@@ -68,7 +68,10 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
   const control = useCallback(
     (request: ControlRequest, expects?: ResponseKind) => {
       if (expects === "mcp_action" && [...pendingRef.current.values()].includes("mcp_action")) return false
-      if (expects === "context_usage" && [...pendingRef.current.values()].includes("context_usage")) return false
+      if (expects === "context_usage" && [...pendingRef.current.values()].includes("context_usage")) {
+        if (request.subtype === "get_context_usage" && request.detail === "full") contextRefreshAfterRef.current = "full"
+        return false
+      }
       const requestId = crypto.randomUUID()
       if (expects) pendingRef.current.set(requestId, expects)
       const sent = write({ type: "control_request", request_id: requestId, request })
@@ -87,7 +90,7 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
         if (sent) contextTimerRef.current = setTimeout(() => {
           pendingRef.current.delete(requestId)
           contextTimerRef.current = undefined
-          contextRefreshAfterRef.current = false
+          contextRefreshAfterRef.current = undefined
           dispatch({ type: "context-error", error: "Context request timed out. Try again." })
         }, 20000)
       }
@@ -100,7 +103,7 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
     ownerRef.current = runtimeId
     dispatch({ type: "reset" })
     pendingRef.current.clear()
-    contextRefreshAfterRef.current = false
+    contextRefreshAfterRef.current = undefined
     modeRef.current = undefined
 
     const params = new URLSearchParams()
@@ -199,7 +202,7 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
             if (kind) {
               pendingRef.current.delete(message.response.request_id)
               if (kind === "context_usage") { clearTimeout(contextTimerRef.current); contextTimerRef.current = undefined }
-              if (kind === "initialize") clearInitializationTimer()
+              if (kind === "startup_settings") clearInitializationTimer()
               if (kind === "mcp_action") {
                 clearTimeout(mcpTimerRef.current)
                 mcpTimerRef.current = undefined
@@ -212,11 +215,12 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
                 else if (kind === "auth_urls" || kind === "auth_complete") dispatch({ type: "auth-error", error })
                 else if (kind === "provider") { dispatch({ type: "provider-pending", pending: false }); dispatch({ type: "error", text: error }) }
                 else dispatch({ type: "error", text: error })
-                if (kind === "initialize") socket.close()
+                if (kind === "initialize" || kind === "startup_settings") socket.close()
               } else routeResponse(kind, message.response.response)
               if (kind === "context_usage" && contextRefreshAfterRef.current) {
-                contextRefreshAfterRef.current = false
-                control({ subtype: "get_context_usage" }, "context_usage")
+                const detail = contextRefreshAfterRef.current
+                contextRefreshAfterRef.current = undefined
+                control({ subtype: "get_context_usage", detail }, "context_usage")
               }
             }
           }
@@ -224,8 +228,8 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
             socket.send(JSON.stringify({ type: "control_response", response: { subtype: "error", request_id: message.request_id, error: `Unsupported GUI request: ${message.request.subtype}` } }))
           }
           if (message.type === "result" && !message.parent_tool_use_id) {
-            if ([...pendingRef.current.values()].includes("context_usage")) contextRefreshAfterRef.current = true
-            else control({ subtype: "get_context_usage" }, "context_usage")
+            if ([...pendingRef.current.values()].includes("context_usage")) contextRefreshAfterRef.current ??= "summary"
+            else control({ subtype: "get_context_usage", detail: "summary" }, "context_usage")
           }
           dispatch({ type: "agent", message })
           break
@@ -247,7 +251,7 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
         mcpTimerRef.current = undefined
         clearTimeout(contextTimerRef.current)
         contextTimerRef.current = undefined
-        contextRefreshAfterRef.current = false
+        contextRefreshAfterRef.current = undefined
         dispatch({ type: "mcp-pending", pending: false })
         flushDeltas(); dispatch({ type: "connection", status: "closed" })
       }
@@ -296,7 +300,7 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
           },
         })
         control({ subtype: "get_settings" }, "settings")
-        control({ subtype: "get_context_usage" }, "context_usage")
+        control({ subtype: "get_context_usage", detail: "summary" }, "context_usage")
         return
       }
       if (kind === "effort") {
@@ -311,9 +315,8 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
       }
       const body = (response ?? {}) as Record<string, unknown>
       if (kind === "initialize") {
-        dispatch({ type: "connection", status: "ready" })
-        control({ subtype: "get_context_usage" }, "context_usage")
         control({ subtype: "get_settings" }, "startup_settings")
+        control({ subtype: "get_context_usage", detail: "summary" }, "context_usage")
         dispatch({
           type: "control",
           payload: {
@@ -332,6 +335,7 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
         dispatch({ type: "effort-set", effort: applied?.effort ?? undefined })
         if (kind === "startup_settings") {
           dispatch({ type: "permission-mode-set", mode: modeRef.current ?? effective?.permissions?.defaultMode ?? "default" })
+          dispatch({ type: "connection", status: "ready" })
         }
       } else {
         dispatch({ type: "control", payload: { kind: "context_usage", usage: body as unknown as ContextUsage } })
@@ -411,7 +415,7 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
     if (sent) dispatch({ type: "mcp-pending", pending: true })
   }, [control])
   const refreshMcp = useCallback(() => control({ subtype: "mcp_status" }, "mcp_status"), [control])
-  const refreshContext = useCallback(() => control({ subtype: "get_context_usage" }, "context_usage"), [control])
+  const refreshContext = useCallback(() => control({ subtype: "get_context_usage", detail: "full" }, "context_usage"), [control])
 
   const answerPermission = useCallback(
     (permission: Permission, allow: boolean, remember: boolean, updatedInput?: Record<string, unknown>) => {

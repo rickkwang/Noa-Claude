@@ -1,5 +1,5 @@
 import assert from "node:assert/strict"
-import { mkdtemp, mkdir, writeFile, symlink, rm } from "node:fs/promises"
+import { mkdtemp, mkdir, readFile, writeFile, symlink, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { projectAdditionalDirectories } from "../server/projects"
@@ -8,12 +8,15 @@ import { projectDir } from "../server/sessions"
 const root = await mkdtemp(join(tmpdir(), "noa-gui-e2e-"))
 const config = await mkdtemp(join(tmpdir(), "noa-gui-e2e-config-"))
 const extraSource = await mkdtemp(join(tmpdir(), "noa-gui-e2e-source-"))
+const gitBin = join(config, "bin"), gitLog = join(config, "git.log")
+await mkdir(gitBin)
+await writeFile(join(gitBin, "git"), `#!/bin/sh\nprintf '%s\\n' "$*" >> '${gitLog}'\nexec '${Bun.which("git")!}' "$@"\n`, { mode: 0o755 })
 const reservation = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: () => new Response() })
 const port = reservation.port!
 await reservation.stop(true)
 const server = Bun.spawn([process.execPath, "run", "server/main.ts"], {
   cwd: resolve(import.meta.dir, ".."),
-  env: { ...process.env, NOA_GUI_PORT: String(port), NOA_GUI_INSECURE: "1", CLAUDE_CONFIG_DIR: config },
+  env: { ...process.env, PATH: `${gitBin}:${process.env.PATH}`, NOA_GUI_PORT: String(port), NOA_GUI_INSECURE: "1", CLAUDE_CONFIG_DIR: config },
   stdout: "ignore",
   stderr: "inherit",
 })
@@ -78,6 +81,13 @@ try {
   })).json()
   assert.equal(body.find((candidate: { path: string }) => candidate.path === root).name, "Edited project")
   assert.deepEqual(body.find((candidate: { path: string }) => candidate.path === root).sources, [root])
+  await writeFile(gitLog, "")
+  const parallelChanges = await Promise.all([request("changes"), request("changes")])
+  assert.deepEqual(await parallelChanges[0]!.json(), await parallelChanges[1]!.json())
+  assert.equal((await readFile(gitLog, "utf8")).split("\n").filter(line => line.includes(" status ")).length, 1)
+  await request("changes")
+  assert.equal((await readFile(gitLog, "utf8")).split("\n").filter(line => line.includes(" status ")).length, 2)
+  check("concurrent change reads share Git work without caching subsequent reads")
   check("existing projects can update their name and source folders")
   // A repository without HEAD is still a valid workspace.
   body = await (await request("changes")).json()

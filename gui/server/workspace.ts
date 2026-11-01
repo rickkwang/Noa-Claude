@@ -471,7 +471,10 @@ async function patch(cwd: string, scope: string) {
   return { patch: text }
 }
 
+const pendingChanges = new Map<string, Promise<unknown>>()
+
 export async function workspaceRequest(url: URL, cwd: string, body?: unknown, signal?: AbortSignal): Promise<unknown> {
+  if (body !== undefined) pendingChanges.clear()
   const path = url.searchParams.get("path") ?? ""
   if (url.pathname === "/api/editors") return { editors: await installedEditors() }
   if (url.pathname === "/api/grep") return grep(cwd, url.searchParams.get("q") ?? "", Math.min(1000, Math.max(1, Number(url.searchParams.get("max")) || 241)), signal)
@@ -526,7 +529,17 @@ export async function workspaceRequest(url: URL, cwd: string, body?: unknown, si
     }
     return { ok: true }
   }
-  if (url.pathname === "/api/changes") return changes(cwd, scope)
+  if (url.pathname === "/api/changes") {
+    const key = `${cwd}\0${scope}`
+    let pending = pendingChanges.get(key)
+    if (!pending) {
+      pending = changes(cwd, scope).finally(() => {
+        if (pendingChanges.get(key) === pending) pendingChanges.delete(key)
+      })
+      pendingChanges.set(key, pending)
+    }
+    return pending
+  }
   if (url.pathname === "/api/diff") return diff(cwd, path, scope, url.searchParams.get("context"))
   if (url.pathname === "/api/file") {
     const file = await textFile(cwd, path)

@@ -282,7 +282,7 @@ export type ControlRequest =
   | { subtype: "provider_save"; id?: string; type?: string; name: string; baseUrl: string; apiKey: string; model: string }
   | { subtype: "provider_delete"; providerId: string }
   | { subtype: "set_permission_mode"; mode: PermissionMode }
-  | { subtype: "get_context_usage" }
+  | { subtype: "get_context_usage"; detail?: "summary" | "full" }
   | { subtype: "mcp_status" }
   | { subtype: "mcp_reconnect"; serverName: string }
   | { subtype: "mcp_toggle"; serverName: string; enabled: boolean }

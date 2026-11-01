@@ -6,7 +6,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEve
 import { startEffortMaxFill } from "./effortMaxFill"
 import type { ContextUsage, ImageAttachment, RateLimitInfo, UserContent, ModelInfo, ProviderInfo, PermissionMode, SlashCommand } from "../agent/protocol"
 import { RateLimitNotice } from "./RateLimitNotice"
-import { Check, Edit2, FileText, List, RotateCcw, X } from "../lib/icons"
+import { Check, Cloud, Edit2, FileText, List, RotateCcw, X } from "../lib/icons"
 import { Lightbox } from "./Lightbox"
 import { useConfirm } from "./ConfirmDialog"
 import { EnvironmentMenu } from "./EnvironmentMenu"
@@ -296,6 +296,14 @@ export function Composer({
   }, [editDraft?.key])
 
   const currentModel = findModel(models, model)
+  const modelLabelKey = `noa-agent.modelLabel:${cwd}`
+  const savedModelLabel = useMemo(() => {
+    try { return localStorage.getItem(modelLabelKey) } catch { return null }
+  }, [modelLabelKey, disabled])
+  useEffect(() => {
+    if (disabled || !model) return
+    try { localStorage.setItem(modelLabelKey, currentModel?.displayName ?? model) } catch {}
+  }, [disabled, modelLabelKey, model, currentModel?.displayName])
   const currentMode = MODE_OPTIONS.find((m) => m.value === mode)
   // Auto stays listed (greyed out) when the model can't run it; it is hidden only while the model list is loading.
   const autoUnsupported = !!currentModel && !currentModel.supportsAutoMode
@@ -613,10 +621,17 @@ export function Composer({
                 onSelect: () => onProject(p.path),
               }))}
           />
-          <span className="flex h-7 items-center gap-1.5 whitespace-nowrap px-2">
-            <ComposerComputerIcon />
-            This computer
-          </span>
+          <Picker
+            align="left"
+            hideChevron
+            ariaLabel="Work in"
+            menuTitle="Work in"
+            label={<><ComposerComputerIcon />This computer</>}
+            items={[
+              { key: "local", title: "This computer", description: "", active: true, icon: <ComposerComputerIcon />, onSelect: () => {} },
+              { key: "cloud", title: "Cloud", description: "Cloud execution is not available in Noa Claude", active: false, icon: <Cloud size={16} />, disabled: true, onSelect: () => {} },
+            ]}
+          />
           <EnvironmentMenu cwd={cwd} branch={branch} onBranchChange={onBranchChange} worktree={!!worktreeOf} canToggleWorktree={newTask} onWorktree={onWorktree} />
           </>}
         </div>
@@ -912,7 +927,7 @@ export function Composer({
               label={
                 <>
                   <span className="noa-agent-model-name max-w-[112px] truncate text-[var(--text-primary)]">
-                    {currentModel?.displayName ?? model ?? "Model"}
+                    {currentModel?.displayName ?? model ?? (disabled ? savedModelLabel : undefined) ?? "Model"}
                   </span>
                   {currentModel?.supportsEffort && effort && currentModel.supportedEffortLevels?.includes(effort) && (
                     <span className="noa-agent-effort-label capitalize text-[var(--text-tertiary)]">{effort}</span>

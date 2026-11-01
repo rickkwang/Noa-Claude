@@ -216,7 +216,27 @@ function Workspace({ cwd }: { cwd: string }) {
       try {
         const runsResponse = await fetch("/api/runs")
         const runs = await runsResponse.json() as { cwd: string; sessionId?: string; title?: string; busy: boolean; waiting: boolean; queued: number }[]
-        const results = await Promise.allSettled(projects.map((project) => fetchSessions(project.path)))
+        const results = await Promise.allSettled(projects.map(async (project) => {
+          const sessions = await fetchSessions(project.path)
+          if (!cancelled) setLoadedProjects((current) => {
+            if ((sessions.length < SESSION_LIST_LIMIT) === current.has(project.path)) return current
+            const next = new Set(current)
+            if (sessions.length < SESSION_LIST_LIMIT) next.add(project.path)
+            else next.delete(project.path)
+            return next
+          })
+          if (!cancelled) setSessionsByProject((current) => {
+            const visible = sessions.map((session): SessionSummary => {
+              const run = runs.find((r) => r.cwd === (session.cwd ?? project.path) && r.sessionId === session.id)
+              return { ...session, status: run?.waiting ? "waiting" : run?.busy ? "running" : run?.queued ? "queued" : undefined }
+            })
+            for (const run of runs.filter((r) => r.cwd === project.path && r.sessionId)) {
+              if (!visible.some((s) => s.id === run.sessionId)) visible.unshift({ id: run.sessionId!, title: run.title ?? "New task", updatedAt: Date.now(), createdAt: Date.now(), status: run.waiting ? "waiting" : run.busy ? "running" : run.queued ? "queued" : undefined })
+            }
+            return { ...current, [project.path]: visible }
+          })
+          return sessions
+        }))
         const completeResults = results.map((result) => result.status === "fulfilled" && result.value.length < SESSION_LIST_LIMIT)
         const active = activeSessionRef.current
         const activeKey = active.id ? sessionUpdateKey(active.cwd, active.id) : undefined
@@ -264,9 +284,8 @@ function Workspace({ cwd }: { cwd: string }) {
             }
             return next.size === current.size && [...next].every((path) => current.has(path)) ? current : next
           })
-          setSessionsByProject((current) => Object.fromEntries(projects.map((project, index) => {
-            const result = results[index]!
-            const sessions = (result.status === "fulfilled" ? result.value : current[project.path] ?? []).map((session): SessionSummary => {
+          setSessionsByProject((current) => Object.fromEntries(projects.map((project) => {
+            const sessions = (current[project.path] ?? []).map((session): SessionSummary => {
               const run = runs.find((r) => r.cwd === (session.cwd ?? project.path) && r.sessionId === session.id)
               return { ...session, status: run?.waiting ? "waiting" : run?.busy ? "running" : run?.queued ? "queued" : undefined }
             })
@@ -330,9 +349,9 @@ function Workspace({ cwd }: { cwd: string }) {
     if (state.diffAction.result.ok) setRefreshTick((n) => n + 1)
   }, [state.diffAction])
 
+  useEffect(() => { setChanges(undefined) }, [session.cwd])
   useEffect(() => {
     let cancelled = false
-    setChanges(undefined)
     fetch(`/api/changes${query(session.cwd)}`)
       .then(async (r) => {
         if (!r.ok) return

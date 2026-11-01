@@ -14,6 +14,7 @@ import {
   IconBrandPython,
   IconServer,
   IconMoon,
+  IconCloud,
   IconZoomIn,
   IconZoomOut,
 } from '@tabler/icons-react';
@@ -115,6 +116,7 @@ export const CircleArrowUp = codex("arrow-up-circle");
 export const Outline = glyph("list-bullet");
 export const Edit2 = glyph("pencil");
 export const Clock = glyph("clock");
+export const Cloud = icon(IconCloud);
 export const Copy = glyph("square-on-square");
 export const Database = icon(IconDatabase);
 export const Dices = icon(IconDice5);

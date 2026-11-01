@@ -357,6 +357,8 @@ Text/image file previews are limited to 512 KiB and code rendering to 3,000 line
 
 Conversation rendering includes local math and Mermaid diagrams, code previews and wrapping, rich table/response copying, workspace citations and review comments, selection quoting, and primitive MCP forms. The bridge preserves structured tool results, Hook and subagent activity, and interrupted history. Earlier messages load in turn pages; unresolved background calls stay with their results. Verify native rendering with `bun run --cwd gui scripts/e2e-conversation.ts` and `bun run --cwd gui test:rendering`. The latter uses HTTP and the production CSP, including native modal/download/navigation checks.
 
+The new-task “Work in” menu shows “This computer” as selected. Cloud execution is unavailable in Noa Claude; the Cloud option is disabled with an explanation.
+
 The built desktop GUI uses `http://127.0.0.1:18787` so browser settings and drafts remain available across launches. A second launch focuses the existing window; the desktop bridge requires port 18787 to be free.
 
 Editing a queued message pauses the queue; saving or cancelling leaves it paused until you continue. Closing the desktop app asks for confirmation when tasks are running or messages are queued. Queued messages are discarded on exit, not restored on relaunch. An explicit `?cwd=` workspace takes precedence over the last saved task.
