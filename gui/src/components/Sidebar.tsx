@@ -719,16 +719,10 @@ export function Sidebar({
         <button
           type="button"
           onClick={onSettings}
-          className="noa-sidebar-tree-item noa-sidebar-hover-surface-subtle group flex h-[30px] w-full items-center gap-2 rounded-lg pl-[7px] pr-2 text-body text-[var(--sidebar-text-muted)] hover:text-[var(--text-primary,#2D2D2B)]"
+          className="noa-sidebar-tree-item noa-sidebar-hover-surface-subtle flex h-[30px] items-center gap-2 rounded-lg pl-[7px] pr-2 text-body text-[var(--sidebar-text-muted)] hover:text-[var(--text-primary,#2D2D2B)]"
         >
           <Settings size={14} className="shrink-0" />
           <span className="min-w-0 flex-1 truncate text-left">Settings</span>
-          <span
-            aria-hidden="true"
-            className="shrink-0 text-caption text-[var(--sidebar-text-muted)] opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100"
-          >
-            {isMac ? "⌘," : "Ctrl+,"}
-          </span>
         </button>
       </div>
     </div>
