@@ -2,8 +2,17 @@ import { expect, test } from "bun:test"
 import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { computeLiveDiff, detachAgent, emit, finalizeTurnDiff } from "../server/agents"
+import { agentMessage, computeLiveDiff, detachAgent, emit, finalizeTurnDiff } from "../server/agents"
 import { createChangeCollector } from "../server/turnDiff"
+
+test("queue moves use visible indexes while a message is starting", async () => {
+  const run: any = { queue: ["a", "b", "c"].map(id => ({ id, content: id })), startingMessageId: "a", historyReady: Promise.resolve(), clients: new Set(), journal: [] }
+  const socket: any = { data: { run } }
+  await agentMessage(socket, JSON.stringify({ type: "queue_move", id: "b", toIndex: 1 }))
+  expect(run.queue.map((message: any) => message.id)).toEqual(["a", "c", "b"])
+  await agentMessage(socket, JSON.stringify({ type: "queue_move", id: "b", toIndex: 0 }))
+  expect(run.queue.map((message: any) => message.id)).toEqual(["a", "b", "c"])
+})
 
 test("a detached background task keeps its agent alive until its terminal event", () => {
   let killed = 0

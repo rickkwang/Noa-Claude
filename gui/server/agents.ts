@@ -606,7 +606,10 @@ export async function agentMessage(ws: ServerWebSocket<SocketData>, raw: string 
     const from = run.queue.findIndex((item) => item.id === message.id)
     if (from !== -1) {
       const [item] = run.queue.splice(from, 1)
-      if (item) run.queue.splice(Math.max(0, Math.min(message.toIndex, run.queue.length)), 0, item)
+      const startingIndex = run.queue.findIndex(item => item.id === run.startingMessageId)
+      let toIndex = Math.max(0, Math.min(message.toIndex, run.queue.length - (startingIndex === -1 ? 0 : 1)))
+      if (startingIndex !== -1 && startingIndex <= toIndex) toIndex++
+      if (item) run.queue.splice(toIndex, 0, item)
       emit(run, queueEnvelope(run))
     }
   } else if (message.type === "queue_update") {
