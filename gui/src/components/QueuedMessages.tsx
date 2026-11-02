@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, type DragEvent, type KeyboardEvent } from "react"
 import type { ImageBlock, QueuedMessage } from "../agent/protocol"
-import { ArrowRight, ArrowUpDown, Edit2, X } from "../lib/icons"
+import { ArrowUpDown, Edit2, MoreHorizontal, Queue, Steer, Trash2 } from "../lib/icons"
 import { Lightbox, type LightboxItem } from "./Lightbox"
+import { PopupMenu, anchorBelow, type PopupMenuAnchor } from "./PopupMenu"
 
 interface QueuedMessagesProps {
   messages: QueuedMessage[]
@@ -41,6 +42,7 @@ export function QueuedMessages({
   const [dragId, setDragId] = useState<string>()
   const [exiting, setExiting] = useState<Record<string, { message: QueuedMessage; beforeId?: string }>>({})
   const [preview, setPreview] = useState<{ items: LightboxItem[]; index: number }>()
+  const [menu, setMenu] = useState<{ id: string; anchor: PopupMenuAnchor; trigger: Element }>()
   const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>())
 
   useEffect(() => () => {
@@ -80,33 +82,14 @@ export function QueuedMessages({
   }
 
   return (
-    <section aria-label="Queued messages" className="flex max-h-[30dvh] flex-col overflow-hidden rounded-panel border border-[var(--border-default)] bg-[var(--bg-card)]">
-      <div className="flex h-9 shrink-0 items-center gap-2 border-b border-[var(--divider-subtle)] px-3 text-caption text-[var(--sidebar-text-muted)]">
-        <span className="min-w-0 flex-1 truncate tabular-nums">
-          {visible.length} queued · {paused ? "paused" : busy ? "sends after this turn" : "ready to send"}
-        </span>
-        {(busy || paused) && (
-          <button
-            type="button"
-            disabled={editing}
-            onClick={() => {
-              if (paused) {
-                onPaused(false)
-                if (!busy) onRun()
-              } else onPaused(true)
-            }}
-            className="rounded px-1.5 py-0.5 hover:bg-[var(--fill-hover)] hover:text-[var(--text-primary)]"
-          >
-            {paused ? "Resume" : "Pause"}
-          </button>
-        )}
-        {!busy && !paused && (
-          <button type="button" disabled={editing} onClick={onRun} className="rounded px-1.5 py-0.5 text-[var(--accent-color)] hover:bg-[var(--fill-hover)]">
-            Send next
-          </button>
-        )}
-      </div>
-      <div className="min-h-0 flex-1 overflow-y-auto p-1">
+    <section aria-label="Queued messages" className="noa-queued-messages flex max-h-[30dvh] flex-col overflow-hidden rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] text-[var(--text-secondary)]">
+      <span className="sr-only">{messages.length} queued</span>
+      {paused && <div className="flex min-h-9 shrink-0 items-center gap-2 border-b border-[var(--divider-subtle)] px-3 text-[length:var(--text-chat-sm)]">
+        <Queue size={16} className="shrink-0 text-[var(--text-tertiary)]" />
+        <span className="min-w-0 flex-1">Queue paused</span>
+        <button type="button" disabled={editing} onClick={() => { onPaused(false); if (!busy) onRun() }} className="rounded-md px-2 py-1 hover:bg-[var(--fill-hover)] disabled:opacity-40">Resume</button>
+      </div>}
+      <div className="scrollbar-on-scroll min-h-0 flex-1 overflow-y-auto px-2.5 py-1">
         {visible.map((message, index) => {
           const content = parts(message)
           const images = content.images.map((image, imageIndex) => ({
@@ -124,11 +107,14 @@ export function QueuedMessages({
               onKeyDown={(event) => keyboard(event, index)}
               tabIndex={0}
               data-exiting={exiting[message.id] ? true : undefined}
-              className={`group/queue flex min-h-9 items-start gap-2 rounded-md px-2 py-1.5 text-body outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-color)] ${dragId === message.id ? "opacity-50" : "hover:bg-[var(--fill-hover)]"}`}
+              className={`group/queue flex min-h-9 items-center gap-2 rounded-md py-0.5 text-[length:var(--text-chat-sm)] leading-5 outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-color)] ${dragId === message.id ? "opacity-50" : ""}`}
             >
-              <ArrowUpDown size={13} className="mt-1 shrink-0 cursor-grab text-[var(--sidebar-text-muted)]" aria-hidden="true" />
+              <span className="relative flex size-5 shrink-0 cursor-grab items-center justify-center text-[var(--text-tertiary)]">
+                <Queue size={16} className="group-hover/queue:opacity-0 group-focus-within/queue:opacity-0" />
+                <ArrowUpDown size={13} className="absolute opacity-0 group-hover/queue:opacity-100 group-focus-within/queue:opacity-100" />
+              </span>
               <div className="min-w-0 flex-1">
-                {content.text && <p className="m-0 line-clamp-2 whitespace-pre-wrap break-words">{content.text}</p>}
+                {content.text && <p title={content.text} className="m-0 truncate">{content.text}</p>}
                 {!!images.length && (
                   <div className="mt-1 flex gap-1 overflow-x-auto">
                     {images.map((image, imageIndex) => (
@@ -145,26 +131,26 @@ export function QueuedMessages({
                   </div>
                 )}
               </div>
-              <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover/queue:opacity-100 group-focus-within/queue:opacity-100">
-                {busy && (
-                  <button type="button" disabled={editing} aria-label="Steer current turn with queued message" title="Steer now" onClick={() => onSteer(message.id)} className="rounded p-1 hover:bg-[var(--fill-hover)]">
-                    <ArrowRight size={13} />
-                  </button>
-                )}
-                <button type="button" aria-label="Edit queued message" title="Edit" onClick={() => onEdit(message)} className="rounded p-1 hover:bg-[var(--fill-hover)]">
-                  <Edit2 size={13} />
+              <div className="flex shrink-0 items-center gap-1">
+                <button type="button" disabled={editing} aria-label={busy ? "Steer current turn with queued message" : "Send queued message now"} title={busy ? "Submit without interrupting the model" : "Send now"} onClick={() => busy ? onSteer(message.id) : onRetry(message.id)} className="flex h-7 items-center gap-1 rounded-md px-2 hover:bg-[var(--fill-hover)] disabled:opacity-40">
+                  <Steer size={14} />{busy ? "Steer" : "Send now"}
                 </button>
-                <button type="button" disabled={editing} aria-label="Send queued message next" title="Send next" onClick={() => onRetry(message.id)} className="rounded px-1 py-0.5 text-caption hover:bg-[var(--fill-hover)]">
-                  Send next
+                <button type="button" aria-label="Delete queued message" title="Delete" onClick={() => remove(message, index)} className="flex size-6 items-center justify-center rounded-md hover:bg-[var(--fill-hover)]">
+                  <Trash2 size={14} />
                 </button>
-                <button type="button" aria-label="Delete queued message" title="Delete" onClick={() => remove(message, index)} className="rounded p-1 hover:bg-[var(--fill-hover)]">
-                  <X size={13} />
+                <button type="button" aria-label="More queued message actions" aria-haspopup="menu" aria-expanded={menu?.id === message.id} onClick={event => setMenu(menu?.id === message.id ? undefined : { id: message.id, anchor: anchorBelow(event.currentTarget), trigger: event.currentTarget })} className="flex size-6 items-center justify-center rounded-md hover:bg-[var(--fill-hover)]">
+                  <MoreHorizontal size={14} />
                 </button>
               </div>
             </div>
           )
         })}
       </div>
+      {menu && messages.some(message => message.id === menu.id) && <PopupMenu anchor={menu.anchor} trigger={menu.trigger} label="Queued message actions" onClose={() => setMenu(undefined)} entries={[
+        { key: "edit", label: "Edit", icon: Edit2, onSelect: () => onEdit(messages.find(message => message.id === menu.id)!) },
+        { key: "next", label: "Send next", disabled: editing, onSelect: () => onRetry(menu.id) },
+        { key: "pause", label: paused ? "Resume queue" : "Pause queue", disabled: editing, onSelect: () => { onPaused(!paused); if (paused && !busy) onRun() } },
+      ]} />}
       {preview && <Lightbox items={preview.items} index={preview.index} onIndex={(index) => setPreview({ ...preview, index })} onClose={() => setPreview(undefined)} />}
     </section>
   )

@@ -2,6 +2,7 @@
 @plugin "@tailwindcss/typography";
 
 .noa-agent-composer { container-type: inline-size; }
+.noa-queued-messages:has(+ .noa-agent-composer:not([data-new-task])) { margin-bottom: -24px; padding-bottom: 16px; border-bottom: 0; border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
 .noa-app-shell {
   font-size: var(--text-body);
   line-height: 20px;

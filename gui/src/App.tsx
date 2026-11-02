@@ -1051,6 +1051,7 @@ function Workspace({ cwd }: { cwd: string }) {
                 newTask={!hasTurns}
                 contextUsage={settings.composer.showContextUsage ? state.contextUsage : undefined}
                 sendShortcut={settings.composer.sendShortcut}
+                followUpMode={settings.composer.followUpMode}
                 showFullAccess={settings.composer.showFullAccess}
                 connection={state.connection}
                 busy={state.busy}

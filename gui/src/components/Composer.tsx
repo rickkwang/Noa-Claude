@@ -6,7 +6,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEve
 import { startEffortMaxFill } from "./effortMaxFill"
 import type { ContextUsage, ImageAttachment, RateLimitInfo, UserContent, ModelInfo, ProviderInfo, PermissionMode, SlashCommand } from "../agent/protocol"
 import { RateLimitNotice } from "./RateLimitNotice"
-import { Check, Cloud, Edit2, FileText, List, RotateCcw, X } from "../lib/icons"
+import { Check, Cloud, Edit2, FileText, List, Queue, RotateCcw, Steer, X } from "../lib/icons"
 import { Lightbox } from "./Lightbox"
 import { useConfirm } from "./ConfirmDialog"
 import { EnvironmentMenu } from "./EnvironmentMenu"
@@ -85,6 +85,7 @@ interface ComposerProps {
   onFiles: () => void
   newTask: boolean
   sendShortcut?: AppSettings["composer"]["sendShortcut"]
+  followUpMode?: AppSettings["composer"]["followUpMode"]
   // Full access is hidden from the permission menu until the user opts in from settings.
   showFullAccess?: boolean
   contextUsage?: ContextUsage
@@ -129,6 +130,7 @@ export function Composer({
   newTask,
   contextUsage,
   sendShortcut = "enter",
+  followUpMode = "queue",
   showFullAccess = false,
   rateLimit,
   onDismissRateLimit,
@@ -598,7 +600,7 @@ export function Composer({
     : []
 
   return (
-    <div ref={composerRef} className="noa-agent-composer relative">
+    <div ref={composerRef} data-new-task={newTask || undefined} className="noa-agent-composer relative">
       {newTask && (
         <div className="noa-agent-environment flex items-center gap-2 text-chat-sm">
           {rateLimit && onDismissRateLimit ? <RateLimitNotice info={rateLimit} inline onDismiss={onDismissRateLimit} /> : <>
@@ -811,7 +813,7 @@ export function Composer({
           aria-activedescendant={mentionOpen && mentionItems[mentionIndex] ? `noa-file-option-${mentionIndex}` : menuOpen && menuItems[menuIndex] ? `noa-slash-option-${menuIndex}` : undefined}
           onCompositionStart={() => setComposing(true)}
           onCompositionEnd={() => { setComposing(false); compositionEndAt.current = performance.now() }}
-          placeholder={connection === "closed" ? "Noa disconnected" : disabled ? "Starting Noa…" : busy ? "Add a follow-up to the queue…" : newTask ? "Do anything" : "Work with Noa"}
+          placeholder={connection === "closed" ? "Noa disconnected" : disabled ? "Starting Noa…" : busy ? followUpMode === "steer" ? "Add a follow-up…" : "Add a follow-up to the queue…" : newTask ? "Do anything" : "Work with Noa"}
           aria-label="Task instruction"
           disabled={disabled}
           rows={1}
@@ -951,14 +953,14 @@ export function Composer({
               type="button"
               onClick={busy && !editDraft?.queued && !text.trim() && !images.length ? onInterrupt : submit}
               disabled={(!busy || editDraft?.queued) && (disabled || loadingImages || !imagesLoaded || (!text.trim() && !images.length))}
-              aria-label={editDraft?.queued ? "Save queued message" : busy && !text.trim() && !images.length ? "Stop (Esc)" : busy ? "Queue message" : "Run task"}
-              title={editDraft?.queued ? "Save queued message; queue stays paused" : busy && !text.trim() && !images.length ? "Stop (Esc)" : busy ? "Queue after the current turn" : "Run task"}
-              data-action={busy && !text.trim() && !images.length ? "stop" : busy ? "queue" : "send"}
+              aria-label={editDraft?.queued ? "Save queued message" : busy && !text.trim() && !images.length ? "Stop (Esc)" : busy ? followUpMode === "steer" ? "Steer" : "Queue message" : "Run task"}
+              title={editDraft?.queued ? "Save queued message; queue stays paused" : busy && !text.trim() && !images.length ? "Stop (Esc)" : busy ? followUpMode === "steer" ? "Submit without interrupting the model" : "Queue after the current turn" : "Run task"}
+              data-action={busy && !text.trim() && !images.length ? "stop" : busy ? followUpMode : "send"}
               className="noa-primary-action ml-1 flex size-7 shrink-0 items-center justify-center rounded-full bg-[var(--text-primary,#2D2D2B)] text-[var(--surface-page,#FFFFFF)] transition-[opacity,transform] hover:opacity-90 disabled:opacity-50 noa-press"
             >
               {busy && !editDraft?.queued && !text.trim() && !images.length
                 ? <span aria-hidden="true" className="block size-[11px] rounded-[1.25px] bg-current" />
-                : <ComposerSendIcon />}
+                : busy && !editDraft?.queued ? followUpMode === "steer" ? <Steer size={16} /> : <Queue size={16} /> : <ComposerSendIcon />}
             </button>
           </div>
         </div>

@@ -358,6 +358,7 @@ try {
 
   first.send({ type: "user", message: { role: "user", content: "GUI_SLOW first" }, parent_tool_use_id: null })
   await wait(() => first.events.some((e) => e.kind === "user"), "user acknowledgement")
+  assert.ok(!first.events.some(e => e.kind === "queue" && e.messages.some(message => message.content === "GUI_SLOW first")), "An idle send must not appear as queued while its snapshot is prepared")
   first.send({ type: "user", message: { role: "user", content: "second queued" }, parent_tool_use_id: null })
   first.send({ type: "user", message: { role: "user", content: "remove this" }, parent_tool_use_id: null })
   await wait(() => first.events.some((e) => e.kind === "queue" && e.messages.length === 2), "queue")
@@ -716,6 +717,16 @@ try {
   assert.equal(stopped.result?.isError, false)
   assert.ok(stopped.logs.some((line) => line.includes("[ede_diagnostic]")))
   console.log("PASS real CLI interruption terminates the active turn and pauses queued follow-ups")
+  const preparing = connect(crypto.randomUUID())
+  await preparing.initialize()
+  preparing.send({ type: "user", message: { role: "user", content: "GUI_SLOW preparing first" }, parent_tool_use_id: null })
+  preparing.send({ type: "user", message: { role: "user", content: "Follow up during snapshot" }, parent_tool_use_id: null, delivery: "steer" })
+  await wait(() => preparing.events.some(e => e.kind === "queue" && e.messages.some(message => message.content === "Follow up during snapshot")), "follow-up waits for the first turn to start")
+  await wait(() => preparing.results().length === 2, "both preparation-window messages complete")
+  assert.deepEqual(preparing.events.filter(e => e.kind === "user").map(e => e.content), ["GUI_SLOW preparing first", "Follow up during snapshot"])
+  assert.ok(!preparing.events.some(e => e.kind === "queue" && e.messages.some(message => message.content === "GUI_SLOW preparing first")))
+  preparing.socket.close()
+  console.log("PASS a steer submitted during snapshot preparation waits without overtaking or queueing the first message")
   const steerDelivery = connect(crypto.randomUUID())
   await steerDelivery.initialize()
   steerDelivery.send({ type: "user", message: { role: "user", content: "GUI_SLOW steer base" }, parent_tool_use_id: null })
@@ -723,6 +734,7 @@ try {
   const steerResultBase = steerDelivery.results().length
   steerDelivery.send({ type: "user", message: { role: "user", content: "STEER_FOLLOW_UP" }, parent_tool_use_id: null, delivery: "steer" })
   await wait(() => steerDelivery.events.some((e) => e.kind === "user" && e.content === "STEER_FOLLOW_UP"), "steer delivered")
+  assert.ok(!steerDelivery.events.some(e => e.kind === "queue" && e.messages.some(message => message.content === "STEER_FOLLOW_UP")), "Direct steering must not flash in the queue")
   assert.equal(steerDelivery.results().length, steerResultBase, "Steer must land in the running turn, not after it")
   const lastQueue = steerDelivery.events.filter((e) => e.kind === "queue").at(-1) as any
   assert.ok(!lastQueue?.messages.some((m: any) => m.content === "STEER_FOLLOW_UP"), "Steered message must not stay in the queue")

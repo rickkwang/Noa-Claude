@@ -51,6 +51,7 @@ interface AgentRun {
   journal: Envelope[]
   history?: import("./sessions").HistoryItem[]
   queue: QueuedMessage[]
+  startingMessageId?: string
   busy: boolean
   queuePaused?: boolean
   turnSucceeded?: boolean
@@ -97,7 +98,7 @@ function afterWorkspaceOperation<T>(cwd: string, operation: () => Promise<T>): P
 }
 
 function queueEnvelope(run: AgentRun): Envelope {
-  return { kind: "queue", messages: [...run.queue], paused: run.queuePaused }
+  return { kind: "queue", messages: run.queue.filter(message => message.id !== run.startingMessageId), paused: run.queuePaused }
 }
 // Reconnects replay the journal in full, so one huge tool result must not be kept verbatim.
 // Only prose is shortened: image payloads under `data` must stay intact to remain viewable.
@@ -209,6 +210,8 @@ async function startNextSerialized(run: AgentRun) {
   if (run.busy || run.waiting.size || run.exited || !run.queue.length) return
   const next = run.queue[0]!
   run.busy = true
+  run.startingMessageId = next.id
+  emit(run, queueEnvelope(run))
   run.turnSucceeded = undefined
   const index = ++run.turnCounter
   // Snapshot before the user message is written, so the turn's diff starts here.
@@ -217,10 +220,12 @@ async function startNextSerialized(run: AgentRun) {
   if (run.exited) {
     await disposeSnapshot(before)
     run.busy = false
+    run.startingMessageId = undefined
     emit(run, queueEnvelope(run))
     return
   }
-  run.queue.shift()
+  run.queue = run.queue.filter(message => message.id !== next.id)
+  run.startingMessageId = undefined
   flushTimeline(run)
   run.pendingTimeline = []
   run.lastTranscriptUuid = undefined
@@ -591,8 +596,8 @@ export async function agentMessage(ws: ServerWebSocket<SocketData>, raw: string 
     if (!run.busy) run.queuePaused = false
     const queued = { id: crypto.randomUUID(), content, at: Date.now() }
     run.queue.push(queued)
-    emit(run, queueEnvelope(run))
-    if (message.delivery === "steer" && run.busy) steerQueued(run, queued.id)
+    if (message.delivery === "steer" && run.busy && run.turn && !run.turn.finalizing) steerQueued(run, queued.id)
+    else if (run.busy || run.waiting.size) emit(run, queueEnvelope(run))
     else void startNext(run)
   } else if (message.type === "queue_remove") {
     run.queue = run.queue.filter((m) => m.id !== message.id)
@@ -653,7 +658,7 @@ export async function agentMessage(ws: ServerWebSocket<SocketData>, raw: string 
 function steerQueued(run: AgentRun, id: string) {
   const index = run.queue.findIndex((item) => item.id === id)
   const item = index === -1 ? undefined : run.queue[index]
-  if (!item || !run.busy) return
+  if (!item || !run.busy || !run.turn || run.turn.finalizing) return
   run.queue.splice(index, 1)
   emit(run, queueEnvelope(run))
   emit(run, { kind: "user", id: item.id, content: item.content, at: item.at ?? Date.now() })
