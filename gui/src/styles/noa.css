@@ -1857,11 +1857,15 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
   0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
   30% { transform: translateY(-3px); opacity: 1; }
 }
-/* Running status dot: 1.2s blink (open-claude-ui dframe-dot-blink). */
-.noa-status-running { animation: noa-status-blink 1.2s ease-in-out infinite; }
-@keyframes noa-status-blink { 50% { opacity: 0.3; } }
+.noa-status-running, .noa-activity-status[data-kind="running"] .noa-activity-dot {
+  width: 16px; height: 16px; flex-shrink: 0; border: 0; border-radius: 0;
+  background: transparent url("../assets/claude-thinking.webp") 0 0 / 100% 11000% no-repeat;
+  animation: noa-status-thinking 3666.663ms steps(110, jump-none) infinite;
+}
+@keyframes noa-status-thinking { to { background-position: 0 100%; } }
 @media (prefers-reduced-motion: reduce) {
-  .noa-quiet-dots > span, .noa-status-running { animation: none; }
+  .noa-quiet-dots > span { animation: none; }
+  .noa-status-running, .noa-activity-status[data-kind="running"] .noa-activity-dot { animation: none; background-position: 0 calc(95 * 100% / 109); }
 }
 
 .noa-model-picker {
@@ -2308,23 +2312,27 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
 .noa-branch { display: inline-flex; align-items: center; gap: 6px; color: var(--text-primary); }
 .noa-branch > svg { flex-shrink: 0; color: var(--sidebar-text-muted); }
 .noa-panel-empty > svg { margin: 0 auto 8px; color: var(--sidebar-text-muted); opacity: .7; }
-.noa-activity-status { display: flex; align-items: center; gap: 10px; padding: 2px 0 0; color: var(--text-primary); }
-.noa-activity-dot { width: 8px; height: 8px; flex-shrink: 0; border-radius: 50%; background: var(--sidebar-text-muted); }
+.noa-activity-status { display: flex; align-items: flex-start; gap: 8px; padding: 2px 0 0; line-height: 1.5; color: var(--text-primary); }
+.noa-activity-dot { width: 8px; height: 8px; flex-shrink: 0; margin: calc(.75em - 4px) 4px 0; border-radius: 50%; background: var(--sidebar-text-muted); }
+.noa-activity-status[data-kind="running"] .noa-activity-dot { margin: calc(.75em - 8px) 0 0; }
+.noa-activity-status .noa-panel-muted { margin-top: 2px; line-height: 1.4; }
 .noa-activity-status[data-kind="ready"] .noa-activity-dot { background: #43A66A; }
-.noa-activity-status[data-kind="running"] .noa-activity-dot { background: var(--accent-color); animation: noa-status-blink 1.2s ease-in-out infinite; }
 .noa-activity-status[data-kind="waiting"] .noa-activity-dot { background: #D9A43B; }
 .noa-activity-status[data-kind="closed"] .noa-activity-dot { background: #C24444; }
 .noa-activity-list { display: flex; flex-direction: column; margin: -6px -16px 0; }
 .noa-activity-history { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--sidebar-text-muted); font-size: var(--text-caption); }
 .noa-activity-log { max-height: 280px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--font-mono); font-size: var(--code-font-size, 12px); line-height: 1.6; margin: 0; color: var(--sidebar-text); }
-@media (prefers-reduced-motion: reduce) { .noa-activity-status .noa-activity-dot { animation: none; } }
 .noa-file-guides { display: flex; flex-shrink: 0; align-items: center; height: 100%; padding-left: 7.5px; pointer-events: none; }
 .noa-file-guides.is-folder { margin-right: -3.75px; }
 .noa-file-guides > span { height: 100%; border-left: 1px solid var(--border-light); margin-right: -1px; transform: translateX(-.25px); opacity: 0; transition: opacity 150ms; }
 .noa-file-guides > span + span { margin-left: 8.75px; }
 .noa-file-tree:hover .noa-file-guides > span { opacity: .75; }
+/* Codex's file-tree icon palette (light / dark), used by file-type glyphs. */
 .noa-glyph-blue { color: #1a85d4; } .noa-glyph-cyan { color: #1ca1c7; } .noa-glyph-green { color: #199f43; }
+.noa-glyph-yellow { color: #d5a910; } .noa-glyph-orange { color: #d47628; } .noa-glyph-indigo { color: #693acf; }
+.noa-glyph-image { color: #8C7AE6; }
 [data-theme="dark"] .noa-glyph-blue { color: #69b1ff; } [data-theme="dark"] .noa-glyph-cyan { color: #68cdf2; } [data-theme="dark"] .noa-glyph-green { color: #5ecc71; }
+[data-theme="dark"] .noa-glyph-yellow { color: #ffd452; } [data-theme="dark"] .noa-glyph-orange { color: #ffa359; } [data-theme="dark"] .noa-glyph-indigo { color: #9d6afb; }
 /* Review tree stats: 12px "+N -N" in git colours, 4px apart, before the git lane. */
 .noa-row-stats { display: inline-flex; flex-shrink: 0; gap: 4px; font-size: 12px; font-variant-numeric: tabular-nums; }
 .noa-row-stats .is-added { color: #168447; } .noa-row-stats .is-removed { color: #C24444; }

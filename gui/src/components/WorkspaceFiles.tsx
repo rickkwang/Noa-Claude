@@ -12,25 +12,20 @@ type Change = { path: string; oldPath?: string; status: string; additions: numbe
 type Changes = { isGit: boolean; branch: string; files: Change[]; additions: number; deletions: number }
 type Preview = { path: string; scope: string; view: string; content?: string; snapshot?: string; revision?: string; truncated?: boolean; binary?: boolean; kind?: string; dataUrl?: string }
 
-// File-type glyphs and brand colors.
+// File-type glyphs in Codex's file-tree icon palette; colours come from the `.noa-glyph-*` classes in noa.css.
 const GLYPHS: Record<string, [typeof FileText, string]> = {
-  ts: [FileTypescript, "#3178C6"], mts: [FileTypescript, "#3178C6"], cts: [FileTypescript, "#3178C6"],
-  tsx: [FileReact, "#61DAFB"], jsx: [FileReact, "#61DAFB"],
-  js: [FileJavascript, "#D4B72C"], mjs: [FileJavascript, "#D4B72C"], cjs: [FileJavascript, "#D4B72C"],
-  json: [FileJson, "#CBB02A"], md: [FileMarkdown, "#7A8AA0"], css: [FileCss, "#2965F1"], html: [FileHtml, "#E34F26"], py: [FilePython, "#3776AB"],
-  png: [Photo, "#8C7AE6"], jpg: [Photo, "#8C7AE6"], jpeg: [Photo, "#8C7AE6"], gif: [Photo, "#8C7AE6"], webp: [Photo, "#8C7AE6"], svg: [Photo, "#8C7AE6"],
+  ts: [FileTypescript, "noa-glyph-blue"], mts: [FileTypescript, "noa-glyph-blue"], cts: [FileTypescript, "noa-glyph-blue"],
+  tsx: [FileReact, "noa-glyph-cyan"], jsx: [FileReact, "noa-glyph-cyan"],
+  js: [FileJavascript, "noa-glyph-yellow"], mjs: [FileJavascript, "noa-glyph-yellow"], cjs: [FileJavascript, "noa-glyph-yellow"],
+  json: [FileJson, "noa-glyph-orange"], md: [FileMarkdown, "noa-glyph-green"], css: [FileCss, "noa-glyph-indigo"],
+  html: [FileHtml, "noa-glyph-orange"], py: [FilePython, "noa-glyph-blue"],
+  png: [Photo, "noa-glyph-image"], jpg: [Photo, "noa-glyph-image"], jpeg: [Photo, "noa-glyph-image"], gif: [Photo, "noa-glyph-image"], webp: [Photo, "noa-glyph-image"], svg: [Photo, "noa-glyph-image"],
 }
 export function FileGlyph({ name }: { name: string }) {
-  const extension = name.split(".").pop()?.toLowerCase() ?? ""
-  if (["ts", "mts", "cts"].includes(extension)) return <svg aria-hidden="true" width={16} height={16} viewBox="0 0 16 16" className="noa-glyph-blue"><path fill="currentColor" d="M8 1C2.24 1 1 2.24 1 8s1.24 7 7 7 7-1.24 7-7-1.24-7-7-7" opacity={0.2}/>
-  <path fill="currentColor" d="M8.1 9.64h.95c.04.62.28.76 1.28.76s1.2-.14 1.2-.85c0-.66-.2-.85-1.2-1.07-1.79-.38-2.18-.7-2.18-1.86C8.15 5.3 8.54 5 10.31 5c1.67 0 2.04.26 2.07 1.42h-.95c-.02-.43-.23-.53-1.1-.53-1 0-1.22.14-1.22.74 0 .52.22.7 1.24.92 1.76.38 2.15.73 2.15 2 0 1.44-.4 1.75-2.24 1.75-1.8 0-2.18-.3-2.15-1.66m-3 1.57V5.99H3.5v-.9h4.21v.9H6.1v5.22z"/></svg>
-  if (["tsx", "jsx"].includes(extension)) return <svg aria-hidden="true" width={16} height={16} viewBox="0 0 16 16" className="noa-glyph-cyan"><path fill="currentColor" d="M8 6.65c.73 0 1.31.6 1.31 1.35S8.73 9.35 8 9.35 6.69 8.75 6.69 8 7.27 6.65 8 6.65"/>
-  <path fill="currentColor" fillRule="evenodd" d="M8 2.55c1.3-.99 2.59-1.34 3.5-.8.92.55 1.27 1.87 1.08 3.53C14.06 5.94 15 6.9 15 8s-.94 2.06-2.42 2.72c.19 1.65-.16 2.98-1.08 3.52-.91.55-2.2.2-3.5-.8-1.3 1-2.58 1.35-3.5.8-.91-.54-1.27-1.87-1.08-3.52C1.94 10.06 1 9.1 1 8s.94-2.06 2.42-2.72c-.19-1.66.17-2.98 1.08-3.52s2.2-.2 3.5.8M4.26 11.2c-.08 1.34.28 2.03.68 2.26s1.15.22 2.25-.52l.11-.09a12 12 0 0 1-1.24-1.39 11 11 0 0 1-1.8-.41zm7.47-.15q-.83.27-1.79.41-.6.8-1.24 1.4l.11.08c1.1.74 1.86.76 2.25.52.4-.23.76-.92.68-2.26zm-3.04.54a14 14 0 0 1-1.38 0q.34.38.69.7.35-.32.7-.7M8 5.29q-.76 0-1.47.1A13 13 0 0 0 5.07 8a14 14 0 0 0 1.46 2.62 13 13 0 0 0 2.94 0A13 13 0 0 0 10.93 8a14 14 0 0 0-1.46-2.62A13 13 0 0 0 8 5.3M4.64 9.18q-.15.5-.25.96.44.16.94.27a15 15 0 0 1-.7-1.23m6.73 0a15 15 0 0 1-.7 1.23q.5-.11.95-.27a10 10 0 0 0-.25-.96M3.44 6.26C2.27 6.86 1.87 7.53 1.87 8s.4 1.14 1.57 1.74l.13.07q.18-.88.55-1.81a12 12 0 0 1-.55-1.8q-.07.02-.13.06m8.99-.07A12 12 0 0 1 11.88 8q.36.94.55 1.8l.13-.06c1.17-.6 1.56-1.27 1.56-1.74s-.39-1.14-1.56-1.74zm-7.1-.6q-.5.11-.94.27.1.46.25.96a15 15 0 0 1 .69-1.23m5.34 0a15 15 0 0 1 .7 1.23q.14-.5.24-.96-.44-.15-.94-.27M7.18 3.06c-1.09-.74-1.85-.76-2.24-.52s-.76.92-.69 2.26l.01.15a11 11 0 0 1 1.8-.41q.6-.8 1.24-1.4zm3.88-.52c-.4-.24-1.15-.22-2.25.52l-.12.08q.65.6 1.25 1.4.96.15 1.8.41v-.14c.08-1.35-.28-2.04-.68-2.27M8 3.7a10 10 0 0 0-.7.7 14 14 0 0 1 1.4 0 10 10 0 0 0-.7-.7" clipRule="evenodd"/></svg>
-  if (extension === "md") return <svg aria-hidden="true" width={16} height={16} viewBox="0 0 16 16" className="noa-glyph-green"><path fill="currentColor" d="M1 12V4h2l2 2.5L7 4h2v8H7V7.5l-2 2-2-2V12zm9-3 3 3.5L16 9h-2V4h-2v5z"/></svg>
   const glyph = GLYPHS[name.split(".").pop()?.toLowerCase() ?? ""]
   if (!glyph) return <FileText size={15} />
   const Glyph = glyph[0]
-  return <Glyph size={15} style={{ color: glyph[1] }} />
+  return <Glyph size={15} className={glyph[1]} />
 }
 // Middle truncation for path labels: the directory shrinks first, the file name stays whole.
 function MiddlePath({ path }: { path: string }) {

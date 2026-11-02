@@ -600,7 +600,7 @@ export function Sidebar({
                   />
                   {/* A collapsed list still shows that one of its tasks is working. */}
                   {recentsPrefs.collapsed && recents.some(({ session }) => session.status) && (
-                    <span role="status" aria-label="Tasks running" className="ml-1 size-1.5 shrink-0 rounded-full bg-[var(--accent-color)]" />
+                    <span role="status" aria-label="Tasks running" className={`ml-1 ${recents.some(({ session }) => session.status === "running") ? "noa-status-running" : "size-1.5 shrink-0 rounded-full bg-[var(--accent-color)]"}`} />
                   )}
                 </button>
                 {/* Shown on hover; an active filter keeps them visible. */}
@@ -1054,7 +1054,7 @@ function SessionRow({
         {dropEdge && <DropIndicator edge={dropEdge} indented={indent} className="inset-x-0" />}
         <MarqueeText className={status ? "" : "-mr-2 group-hover:mr-6 group-focus-within:mr-6"}>{title}</MarqueeText>
         <span className={`${status ? "ml-2 flex shrink-0" : "absolute inset-y-0 right-2 flex"} items-center gap-1`}>
-          {status && <span role="status" aria-label={status === "waiting" ? "Approval required" : status === "running" ? "Running" : "Queued"} title={status} className={`size-1.5 shrink-0 rounded-full ${status === "waiting" ? "bg-amber-500" : "animate-pulse bg-[var(--accent-color)]"}`} />}
+          {status && <span role="status" aria-label={status === "waiting" ? "Approval required" : status === "running" ? "Running" : "Queued"} title={status} className={`size-1.5 shrink-0 rounded-full ${status === "running" ? "noa-status-running" : status === "waiting" ? "bg-amber-500" : "animate-pulse bg-[var(--accent-color)]"}`} />}
           <button
             type="button"
             data-session-action
