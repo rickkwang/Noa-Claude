@@ -1,33 +1,11 @@
-// Central icon mapping: Codex's internal icons where one exists, filled 16px glyphs next, and Tabler Icons
-// (plus a hand-drawn ChevronsDownUp) for the rest, exported under the legacy lucide-react names so call sites
-// are unchanged. To swap a shape, change its mapping here only.
-import {
-  IconDatabase,
-  IconDice5,
-  IconBrandTypescript,
-  IconBrandReact,
-  IconBrandJavascript,
-  IconJson,
-  IconMarkdown,
-  IconBrandCss3,
-  IconBrandHtml5,
-  IconBrandPython,
-  IconServer,
-  IconMoon,
-  IconCloud,
-  IconZoomIn,
-  IconZoomOut,
-} from '@tabler/icons-react';
-import type { Icon, IconProps } from '@tabler/icons-react';
+// Central icon mapping, all from Codex's icon set: its 16px light glyphs (glyphs.ts) and a few full-viewBox
+// icons (codexIcons.ts), exported under the legacy lucide-react names so call sites are unchanged.
+// To swap a shape, change its mapping here only.
+import type { CSSProperties } from 'react';
 import { GLYPHS } from './glyphs';
 import { codexIcons, type CodexIconName } from './codexIcons';
 
-// Default to 24px with a 1.5 stroke; call sites that need a heavier glyph pass their own stroke.
-function icon(Cmp: Icon) {
-  return function WrappedIcon(props: IconProps) {
-    return <Cmp size={24} stroke={1.5} {...props} />;
-  };
-}
+type IconProps = { size?: number; className?: string; style?: CSSProperties };
 
 // Codex icons carry their own viewBox; the size defaults to 16px to match the glyphs.
 function codex(name: CodexIconName) {
@@ -49,7 +27,7 @@ function codex(name: CodexIconName) {
   };
 }
 
-// Glyphs are filled 16px artwork, so stroke props from Tabler-era call sites don't apply.
+// Glyphs are filled 16px artwork, so stroke props don't apply.
 function glyph(name: string, mirrored = false) {
   const body = GLYPHS[name]!;
   return function GlyphIcon({ size = 16, className, style }: IconProps) {
@@ -88,7 +66,7 @@ export const ChevronLeft = glyph("chevron-left-md");
 export const ChevronRight = glyph("chevron-right-md");
 export const ChevronsUpDown = codex("arrow-up-arrow-down");
 // Inward twin of ChevronsUpDown ("collapse all folders"), drawn by hand because
-// Tabler has no such glyph: same 256 grid, 16-unit stroke (1.5 at 24px), carets flipped.
+// Codex has no collapse-all icon: same 256 grid and 16-unit stroke as the chevrons, carets flipped.
 export function ChevronsDownUp({ size = 24, className, style }: IconProps) {
   return (
     <svg
@@ -116,34 +94,32 @@ export const CircleArrowUp = codex("arrow-up-circle");
 export const Outline = glyph("list-bullet");
 export const Edit2 = glyph("pencil");
 export const Clock = glyph("clock");
-export const Cloud = icon(IconCloud);
+export const Cloud = glyph("cloud");
 export const Copy = glyph("square-on-square");
-export const Database = icon(IconDatabase);
-export const Dices = icon(IconDice5);
 export const Download = glyph("arrow-down-line-horizontal");
 export const ExternalLink = glyph("open-link");
 export const ArrowUpRight = glyph("arrow-up-right-md");
 export const Eye = glyph("eye");
 export const FileArchive = glyph("document-zip");
 export const FileText = glyph("document-text");
-export const BrandTypescript = icon(IconBrandTypescript);
-export const BrandReact = icon(IconBrandReact);
-export const BrandJavascript = icon(IconBrandJavascript);
-export const Json = icon(IconJson);
-export const Markdown = icon(IconMarkdown);
-export const BrandCss3 = icon(IconBrandCss3);
-export const BrandHtml5 = icon(IconBrandHtml5);
-export const BrandPython = icon(IconBrandPython);
+export const FileTypescript = glyph("file-ts");
+export const FileReact = glyph("file-react");
+export const FileJavascript = glyph("file-js");
+export const FileJson = glyph("file-json");
+export const FileMarkdown = glyph("file-markdown");
+export const FileCss = glyph("file-css");
+export const FileHtml = glyph("file-html");
+export const FilePython = glyph("file-python");
 export const Photo = glyph("photo");
 export const ListDetails = codex("list-bullet");
 export const Filter = glyph("filter");
 export const Folder = glyph("folder");
+export const FolderOpen = glyph("folder-open");
 export const FolderPlus = glyph("folder-badge-plus");
 export const GitBranch = glyph("branch");
 export const Tag = glyph("tag");
 export const Terminal = glyph("terminal");
 export const Tool = glyph("wrench");
-export const HardDrive = icon(IconServer);
 export const Info = glyph("info-circle");
 // The note rail toggle: a stack of cards, since the rail holds more than the calendar.
 export const Layers = glyph("stack");
@@ -152,9 +128,8 @@ export const Loader2 = glyph("spinner-quarter-graded");
 export const Maximize2 = glyph("arrow-up-right-arrow-down-left-md");
 export const Minimize2 = glyph("arrow-down-left-arrow-up-right-sm");
 export const Monitor = glyph("desktop");
-export const Moon = icon(IconMoon);
 export const MoreHorizontal = glyph("ellipsis-horizontal");
-// The graph's "hide isolated nodes" toggle: linked nodes, not Tabler's globe-on-a-stand network.
+// The graph's "hide isolated nodes" toggle: linked nodes.
 export const Network = glyph("node-to-node-path");
 export const Palette = glyph("paint-palette");
 export const Pin = glyph("pin");
@@ -181,5 +156,5 @@ export const Unlink = glyph("unlink");
 export const Upload = glyph("arrow-up-line-horizontal");
 export const Users = glyph("person-2");
 export const X = glyph("xmark-md");
-export const ZoomIn = icon(IconZoomIn);
-export const ZoomOut = icon(IconZoomOut);
+export const ZoomIn = glyph("plus-md");
+export const ZoomOut = glyph("minus-md");

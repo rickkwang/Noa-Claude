@@ -18,6 +18,7 @@ import {
   ArrowUpDown,
   ChevronRight,
   Folder,
+  FolderOpen,
   FolderPlus,
   MoreHorizontal,
   Pin,
@@ -859,9 +860,13 @@ function ProjectRow({
         onPointerCancel={onPointerCancel}
         className={`noa-sidebar-tree-row noa-agent-sidebar-row group flex h-[30px] items-center gap-[7px] pl-[6px] pr-2 mx-2 rounded-lg cursor-pointer select-none ${menuOpen ? "is-active" : ""} ${dragging ? "noa-session-row-dragging" : ""}`}
       >
-        {/* A 16px folder icon in the row ink, the same open or closed, centred on the New task icon's
-            column so names line up with the search and New task labels. */}
-        <Folder size={16} className="shrink-0" />
+        {/* A 16px folder icon in the row ink, centred on the New task icon's column so names line up
+            with the search and New task labels. Open folders swap to the open shape. */}
+        {open ? (
+          <FolderOpen size={16} className="shrink-0" />
+        ) : (
+          <Folder size={16} className="shrink-0" />
+        )}
         <span
           className={`min-w-0 flex-1 truncate text-body ${project.missing ? "text-[var(--sidebar-text-muted,#898781)] line-through" : ""}`}
         >

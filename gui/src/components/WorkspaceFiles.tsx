@@ -4,7 +4,7 @@ import { useConfirm } from "./ConfirmDialog"
 import { FileMenu, loadEditors, openPath, revealLabel, type Editor, type FileMenuTarget } from "./FileMenu"
 import { useDiffPref } from "../lib/diffPrefs"
 import { rememberFile } from "../lib/recentFiles"
-import { ArrowLeft, ArrowUpRight, CheckCircle2, GitBranch, BrandCss3, BrandHtml5, BrandJavascript, BrandPython, BrandReact, BrandTypescript, ChevronDown, Copy, FileText, Folder, Json, ListDetails, Markdown, MoreHorizontal, Photo, PlusMinus, RefreshCcw, Search, SquarePen } from "../lib/icons"
+import { ArrowLeft, ArrowUpRight, CheckCircle2, GitBranch, FileCss, FileHtml, FileJavascript, FilePython, FileReact, FileTypescript, ChevronDown, Copy, FileText, Folder, FileJson, ListDetails, FileMarkdown, MoreHorizontal, Photo, PlusMinus, RefreshCcw, Search, SquarePen } from "../lib/icons"
 
 const CodeView = lazy(() => import("./CodeView"))
 type Entry = { name: string; path: string; directory: boolean }
@@ -14,10 +14,10 @@ type Preview = { path: string; scope: string; view: string; content?: string; sn
 
 // File-type glyphs and brand colors.
 const GLYPHS: Record<string, [typeof FileText, string]> = {
-  ts: [BrandTypescript, "#3178C6"], mts: [BrandTypescript, "#3178C6"], cts: [BrandTypescript, "#3178C6"],
-  tsx: [BrandReact, "#61DAFB"], jsx: [BrandReact, "#61DAFB"],
-  js: [BrandJavascript, "#D4B72C"], mjs: [BrandJavascript, "#D4B72C"], cjs: [BrandJavascript, "#D4B72C"],
-  json: [Json, "#CBB02A"], md: [Markdown, "#7A8AA0"], css: [BrandCss3, "#2965F1"], html: [BrandHtml5, "#E34F26"], py: [BrandPython, "#3776AB"],
+  ts: [FileTypescript, "#3178C6"], mts: [FileTypescript, "#3178C6"], cts: [FileTypescript, "#3178C6"],
+  tsx: [FileReact, "#61DAFB"], jsx: [FileReact, "#61DAFB"],
+  js: [FileJavascript, "#D4B72C"], mjs: [FileJavascript, "#D4B72C"], cjs: [FileJavascript, "#D4B72C"],
+  json: [FileJson, "#CBB02A"], md: [FileMarkdown, "#7A8AA0"], css: [FileCss, "#2965F1"], html: [FileHtml, "#E34F26"], py: [FilePython, "#3776AB"],
   png: [Photo, "#8C7AE6"], jpg: [Photo, "#8C7AE6"], jpeg: [Photo, "#8C7AE6"], gif: [Photo, "#8C7AE6"], webp: [Photo, "#8C7AE6"], svg: [Photo, "#8C7AE6"],
 }
 export function FileGlyph({ name }: { name: string }) {

@@ -21,7 +21,7 @@ function CommandIcon({ command, size = 18 }: { command: ComposerCommand; size?: 
                           : command.action === "reload" ? "refresh"
                             : name.includes("review") ? "bug"
                               : name.includes("compact") ? "dashed"
-                                : name.includes("mcp") ? "server"
+                                : name.includes("mcp") ? "mcp"
                                   : name.includes("memor") ? "brain"
                                     : name.includes("agent") ? "person-group"
                                       : command.group === "Skills" ? "sparkle-fill" : "text-page"

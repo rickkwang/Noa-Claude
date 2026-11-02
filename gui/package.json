@@ -16,7 +16,6 @@
     "test:scroll": "bun scripts/e2e-scroll.ts"
   },
   "dependencies": {
-    "@tabler/icons-react": "3.48.0",
     "katex": "0.19.1",
     "mermaid": "12.2.0",
     "react": "19.2.6",
