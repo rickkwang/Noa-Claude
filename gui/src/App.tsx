@@ -944,8 +944,9 @@ function Workspace({ cwd }: { cwd: string }) {
               tasks={state.tasks}
               onStopTask={stopTask}
               onOpenTask={(id) => {
+                const taskType = state.tasks.find(task => task.id === id)?.taskType
                 setRightOpen(true)
-                setRightTab("subagents")
+                setRightTab(taskType && !["local_agent", "remote_agent", "in_process_teammate"].includes(taskType) ? "activity" : "subagents")
                 setFocusTask({ id, key: Date.now() })
               }}
             />

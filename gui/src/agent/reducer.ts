@@ -431,7 +431,7 @@ function applyAgentMessage(state: AgentState, m: AgentMessage): AgentState {
         }
         let turns = state.turns
         const isAgent = !task.taskType || task.taskType === "local_agent" || task.taskType === "remote_agent" || task.taskType === "in_process_teammate"
-        if (isAgent && (m.subtype === "task_started" || m.subtype === "task_notification" && task.status !== existing?.status)) {
+        if (isAgent && (m.subtype === "task_started" || m.subtype === "task_notification" && task.status !== "unknown" && task.status !== existing?.status)) {
           const id = `subagent:${m.uuid ?? `${task.id}:${task.status}`}`
           if (!turns.some(turn => turn.role === "assistant" && turn.blocks.some(block => block.kind === "subagent" && block.id === id)))
             turns = appendNotice(turns, { kind: "subagent", id, taskId: task.id, description: task.description, status: task.status })

@@ -85,6 +85,7 @@ window.runChecks = async () => {
   await show(<Comparison />)
   results.parallelReplay = tools.some((block: any) => block.id === "t1") && document.querySelectorAll('[data-case="replay"] [data-tool-activity]').length === 2
   results.agentTerminal = data.task.tasks[0]?.status === "completed" && !!document.querySelector('[data-case="task"] [data-subagent-state="completed"]')
+  results.agentHistoryLifecycle = data.task.turns.flatMap((turn: any) => turn.blocks ?? []).filter((block: any) => block.kind === "subagent").map((block: any) => block.status).join(",") === "running,completed"
   results.shellVariables = document.querySelector('[data-case="math"]')!.textContent!.includes("$HOME/$USER")
   results.mathFence = !!document.querySelector("[data-math-fence] .katex")
   results.planCard = !!document.querySelector('[data-case="plan"] [data-plan-card] ol')
@@ -520,6 +521,23 @@ window.inspectAppBoundary = async () => {
   await new Promise(requestAnimationFrame)
   const checks = { conversationMinimumWidth: scroller.getBoundingClientRect().width >= 352, diffTitleReadable: header.querySelector<HTMLElement>(".noa-turn-diff-heading > span")!.clientWidth >= 100, panelTabScrollbarHidden: getComputedStyle(tablist).scrollbarWidth === "none", panelTabKeyboardReachable: reachable, panelTabsClearOfToggle: tabs.right <= toggle.left - 7, horizontalContentContained: scroller.scrollWidth <= scroller.clientWidth + 1, diffAboveComposer: card.bottom <= footer.top + 33, answerAboveComposer: response.bottom <= footer.top + 33, composerInsideWindow: input.bottom <= innerHeight && input.left >= 0 && input.right <= innerWidth, controlsInsideCard: Array.from(header.querySelectorAll("button")).every(button => button.getBoundingClientRect().right <= card.right + 1), shellInsideWindow: shell.width <= innerWidth && shell.height <= innerHeight }
   return { width: innerWidth, theme: visualTheme, checks, pass: Object.values(checks).every(Boolean), sizes: { contentWidth: scroller.clientWidth, contentScrollWidth: scroller.scrollWidth, footerTop: footer.top, cardBottom: card.bottom, responseBottom: response.bottom } }
+}
+
+window.checkBackgroundTaskNavigation = async () => {
+  const emit = (envelope: any) => window.boundarySocket.onmessage({ data: JSON.stringify(envelope) })
+  const agent = (message: any) => emit({ kind: "agent", message })
+  emit({ kind: "user", id: "background-user", content: "Run a background build" })
+  agent({ type: "assistant", parent_tool_use_id: null, message: { content: [{ type: "tool_use", id: "background-call", name: "Bash", input: { command: "bun run build", run_in_background: true } }] } })
+  agent({ type: "system", subtype: "task_started", uuid: "background-start", task_id: "background-shell", tool_use_id: "background-call", task_type: "local_bash", description: "Background build" })
+  agent({ type: "user", parent_tool_use_id: null, message: { content: [{ type: "tool_result", tool_use_id: "background-call", content: "Running in background" }] } })
+  await wait(() => !!document.querySelector("[data-work-activity]"))
+  Array.from(document.querySelectorAll<HTMLButtonElement>("[data-work-activity] > button")).at(-1)!.click()
+  await wait(() => !!document.querySelector('[data-tool-activity="background-call"] > button'))
+  document.querySelector<HTMLButtonElement>('[data-tool-activity="background-call"] > button')!.click()
+  await wait(() => Array.from(document.querySelectorAll("button")).some(button => button.textContent === "Open in Activity"))
+  Array.from(document.querySelectorAll<HTMLButtonElement>("button")).find(button => button.textContent === "Open in Activity")!.click()
+  await new Promise(requestAnimationFrame)
+  return document.querySelector('[role="tab"][aria-selected="true"]')?.textContent === "Activity" && document.querySelector("#panel-activity")?.textContent?.includes("Background build") === true
 }
 
 window.inspectPendingBoundary = async () => {
