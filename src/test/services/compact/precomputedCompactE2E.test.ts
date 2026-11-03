@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
+import { afterAll, afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
 import type { Message } from '../../../types/message.js'
 
 // End-to-end coverage for the precompute HAPPY PATH.
@@ -18,6 +18,12 @@ let summaryIsApiError = false
 // Keep the real module intact and override only the summary API call —
 // compact.ts has many other exports the import graph depends on.
 const actualCompact = await import('../../../services/compact/compact.js')
+// mock.module outlives this file within the bun test process; restore the real
+// exports so later files (compact.test.ts) don't run against these stubs.
+const realCompact = { ...actualCompact }
+afterAll(() => {
+  mock.module('../../../services/compact/compact.js', () => realCompact)
+})
 
 mock.module('../../../services/compact/compact.js', () => ({
   ...actualCompact,

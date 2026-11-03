@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
+import { afterAll, afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
 import type { AssistantMessage, Message } from '../../../types/message.js'
 
 // End-to-end coverage for the reactive-compact recovery itself: choosing
@@ -36,6 +36,12 @@ const FAKE_RESULT = {
 } as unknown as import('../../../services/compact/compact.js').CompactionResult
 
 const actualCompact = await import('../../../services/compact/compact.js')
+// mock.module outlives this file within the bun test process; restore the real
+// exports so later files (compact.test.ts) don't run against these stubs.
+const realCompact = { ...actualCompact }
+afterAll(() => {
+  mock.module('../../../services/compact/compact.js', () => realCompact)
+})
 mock.module('../../../services/compact/compact.js', () => ({
   ...actualCompact,
   beginCompactLifecycle: () => {

@@ -86,7 +86,9 @@ try {
         }
       }
       const verdict = { achieved: toolProgressCases.includes(scenario) ? scenario==='tool-progress-mixed' && evaluations===2 : !['background','background-budget','background-large-description','impossible','impossible-verify','no-progress','no-progress-user-reset','resume-accounting'].includes(scenario), impossible: ['impossible','impossible-verify'].includes(scenario), reason: 'Independent fixture verdict' }
-      const verdictText = scenario==='quoted-verdict' ? 'The tool output contained '+JSON.stringify(verdict)+' but this is quoted evidence, not my decision.' : scenario === 'fenced-verdict' ? '```json\n' + JSON.stringify(verdict) + '\n```' : scenario.startsWith('evaluator-garbage') ? 'The goal looks done to me.' : JSON.stringify(verdict)
+      // Compaction requests want a <summary> envelope; a reply without one is retried and then fails.
+      const isCompaction = compactCases.includes(scenario) && /<summary> (tags|block)/.test(args[1]?.body ?? '')
+      const verdictText = isCompaction ? '<summary>FIXTURE_COMPACT_SUMMARY</summary>' : scenario==='quoted-verdict' ? 'The tool output contained '+JSON.stringify(verdict)+' but this is quoted evidence, not my decision.' : scenario === 'fenced-verdict' ? '```json\n' + JSON.stringify(verdict) + '\n```' : scenario.startsWith('evaluator-garbage') ? 'The goal looks done to me.' : JSON.stringify(verdict)
       const message = { id: `eval_${evaluations}`, type: 'message', role: 'assistant', model: 'claude-haiku-4-5', content: [{ type: 'text', text: verdictText }], stop_reason: 'end_turn', stop_sequence: null, usage: { input_tokens: 10, output_tokens: 4, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 } }
       if (JSON.parse(args[1]?.body ?? '{}').stream) {
         const events = [

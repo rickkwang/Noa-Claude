@@ -222,6 +222,10 @@ try {
             tmux('send-keys', '-t', 'cd', '-l', '/cd ' + realpathSync(target)); await new Promise(r => setTimeout(r, 300));
             tmux('send-keys', '-t', 'cd', 'Enter');
             await until('cd confirmation', () => screen().includes('Yes, move here'));
+            // "No, stay put" is the default, and an Enter within 500ms of the prompt opening is ignored.
+            tmux('send-keys', '-t', 'cd', 'Down');
+            await until('yes selected', () => /❯\s*(\d+\.\s*)?Yes, move here/.test(screen()));
+            await new Promise(r => setTimeout(r, 600));
             tmux('send-keys', '-t', 'cd', 'Enter');
             await until('persisted trust', () => readConfig().projects?.[realpathSync(target)]?.hasTrustDialogAccepted === true);
           }

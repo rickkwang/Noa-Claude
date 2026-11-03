@@ -198,7 +198,11 @@ function check(name, { dir, exit, stdout, stderr, workspace }) {
     assert.equal(existsSync(join(dir, 'hook-ran.txt')), false, 'project SessionStart hook ran under --safe-mode');
   }
   if (name === 'safe-mode-auth-works') {
-    assert.equal(headers['x-api-key'], 'local-e2e-dummy', 'API key was not sent under --safe-mode');
+    // SDK 1.x sends the API key as a Bearer token; older versions used x-api-key.
+    assert.ok(
+      headers['x-api-key'] === 'local-e2e-dummy' || headers.authorization === 'Bearer local-e2e-dummy',
+      `API key was not sent under --safe-mode: ${JSON.stringify({ 'x-api-key': headers['x-api-key'], authorization: headers.authorization })}`,
+    );
   }
   if (name === 'restricted-ignores-project-settings') {
     assert.equal(existsSync(join(dir, 'hook-ran.txt')), false, 'project SessionStart hook ran under --restricted');

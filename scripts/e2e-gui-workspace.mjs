@@ -11,7 +11,7 @@ const repo = join(dir, 'repo')
 const port = 19587
 const git = (...args) => execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8' }).trim()
 await mkdir(repo)
-const child = spawn('bun', ['run', 'server/main.ts'], { cwd: join(root, 'gui'), env: { ...process.env, NOA_GUI_PORT: String(port), CLAUDE_CONFIG_DIR: join(dir, 'config') }, stdio: ['ignore', 'pipe', 'pipe'] })
+const child = spawn('bun', ['run', 'server/main.ts'], { cwd: join(root, 'gui'), env: { ...process.env, NOA_GUI_PORT: String(port), NOA_GUI_INSECURE: '1', CLAUDE_CONFIG_DIR: join(dir, 'config') }, stdio: ['ignore', 'pipe', 'pipe'] })
 let log = ''
 child.stdout.on('data', (data) => { log += data })
 child.stderr.on('data', (data) => { log += data })
@@ -182,6 +182,10 @@ try {
   check('non-repository initialization and unborn working-tree diff')
   const collisionA = join(dir, 'a-b'), collisionB = join(dir, 'a/b')
   await mkdir(collisionA); await mkdir(collisionB, { recursive: true })
+  for (const path of [collisionA, collisionB]) {
+    const listed = await fetch(`http://127.0.0.1:${port}/api/projects`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path }) })
+    assert.equal(listed.status, 200)
+  }
   const collisionId = crypto.randomUUID()
   const collisionDir = join(dir, 'config', 'projects', (await realpath(collisionA)).replace(/[^a-zA-Z0-9]/g, '-'))
   await mkdir(collisionDir, { recursive: true })
