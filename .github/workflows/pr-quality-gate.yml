@@ -91,8 +91,9 @@ jobs:
       - uses: ./.github/actions/setup
       - name: Runtime health
         run: bun run check:runtime
+      # gui/ tests run in the gui job, where its dependencies are installed.
       - name: Critical path tests
-        run: bun run test
+        run: bun test ./src
 
   gui:
     needs: changes
@@ -145,7 +146,6 @@ jobs:
               bun ./scripts/e2e-agent-lifecycle.mjs
               bun run e2e:bare
               bun run e2e:restricted-safe
-              bun run e2e:multiedit
           - name: compiled loop 2
             build: bun run compile
             run: |
@@ -156,24 +156,28 @@ jobs:
             run: |
               bun run e2e:tool-boundaries
               bun run e2e:startup
-          - name: compiled harness and background
+          - name: compiled harness, background and multiedit
             build: bun run compile
             run: |
               bun run e2e:deferred
               bun run e2e:goal
               bun run e2e:state
               bun run e2e:background
+              bun run e2e:multiedit
           # build:dev:full only proves the bundle resolves; the placeholder modules
           # behind the experimental flags have crashed it at startup before.
+          # Coordination is the slowest script under this bundle, so its shard
+          # takes one third of the loop cases and the other shard two thirds.
           - name: full-feature loop 1
             build: bun run build:dev:full
             run: |
-              bun ./scripts/e2e-agent-loop.mjs --entry dist/main-dev.js --shard 1/2
+              bun ./scripts/e2e-agent-loop.mjs --entry dist/main-dev.js --shard 1/3
+              bun ./scripts/e2e-agent-loop.mjs --entry dist/main-dev.js --shard 2/3
               bun ./scripts/e2e-agent-lifecycle.mjs --entry dist/main-dev.js
           - name: full-feature loop 2
             build: bun run build:dev:full
             run: |
-              bun ./scripts/e2e-agent-loop.mjs --entry dist/main-dev.js --shard 2/2
+              bun ./scripts/e2e-agent-loop.mjs --entry dist/main-dev.js --shard 3/3
               bun ./scripts/e2e-agent-coordination.mjs --entry dist/main-dev.js
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4

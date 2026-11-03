@@ -13,9 +13,9 @@ describe('GitHub Actions workflow contracts', () => {
     const workflow = parse(
       readFileSync(resolve(repoRoot, '.github/workflows/pr-quality-gate.yml'), 'utf8'),
     )
-    const commands = workflow.jobs.quality.steps
-      .map((step: { run?: string }) => step.run)
-      .filter((command: unknown): command is string => typeof command === 'string')
+    const commands = Object.values(workflow.jobs).flatMap((job: any) =>
+      (job.steps ?? []).map((step: { run?: string }) => step.run),
+    )
 
     expect(commands).toContain('bun run check:quality')
   })
@@ -78,6 +78,13 @@ describe('GitHub Actions workflow contracts', () => {
   })
 
   test('CI workflows install ripgrep before running health checks', () => {
+    const setup = parse(
+      readFileSync(resolve(repoRoot, '.github/actions/setup/action.yml'), 'utf8'),
+    )
+    const ripgrepStep = setup.runs.steps.find((step: { name?: string }) => step.name === 'Install ripgrep')
+    expect(ripgrepStep.run).toContain('ripgrep/releases/download')
+    expect(setup.inputs.ripgrep.default).toBe('true')
+
     for (const workflowFile of [
       'pr-quality-gate.yml',
       'smoke-engineering-live.yml',
@@ -85,12 +92,17 @@ describe('GitHub Actions workflow contracts', () => {
       const workflow = parse(
         readFileSync(resolve(repoRoot, '.github/workflows', workflowFile), 'utf8'),
       )
-      const job = workflow.jobs.quality ?? workflow.jobs['live-smoke']
-      const commands = job.steps
-        .map((step: { run?: string }) => step.run)
-        .filter((command: unknown): command is string => typeof command === 'string')
-
-      expect(commands.some((command: string) => command.includes('install -y ripgrep'))).toBe(true)
+      const healthJobs = Object.values(workflow.jobs).filter((job: any) =>
+        job.steps.some((step: { run?: string }) => /check:runtime|smoke:engine:live/.test(step.run ?? '')),
+      )
+      expect(healthJobs.length).toBeGreaterThan(0)
+      for (const job of healthJobs as any[]) {
+        const setupIndex = job.steps.findIndex((step: { uses?: string }) => step.uses === './.github/actions/setup')
+        const healthIndex = job.steps.findIndex((step: { run?: string }) => /check:runtime|smoke:engine:live/.test(step.run ?? ''))
+        expect(setupIndex).toBeGreaterThanOrEqual(0)
+        expect(setupIndex).toBeLessThan(healthIndex)
+        expect(job.steps[setupIndex].with?.ripgrep ?? 'true').toBe('true')
+      }
     }
   })
 })

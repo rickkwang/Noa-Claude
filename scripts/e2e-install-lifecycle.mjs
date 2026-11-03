@@ -445,7 +445,8 @@ try {
   console.error(err)
 } finally {
   writeEvidence(fatal)
-  rmSync(work, { recursive: true, force: true })
+  // Removing the installed copies' node_modules takes ~15s; CI runners are discarded anyway.
+  if (!process.env.CI) rmSync(work, { recursive: true, force: true })
 }
 
 const passed = checks.filter((c) => c.ok).length
