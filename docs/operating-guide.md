@@ -296,3 +296,4 @@ Track these as release-gating regressions, not just ad hoc metrics:
 - resume latency from existing transcript
 - non-interactive `--print` completion time
 
+ 
