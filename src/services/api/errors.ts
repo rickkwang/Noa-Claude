@@ -139,6 +139,39 @@ function isContextOverflowErrorMessage(
 }
 
 /**
+ * Bedrock's bare overflow, "400 Input is too long.", as plain text or a JSON
+ * body. Unlike "input is too long for requested model" it does not say
+ * whether tokens or request bytes overflowed, so the caller checks for media.
+ */
+function isBareInputTooLongError(message: string): boolean {
+  const body = message.trim().replace(/^400 /, '')
+  return body.startsWith('{')
+    ? /"message":\s*"input is too long\.?"/i.test(body) &&
+        !body.includes('"policy_blocked"')
+    : /^input is too long\.?$/i.test(body)
+}
+
+function hasMediaBlocks(messages: (UserMessage | AssistantMessage)[]): boolean {
+  const isMedia = (block: { type?: string }) =>
+    block.type === 'image' || block.type === 'document'
+  return messages.some(
+    m =>
+      m.type === 'user' &&
+      Array.isArray(m.message.content) &&
+      m.message.content.some(
+        block =>
+          isMedia(block) ||
+          (block.type === 'tool_result' &&
+            Array.isArray(block.content) &&
+            block.content.some(isMedia)),
+      ),
+  )
+}
+
+// errorDetails prefix for a size rejection that removing media may fix.
+const REQUEST_TOO_LARGE_DETAILS_PREFIX = 'request_too_large: '
+
+/**
  * Returns how many tokens over the limit a prompt-too-long error reports,
  * or undefined if the message isn't PTL or its errorDetails are unparseable.
  * Reactive compact uses this gap to jump past multiple groups in one retry
@@ -165,16 +198,16 @@ export function getPromptTooLongTokenGap(
  * can fix? Reactive compact's summarize retry uses this to decide whether to
  * strip and retry (media error) or bail (anything else).
  *
- * Patterns MUST stay in sync with the getAssistantMessageFromError branches
- * that populate errorDetails (~L523 PDF, ~L560 image, ~L573 many-image) and
- * the classifyAPIError branches (~L929-946). The closed loop: errorDetails is
- * only set after those branches already matched these same substrings, so
- * isMediaSizeError(errorDetails) is tautologically true for that path. API
- * wording drift causes graceful degradation (errorDetails stays undefined,
- * caller short-circuits), not a false negative.
+ * Patterns MUST stay in sync with the mapAssistantMessageFromError branches
+ * that populate errorDetails (PDF pages, image size, many-image dimensions,
+ * Bedrock's bare "Input is too long.") and the matching classifyAPIError
+ * branches. errorDetails is only set after those branches matched, so API
+ * wording drift degrades gracefully (errorDetails stays undefined, caller
+ * short-circuits) rather than producing a false negative.
  */
 export function isMediaSizeError(raw: string): boolean {
   return (
+    raw.startsWith(REQUEST_TOO_LARGE_DETAILS_PREFIX) ||
     (raw.includes('image exceeds') && raw.includes('maximum')) ||
     (raw.includes('image dimensions exceed') && raw.includes('many-image')) ||
     /maximum of \d+ PDF pages/.test(raw)
@@ -184,8 +217,8 @@ export function isMediaSizeError(raw: string): boolean {
 /**
  * Message-level predicate: is this assistant message a media-size rejection?
  * Parallel to isPromptTooLongMessage. Checks errorDetails (the raw API error
- * string populated by the getAssistantMessageFromError branches at ~L523/560/573)
- * rather than content text, since media errors have per-variant content strings.
+ * string the mapAssistantMessageFromError media branches populate) rather
+ * than content text, since media errors have per-variant content strings.
  */
 export function isMediaSizeErrorMessage(msg: AssistantMessage): boolean {
   return (
@@ -235,12 +268,14 @@ export function getImageTooLargeErrorMessage(): string {
     ? 'Image was too large. Try resizing the image or using a different approach.'
     : 'Image was too large. Double press esc to go back and try again with a smaller image.'
 }
-export function getRequestTooLargeErrorMessage(): string {
+export function getRequestTooLargeErrorMessage(
   // The request-level cap is the API's 32MB total, not the 20MB per-PDF target
-  const limits = `max ${formatFileSize(API_REQUEST_MAX_SIZE)}`
+  limit: string | null = `max ${formatFileSize(API_REQUEST_MAX_SIZE)}`,
+): string {
+  const head = limit ? `Request too large (${limit}).` : 'Request too large.'
   return getIsNonInteractiveSession()
-    ? `Request too large (${limits}). Accumulated images and attachments in the conversation pushed the request over the limit. Remove older images or compact the conversation.`
-    : `Request too large (${limits}). Accumulated images and attachments in the conversation pushed the request over the limit. Run /compact, or double press esc to go back and remove attachments.`
+    ? `${head} Accumulated images and attachments in the conversation pushed the request over the limit. Remove older images or compact the conversation.`
+    : `${head} Accumulated images and attachments in the conversation pushed the request over the limit. Run /compact, or double press esc to go back and remove attachments.`
 }
 /**
  * Fable / Mythos are Covered Models: they require 30-day data retention and are
@@ -474,7 +509,7 @@ export function getAssistantMessageFromError(
   else if (error instanceof APIError) {
     if (error.status === 403 && message.error === 'rate_limit') category = 'rate_limit'
     else if (error.status === 402 || error.message.includes('Your credit balance is too low') || isLongContextCreditsError(error.message)) category = 'credit'
-    else if (isContextOverflowErrorMessage(error.message) || error.status === 413) category = 'context'
+    else if (isContextOverflowErrorMessage(error.message) || isBareInputTooLongError(error.message) || error.status === 413) category = 'context'
     else if (error.status === 401 || error.status === 403) category = 'auth'
     else if (error.status === 404 || error.message.toLowerCase().includes('invalid model name')) category = 'model'
     else if (error.status === 429) category = 'rate_limit'
@@ -646,6 +681,28 @@ function mapAssistantMessageFromError(
       content: PROMPT_TOO_LONG_ERROR_MESSAGE,
       error: 'invalid_request',
       errorDetails: error.message,
+    })
+  }
+
+  // Bedrock's bare "Input is too long." also covers a request over the byte
+  // cap, which images fill long before tokens run out: with media in (or
+  // unknown), let reactive compact strip it; without, it is a token overflow.
+  if (
+    error instanceof Error &&
+    (!(error instanceof APIError) || error.status === 400) &&
+    isBareInputTooLongError(error.message)
+  ) {
+    if (options?.messagesForAPI && !hasMediaBlocks(options.messagesForAPI)) {
+      return createAssistantAPIErrorMessage({
+        content: PROMPT_TOO_LONG_ERROR_MESSAGE,
+        error: 'invalid_request',
+        errorDetails: error.message,
+      })
+    }
+    return createAssistantAPIErrorMessage({
+      content: getRequestTooLargeErrorMessage(null),
+      error: 'invalid_request',
+      errorDetails: `${REQUEST_TOO_LARGE_DETAILS_PREFIX}${error.message}`,
     })
   }
 

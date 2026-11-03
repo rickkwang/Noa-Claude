@@ -18,9 +18,9 @@ const artifacts = resolve(option('--artifacts') || mkdtempSync(join(tmpdir(), 'n
 mkdirSync(artifacts, { recursive: true });
 const model = 'claude-sonnet-4-6';
 // A 200k-window model, so a gateway naming a 1M model in its responses offers a "larger window".
-const modelFor = scenario => option('--model') || (scenario === 'gateway-model-name' ? 'claude-haiku-4-5' : scenario === 'preserved-thinking' ? 'claude-opus-5-5' : scenario === 'mandatory-thinking' ? 'kimi/k3.1-pro' : scenario.startsWith('openai-responses') ? 'gpt-6.1-sol' : model);
+const modelFor = scenario => option('--model') || (scenario === 'gateway-model-name' ? 'claude-haiku-4-5' : scenario === 'preserved-thinking' ? 'claude-opus-5-5' : scenario === 'opus-1m-cache-off' ? 'claude-opus-4-6[1m]' : scenario === 'mandatory-thinking' ? 'kimi/k3.1-pro' : scenario.startsWith('openai-responses') ? 'gpt-6.1-sol' : model);
 const sentinel = 'KEEP_IDENTIFIER=loop-sentinel-42';
-const cases = ['agent-nested', 'agent-budget', 'agent-budget-resume', 'agent-stop-pending', 'agent-owned-results', 'agent-owned-auto', 'auto-plan-race', 'auto-stage2-error', 'agent-cascade-stop', 'agent-schema', 'agent-schema-bg', 'hook-output', 'hook-output-null', 'blocking-limit', 'image-error', 'small-window-overflow', 'read', 'large-output', 'max-turns', 'malformed', 'empty', 'alternating', 'fallback', 'provider-quota', 'refusal', 'refusal-repeat', 'truncated', 'tool-input-streaming', 'tool-input-nonstream', 'stale-signature', 'budget-streaming', 'budget-nonstream', 'permission-deny', 'deny-rule', 'mode-auto', 'mode-bypass', 'mode-bypass-off', 'hook-block', 'compact-resume', 'task-crud', 'task-metadata-race', 'task-dependency-race', 'goal-child-usage', 'agent-custom-fork', 'hook-composition', 'tombstone-resume', 'concurrency-streaming', 'concurrency-nonstream', 'background-deadline', 'openai-overflow', 'openai-usage', 'openai-usage-nonstream', 'openai-tools', 'openai-max-tokens-cap', 'openai-max-tokens-vllm', 'openai-responses', 'openai-responses-effort', 'bedrock-overflow', 'field-reject', 'gateway-model-name', 'preserved-thinking', 'mandatory-thinking'].filter(name => !option('--case') || name === option('--case'));
+const cases = ['agent-nested', 'agent-budget', 'agent-budget-resume', 'agent-stop-pending', 'agent-owned-results', 'agent-owned-auto', 'auto-plan-race', 'auto-stage2-error', 'agent-cascade-stop', 'agent-schema', 'agent-schema-bg', 'hook-output', 'hook-output-null', 'blocking-limit', 'image-error', 'small-window-overflow', 'read', 'large-output', 'max-turns', 'malformed', 'empty', 'alternating', 'fallback', 'provider-quota', 'refusal', 'refusal-repeat', 'truncated', 'tool-input-streaming', 'tool-input-nonstream', 'stale-signature', 'budget-streaming', 'budget-nonstream', 'permission-deny', 'deny-rule', 'mode-auto', 'mode-bypass', 'mode-bypass-off', 'hook-block', 'compact-resume', 'task-crud', 'task-metadata-race', 'task-dependency-race', 'goal-child-usage', 'agent-custom-fork', 'hook-composition', 'tombstone-resume', 'concurrency-streaming', 'concurrency-nonstream', 'background-deadline', 'openai-overflow', 'openai-usage', 'openai-usage-nonstream', 'openai-tools', 'openai-max-tokens-cap', 'openai-max-tokens-vllm', 'openai-responses', 'openai-responses-effort', 'bedrock-overflow', 'bedrock-bare-overflow', 'bedrock-media-overflow', 'opus-1m-cache-off', 'field-reject', 'gateway-model-name', 'preserved-thinking', 'mandatory-thinking'].filter(name => !option('--case') || name === option('--case'));
 assert.ok(cases.length > 0, 'unknown --case');
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const textOf = content => typeof content === 'string' ? content : (content || []).filter(b => b.type === 'text').map(b => b.text).join('\n');
@@ -141,6 +141,12 @@ const server = createServer(async (req, res) => {
     // checks the wording → reactive compact path, not Bedrock's own client.
     if (active.case === 'bedrock-overflow' && !summary && n === 2) {
       error(400, 'invalid_request_error', 'Input is too long for requested model.');
+      return;
+    }
+    // Bedrock's bare wording: a token overflow without images in the request,
+    // a byte overflow (strip the media) with one.
+    if ((active.case === 'bedrock-bare-overflow' || active.case === 'bedrock-media-overflow') && !summary && n === 2) {
+      error(400, 'invalid_request_error', 'Input is too long.');
       return;
     }
     if(active.case==='provider-quota'){error(403,'permission_error',"You've reached your weekly (7-day) usage limit. Your quota will reset when the current 7-day window ends.");return;}
@@ -351,7 +357,7 @@ const server = createServer(async (req, res) => {
       content = [
         ...(active.case === 'compact-resume' ? [{ type: 'text', text: 'prior-context '.repeat(5000) }] : []),
         // GPT and Kimi fill optional arguments with "" (pages: "" must not fail Read).
-        { type: 'tool_use', id: `toolu_${n}`, name: 'Read', input: { file_path: join(active.dir, 'fixture.txt'), ...((active.case === 'read' || active.case.startsWith('openai-responses')) && { pages: '' }) } },
+        { type: 'tool_use', id: `toolu_${n}`, name: 'Read', input: { file_path: join(active.dir, active.case === 'bedrock-media-overflow' ? 'fixture.png' : 'fixture.txt'), ...((active.case === 'read' || active.case.startsWith('openai-responses')) && { pages: '' }) } },
         ...(active.case.startsWith('openai-responses') ? [{ type: 'tool_use', id: 'clear_task', name: 'TaskUpdate', input: { taskId: '1', description: '', owner: '' } }] : []),
       ]; stop = 'tool_use';
     } else {
@@ -445,6 +451,8 @@ async function run(executable, scenario, extra = [], input = 'Run the local loop
   const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => ['PATH', 'HOME', 'TMPDIR', 'USER', 'LOGNAME', 'SHELL', 'LANG', 'LC_ALL'].includes(k)));
   Object.assign(env, {
     ...(scenario==='blocking-limit' && {DISABLE_AUTO_COMPACT:'1'}),
+    // [1m] is a real opt-in on Opus 4.6 (inert, and stripped, on newer Opus).
+    ...(scenario==='opus-1m-cache-off' && {DISABLE_PROMPT_CACHING_OPUS:'1', ANTHROPIC_DEFAULT_OPUS_MODEL:'claude-opus-4-6'}),
     ...(scenario === 'mode-bypass-off' && { NOA_CLAUDE_BASH_FIRST: '0' }),
     ...(scenario === 'mode-bypass' && { NOA_CLAUDE_BASH_FIRST_VARIANT: 'relaxed' }),
     // Size-based microcompact fires on the second large tool result here.
@@ -558,6 +566,7 @@ try {
       const dir = join(artifacts, `${executable === entry ? 'candidate' : 'comparison'}-${scenario}`);
       mkdirSync(dir, { recursive: true });
       writeFileSync(join(dir, 'fixture.txt'), 'LOCAL_FIXTURE_42\n');
+      writeFileSync(join(dir, 'fixture.png'), Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==', 'base64'));
       if (scenario === 'preserved-thinking') for (const i of [1, 2, 3]) writeFileSync(join(dir, `pt${i}.txt`), Array.from({ length: 1500 }, (_, l) => `pt${i} line ${l} ${'x'.repeat(30)}`).join('\n'));
       active = { case: scenario, dir, requests: [], invocations: [], summaries: 0, oversized: 0, rejected: [] };
       let passed = false, failure, observation, runResult;
@@ -654,6 +663,14 @@ try {
             assert.equal(active.summaries, 1, 'context overflow did not trigger reactive compact');
             assert.equal(count, scenario==='small-window-overflow'?5:4);
             assert.ok(JSON.stringify(active.requests.at(-1).body.messages).includes(sentinel), 'retry after compaction lost the original constraint');
+            if (scenario === 'bedrock-media-overflow') {
+              assert.ok(JSON.stringify(active.requests[1].body.messages).includes('"type":"image"'), 'fixture image never reached the request');
+              assert.ok(active.requests.slice(2).every(r => !JSON.stringify(r.body.messages).includes('"type":"image"')), 'image was not stripped after the byte overflow');
+            }
+          } else if (scenario === 'opus-1m-cache-off') {
+            assert.equal(runResult.code, 0, `run failed: ${runResult.result?.result}`); assert.equal(runResult.result.result, 'AUDIT_OK');
+            assert.ok(main.length > 0 && main.every(r => r.body.model === 'claude-opus-4-6'), 'main loop did not run on the default Opus');
+            assert.ok(main.every(r => !JSON.stringify(r.body).includes('cache_control')), 'DISABLE_PROMPT_CACHING_OPUS ignored for the [1m] variant');
           } else if (scenario === 'gateway-model-name') {
             assert.equal(runResult.code, 0, `run failed: ${runResult.result.result}`); assert.equal(runResult.result.result, 'AUDIT_OK');
             assert.equal(active.summaries, 1, 'near-full context did not compact');

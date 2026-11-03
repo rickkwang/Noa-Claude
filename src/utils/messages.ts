@@ -2160,6 +2160,7 @@ export function normalizeMessagesForAPI(
     [getPdfInvalidErrorMessage()]: new Set(['document']),
     [getImageTooLargeErrorMessage()]: new Set(['image']),
     [getRequestTooLargeErrorMessage()]: new Set(['document', 'image']),
+    [getRequestTooLargeErrorMessage(null)]: new Set(['document', 'image']),
   }
 
   // Walk the reordered messages to build a targeted strip map:

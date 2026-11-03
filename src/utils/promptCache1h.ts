@@ -19,6 +19,7 @@ import {
   getDefaultOpusModel,
   getDefaultSonnetModel,
   getSmallFastModel,
+  isSameModel,
 } from './model/model.js'
 
 export {
@@ -51,42 +52,16 @@ export function getPromptCache1hDiagnostic(
   model?: string,
 ): PromptCache1hDiagnostic {
   const resolvedModel = model ?? getDefaultSonnetModel()
-  if (isEnvTruthy(process.env.DISABLE_PROMPT_CACHING)) {
-    return {
-      enabled: false,
-      reason: 'prompt_caching_disabled',
-      querySource,
-      userEligible: false,
-      allowlist: [],
-    }
-  }
+  // Same per-model rules as getPromptCachingEnabled (services/api/claude.ts),
+  // which this module can't import without the claude.ts cycle.
   if (
-    isEnvTruthy(process.env.DISABLE_PROMPT_CACHING_HAIKU) &&
-    resolvedModel === getSmallFastModel()
-  ) {
-    return {
-      enabled: false,
-      reason: 'prompt_caching_disabled',
-      querySource,
-      userEligible: false,
-      allowlist: [],
-    }
-  }
-  if (
-    isEnvTruthy(process.env.DISABLE_PROMPT_CACHING_SONNET) &&
-    resolvedModel === getDefaultSonnetModel()
-  ) {
-    return {
-      enabled: false,
-      reason: 'prompt_caching_disabled',
-      querySource,
-      userEligible: false,
-      allowlist: [],
-    }
-  }
-  if (
-    isEnvTruthy(process.env.DISABLE_PROMPT_CACHING_OPUS) &&
-    resolvedModel === getDefaultOpusModel()
+    isEnvTruthy(process.env.DISABLE_PROMPT_CACHING) ||
+    (isEnvTruthy(process.env.DISABLE_PROMPT_CACHING_HAIKU) &&
+      isSameModel(resolvedModel, getSmallFastModel())) ||
+    (isEnvTruthy(process.env.DISABLE_PROMPT_CACHING_SONNET) &&
+      isSameModel(resolvedModel, getDefaultSonnetModel())) ||
+    (isEnvTruthy(process.env.DISABLE_PROMPT_CACHING_OPUS) &&
+      isSameModel(resolvedModel, getDefaultOpusModel()))
   ) {
     return {
       enabled: false,

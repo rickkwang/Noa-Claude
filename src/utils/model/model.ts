@@ -944,3 +944,29 @@ export function getMarketingNameForModel(modelId: string | undefined): string | 
 export function normalizeModelStringForAPI(model: string): string {
   return model.replace(/\[(1|2)m\]/gi, '')
 }
+
+/**
+ * Whether two model strings name the same model, across a `[1m]` suffix,
+ * provider prefixes and ids, and a dated vs undated id. Dates only decide
+ * when both sides carry one. A model this build doesn't know must match by
+ * its whole id: getCanonicalName's generic fallback would equate any two
+ * `claude-<word>-…` names.
+ */
+export function isSameModel(a: string, b: string): boolean {
+  const known = new Set(
+    Object.values(ALL_MODEL_CONFIGS).map(c => getCanonicalName(c.firstParty)),
+  )
+  const parse = (model: string) => {
+    const id = normalizeModelStringForAPI(model).toLowerCase()
+    const name = getCanonicalName(id)
+    return known.has(name)
+      ? { name, date: id.match(/-(\d{8})(?:\b|$)/)?.[1] }
+      : { name: id, date: undefined }
+  }
+  const x = parse(a)
+  const y = parse(b)
+  return (
+    x.name === y.name &&
+    (x.date === undefined || y.date === undefined || x.date === y.date)
+  )
+}

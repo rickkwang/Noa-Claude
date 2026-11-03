@@ -370,10 +370,69 @@ export function selectPTLPartialPivot(
  *
  * The dropped content still exists in the session transcript, so the marker
  * this leaves behind names the file the model can read it back from.
+ *
+ * A prior compact summary, like the opening-round summary standing in for a
+ * condensed first round, is the only record of the history before it, so
+ * when the gap is known the rounds are counted without it and any summary in
+ * the dropped head is put back in front. With no parseable gap the plain 20%
+ * drop applies, summaries included: nothing says the summary isn't what
+ * overflows.
  */
 export function truncateHeadForPTLRetry(
   messages: Message[],
   ptlResponse: AssistantMessage,
+): Message[] | null {
+  const tokenGap = getPromptTooLongTokenGap(ptlResponse)
+  if (tokenGap !== undefined) {
+    const kept = dropOldestRoundsKeepingSummaries(messages, tokenGap)
+    if (kept) return kept
+  }
+  return dropOldestRounds(messages, tokenGap)
+}
+
+function isCompactSummaryMessage(message: Message): boolean {
+  if (message.type !== 'user') return false
+  if (message.isCompactSummary === true) return true
+  const content = message.message.content
+  return (
+    message.isMeta === true &&
+    typeof content === 'string' &&
+    content.startsWith(OPENING_ROUND_SUMMARY_MARKER)
+  )
+}
+
+function dropOldestRoundsKeepingSummaries(
+  messages: Message[],
+  tokenGap: number,
+): Message[] | null {
+  const truncated = dropOldestRounds(
+    messages.filter(m => !isCompactSummaryMessage(m)),
+    tokenGap,
+  )
+  if (!truncated) return null
+  const firstKept = truncated.find(m => messages.includes(m))
+  const cut = firstKept === undefined ? -1 : messages.indexOf(firstKept)
+  if (cut <= 0) return null
+  const dropped = messages.slice(0, cut)
+  // Summaries alone in the head: keeping them would make no progress.
+  if (
+    roughTokenCountEstimationForMessages(
+      dropped.filter(m => !isCompactSummaryMessage(m)),
+    ) === 0
+  ) {
+    return null
+  }
+  const marker = truncated[0] === firstKept ? [] : [truncated[0]!]
+  return [
+    ...dropped.filter(isCompactSummaryMessage),
+    ...marker,
+    ...messages.slice(cut),
+  ]
+}
+
+function dropOldestRounds(
+  messages: Message[],
+  tokenGap: number | undefined,
 ): Message[] | null {
   // Strip our own synthetic marker from a previous retry before grouping.
   // Otherwise it becomes its own group 0 and the 20% fallback stalls
@@ -389,7 +448,6 @@ export function truncateHeadForPTLRetry(
   const groups = groupMessagesByApiRound(input)
   if (groups.length < 2) return null
 
-  const tokenGap = getPromptTooLongTokenGap(ptlResponse)
   let dropCount: number
   if (tokenGap !== undefined) {
     let acc = 0

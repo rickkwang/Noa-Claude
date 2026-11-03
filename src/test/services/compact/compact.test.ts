@@ -7,6 +7,7 @@ import {
   getPartialCompactMessagesToSummarize,
   isStaleFullCompactSummary,
   partialCompactConversation,
+  OPENING_ROUND_SUMMARY_MARKER,
   PTL_RETRY_MARKER,
   selectPTLPartialPivot,
   snapshotCompactContextState,
@@ -547,6 +548,42 @@ describe('truncateHeadForPTLRetry', () => {
     // Progress, not a marker-only no-op.
     expect(second).not.toBeNull()
     expect(second!.length).toBeLessThan(first!.length)
+  })
+
+  test('keeps a prior compact summary from the dropped head when the gap is known', () => {
+    const summary = {
+      ...makeUserMessage('s-0', 'PRIOR_SUMMARY'),
+      isCompactSummary: true,
+    } as Message
+    const messages = [summary, ...makeGroupedConversation()]
+    const gap = makePTLResponse('prompt is too long: 200400 tokens > 200000')
+
+    const first = truncateHeadForPTLRetry(messages, gap)
+    expect(first![0]).toBe(summary)
+    expect(first!.some(m => (m.uuid as string) === 'a-0')).toBe(false)
+    // Retries keep it too, and still make progress.
+    const second = truncateHeadForPTLRetry(first!, gap)
+    expect(second![0]).toBe(summary)
+    expect(second!.length).toBeLessThan(first!.length)
+
+    // No parseable gap: the plain head drop, summary included.
+    const blind = truncateHeadForPTLRetry(
+      messages,
+      makePTLResponse('prompt is too long'),
+    )
+    expect(blind!.includes(summary)).toBe(false)
+  })
+
+  test('keeps an opening-round summary stand-in like a compact summary', () => {
+    const opening = {
+      ...makeUserMessage('o-0', `${OPENING_ROUND_SUMMARY_MARKER}\n\nOPENING_SUMMARY`),
+      isMeta: true,
+    } as Message
+    const out = truncateHeadForPTLRetry(
+      [opening, ...makeGroupedConversation()],
+      makePTLResponse('prompt is too long: 200400 tokens > 200000'),
+    )
+    expect(out![0]).toBe(opening)
   })
 
 })

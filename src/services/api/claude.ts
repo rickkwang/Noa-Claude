@@ -96,6 +96,7 @@ import {
   getDefaultSonnetModel,
   getSmallFastModel,
   isNonCustomOpusModel,
+  isSameModel,
 } from '../../utils/model/model.js'
 import {
   asSystemPrompt,
@@ -391,24 +392,24 @@ export function getPromptCachingEnabled(model: string): boolean {
   // Global disable takes precedence
   if (isEnvTruthy(process.env.DISABLE_PROMPT_CACHING)) return false
 
-  // Check if we should disable for small/fast model
-  if (isEnvTruthy(process.env.DISABLE_PROMPT_CACHING_HAIKU)) {
-    const smallFastModel = getSmallFastModel()
-    if (model === smallFastModel) return false
+  if (
+    isEnvTruthy(process.env.DISABLE_PROMPT_CACHING_HAIKU) &&
+    isSameModel(model, getSmallFastModel())
+  ) {
+    return false
   }
-
-  // Check if we should disable for default Sonnet
-  if (isEnvTruthy(process.env.DISABLE_PROMPT_CACHING_SONNET)) {
-    const defaultSonnet = getDefaultSonnetModel()
-    if (model === defaultSonnet) return false
+  if (
+    isEnvTruthy(process.env.DISABLE_PROMPT_CACHING_SONNET) &&
+    isSameModel(model, getDefaultSonnetModel())
+  ) {
+    return false
   }
-
-  // Check if we should disable for default Opus
-  if (isEnvTruthy(process.env.DISABLE_PROMPT_CACHING_OPUS)) {
-    const defaultOpus = getDefaultOpusModel()
-    if (model === defaultOpus) return false
+  if (
+    isEnvTruthy(process.env.DISABLE_PROMPT_CACHING_OPUS) &&
+    isSameModel(model, getDefaultOpusModel())
+  ) {
+    return false
   }
-
   return true
 }
 
