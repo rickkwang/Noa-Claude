@@ -108,9 +108,11 @@ describe('auto mode classifier probe', () => {
     // 1 initial attempt + maxRetries (4) re-samples, then stage 2 once.
     expect(stage1Calls).toBe(5)
     expect(stage2Calls).toBe(1)
+    // A stage-2 API error is unavailability, not a verdict (kept out of the
+    // denial count); the malformed stage 1 still reports its parse failure.
     expect(result).toMatchObject({
       shouldBlock: true,
-      unavailable: false,
+      unavailable: true,
       parseFailure: true,
       stage2Failed: true,
       errorKind: 'unknown_error',
