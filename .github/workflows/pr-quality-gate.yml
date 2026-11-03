@@ -118,12 +118,28 @@ jobs:
         run: |
           node scripts/e2e-gui-workspace.mjs
           bun run --cwd gui scripts/e2e-workspace.ts
+
+  # Split from gui: the bridge E2E alone is as long as the rest of that job.
+  gui-bridge:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          gui: 'true'
       # The bridge spawns agents through run-noa.js, which needs dist/main.js;
       # building it here keeps the launcher's auto-rebuild out of test timeouts.
+      - name: Build bundle
+        run: bun run build
       - name: GUI bridge E2E
-        run: |
-          bun run build
-          bun run --cwd gui test:bridge
+        run: bun run --cwd gui test:bridge
 
   # Each shard builds its own binary (~8s) rather than waiting on a build job and
   # an artifact round trip. The agent-loop suite is the longest, so it is split.
@@ -218,7 +234,7 @@ jobs:
   # docs-only ones where the jobs above were skipped.
   ci-ok:
     if: always()
-    needs: [changes, static, unit, gui, e2e, install]
+    needs: [changes, static, unit, gui, gui-bridge, e2e, install]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
