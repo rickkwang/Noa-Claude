@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 import assert from 'node:assert/strict'
-import { readdirSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parse } from 'yaml'
@@ -41,6 +41,21 @@ for (const file of readdirSync(directory).filter(name => /\.ya?ml$/.test(name)))
       if (hasModelSecrets(step.env) && !/\bbun run smoke:engine:live\b/.test(step.run ?? '')) {
         failures.push(`${place}: model secrets belong only on the live smoke step`)
       }
+    }
+  }
+}
+// Local composite actions run inside those jobs, so their steps follow the same rules.
+const actionsDirectory = resolve(directory, '../actions')
+for (const name of existsSync(actionsDirectory) ? readdirSync(actionsDirectory) : []) {
+  const file = ['action.yml', 'action.yaml'].map(f => join(actionsDirectory, name, f)).find(existsSync)
+  if (!file) continue
+  const action = parse(readFileSync(file, 'utf8'))
+  for (const step of action.runs?.steps ?? []) {
+    const place = `actions/${name}:${step.name ?? step.uses ?? 'step'}`
+    const problem = actionProblem(step.uses, step.with)
+    if (problem) failures.push(`${place}: ${problem}`)
+    if (hasSecrets(step.env) || /\bsecrets(?:\.|\[)/.test(JSON.stringify(step.with ?? {}))) {
+      failures.push(`${place}: composite actions must not read secrets; pass them as inputs from the workflow step`)
     }
   }
 }
