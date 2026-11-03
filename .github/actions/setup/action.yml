@@ -27,6 +27,23 @@ runs:
         mkdir -p "$RUNNER_TEMP/bin" && mv "$RUNNER_TEMP/$name/rg" "$RUNNER_TEMP/bin/rg"
         echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
 
+    # Bun's package cache (~50MB), so installs don't hinge on registry latency.
+    # Only master pushes save it; PRs restore it read-only instead of each
+    # storing a copy against the 10GB repository quota. The gui job never saves,
+    # so its ~700MB of gui/ packages stay out of the shared entry.
+    - name: Cache Bun packages
+      if: github.event_name == 'push' && github.ref == 'refs/heads/master' && inputs.gui != 'true'
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.bun/install/cache
+        key: bun-packages-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+    - name: Restore Bun packages
+      if: github.event_name != 'push' || github.ref != 'refs/heads/master' || inputs.gui == 'true'
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.bun/install/cache
+        key: bun-packages-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+
     - name: Install dependencies
       shell: bash
       run: bun install --frozen-lockfile
