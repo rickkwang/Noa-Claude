@@ -210,9 +210,6 @@ async function setupSessionMemoryFile(
     }
   }
 
-  // Drop any cached entry so FileReadTool's dedup doesn't return a
-  // file_unchanged stub — we need the actual content. The Read repopulates it.
-  toolUseContext.readFileState.delete(memoryPath)
   const result = await FileReadTool.call(
     { file_path: memoryPath },
     toolUseContext,

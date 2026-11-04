@@ -10,7 +10,6 @@ import {
 } from '../../constants/apiLimits.js'
 import { hasBinaryExtension } from '../../constants/files.js'
 import { memoryFreshnessNote } from '../../memdir/memoryAge.js'
-import { getFeatureValue_CACHED_MAY_BE_STALE } from '../../services/analytics/growthbook.js'
 import { logEvent } from '../../services/analytics/index.js'
 import {
   type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
@@ -34,7 +33,6 @@ import {
   addLineNumbers,
   FILE_NOT_FOUND_CWD_NOTE,
   findSimilarFile,
-  getFileModificationTimeAsync,
   suggestPathUnderCwd,
 } from '../../utils/file.js'
 import { logFileOperation } from '../../utils/fileOperationAnalytics.js'
@@ -82,7 +80,6 @@ import { getDefaultFileReadingLimits } from './limits.js'
 import {
   DESCRIPTION,
   FILE_READ_TOOL_NAME,
-  FILE_UNCHANGED_STUB,
   LINE_FORMAT_INSTRUCTION,
   OFFSET_INSTRUCTION_TARGETED,
   renderPromptTemplate,
@@ -316,12 +313,6 @@ const outputSchema = lazySchema(() => {
           .describe('Directory containing extracted page images'),
       }),
     }),
-    z.object({
-      type: z.literal('file_unchanged'),
-      file: z.object({
-        filePath: z.string().describe('The path to the file'),
-      }),
-    }),
   ])
 })
 type OutputSchema = ReturnType<typeof outputSchema>
@@ -513,58 +504,6 @@ export const FileReadTool = buildTool({
     // (especially handles whitespace trimming and Windows path separators)
     const fullFilePath = expandPath(file_path)
 
-    // Dedup: if we've already read this exact range and the file hasn't
-    // changed on disk, return a stub instead of re-sending the full content.
-    // The earlier Read tool_result is still in context — two full copies
-    // waste cache_creation tokens on every subsequent turn. BQ proxy shows
-    // ~18% of Read calls are same-file collisions (up to 2.64% of fleet
-    // cache_creation). Only applies to text/notebook reads — images/PDFs
-    // aren't cached in readFileState so won't match here.
-    //
-    // Ant soak: 1,734 dedup hits in 2h, no Read error regression.
-    // Killswitch pattern: GB can disable if the stub message confuses
-    // the model externally.
-    // 3P default: killswitch off = dedup enabled. Client-side only — no
-    // server support needed, safe for Bedrock/Vertex/Foundry.
-    const dedupKillswitch = getFeatureValue_CACHED_MAY_BE_STALE(
-      'tengu_read_dedup_killswitch',
-      false,
-    )
-    const existingState = dedupKillswitch
-      ? undefined
-      : readFileState.get(fullFilePath)
-    // Only dedup entries that came from a prior Read (offset is always set
-    // by Read). Edit/Write store offset=undefined — their readFileState
-    // entry reflects post-edit mtime, so deduping against it would wrongly
-    // point the model at the pre-edit Read content.
-    if (
-      existingState &&
-      !existingState.isPartialView &&
-      existingState.offset !== undefined
-    ) {
-      const rangeMatch =
-        existingState.offset === offset && existingState.limit === limit
-      if (rangeMatch) {
-        try {
-          const mtimeMs = await getFileModificationTimeAsync(fullFilePath)
-          if (mtimeMs === existingState.timestamp) {
-            const analyticsExt = getFileExtensionForAnalytics(fullFilePath)
-            logEvent('tengu_file_read_dedup', {
-              ...(analyticsExt !== undefined && { ext: analyticsExt }),
-            })
-            return {
-              data: {
-                type: 'file_unchanged' as const,
-                file: { filePath: file_path },
-              },
-            }
-          }
-        } catch {
-          // stat failed — fall through to full read
-        }
-      }
-    }
-
     // Discover skills from this file's path (fire-and-forget, non-blocking)
     // Skip in simple mode - no skills available
     const cwd = getCwd()
@@ -675,12 +614,6 @@ export const FileReadTool = buildTool({
           tool_use_id: toolUseID,
           type: 'tool_result',
           content: `PDF pages extracted: ${data.file.count} page(s) from ${data.file.filePath} (${formatFileSize(data.file.originalSize)})`,
-        }
-      case 'file_unchanged':
-        return {
-          tool_use_id: toolUseID,
-          type: 'tool_result',
-          content: FILE_UNCHANGED_STUB,
         }
       case 'text': {
         let content: string

@@ -5,6 +5,8 @@ import { shouldUseCompactSystemPrompt } from '../../constants/systemPromptCompac
 // Use a string constant for tool names to avoid circular dependencies
 export const FILE_READ_TOOL_NAME = 'Read'
 
+// Read no longer returns this stub; transcripts from older sessions may still
+// contain it, so callers use it to recognize those results.
 export const FILE_UNCHANGED_STUB =
   'File unchanged since last read. The content from the earlier Read tool_result in this conversation is still current — refer to that instead of re-reading.'
 

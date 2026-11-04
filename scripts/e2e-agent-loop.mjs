@@ -18,9 +18,9 @@ const artifacts = resolve(option('--artifacts') || mkdtempSync(join(tmpdir(), 'n
 mkdirSync(artifacts, { recursive: true });
 const model = 'claude-sonnet-4-6';
 // A 200k-window model, so a gateway naming a 1M model in its responses offers a "larger window".
-const modelFor = scenario => option('--model') || (scenario === 'gateway-model-name' ? 'claude-haiku-4-5' : scenario === 'preserved-thinking' ? 'claude-opus-5-5' : scenario === 'opus-1m-cache-off' ? 'claude-opus-4-6[1m]' : scenario === 'mandatory-thinking' ? 'kimi/k3.1-pro' : scenario.startsWith('openai-responses') ? 'gpt-6.1-sol' : model);
+const modelFor = scenario => option('--model') || (scenario === 'gateway-model-name' ? 'claude-haiku-4-5' : scenario === 'preserved-thinking' ? 'claude-opus-5-5' : scenario === 'opus-1m-cache-off' ? 'claude-opus-4-6[1m]' : scenario === 'mandatory-thinking' ? 'kimi/k3.1-pro' : scenario === 'agent-effort-plan' ? 'opusplan' : scenario.startsWith('openai-responses') ? 'gpt-6.1-sol' : model);
 const sentinel = 'KEEP_IDENTIFIER=loop-sentinel-42';
-const cases = ['agent-nested', 'agent-budget', 'agent-budget-resume', 'agent-stop-pending', 'agent-owned-results', 'agent-owned-auto', 'auto-plan-race', 'auto-stage2-error', 'agent-cascade-stop', 'agent-schema', 'agent-schema-bg', 'hook-output', 'hook-output-null', 'blocking-limit', 'image-error', 'small-window-overflow', 'read', 'large-output', 'max-turns', 'malformed', 'empty', 'alternating', 'fallback', 'provider-quota', 'refusal', 'refusal-repeat', 'truncated', 'tool-input-streaming', 'tool-input-nonstream', 'stale-signature', 'budget-streaming', 'budget-nonstream', 'permission-deny', 'deny-rule', 'mode-auto', 'mode-bypass', 'mode-bypass-off', 'hook-block', 'compact-resume', 'task-crud', 'task-metadata-race', 'task-dependency-race', 'goal-child-usage', 'agent-custom-fork', 'hook-composition', 'tombstone-resume', 'concurrency-streaming', 'concurrency-nonstream', 'background-deadline', 'openai-overflow', 'openai-usage', 'openai-usage-nonstream', 'openai-tools', 'openai-max-tokens-cap', 'openai-max-tokens-vllm', 'openai-responses', 'openai-responses-effort', 'bedrock-overflow', 'bedrock-bare-overflow', 'bedrock-media-overflow', 'opus-1m-cache-off', 'field-reject', 'gateway-model-name', 'preserved-thinking', 'mandatory-thinking'].filter(name => !option('--case') || name === option('--case')).filter((_, i) => {
+const cases = ['agent-nested', 'agent-budget', 'agent-budget-resume', 'agent-stop-pending', 'agent-owned-results', 'agent-owned-auto', 'auto-plan-race', 'auto-stage2-error', 'agent-cascade-stop', 'agent-schema', 'agent-schema-bg', 'hook-output', 'hook-output-null', 'blocking-limit', 'image-error', 'small-window-overflow', 'read', 'read-repeat', 'large-output', 'max-turns', 'malformed', 'empty', 'alternating', 'fallback', 'provider-quota', 'refusal', 'refusal-repeat', 'truncated', 'tool-input-streaming', 'tool-input-nonstream', 'stale-signature', 'budget-streaming', 'budget-nonstream', 'permission-deny', 'deny-rule', 'mode-auto', 'mode-bypass', 'mode-bypass-off', 'hook-block', 'compact-resume', 'task-crud', 'task-metadata-race', 'task-dependency-race', 'goal-child-usage', 'agent-custom-fork', 'agent-effort', 'agent-effort-plan', 'hook-composition', 'tombstone-resume', 'concurrency-streaming', 'concurrency-nonstream', 'background-deadline', 'openai-overflow', 'openai-usage', 'openai-usage-nonstream', 'openai-tools', 'openai-max-tokens-cap', 'openai-max-tokens-vllm', 'openai-responses', 'openai-responses-effort', 'bedrock-overflow', 'bedrock-bare-overflow', 'bedrock-media-overflow', 'opus-1m-cache-off', 'field-reject', 'gateway-model-name', 'preserved-thinking', 'mandatory-thinking'].filter(name => !option('--case') || name === option('--case')).filter((_, i) => {
   // --shard K/N runs every Nth case starting at K, so CI can split the suite across runners.
   const shard = option('--shard')?.match(/^(\d+)\/(\d+)$/);
   return !shard || i % Number(shard[2]) === Number(shard[1]) - 1;
@@ -69,9 +69,10 @@ const server = createServer(async (req, res) => {
     const summary = lastText.startsWith('CRITICAL: Respond with TEXT ONLY.') || /create a detailed continuation summary|summarize the recent messages|summary of the conversation|summarizing.*conversation/i.test(lastText);
     active.requests.push({ path: req.url, body, summary, auth: req.headers.authorization, sessionHeader: req.headers['session-id'] });
     writeFileSync(join(active.dir, 'requests.json'), JSON.stringify(active.requests, null, 2));
-    const harness = active.case.startsWith('task-') || active.case === 'goal-child-usage' || active.case==='agent-custom-fork' || active.case==='agent-nested' || active.case.startsWith('agent-owned-') || active.case==='agent-cascade-stop' || active.case==='agent-stop-pending' || active.case.startsWith('agent-budget') || active.case.startsWith('agent-schema');
+    const harness = active.case.startsWith('task-') || active.case === 'goal-child-usage' || active.case==='agent-custom-fork' || active.case.startsWith('agent-effort') || active.case==='agent-nested' || active.case.startsWith('agent-owned-') || active.case==='agent-cascade-stop' || active.case==='agent-stop-pending' || active.case.startsWith('agent-budget') || active.case.startsWith('agent-schema');
     const customChild=active.case==='agent-custom-fork'&&((lastText.includes('CHILD_CUSTOM_FORK_')||body.tools?.every(t=>t.name==='Read'))||body.messages?.at(-1)?.content?.some?.(b=>b.type==='tool_result'&&b.tool_use_id.startsWith('custom_read_')));
-    const child = customChild || active.case === 'goal-child-usage' && (lastText.includes('CHILD_USAGE_FIXTURE') || body.messages?.at(-1)?.content?.some?.(b => b.type === 'tool_result' && b.tool_use_id === 'child_read'));
+    const effortChild=active.case.startsWith('agent-effort')&&JSON.stringify(body.system||'').includes('EFFORT_PROBE_RULE');
+    const child = customChild || effortChild || active.case === 'goal-child-usage' && (lastText.includes('CHILD_USAGE_FIXTURE') || body.messages?.at(-1)?.content?.some?.(b => b.type === 'tool_result' && b.tool_use_id === 'child_read'));
     active.requests.at(-1).child = child;
     const n = active.requests.filter(r => active.case !== 'openai-usage-nonstream' || !r.body.stream).filter(r => (harness || active.case.startsWith('hook-') || active.case.startsWith('concurrency-') || active.case === 'background-deadline') ? r.body.tools?.length && !r.child : !r.summary).length;
     const error = (status, type, message) => {
@@ -164,6 +165,12 @@ const server = createServer(async (req, res) => {
       active.requests.at(-1).childStep=active.childRequests;
       const reading=active.childRequests%2===1;
       content=reading?[{type:'tool_use',id:'custom_read_'+active.childRequests,name:'Read',input:{file_path:join(active.dir,'fixture.txt')}}]:[{type:'text',text:'CUSTOM_DONE'}];stop=reading?'tool_use':'end_turn';
+    } else if (effortChild) {
+      content=[{type:'text',text:'EFFORT_CHILD_DONE'}];
+    } else if(active.case.startsWith('agent-effort')) {
+      const agentName=body.tools.find(t=>t.name==='Task'||t.name==='Agent')?.name||'Task';
+      const type=active.case==='agent-effort-plan'?(n===1?'inheritprobe':undefined):n===1?'otherprobe':n===2?'sameprobe':undefined;
+      content=type?[{type:'tool_use',id:'effort_'+n,name:agentName,input:{prompt:'Effort fixture',description:'Effort fixture',subagent_type:type,run_in_background:false}}]:[{type:'text',text:'AUDIT_OK'}];stop=type?'tool_use':'end_turn';
     } else if(active.case==='agent-custom-fork') {
       const agentName=body.tools.find(t=>t.name==='Task'||t.name==='Agent')?.name||'Task';
       let step;
@@ -357,7 +364,7 @@ const server = createServer(async (req, res) => {
       content = [1, 2].map(i => ({ type: 'tool_use', id: 'write_' + i, name: 'Bash', input: { command: 'pwd' } })); stop = 'tool_use';
     } else if (active.case === 'auto-plan-race' && !body.messages.some(m => Array.isArray(m.content) && m.content.some(b => b.type === 'tool_result' && b.tool_use_id === 'race_write'))) {
       content = [{ type: 'tool_use', id: 'race_write', name: 'Write', input: { file_path: join(active.dir, '..', 'auto-plan-race-target.txt'), content: 'MUST_NOT_WRITE' } }]; stop = 'tool_use';
-    } else if (active.case === 'max-turns' || ((active.case === 'read' || active.case.startsWith('mode-') || active.case.startsWith('openai-usage') || active.case === 'openai-tools' || active.case.startsWith('openai-max-tokens') || active.case.startsWith('openai-responses') || active.case.endsWith('-overflow') || active.case.startsWith('hook-')) && n === 1) || (active.case === 'compact-resume' && n <= 3) || (active.case === 'field-reject' && n === 2)) {
+    } else if (active.case === 'max-turns' || (active.case === 'read-repeat' && n <= 2) || ((active.case === 'read' || active.case.startsWith('mode-') || active.case.startsWith('openai-usage') || active.case === 'openai-tools' || active.case.startsWith('openai-max-tokens') || active.case.startsWith('openai-responses') || active.case.endsWith('-overflow') || active.case.startsWith('hook-')) && n === 1) || (active.case === 'compact-resume' && n <= 3) || (active.case === 'field-reject' && n === 2)) {
       content = [
         ...(active.case === 'compact-resume' ? [{ type: 'text', text: 'prior-context '.repeat(5000) }] : []),
         // GPT and Kimi fill optional arguments with "" (pages: "" must not fail Read).
@@ -467,6 +474,9 @@ async function run(executable, scenario, extra = [], input = 'Run the local loop
     ...(scenario.startsWith('openai-') && { CLAUDE_CODE_USE_OPENAI: '1', OPENAI_BASE_URL: `${baseUrl}/v1`, OPENAI_API_KEY: 'local-e2e-dummy' }),
     ...(scenario.startsWith('openai-responses') && { NOA_CLAUDE_OPENAI_AUTH: 'chatgpt' }),
     ...(scenario === 'openai-responses-effort' && { CLAUDE_CODE_EFFORT_LEVEL: 'xhigh' }),
+    // A local base URL is not first party, so effort is only sent when forced on.
+    ...(scenario.startsWith('agent-effort') && { CLAUDE_CODE_ALWAYS_ENABLE_EFFORT: '1' }),
+    ...(scenario === 'agent-effort-plan' && { ANTHROPIC_DEFAULT_OPUS_MODEL: 'claude-opus-4-6' }),
     CLAUDE_CODE_TASK_LIST_ID: 'harness-probe', NOA_CLAUDE_STREAMING_TOOL_EXECUTION: ['budget-nonstream', 'concurrency-nonstream'].includes(scenario) ? '0' : '1', FALLBACK_FOR_ALL_PRIMARY_MODELS: '1', CLAUDE_CODE_EAGER_FLUSH: '1',
   });
   if (scenario.startsWith('openai-responses')) {
@@ -475,11 +485,11 @@ async function run(executable, scenario, extra = [], input = 'Run the local loop
     writeFileSync(join(env.CLAUDE_CONFIG_DIR, 'chatgpt-auth.json'), JSON.stringify({ hostId: 'urn:uuid:00000000-0000-4000-8000-000000000000', clientId: 'e2e-client', accessToken: 'e2e-chatgpt-access', refreshToken: 'e2e-chatgpt-refresh', expiresAt: Date.now() + 3_600_000 }));
   }
   const streamingInput = scenario.startsWith('budget-') || scenario === 'auto-plan-race';
-  const harness = scenario.startsWith('task-') || scenario === 'goal-child-usage' || scenario==='agent-custom-fork' || scenario==='agent-nested' || scenario.startsWith('agent-owned-') || scenario==='agent-cascade-stop' || scenario==='agent-stop-pending' || scenario.startsWith('agent-budget') || scenario.startsWith('agent-schema');
+  const harness = scenario.startsWith('task-') || scenario === 'goal-child-usage' || scenario==='agent-custom-fork' || scenario.startsWith('agent-effort') || scenario==='agent-nested' || scenario.startsWith('agent-owned-') || scenario==='agent-cascade-stop' || scenario==='agent-stop-pending' || scenario.startsWith('agent-budget') || scenario.startsWith('agent-schema');
   // Hooks are off under --bare, so the hook scenario runs the full startup path.
   // --bare drops run_in_background, so the deadline scenario needs the full startup path too.
   // --bare also keeps only the simple tools, so openai-tools runs it to keep WebFetch and ToolSearch.
-  const command = [...(scenario.startsWith('hook-') || scenario.startsWith('mode-') || scenario === 'auto-plan-race' || scenario === 'auto-stage2-error' || scenario.startsWith('concurrency-') ||scenario.startsWith('tool-input-') || scenario === 'background-deadline' || scenario === 'openai-tools' || scenario.startsWith('openai-responses') || harness ? [] : ['--bare']), '--print', '--verbose', '--output-format', 'stream-json', '--model', modelFor(scenario), '--strict-mcp-config', '--setting-sources', '', '--permission-mode', 'dontAsk', '--tools', harness ? (scenario==='agent-custom-fork'?'Read,Bash,Task,SendMessage':scenario==='goal-child-usage'?'Read,Task,goal':scenario==='agent-nested'||scenario.startsWith('agent-owned-')||scenario.startsWith('agent-schema')?'Task':scenario==='agent-cascade-stop'||scenario==='agent-stop-pending'?'Task,Bash,TaskStop':scenario==='agent-budget'?'Task,Bash':scenario==='agent-budget-resume'?'Task,Bash,SendMessage':'TaskCreate,TaskUpdate,TaskGet,TaskList') : scenario.startsWith('tool-input-') ? 'Read,Bash,Write' : scenario === 'openai-tools' ? 'Read,Bash,WebFetch,ToolSearch' : scenario.startsWith('openai-responses') ? 'Read,Bash,TaskUpdate' : scenario.startsWith('mode-') ? 'Read,Bash,Edit,Write,Glob,Grep' : scenario === 'auto-plan-race' ? 'Read,Bash,Write' : 'Read,Bash', '--max-turns', harness ? '8' : scenario === 'compact-resume' ? '6' : scenario === 'stale-signature' ? '3' : scenario === 'preserved-thinking' ? '5' : scenario === 'background-deadline' || scenario === 'small-window-overflow' ? '4' : scenario === 'auto-stage2-error' ? '6' : '2'];
+  const command = [...(scenario.startsWith('hook-') || scenario.startsWith('mode-') || scenario === 'auto-plan-race' || scenario === 'auto-stage2-error' || scenario.startsWith('concurrency-') ||scenario.startsWith('tool-input-') || scenario === 'background-deadline' || scenario === 'openai-tools' || scenario.startsWith('openai-responses') || harness ? [] : ['--bare']), '--print', '--verbose', '--output-format', 'stream-json', '--model', modelFor(scenario), '--strict-mcp-config', '--setting-sources', '', '--permission-mode', 'dontAsk', '--tools', harness ? (scenario==='agent-custom-fork'?'Read,Bash,Task,SendMessage':scenario.startsWith('agent-effort')?'Task':scenario==='goal-child-usage'?'Read,Task,goal':scenario==='agent-nested'||scenario.startsWith('agent-owned-')||scenario.startsWith('agent-schema')?'Task':scenario==='agent-cascade-stop'||scenario==='agent-stop-pending'?'Task,Bash,TaskStop':scenario==='agent-budget'?'Task,Bash':scenario==='agent-budget-resume'?'Task,Bash,SendMessage':'TaskCreate,TaskUpdate,TaskGet,TaskList') : scenario.startsWith('tool-input-') ? 'Read,Bash,Write' : scenario === 'openai-tools' ? 'Read,Bash,WebFetch,ToolSearch' : scenario.startsWith('openai-responses') ? 'Read,Bash,TaskUpdate' : scenario.startsWith('mode-') ? 'Read,Bash,Edit,Write,Glob,Grep' : scenario === 'auto-plan-race' ? 'Read,Bash,Write' : 'Read,Bash', '--max-turns', harness ? '8' : scenario === 'compact-resume' ? '6' : scenario === 'read-repeat' ? '3' : scenario === 'stale-signature' ? '3' : scenario === 'preserved-thinking' ? '5' : scenario === 'background-deadline' || scenario === 'small-window-overflow' ? '4' : scenario === 'auto-stage2-error' ? '6' : '2'];
   if (!scenario.startsWith('tool-input-') && scenario !== 'compact-resume' && scenario !== 'tombstone-resume' && scenario !== 'stale-signature' && scenario!=='agent-custom-fork' && scenario!=='agent-budget-resume') command.push('--no-session-persistence');
   if (scenario.startsWith('tool-input-')) command.push('--allowedTools', 'Write');
   if (scenario === 'fallback') command.push('--fallback-model', 'claude-haiku-4-5');
@@ -492,6 +502,8 @@ async function run(executable, scenario, extra = [], input = 'Run the local loop
   if (scenario.startsWith('agent-budget')) command.push('--allowedTools', 'Bash', '--max-budget-usd', '0.01');
   if (scenario === 'agent-owned-auto' || scenario === 'auto-plan-race' || scenario === 'auto-stage2-error') command[command.indexOf('dontAsk')] = 'auto';
   if (scenario === 'auto-plan-race' || scenario === 'auto-stage2-error') command.push('--settings', JSON.stringify({ skipAutoPermissionPrompt: true }));
+  // opusplan runs Opus in plan mode, so an inherit subagent shares the main loop's model.
+  if (scenario === 'agent-effort-plan') command[command.indexOf('dontAsk')] = 'plan';
   if (scenario === 'mode-auto' || scenario.startsWith('mode-bypass')) command[command.indexOf('dontAsk')] = scenario === 'mode-auto' ? 'auto' : 'bypassPermissions';
   if (scenario.startsWith('mode-bypass')) command.push('--dangerously-skip-permissions');
   if (scenario==='hook-output' || scenario==='hook-output-null') command.push('--settings',JSON.stringify({hooks:{PostToolUse:[{matcher:'Read',hooks:[{type:'command',command:`echo '${JSON.stringify({hookSpecificOutput:{hookEventName:'PostToolUse',updatedToolOutput:scenario==='hook-output-null'?null:'HOOK_REDACTED',updatedMCPToolOutput:'LEGACY_MUST_NOT_WIN'}})}'`}]}]}}));
@@ -510,6 +522,9 @@ async function run(executable, scenario, extra = [], input = 'Run the local loop
   const started = performance.now();
   // A bundle (dist/main-dev.js) has no shebang; run it through bun.
   const [bin, binArgs] = executable.endsWith('.js') ? ['bun', [executable, ...command]] : [executable, command];
+  // Session effort low; the other model has a saved medium of its own.
+  if(scenario==='agent-effort')binArgs.push('--effort','low','--settings',JSON.stringify({modelSettings:{'claude-opus-4-6':{effortLevel:'medium'}}}),'--agents',JSON.stringify({otherprobe:{description:'Other-model effort probe',prompt:'EFFORT_PROBE_RULE',tools:['Read'],model:'claude-opus-4-6'},sameprobe:{description:'Same-model effort probe',prompt:'EFFORT_PROBE_RULE',tools:['Read'],model:'claude-sonnet-4-6'}}));
+  if(scenario==='agent-effort-plan')binArgs.push('--effort','low','--settings',JSON.stringify({modelSettings:{'claude-opus-4-6':{effortLevel:'medium'}}}),'--agents',JSON.stringify({inheritprobe:{description:'Inherit-model effort probe',prompt:'EFFORT_PROBE_RULE',tools:['Read']}}));
   if(scenario==='agent-custom-fork')binArgs.push('--agents',JSON.stringify({fork:{description:'Custom agent named fork',prompt:'FORK_CUSTOM_RULE_42',tools:['Read']}}));
   const child = spawn(bin, binArgs, { cwd: active.dir, env, stdio: ['pipe', 'pipe', 'pipe'], detached: true });
   children.add(child);
@@ -648,6 +663,23 @@ try {
             assert.equal(runResult.code,0);assert.equal(runResult.result.result,'AUDIT_OK','parent did not report its child result');
             const mainThread=main.filter(r=>!/OWNED_(PARENT|GRANDCHILD)/.test(textOf(r.body.messages[0]?.content)));
             assert.ok(!mainThread.some(r=>JSON.stringify(r.body.messages).includes('GRANDCHILD_RESULT_42')),'grandchild result leaked to the main thread');
+          } else if(scenario==='agent-effort'){
+            assert.equal(runResult.code,0);assert.equal(runResult.result.result,'AUDIT_OK');
+            const effortOf=pick=>active.requests.filter(pick).map(r=>r.body.output_config?.effort);
+            assert.deepEqual([...new Set(effortOf(r=>r.child&&r.body.model==='claude-opus-4-6'))],['medium'],'a subagent on another model did not use that model\'s saved effort');
+            assert.deepEqual([...new Set(effortOf(r=>r.child&&r.body.model==='claude-sonnet-4-6'))],['low'],'a subagent on the session model did not keep the session effort');
+            assert.deepEqual([...new Set(effortOf(r=>!r.child&&r.body.tools?.length))],['low'],'the main loop lost the session effort');
+          } else if(scenario==='agent-effort-plan'){
+            assert.equal(runResult.code,0);assert.equal(runResult.result.result,'AUDIT_OK');
+            const children=active.requests.filter(r=>r.child);assert.ok(children.length>0,'inherit subagent never ran');
+            assert.deepEqual([...new Set(children.map(r=>r.body.model))],['claude-opus-4-6'],'inherit subagent did not run on the plan-mode model');
+            assert.deepEqual([...new Set(children.map(r=>r.body.output_config?.effort))],['low'],'an inherit subagent in plan mode lost the session effort');
+            assert.deepEqual([...new Set(active.requests.filter(r=>!r.child&&r.body.tools?.length).map(r=>r.body.model))],['claude-opus-4-6'],'main loop did not run Opus in plan mode');
+          } else if(scenario==='read-repeat'){
+            assert.equal(runResult.code,0);assert.equal(runResult.result.result,'AUDIT_OK');assert.equal(count,3);
+            const second=JSON.stringify(active.requests[2].body.messages.at(-1));
+            assert.ok(second.includes('LOCAL_FIXTURE_42'),'repeated Read of an unchanged file did not return its content');
+            assert.ok(!second.includes('File unchanged since last read'),'repeated Read returned the unchanged stub');
           } else if(scenario==='agent-custom-fork'){
             assert.equal(runResult.code,0);assert.equal(runResult.result.result,'AUDIT_OK');assert.ok(active.childRequests>=4,'resumed child never ran');
             const resumed=active.requests.find(r=>r.childStep===3);assert.ok(JSON.stringify(resumed.body.system).includes('FORK_CUSTOM_RULE_42'),'custom agent named fork lost its system prompt on resume');assert.deepEqual(resumed.body.tools.map(t=>t.name),['Read'],'resuming custom fork widened its tool pool');

@@ -134,6 +134,7 @@ export function renderToolResultMessage(output: Output): React.ReactNode {
           </Text>
         </MessageResponse>;
       }
+    // Older transcripts only; Read no longer returns this.
     case 'file_unchanged':
       {
         return <MessageResponse height={1}>
