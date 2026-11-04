@@ -1,7 +1,7 @@
 import type { AppSettings } from "../../types"
 import type { AccountInfo, ModelInfo } from "../../agent/protocol"
 import { useConfirm } from "../ConfirmDialog"
-import { Row, Section, Select, Toggle } from "./controls"
+import { Row, Section, Select, TextField, Toggle } from "./controls"
 
 export type DefaultMode = AppSettings["agent"]["permissionDefault"]
 
@@ -133,6 +133,28 @@ export function GeneralPage({
             onChange={(showContextUsage) =>
               onChange({ ...settings, composer: { ...settings.composer, showContextUsage } })
             }
+          />
+        </Row>
+      </Section>
+      <Section title="Terminal">
+        <Row label="Default terminal location" description="Choose where the terminal shortcut opens terminal tabs.">
+          <Select
+            value={settings.terminal.defaultLocation}
+            options={[
+              ["bottom", "Bottom"],
+              ["right", "Right"],
+            ]}
+            onChange={(value) =>
+              onChange({ ...settings, terminal: { ...settings.terminal, defaultLocation: value as AppSettings["terminal"]["defaultLocation"] } })
+            }
+          />
+        </Row>
+        <Row label="Font" description="A font installed on this computer, such as a Nerd Font for prompt icons. Leave empty to use the code font.">
+          <TextField
+            value={settings.terminal.fontFamily}
+            placeholder="Code font"
+            label="Terminal font"
+            onChange={(fontFamily) => onChange({ ...settings, terminal: { ...settings.terminal, fontFamily } })}
           />
         </Row>
       </Section>

@@ -1,12 +1,14 @@
 // Local HTTP and WebSocket bridge for the Noa CLI.
 import { existsSync, statSync } from "node:fs"
 import { resolve, sep } from "node:path"
+import type { ServerWebSocket } from "bun"
 import { SESSION_ID, deleteSession, listSessions, loadHistory, renameSession } from "./sessions"
 import { addProject, listProjects, removeProject } from "./projects"
 import { isManagedWorktree, mediaResponse, projectWorktrees, workspaceRequest } from "./workspace"
 import { listPlugins, pluginAction } from "./plugins"
 import { skillAction, skillsState } from "./skills"
 import { attachAgent, agentMessage, detachAgent, listAgentRuns, releaseSessionRuns, SPAWN_PERMISSION_MODES, type SocketData } from "./agents"
+import { attachTerminal, detachTerminal, TERMINAL_ID, terminalMessage, terminalSize, type TerminalSocketData } from "./terminal"
 
 const REPO_ROOT = resolve(import.meta.dir, "../..")
 const DIST_DIR = resolve(import.meta.dir, "../dist")
@@ -55,7 +57,10 @@ function inListedProject(cwd: string): boolean {
   )
 }
 
-type Handler = (ctx: { req: Request; url: URL; cwd: string; server: Bun.Server<SocketData> }) => Response | undefined | Promise<Response | undefined>
+type BridgeSocketData = SocketData | TerminalSocketData
+const isTerminal = (ws: ServerWebSocket<BridgeSocketData>): ws is ServerWebSocket<TerminalSocketData> => "kind" in ws.data
+
+type Handler = (ctx: { req: Request; url: URL; cwd: string; server: Bun.Server<BridgeSocketData> }) => Response | undefined | Promise<Response | undefined>
 
 // Routes that act on a folder. Every method a route accepts is listed here, and the folder must belong to a listed project.
 const cwdRoutes: Record<string, { methods: string[]; handler: Handler }> = {}
@@ -94,6 +99,20 @@ cwdRoutes["/ws"] = {
     const modeParam = url.searchParams.get("mode") ?? undefined
     if (modeParam && !SPAWN_PERMISSION_MODES.has(modeParam)) return new Response("invalid permission mode", { status: 400 })
     if (server.upgrade(req, { data: { cwd, resume, runtimeId, mode: modeParam } })) return undefined
+    return new Response("Expected WebSocket upgrade", { status: 426 })
+  },
+}
+
+cwdRoutes["/terminal"] = {
+  methods: ["GET"],
+  handler({ req, url, cwd, server }) {
+    const id = url.searchParams.get("id") ?? ""
+    if (!TERMINAL_ID.test(id)) return new Response("invalid terminal id", { status: 400 })
+    const data: TerminalSocketData = { kind: "terminal", cwd, id, cols: terminalSize(url.searchParams.get("cols"), 80), rows: terminalSize(url.searchParams.get("rows"), 24) }
+    // A shell is the strongest thing the bridge hands out, so it is never served without the token.
+    // The socket still opens so the panel can say why instead of retrying.
+    if (!TOKEN) data.refused = "The terminal is unavailable: this bridge runs without NOA_GUI_TOKEN."
+    if (server.upgrade(req, { data })) return undefined
     return new Response("Expected WebSocket upgrade", { status: 426 })
   },
 }
@@ -166,7 +185,7 @@ async function revealProject(req: Request): Promise<Response> {
   return json({ ok: true })
 }
 
-Bun.serve<SocketData>({
+Bun.serve<BridgeSocketData>({
   port: PORT,
   hostname: "127.0.0.1",
   async fetch(req, server) {
@@ -232,9 +251,9 @@ Bun.serve<SocketData>({
   },
   websocket: {
     maxPayloadLength: 32 * 1024 * 1024,
-    open(ws) { attachAgent(ws, REPO_ROOT) },
-    message: agentMessage,
-    close: detachAgent,
+    open(ws) { if (isTerminal(ws)) attachTerminal(ws); else attachAgent(ws as ServerWebSocket<SocketData>, REPO_ROOT) },
+    message(ws, raw) { if (isTerminal(ws)) terminalMessage(ws, raw); else return agentMessage(ws as ServerWebSocket<SocketData>, raw) },
+    close(ws) { if (isTerminal(ws)) detachTerminal(ws); else detachAgent(ws as ServerWebSocket<SocketData>) },
   },
 })
 

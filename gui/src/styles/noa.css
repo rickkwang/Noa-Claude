@@ -88,6 +88,9 @@
 /* A panel drag owns the cursor for the whole window, so it doesn't flicker over child surfaces. */
 body[data-pane-dragging="true"],
 body[data-pane-dragging="true"] * { cursor: col-resize !important; user-select: none; }
+[role="separator"][aria-orientation="horizontal"] .noa-resize-indicator { inset-block: auto; inset-inline: 0; top: 4px; left: 0; width: auto; height: 1px; background: linear-gradient(to right, transparent, color-mix(in srgb, var(--text-primary) 25%, transparent), transparent); }
+body[data-pane-dragging="row"],
+body[data-pane-dragging="row"] * { cursor: row-resize !important; user-select: none; }
 @container noa-agent-footer (max-width: 475px) {
   .noa-agent-mode-label { display: none; }
 }
@@ -2244,7 +2247,8 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
 .noa-review-menu-separator { height: 1px; margin: 3px 4px; background: var(--divider-subtle); }
 
 /* File row context menu (Claude Code's Attach / Copy ▸ / Open in ▸ / reveal), fixed at the pointer. */
-.noa-context-menu-root { position: fixed; z-index: 90; }
+/* Menus can open over the titlebar strip (panel tab menus); the window-drag region there would take their clicks. */
+.noa-context-menu-root { position: fixed; z-index: 90; -webkit-app-region: no-drag; }
 .noa-context-menu { display: flex; flex-direction: column; min-width: 180px; padding: 4px; border-radius: 10px; background: var(--bg-card); font-size: var(--text-body); outline: none; }
 .noa-context-menu-entry { position: relative; }
 .noa-context-menu-entry > [role="menuitem"] { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 12px; height: 28px; padding: 0 8px; border-radius: 6px; color: var(--text-primary); text-align: left; }
@@ -3378,3 +3382,18 @@ body.noa-session-dragging * { cursor: grabbing !important; }
 .noa-search-tabs button { flex-shrink: 0; min-height: 32px; border: 0; border-radius: 999px; padding: 4px 12px; color: var(--text-tertiary); font-size: var(--text-body); line-height: 20px; }
 .noa-search-tabs button[aria-selected="true"] { background: var(--fill-hover); color: var(--text-primary); }
 .noa-search-tabs button:focus-visible { outline: 2px solid var(--accent-color); outline-offset: -2px; }
+
+/* Terminal panel: the bottom-left corner follows the content surface's rounded edge, as the composer footer does. */
+.noa-terminal-panel { margin-left: 0.5px; border-bottom-left-radius: var(--noa-surface-radius); }
+.noa-terminal-host { width: 100%; height: 100%; }
+.noa-terminal-host .xterm { height: 100%; }
+/* xterm paints the viewport black below the last whole row; the panel surface shows there instead. */
+.noa-terminal-host .xterm-viewport { background-color: transparent !important; }
+.noa-terminal-action { color: var(--text-tertiary, #A3A19B); transition: background-color 120ms ease, color 120ms ease; }
+.noa-terminal-action:hover { background-color: var(--fill-hover); color: var(--text-primary, #2D2D2B); }
+
+/* Panel New tab page: tool rows on a faint fill, shortcuts as keycaps tinted from the row's secondary text. */
+.noa-new-tab-page { background: var(--surface-page, #F9F9F7); }
+.noa-new-tab-row { background: color-mix(in oklab, var(--text-primary, #2D2D2B) 2.5%, transparent); transition: background-color 120ms ease; }
+.noa-new-tab-row:hover, .noa-new-tab-row:has([aria-expanded="true"]) { background: var(--fill-hover); }
+.noa-new-tab-key { display: inline-flex; padding: 2px 6px; border: 0; border-radius: 6px; background: color-mix(in srgb, currentColor 10%, transparent); color: var(--text-secondary, #7B7974); font-family: var(--font-ui, inherit); font-size: var(--text-micro, 11px); line-height: 1; }

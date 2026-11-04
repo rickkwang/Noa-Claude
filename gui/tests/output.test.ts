@@ -38,7 +38,7 @@ test("activity distinguishes input from approval", () => {
   Object.defineProperty(globalThis, "localStorage", { configurable: true, value: { getItem: () => null } })
   try {
     const state = { ...initialState, connection: "ready" as const, historyBefore: 10, elicitations: [{ requestId: "input" }] as any }
-    const html = render(createElement(RightPanel, { state, cwd: "/project", tab: "activity", onTab: () => {}, onStopTask: () => {}, onReference: () => {}, workspaceRefreshKey: 0 }))
+    const html = render(createElement(RightPanel, { state, cwd: "/project", tabs: ["files", "changes", "activity", "subagents"], onTabs: () => {}, newTab: false, onNewTab: () => {}, tab: "activity", onTab: () => {}, onStopTask: () => {}, onReference: () => {}, workspaceRefreshKey: 0 }))
     expect(html).toContain("Waiting for input")
     expect(html).not.toContain("Load earlier")
     expect(html).not.toContain("Waiting for approval")

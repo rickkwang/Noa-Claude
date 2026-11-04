@@ -21,6 +21,7 @@ export const defaultSettings: AppSettings = {
     fontSmoothing: true,
   },
   composer: { sendShortcut: 'enter', followUpMode: 'queue', showFullAccess: false, showContextUsage: true },
+  terminal: { defaultLocation: 'bottom', fontFamily: '' },
   agent: {
     permissionDefault: 'inherit',
   },

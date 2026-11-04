@@ -43,6 +43,12 @@ export interface AppSettings {
     showFullAccess: boolean;
     showContextUsage: boolean;
   };
+  terminal: {
+    /** Where the terminal shortcut opens a terminal: the bottom panel or a right-panel tab. */
+    defaultLocation: 'bottom' | 'right';
+    /** An installed font for terminals (e.g. a Nerd Font for prompt icons); empty uses the code font. */
+    fontFamily: string;
+  };
   agent: {
     // 'inherit' starts sessions in the mode from Noa's settings.json instead of overriding it.
     permissionDefault: 'inherit' | 'default' | 'acceptEdits' | 'plan' | 'auto';

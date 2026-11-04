@@ -1,4 +1,4 @@
-import { useEffect, type CSSProperties, type PointerEvent } from "react"
+import { useEffect, useRef, type CSSProperties, type PointerEvent } from "react"
 
 interface ResizeHandleProps {
   label: string
@@ -10,26 +10,37 @@ interface ResizeHandleProps {
   onResize: (width: number) => void
   onDraggingChange: (dragging: boolean) => void
   style?: CSSProperties
+  // "horizontal" sits on a top or bottom edge and resizes height; `width` and `grow` then refer to that height.
+  orientation?: "vertical" | "horizontal"
 }
 
 // An 8px strip on a panel edge with a grip that appears on hover, as in Noa. Keyboard arrows nudge it.
-export function ResizeHandle({ label, grow, width, defaultWidth, onResize, onDraggingChange, style }: ResizeHandleProps) {
-  // A drag that loses its pointer (window blur, unmount) must not leave the resize cursor stuck on the page.
-  useEffect(() => () => { delete document.body.dataset.paneDragging }, [])
+export function ResizeHandle({ label, grow, width, defaultWidth, onResize, onDraggingChange, style, orientation = "vertical" }: ResizeHandleProps) {
+  const rows = orientation === "horizontal"
+  // A drag that loses its pointer (window blur, unmount) must not leave the resize cursor stuck on the page,
+  // nor the owner believing a drag is still running: a resize can unmount its own handle (dragging a panel shut).
+  const dragging = useRef(onDraggingChange)
+  const active = useRef(false)
+  dragging.current = onDraggingChange
+  useEffect(() => () => {
+    delete document.body.dataset.paneDragging
+    if (active.current) dragging.current(false)
+  }, [])
 
   function onPointerDown(event: PointerEvent<HTMLDivElement>) {
     if (event.button !== 0) return
     event.preventDefault()
     const handle = event.currentTarget
     handle.setPointerCapture(event.pointerId)
-    const startX = event.clientX
+    const start = rows ? event.clientY : event.clientX
     const startWidth = width
     handle.dataset.resizing = "true"
-    document.body.dataset.paneDragging = "true"
+    document.body.dataset.paneDragging = rows ? "row" : "true"
+    active.current = true
     onDraggingChange(true)
 
     function move(e: globalThis.PointerEvent) {
-      onResize(startWidth + grow * (e.clientX - startX))
+      onResize(startWidth + grow * ((rows ? e.clientY : e.clientX) - start))
     }
     function end() {
       handle.removeEventListener("pointermove", move)
@@ -38,6 +49,7 @@ export function ResizeHandle({ label, grow, width, defaultWidth, onResize, onDra
       window.removeEventListener("keydown", cancel)
       delete handle.dataset.resizing
       delete document.body.dataset.paneDragging
+      active.current = false
       onDraggingChange(false)
     }
     function cancel(e: globalThis.KeyboardEvent) {
@@ -55,7 +67,7 @@ export function ResizeHandle({ label, grow, width, defaultWidth, onResize, onDra
   return (
     <div
       role="separator"
-      aria-orientation="vertical"
+      aria-orientation={orientation}
       aria-label={label}
       aria-valuenow={Math.round(width)}
       tabIndex={0}
@@ -63,11 +75,12 @@ export function ResizeHandle({ label, grow, width, defaultWidth, onResize, onDra
       onPointerDown={onPointerDown}
       onDoubleClick={() => { if (defaultWidth !== undefined) onResize(defaultWidth) }}
       onKeyDown={(e) => {
-        if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return
+        const [less, more] = rows ? ["ArrowUp", "ArrowDown"] : ["ArrowLeft", "ArrowRight"]
+        if (e.key !== less && e.key !== more) return
         e.preventDefault()
-        onResize(width + (e.key === "ArrowRight" ? 16 : -16) * grow)
+        onResize(width + (e.key === more ? 16 : -16) * grow)
       }}
-      className="group absolute top-0 bottom-0 z-30 w-2 cursor-col-resize touch-none outline-none"
+      className={`group absolute z-30 touch-none outline-none ${rows ? "inset-x-0 h-2 cursor-row-resize" : "top-0 bottom-0 w-2 cursor-col-resize"}`}
       style={{ WebkitAppRegion: "no-drag", ...style } as CSSProperties}
     >
       <span aria-hidden="true" className="noa-resize-indicator" />

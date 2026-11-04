@@ -21,10 +21,12 @@ import { MessageList } from "./components/MessageList"
 import { DiffActionDialog } from "./components/TurnDiffCard"
 import { PermissionCard, type QuestionDraft } from "./components/PermissionCard"
 import { QueuedMessages } from "./components/QueuedMessages"
-import { RightPanel, type PanelTab } from "./components/RightPanel"
+import { DEFAULT_RIGHT_TABS, RightPanel, type PanelTab, type RightTab } from "./components/RightPanel"
 import { OverviewPanel } from "./components/OverviewPanel"
 import { ResizeHandle } from "./components/ResizeHandle"
 import { usePanelWidth } from "./hooks/usePanelWidth"
+import { TERMINAL_PANEL_DEFAULT_HEIGHT, TerminalPanel } from "./components/TerminalPanel"
+import { openTerminal, setTerminalFontFamily, terminalTabs } from "./lib/terminalSessions"
 import { useAppSettings } from "./hooks/useAppSettings"
 import { removeSessionBrowserState, useSessionSync } from "./hooks/useSessionSync"
 import { Sidebar } from "./components/Sidebar"
@@ -34,7 +36,7 @@ import { SettingsDialog } from "./components/SettingsDialog"
 import { SessionTitle } from "./components/SessionTitle"
 import { SearchDialog } from "./components/SearchDialog"
 import { rateLimitKey } from "./components/RateLimitNotice"
-import { ListDetails, PanelRight } from "./lib/icons"
+import { ListDetails, PanelBottom, PanelRight } from "./lib/icons"
 
 // Noa's default layout widths.
 const SIDEBAR_DEFAULT_WIDTH = 340
@@ -103,6 +105,20 @@ function Workspace({ cwd }: { cwd: string }) {
     return () => clearTimeout(timer)
   }, [dockMotion, sidebarOpen])
   const [rightOpen, setRightOpen] = useState(true)
+  // The bottom terminal panel: hiding it keeps its shells running.
+  const [terminalOpen, setTerminalOpen] = useState(false)
+  const [terminalFocus, setTerminalFocus] = useState(0)
+  const [rightTerminalFocus, setRightTerminalFocus] = useState(0)
+  const [terminalHeight, setTerminalHeight] = useState(() => {
+    try {
+      const saved = Number(localStorage.getItem("noa-agent.terminalHeight"))
+      return saved > 0 ? saved : TERMINAL_PANEL_DEFAULT_HEIGHT
+    } catch { return TERMINAL_PANEL_DEFAULT_HEIGHT }
+  })
+  useEffect(() => {
+    try { localStorage.setItem("noa-agent.terminalHeight", String(terminalHeight)) } catch { /* Storage unavailable. */ }
+  }, [terminalHeight])
+  useEffect(() => setTerminalFontFamily(settings.terminal.fontFamily), [settings.terminal.fontFamily])
   // The docked column is visible while it is shown and fits; when it does not fit, the toggle opens a transient
   // popover instead. Both open only from the toggle: never persisted, and a column that stops fitting becomes
   // the popover, so widening the window again cannot re-dock it on its own.
@@ -119,7 +135,23 @@ function Workspace({ cwd }: { cwd: string }) {
   const [changes, setChanges] = useState<{ count: number; additions: number; deletions: number; branch: string; files: { path: string; additions: number; deletions: number; binary: boolean }[] }>()
   const [turnDiff, setTurnDiff] = useState<{ diff: TurnDiff; path?: string; key: number }>()
   const [pendingDiffAction, setPendingDiffAction] = useState<number>()
-  const [rightTab, setRightTab] = useState<PanelTab>("files")
+  // The right panel's open tools, remembered per viewer; terminals and the New tab are not.
+  const [rightTabs, setRightTabs] = useState<PanelTab[]>(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem("noa-agent.rightTabs") ?? "null")
+      return Array.isArray(saved) ? saved.filter((tab): tab is PanelTab => ["files", "changes", "activity", "subagents"].includes(tab)) : DEFAULT_RIGHT_TABS
+    } catch { return DEFAULT_RIGHT_TABS }
+  })
+  useEffect(() => {
+    try { localStorage.setItem("noa-agent.rightTabs", JSON.stringify(rightTabs)) } catch { /* Storage unavailable. */ }
+  }, [rightTabs])
+  const [rightNewTab, setRightNewTab] = useState(false)
+  const [rightTab, selectRightTab] = useState<RightTab>(() => rightTabs[0] ?? "new")
+  // Showing a tool opens its tab when it was closed.
+  const setRightTab = (tab: RightTab) => {
+    if (tab !== "new" && tab !== "terminal") setRightTabs((tabs) => tabs.includes(tab) ? tabs : [...tabs, tab])
+    selectRightTab(tab)
+  }
   const [focusTask, setFocusTask] = useState<{ id?: string; key: number }>()
   useEffect(() => { setFocusTask(undefined) }, [session.key])
   useEffect(() => { setTurnDiff(undefined) }, [session.key])
@@ -367,6 +399,15 @@ function Workspace({ cwd }: { cwd: string }) {
         e.preventDefault()
         setSearchOpen(open => !open)
       }
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "j") {
+        e.preventDefault()
+        setTerminalOpen(open => !open)
+      }
+      // The physical key: input sources that remap the backtick (e.g. Chinese "·") still open the terminal.
+      if (e.ctrlKey && !e.metaKey && !e.altKey && e.code === "Backquote") {
+        e.preventDefault()
+        openDefaultTerminal()
+      }
       if ((e.metaKey || e.ctrlKey) && e.key === ",") {
         e.preventDefault()
         setSearchOpen(false)
@@ -385,7 +426,21 @@ function Workspace({ cwd }: { cwd: string }) {
     }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
-  }, [state.busy, activeId, session, history])
+  }, [state.busy, activeId, session, history, settings.terminal.defaultLocation])
+
+  // The terminal shortcut opens the bottom panel or a right-panel terminal, as settings choose.
+  function openDefaultTerminal() {
+    if (settings.terminal.defaultLocation === "right") {
+      if (terminalTabs(session.cwd, "right").ids.length === 0) openTerminal(session.cwd, "right")
+      setRightOpen(true)
+      setRightTab("terminal")
+      setRightTerminalFocus(n => n + 1)
+    } else showBottomTerminal()
+  }
+  function showBottomTerminal() {
+    setTerminalOpen(true)
+    setTerminalFocus(n => n + 1)
+  }
 
   const firstUserText = state.turns.find((t) => t.role === "user")?.text
   const title =
@@ -493,10 +548,11 @@ function Workspace({ cwd }: { cwd: string }) {
   // computed width can dock the overview while the real column is too narrow to hold it.
   const chatColumnRef = useRef<HTMLDivElement>(null)
   const [measuredChatWidth, setMeasuredChatWidth] = useState<number>()
+  const [chatHeight, setChatHeight] = useState(window.innerHeight)
   useEffect(() => {
     const el = chatColumnRef.current
     if (!el) return
-    const observer = new ResizeObserver(() => setMeasuredChatWidth(el.offsetWidth))
+    const observer = new ResizeObserver(() => { setMeasuredChatWidth(el.offsetWidth); setChatHeight(el.offsetHeight) })
     observer.observe(el)
     return () => observer.disconnect()
   }, [])
@@ -640,8 +696,15 @@ function Workspace({ cwd }: { cwd: string }) {
             state={state}
             onStopTask={stopTask}
             cwd={session.cwd}
+            open={rightOpen}
+            tabs={rightTabs}
+            onTabs={setRightTabs}
+            newTab={rightNewTab}
+            onNewTab={setRightNewTab}
             tab={rightTab}
             onTab={setRightTab}
+            terminalFocusKey={rightTerminalFocus}
+            onBottomTerminal={showBottomTerminal}
             onReference={(path) => setReference({ path, key: Date.now() })}
             onWorkspaceChange={() => setRefreshTick((n) => n + 1)}
             workspaceRefreshKey={refreshTick}
@@ -697,6 +760,16 @@ function Workspace({ cwd }: { cwd: string }) {
           >
             <ListDetails size={16} />
           </button>
+          <button
+            type="button"
+            onClick={() => setTerminalOpen((open) => !open)}
+            className="flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-[var(--icon-ink,#52514E)] transition-colors hover:bg-[var(--fill-hover)] hover:text-[var(--text-primary,#2D2D2B)] aria-pressed:bg-[var(--fill-active)]"
+            title="Toggle bottom panel (⌘J)"
+            aria-label="Toggle bottom panel"
+            aria-pressed={terminalOpen}
+          >
+            <PanelBottom size={16} />
+          </button>
           {panelToggle}
         </div>
       </div>
@@ -705,188 +778,206 @@ function Workspace({ cwd }: { cwd: string }) {
         <div
           ref={chatColumnRef}
           className={`relative flex min-w-0 flex-1 flex-col ${moving ? "" : "transition-[margin-left,margin-right] duration-500 ease-in-out"}`}
-          style={{ marginLeft: sidebarWidth, marginRight: rightWidth, paddingRight: overviewDockInset, "--noa-overview-dock": `${overviewDockInset}px`, "--composer-overlay": `${footerHeight}px` } as React.CSSProperties}
+          style={{ marginLeft: sidebarWidth, marginRight: rightWidth }}
         >
-          {hasTurns ? (
-            <MessageList
-              key={session.key}
-              cwd={session.cwd}
-              sessionId={activeId}
-              historyBefore={state.historyBefore}
-              historyLoading={state.historyLoading}
-              onLoadEarlier={loadEarlier}
-              onOpenFile={openFile}
-              turns={state.turns}
-              busy={state.busy}
-              result={state.result}
-              readingWidth={readingWidth}
-              liveDiff={state.liveDiff}
-              onTurnDiff={(diff, path) => {
-                setTurnDiff({ diff, path, key: Date.now() })
-                setRightOpen(true)
-                setRightTab("changes")
-              }}
-              onTurnDiffAction={(diff, action) => {
-                if (diff.turnIndex === undefined) return
-                setPendingDiffAction(diff.turnIndex)
-                turnDiffAction(diff.turnIndex, action)
-              }}
-              diffActionPending={pendingDiffAction}
-              onRetry={retryLast}
-              onEdit={editMessage}
-              onQuote={text => setQuote({ text, key: Date.now() })}
-              tasks={state.tasks}
-              onStopTask={stopTask}
-              onOpenTask={(id) => {
-                const taskType = state.tasks.find(task => task.id === id)?.taskType
-                setRightOpen(true)
-                setRightTab(taskType && !["local_agent", "remote_agent", "in_process_teammate"].includes(taskType) ? "activity" : "subagents")
-                setFocusTask({ id, key: Date.now() })
-              }}
-            />
-          ) : (
-            <EmptyState
-              cwd={session.cwd}
-              projects={projects}
-              onSelectProject={(path) => newSession(path)}
-              onAddProject={() => setAddingProject(true)}
-            />
-          )}
-          {/* With a conversation the composer floats over the list:
-              messages scroll beneath it and a gradient fades them out above the card. */}
-          <div ref={footerRef} className={hasTurns ? "noa-conversation-footer" : "shrink-0 px-[29px] pb-3 pt-2"}>
-            <div className="mx-auto flex flex-col gap-2" style={{ maxWidth: readingWidth + 22 }}>
-              {(state.connection === "closed") && (
-                <div
-                  role="status"
-                  className="flex items-center justify-center gap-2 text-caption text-[var(--sidebar-text-muted)]"
-                >
-                  <span
-                    className={`size-1.5 rounded-full ${state.connection === "closed" ? "bg-red-500" : "animate-pulse bg-[var(--accent-color)]"}`}
-                  />
-                  <span className={state.connection === "closed" ? undefined : "noa-shimmer"}>
-                  {state.connection === "closed"
-                    ? "Agent disconnected"
-                    : "Compacting context…"}
-                  </span>
-                  {state.connection === "closed" && (
-                    <button
-                      className="text-[var(--accent-color)]"
-                      onClick={() => setSession((s) => ({ ...s, resume: activeId, key: s.key + 1 }))}
-                    >
-                      Reconnect
-                    </button>
-                  )}
-                  {state.connection === "closed" && (
-                    <button className="text-[var(--accent-color)]" onClick={() => { setRightOpen(true); setRightTab("activity") }}>
-                      Diagnostics
-                    </button>
-                  )}
-                </div>
-              )}
-              {(state.permissions.length > 0 || state.elicitations.length > 0) && (
-                <div className="flex min-h-0 max-h-[50vh] flex-col gap-2 overflow-y-auto p-px">
-                  {state.permissions.map((permission) => (
-                    <PermissionCard key={permission.requestId} permission={permission} onAnswer={answerPermission} draft={questionDrafts.current.get(requestDraftPrefix + permission.requestId)} onDraftChange={draft => questionDrafts.current.set(requestDraftPrefix + permission.requestId, draft)} />
-                  ))}
-                  {state.elicitations.map((request) => <ElicitationCard key={request.requestId} request={request} onAnswer={answerElicitation} draft={elicitationDrafts.current.get(requestDraftPrefix + request.requestId)} onDraftChange={draft => elicitationDrafts.current.set(requestDraftPrefix + request.requestId, draft)} />)}
-                </div>
-              )}
-              {state.queue.length > 0 && (
-                <QueuedMessages
-                  messages={state.queue}
-                  busy={state.busy}
-                  paused={state.queuePaused}
-                  editing={!!queueEditId}
-                  onMove={moveQueued}
-                  onRemove={removeQueued}
-                  onEdit={editQueued}
-                  onSteer={steerQueued}
-                  onRetry={(id) => {
-                    moveQueued(id, 0)
-                    setQueuePaused(false)
-                    runQueued()
-                  }}
-                  onRun={runQueued}
-                  onPaused={setQueuePaused}
-                />
-              )}
-              {state.notice && <p role="status" className="m-0 px-1 text-caption text-[var(--sidebar-text-muted)]">{state.notice}</p>}
-              {state.error && !state.turns.some(turn => turn.role === "assistant" && turn.error === state.error) && (
-                <p role="alert" className="m-0 break-words px-1 text-caption text-[#C24444]">
-                  {state.error}
-                </p>
-              )}
-              <Composer
+          {/* The conversation and its floating composer sit above the terminal panel. */}
+          <div
+            className="relative flex min-h-0 flex-1 flex-col"
+            style={{ paddingRight: overviewDockInset, "--noa-overview-dock": `${overviewDockInset}px`, "--composer-overlay": `${footerHeight}px` } as React.CSSProperties}
+          >
+            {hasTurns ? (
+              <MessageList
                 key={session.key}
-                rateLimit={visibleRateLimit}
-                onDismissRateLimit={() => state.rateLimit && setDismissedRateLimit(rateLimitKey(state.rateLimit))}
-                draftKey={`noa-agent.draft:${session.cwd}:${activeId ?? session.runtimeId}`}
-                reference={reference}
-                quote={quote}
-                onQuoteConsumed={() => setQuote(undefined)}
-                prefill={prefill}
-                onPrefillConsumed={() => setPrefill(undefined)}
-                editDraft={editDraft ? { ...editDraft, queued: !!queueEditId, label: queueEditId ? "Edit queued message" : "Edit and resend" } : undefined}
-                onCancelEdit={() => {
-                  setEditDraft(undefined)
-                  setQueueEditId(undefined)
+                cwd={session.cwd}
+                sessionId={activeId}
+                historyBefore={state.historyBefore}
+                historyLoading={state.historyLoading}
+                onLoadEarlier={loadEarlier}
+                onOpenFile={openFile}
+                turns={state.turns}
+                busy={state.busy}
+                result={state.result}
+                readingWidth={readingWidth}
+                liveDiff={state.liveDiff}
+                onTurnDiff={(diff, path) => {
+                  setTurnDiff({ diff, path, key: Date.now() })
+                  setRightOpen(true)
+                  setRightTab("changes")
                 }}
-                effort={state.effort}
-                onEffort={setEffort}
+                onTurnDiffAction={(diff, action) => {
+                  if (diff.turnIndex === undefined) return
+                  setPendingDiffAction(diff.turnIndex)
+                  turnDiffAction(diff.turnIndex, action)
+                }}
+                diffActionPending={pendingDiffAction}
+                onRetry={retryLast}
+                onEdit={editMessage}
+                onQuote={text => setQuote({ text, key: Date.now() })}
+                tasks={state.tasks}
+                onStopTask={stopTask}
+                onOpenTask={(id) => {
+                  const taskType = state.tasks.find(task => task.id === id)?.taskType
+                  setRightOpen(true)
+                  setRightTab(taskType && !["local_agent", "remote_agent", "in_process_teammate"].includes(taskType) ? "activity" : "subagents")
+                  setFocusTask({ id, key: Date.now() })
+                }}
+              />
+            ) : (
+              <EmptyState
                 cwd={session.cwd}
                 projects={projects}
-                onProject={newSession}
-                branch={changes?.branch}
-                onBranchChange={() => setRefreshTick((n) => n + 1)}
-                worktreeOf={worktreeOf}
-                onWorktree={toggleWorktree}
-                onFiles={() => showWorkspacePane("files")}
-                newTask={!hasTurns}
-                contextUsage={settings.composer.showContextUsage ? state.contextUsage : undefined}
-                sendShortcut={settings.composer.sendShortcut}
-                followUpMode={settings.composer.followUpMode}
-                showFullAccess={settings.composer.showFullAccess}
-                connection={state.connection}
-                busy={state.busy}
-                models={state.models}
-                providers={state.providers}
-                onProvider={setProvider}
-                model={state.model}
-                mode={state.permissionMode}
-                commands={state.commands}
-                onSend={sendComposer}
-                onCommand={(action) => {
-                  if (action === "new") newSession()
-                  else if (action === "resume") {
-                    setSearchOpen(true)
-                  } else if (action === "settings") setSettingsOpen(true)
-                  else if (action === "context") { if (!overviewVisible) toggleOverview(); refreshContext() }
-                  else if (action === "activity") { setRightOpen(true); setRightTab("activity") }
-                  else if (action === "plan") setPermissionMode("plan")
-                  else if (action === "stop") interrupt()
-                  else if (action === "reload") reloadCommands()
-                }}
-                onInterrupt={interrupt}
-                onModel={setModel}
-                onMode={setPermissionMode}
+                onSelectProject={(path) => newSession(path)}
+                onAddProject={() => setAddingProject(true)}
               />
+            )}
+            {/* With a conversation the composer floats over the list:
+                messages scroll beneath it and a gradient fades them out above the card. */}
+            <div ref={footerRef} className={hasTurns ? "noa-conversation-footer" : "shrink-0 px-[29px] pb-3 pt-2"}>
+              <div className="mx-auto flex flex-col gap-2" style={{ maxWidth: readingWidth + 22 }}>
+                {(state.connection === "closed") && (
+                  <div
+                    role="status"
+                    className="flex items-center justify-center gap-2 text-caption text-[var(--sidebar-text-muted)]"
+                  >
+                    <span
+                      className={`size-1.5 rounded-full ${state.connection === "closed" ? "bg-red-500" : "animate-pulse bg-[var(--accent-color)]"}`}
+                    />
+                    <span className={state.connection === "closed" ? undefined : "noa-shimmer"}>
+                    {state.connection === "closed"
+                      ? "Agent disconnected"
+                      : "Compacting context…"}
+                    </span>
+                    {state.connection === "closed" && (
+                      <button
+                        className="text-[var(--accent-color)]"
+                        onClick={() => setSession((s) => ({ ...s, resume: activeId, key: s.key + 1 }))}
+                      >
+                        Reconnect
+                      </button>
+                    )}
+                    {state.connection === "closed" && (
+                      <button className="text-[var(--accent-color)]" onClick={() => { setRightOpen(true); setRightTab("activity") }}>
+                        Diagnostics
+                      </button>
+                    )}
+                  </div>
+                )}
+                {(state.permissions.length > 0 || state.elicitations.length > 0) && (
+                  <div className="flex min-h-0 max-h-[50vh] flex-col gap-2 overflow-y-auto p-px">
+                    {state.permissions.map((permission) => (
+                      <PermissionCard key={permission.requestId} permission={permission} onAnswer={answerPermission} draft={questionDrafts.current.get(requestDraftPrefix + permission.requestId)} onDraftChange={draft => questionDrafts.current.set(requestDraftPrefix + permission.requestId, draft)} />
+                    ))}
+                    {state.elicitations.map((request) => <ElicitationCard key={request.requestId} request={request} onAnswer={answerElicitation} draft={elicitationDrafts.current.get(requestDraftPrefix + request.requestId)} onDraftChange={draft => elicitationDrafts.current.set(requestDraftPrefix + request.requestId, draft)} />)}
+                  </div>
+                )}
+                {state.queue.length > 0 && (
+                  <QueuedMessages
+                    messages={state.queue}
+                    busy={state.busy}
+                    paused={state.queuePaused}
+                    editing={!!queueEditId}
+                    onMove={moveQueued}
+                    onRemove={removeQueued}
+                    onEdit={editQueued}
+                    onSteer={steerQueued}
+                    onRetry={(id) => {
+                      moveQueued(id, 0)
+                      setQueuePaused(false)
+                      runQueued()
+                    }}
+                    onRun={runQueued}
+                    onPaused={setQueuePaused}
+                  />
+                )}
+                {state.notice && <p role="status" className="m-0 px-1 text-caption text-[var(--sidebar-text-muted)]">{state.notice}</p>}
+                {state.error && !state.turns.some(turn => turn.role === "assistant" && turn.error === state.error) && (
+                  <p role="alert" className="m-0 break-words px-1 text-caption text-[#C24444]">
+                    {state.error}
+                  </p>
+                )}
+                <Composer
+                  key={session.key}
+                  rateLimit={visibleRateLimit}
+                  onDismissRateLimit={() => state.rateLimit && setDismissedRateLimit(rateLimitKey(state.rateLimit))}
+                  draftKey={`noa-agent.draft:${session.cwd}:${activeId ?? session.runtimeId}`}
+                  reference={reference}
+                  quote={quote}
+                  onQuoteConsumed={() => setQuote(undefined)}
+                  prefill={prefill}
+                  onPrefillConsumed={() => setPrefill(undefined)}
+                  editDraft={editDraft ? { ...editDraft, queued: !!queueEditId, label: queueEditId ? "Edit queued message" : "Edit and resend" } : undefined}
+                  onCancelEdit={() => {
+                    setEditDraft(undefined)
+                    setQueueEditId(undefined)
+                  }}
+                  effort={state.effort}
+                  onEffort={setEffort}
+                  cwd={session.cwd}
+                  projects={projects}
+                  onProject={newSession}
+                  branch={changes?.branch}
+                  onBranchChange={() => setRefreshTick((n) => n + 1)}
+                  worktreeOf={worktreeOf}
+                  onWorktree={toggleWorktree}
+                  onFiles={() => showWorkspacePane("files")}
+                  newTask={!hasTurns}
+                  contextUsage={settings.composer.showContextUsage ? state.contextUsage : undefined}
+                  sendShortcut={settings.composer.sendShortcut}
+                  followUpMode={settings.composer.followUpMode}
+                  showFullAccess={settings.composer.showFullAccess}
+                  connection={state.connection}
+                  busy={state.busy}
+                  models={state.models}
+                  providers={state.providers}
+                  onProvider={setProvider}
+                  model={state.model}
+                  mode={state.permissionMode}
+                  commands={state.commands}
+                  onSend={sendComposer}
+                  onCommand={(action) => {
+                    if (action === "new") newSession()
+                    else if (action === "resume") {
+                      setSearchOpen(true)
+                    } else if (action === "settings") setSettingsOpen(true)
+                    else if (action === "context") { if (!overviewVisible) toggleOverview(); refreshContext() }
+                    else if (action === "activity") { setRightOpen(true); setRightTab("activity") }
+                    else if (action === "plan") setPermissionMode("plan")
+                    else if (action === "stop") interrupt()
+                    else if (action === "reload") reloadCommands()
+                  }}
+                  onInterrupt={interrupt}
+                  onModel={setModel}
+                  onMode={setPermissionMode}
+                />
+              </div>
             </div>
+            <OverviewPanel
+              state={state}
+              cwd={session.cwd}
+              open={overviewVisible}
+              workspaceRefreshKey={refreshTick}
+              endInset={8}
+              // The popover stops above the composer card (the footer's 32px top padding is only a fade).
+              bottomInset={Math.max(0, footerHeight - 32)}
+              docked={overviewDockedVisible}
+              onClose={() => setOverviewPopover(null)}
+              onRefreshContext={refreshContext}
+              onRefreshMcp={refreshMcp}
+              onReference={(path) => setReference({ path, key: Date.now() })}
+              onOpenChanges={() => { setRightOpen(true); setRightTab("changes") }}
+            />
           </div>
-          <OverviewPanel
-            state={state}
+          <TerminalPanel
             cwd={session.cwd}
-            open={overviewVisible}
-            workspaceRefreshKey={refreshTick}
-            endInset={8}
-            // The popover stops above the composer card (the footer's 32px top padding is only a fade).
-            bottomInset={Math.max(0, footerHeight - 32)}
-            docked={overviewDockedVisible}
-            onClose={() => setOverviewPopover(null)}
-            onRefreshContext={refreshContext}
-            onRefreshMcp={refreshMcp}
-            onReference={(path) => setReference({ path, key: Date.now() })}
-            onOpenChanges={() => { setRightOpen(true); setRightTab("changes") }}
+            open={terminalOpen}
+            height={terminalHeight}
+            available={chatHeight}
+            styleKey={JSON.stringify(settings.appearance)}
+            focusKey={terminalFocus}
+            onHeight={setTerminalHeight}
+            onHide={() => setTerminalOpen(false)}
+            onDraggingChange={setResizing}
+            onMovedToRight={() => { setRightOpen(true); setRightTab("terminal"); setRightTerminalFocus(n => n + 1) }}
           />
         </div>
       </div>

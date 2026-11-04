@@ -5,6 +5,8 @@ const shortcuts: [string, string[]][] = [
   ["New task", ["⌘", "N"]],
   ["Find tasks", ["⌘", "K"]],
   ["Settings", ["⌘", ","]],
+  ["Toggle bottom panel", ["⌘", "J"]],
+  ["Open terminal", ["⌃", "`"]],
   ["Run instruction", ["Enter"]],
   ["New line", ["Shift", "Enter"]],
   ["Reorder task", ["⌥", "↑/↓"]],

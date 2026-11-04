@@ -118,6 +118,7 @@ jobs:
         run: |
           node scripts/e2e-gui-workspace.mjs
           bun run --cwd gui scripts/e2e-workspace.ts
+          bun run --cwd gui scripts/e2e-terminal.ts
 
   # Split from gui: the bridge E2E alone is as long as the rest of that job.
   gui-bridge:

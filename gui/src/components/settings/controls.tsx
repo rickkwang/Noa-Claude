@@ -79,6 +79,25 @@ export function NumberField({
   )
 }
 
+// Commits on blur or Enter, so a half-typed value never applies.
+export function TextField({ value, placeholder, label, onChange }: { value: string; placeholder?: string; label: string; onChange: (value: string) => void }) {
+  const [draft, setDraft] = useState(value)
+  useEffect(() => setDraft(value), [value])
+  return (
+    <input
+      type="text"
+      value={draft}
+      placeholder={placeholder}
+      aria-label={label}
+      spellCheck={false}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={() => { if (draft.trim() !== value) onChange(draft.trim()) }}
+      onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+      className="h-8 w-48 shrink-0 rounded-lg border border-[var(--border-default)] bg-[var(--bg-card)] px-2 text-body text-[var(--text-primary)] outline-none placeholder:text-[var(--text-tertiary)]"
+    />
+  )
+}
+
 export function Slider({ value, label, onChange }: { value: number; label: string; onChange: (value: number) => void }) {
   return (
     <div className="flex h-9 min-w-[12rem] shrink-0 items-center gap-2.5">

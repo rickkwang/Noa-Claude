@@ -57,7 +57,7 @@ function ContextProbe() {
 
 function WorkspacePanelProbe() {
   const [tab, setTab] = useState<PanelTab>("changes")
-  return <div style={{ width: 700, height: 500 }}><RightPanel state={{ ...initialState, connection: "ready" }} cwd="/fixture" tab={tab} onTab={setTab} onStopTask={() => {}} onRefreshContext={() => {}} onLoadEarlier={() => {}} onReference={() => {}} workspaceRefreshKey={0} /></div>
+  return <div style={{ width: 700, height: 500 }}><RightPanel state={{ ...initialState, connection: "ready" }} cwd="/fixture" tabs={["files", "changes", "activity", "subagents"]} onTabs={() => {}} newTab={false} onNewTab={() => {}} tab={tab} onTab={setTab} onStopTask={() => {}} onRefreshContext={() => {}} onLoadEarlier={() => {}} onReference={() => {}} workspaceRefreshKey={0} /></div>
 }
 
 function Comparison() {
@@ -515,7 +515,7 @@ window.inspectAppBoundary = async () => {
   const tablist = document.querySelector('[aria-label="Panel tabs"]')!
   tablist.dispatchEvent(new KeyboardEvent("keydown", { key: "End", bubbles: true }))
   await new Promise(requestAnimationFrame)
-  const activity = tablist.querySelector('[data-tab]:last-child')!
+  const activity = Array.from(tablist.querySelectorAll('[data-tab]')).at(-1)!
   const reachable = activity.getAttribute("aria-selected") === "true" && activity.getBoundingClientRect().right <= tabs.right + 1
   tablist.dispatchEvent(new KeyboardEvent("keydown", { key: "Home", bubbles: true }))
   await new Promise(requestAnimationFrame)
@@ -537,7 +537,7 @@ window.checkBackgroundTaskNavigation = async () => {
   await wait(() => Array.from(document.querySelectorAll("button")).some(button => button.textContent === "Open in Activity"))
   Array.from(document.querySelectorAll<HTMLButtonElement>("button")).find(button => button.textContent === "Open in Activity")!.click()
   await new Promise(requestAnimationFrame)
-  return document.querySelector('[role="tab"][aria-selected="true"]')?.textContent === "Activity" && document.querySelector("#panel-activity")?.textContent?.includes("Background build") === true
+  return document.querySelector('[role="tab"][aria-selected="true"]')?.textContent?.trim() === "Activity" && document.querySelector("#panel-activity")?.textContent?.includes("Background build") === true
 }
 
 window.inspectPendingBoundary = async () => {

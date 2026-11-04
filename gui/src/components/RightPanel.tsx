@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react"
+import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from "react"
 import type { AgentState, AgentTask } from "../agent/reducer"
 import type { TurnDiff } from "../agent/protocol"
-import { ChevronRight, MoreHorizontal } from "../lib/icons"
+import { ChevronRight, Folder, Gauge, MoreHorizontal, PanelBottom, Plus, PlusMinus, Terminal, Users } from "../lib/icons"
+import { closeTerminal, moveTerminal, openTerminal, selectTerminal, snapshotTerminals, subscribeTerminals, terminalsVersion, terminalTabs } from "../lib/terminalSessions"
 import { query } from "../api"
 import { SPLIT_MIN_WIDTH, useDiffPref } from "../lib/diffPrefs"
 import { PopupMenu, anchorBelow, type PopupMenuAnchor } from "./PopupMenu"
@@ -9,8 +10,15 @@ import { ToolCard } from "./ToolCard"
 import { TurnReview } from "./TurnReview"
 import { WorkspaceFiles } from "./WorkspaceFiles"
 import { SubagentsPanel } from "./SubagentsPanel"
+import { NewTabPage } from "./NewTabPage"
+import { PanelTabStrip } from "./PanelTabStrip"
+import { TerminalView } from "./TerminalView"
 
+// Tools that open at most once; terminals open as many tabs as wanted.
 export type PanelTab = "files" | "changes" | "activity" | "subagents"
+// The shown pane: a tool, the New tab page, or the panel's active terminal.
+export type RightTab = PanelTab | "new" | "terminal"
+export const DEFAULT_RIGHT_TABS: PanelTab[] = ["files", "changes"]
 
 // The panel sits in a no-drag column; its tab row drags the window again, except on the tabs themselves.
 const dragRegion = { WebkitAppRegion: "drag" } as CSSProperties
@@ -18,19 +26,29 @@ const noDragRegion = { WebkitAppRegion: "no-drag" } as CSSProperties
 
 const SOURCES = { turn: "Last turn", all: "Uncommitted", unstaged: "Unstaged", staged: "Staged", branch: "Branch comparison", commit: "Committed" } as const
 
-const TABS: { id: PanelTab; label: string }[] = [
-  { id: "files", label: "Files" },
-  { id: "changes", label: "Changes" },
-  { id: "activity", label: "Activity" },
-  { id: "subagents", label: "Subagents" },
-]
+const TOOLS = {
+  files: { title: "Files", icon: Folder },
+  changes: { title: "Changes", icon: PlusMinus },
+  activity: { title: "Activity", icon: Gauge },
+  subagents: { title: "Subagents", icon: Users },
+} as const
+const TERMINAL_KEY = "terminal:"
 
 interface RightPanelProps {
   state: AgentState
   onStopTask: (id: string) => void
   cwd: string
-  tab: PanelTab
-  onTab: (tab: PanelTab) => void
+  // Whether the panel is shown; a hidden panel keeps its panes but does not attach a terminal.
+  open?: boolean
+  tabs: PanelTab[]
+  onTabs: (tabs: PanelTab[]) => void
+  newTab: boolean
+  onNewTab: (open: boolean) => void
+  tab: RightTab
+  onTab: (tab: RightTab) => void
+  terminalFocusKey?: number
+  // A terminal moved to the bottom panel, or the New tab page asked for it.
+  onBottomTerminal?: () => void
   onReference: (path: string) => void
   onWorkspaceChange?: () => void
   workspaceRefreshKey: number
@@ -41,7 +59,50 @@ interface RightPanelProps {
 }
 
 // Right column: one pane under a tab strip.
-export function RightPanel({ state, onStopTask, cwd, tab, onTab, onReference, onWorkspaceChange, workspaceRefreshKey, focusChange, focusFile, turnDiff, focusTask }: RightPanelProps) {
+export function RightPanel({ state, onStopTask, cwd, open = true, tabs, onTabs, newTab, onNewTab, tab, onTab, terminalFocusKey, onBottomTerminal, onReference, onWorkspaceChange, workspaceRefreshKey, focusChange, focusFile, turnDiff, focusTask }: RightPanelProps) {
+  useSyncExternalStore(subscribeTerminals, terminalsVersion, terminalsVersion)
+  const terminals = snapshotTerminals(cwd, "right")
+  const activeTerminal = terminals.find((terminal) => terminal.id === terminalTabs(cwd, "right").active) ?? terminals[0]
+  // Strip order: tools, then terminals, then an open New tab.
+  const stripKeys = [...tabs, ...terminals.map((terminal) => TERMINAL_KEY + terminal.id), ...(newTab ? ["new"] : [])]
+  const activeKey = tab === "terminal" ? (activeTerminal ? TERMINAL_KEY + activeTerminal.id : undefined) : tab
+  const shownKey = activeKey && stripKeys.includes(activeKey) ? activeKey : stripKeys[0]
+  // With no tabs at all the New tab page fills the panel, as an empty state.
+  const shown: RightTab = !shownKey || shownKey === "new" ? "new" : shownKey.startsWith(TERMINAL_KEY) ? "terminal" : (shownKey as PanelTab)
+  useEffect(() => {
+    if (shownKey && shownKey !== activeKey) select(shownKey)
+  })
+  function select(key: string) {
+    if (key.startsWith(TERMINAL_KEY)) {
+      selectTerminal(cwd, key.slice(TERMINAL_KEY.length))
+      onTab("terminal")
+    } else onTab(key as RightTab)
+  }
+  function close(key: string) {
+    const index = stripKeys.indexOf(key)
+    const rest = stripKeys.filter((other) => other !== key)
+    if (key === "new") onNewTab(false)
+    else if (key.startsWith(TERMINAL_KEY)) closeTerminal(cwd, key.slice(TERMINAL_KEY.length))
+    else onTabs(tabs.filter((other) => other !== key))
+    if (key === shownKey) {
+      const next = rest[Math.min(index, rest.length - 1)]
+      if (next) select(next)
+      else onTab("new")
+    }
+  }
+  // A tool chosen on the New tab page takes that tab's place; an open tool is focused instead of duplicated.
+  function openTool(id: string) {
+    onNewTab(false)
+    if (id === "terminal") {
+      openTerminal(cwd, "right")
+      onTab("terminal")
+      return
+    }
+    const tool = id as PanelTab
+    if (!tabs.includes(tool)) onTabs([...tabs, tool])
+    onTab(tool)
+  }
+  const [tabMenu, setTabMenu] = useState<{ key: string; anchor: PopupMenuAnchor }>()
   const [selectedTask, setSelectedTask] = useState<string>()
   useEffect(() => { setSelectedTask(focusTask?.id) }, [focusTask, state.sessionId])
   const subagents = state.tasks.filter(task => !task.taskType || task.taskType === "local_agent" || task.taskType === "remote_agent" || task.taskType === "in_process_teammate")
@@ -111,58 +172,53 @@ export function RightPanel({ state, onStopTask, cwd, tab, onTab, onReference, on
     observer.observe(element)
     return () => observer.disconnect()
   }, [])
-  // Arrow keys move between tabs, as in a WAI-ARIA tablist.
-  const onTabKey = (e: KeyboardEvent<HTMLDivElement>) => {
-    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) return
-    e.preventDefault()
-    const index = TABS.findIndex((t) => t.id === tab)
-    const nextId = TABS[e.key === "Home" ? 0 : e.key === "End" ? TABS.length - 1 : (index + (e.key === "ArrowRight" ? 1 : TABS.length - 1)) % TABS.length]?.id
-    if (!nextId) return
-    onTab(nextId)
-    const next = e.currentTarget.querySelector<HTMLElement>(`[data-tab="${nextId}"]`)
-    next?.focus({ preventScroll: true })
-    next?.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "instant" })
-  }
-
   return (
     <div className="flex h-full min-h-0 w-full flex-col bg-[var(--surface-page,#F9F9F7)] font-ui">
-      <div className="flex h-11 shrink-0 items-center gap-1 pl-2.5 pr-[76px] select-none" style={dragRegion}>
-        <div
-          className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto whitespace-nowrap hide-scrollbar"
-          role="tablist"
-          aria-label="Panel tabs"
-          onKeyDown={onTabKey}
-        >
-          {TABS.map((t) => {
-            const active = tab === t.id
-            return (
-              <button
-                key={t.id}
-                type="button"
-                role="tab"
-                data-tab={t.id}
-                id={`panel-tab-${t.id}`}
-                aria-controls={`panel-${t.id}`}
-                aria-selected={active}
-                tabIndex={active ? 0 : -1}
-                onClick={() => onTab(t.id)}
-                style={noDragRegion}
-                className={`h-6 shrink-0 rounded-md px-2 text-body transition-colors ${
-                  active
-                    ? "bg-[var(--fill-hover)] text-[var(--text-primary,#2D2D2B)]"
-                    : "noa-sidebar-hover-surface-subtle text-[var(--sidebar-text-muted,#898781)] hover:text-[var(--text-primary,#2D2D2B)]"
-                }`}
-              >
-                {t.label}
-              </button>
-            )
-          })}
+      {/* Level with the window controls; the right inset clears the header buttons fixed over this corner. */}
+      <PanelTabStrip
+        className="h-11 pr-[100px]"
+        style={dragRegion}
+        controlStyle={noDragRegion}
+        label="Panel tabs"
+        tabs={stripKeys.map((key) => {
+          if (key === "new") return { key, title: "New tab", icon: Plus }
+          if (key.startsWith(TERMINAL_KEY)) return { key, title: terminals.find((terminal) => TERMINAL_KEY + terminal.id === key)?.title ?? "Terminal", icon: Terminal }
+          return { key, ...TOOLS[key as PanelTab] }
+        })}
+        activeKey={shownKey}
+        onSelect={select}
+        onClose={close}
+        onContextMenu={(key, event) => { if (key.startsWith(TERMINAL_KEY)) setTabMenu({ key, anchor: { left: event.clientX, top: event.clientY, bottom: event.clientY } }) }}
+        onNew={() => { onNewTab(true); onTab("new") }}
+        newLabel="New tab"
+      />
+      {tabMenu && (
+        <PopupMenu
+          anchor={tabMenu.anchor}
+          label="Terminal tab"
+          onClose={() => setTabMenu(undefined)}
+          entries={[{ key: "move-bottom", label: "Move to bottom pane", icon: PanelBottom, onSelect: () => { moveTerminal(cwd, tabMenu.key.slice(TERMINAL_KEY.length), "bottom"); onBottomTerminal?.() } }]}
+        />
+      )}
+      {shown === "new" && (
+        <NewTabPage
+          tools={[
+            ...(Object.keys(TOOLS) as PanelTab[]).map((id) => ({ id, ...TOOLS[id] })),
+            { id: "terminal", title: "Terminal", icon: Terminal, shortcut: "⌃`" },
+          ]}
+          onSelect={openTool}
+          onOpenBottomTerminal={() => onBottomTerminal?.()}
+        />
+      )}
+      {shown === "terminal" && activeTerminal && (
+        <div className="flex min-h-0 flex-1 flex-col">
+          <TerminalView key={activeTerminal.id} cwd={cwd} terminal={activeTerminal} visible={open} focusKey={terminalFocusKey} />
         </div>
+      )}
+      <div id="panel-files" role="tabpanel" aria-labelledby="panel-tab-files" className="min-h-0 flex-1 flex-col overflow-hidden" style={{ display: shown === "files" ? "flex" : "none" }}>
+        <WorkspaceFiles key={`files-${cwd}`} cwd={cwd} active={shown === "files"} focus={focusFile} reveal={revealFile} refreshKey={workspaceRefreshKey} onReference={onReference} onUpdated={onWorkspaceChange} onOpenChanges={(path) => { if (path) setFileChange({ cwd, path, at: Date.now(), scope: "all" }); setSource("all"); onTab("changes") }} />
       </div>
-      <div id="panel-files" role="tabpanel" aria-labelledby="panel-tab-files" className="min-h-0 flex-1 flex-col overflow-hidden" style={{ display: tab === "files" ? "flex" : "none" }}>
-        <WorkspaceFiles key={`files-${cwd}`} cwd={cwd} active={tab === "files"} focus={focusFile} reveal={revealFile} refreshKey={workspaceRefreshKey} onReference={onReference} onUpdated={onWorkspaceChange} onOpenChanges={(path) => { if (path) setFileChange({ cwd, path, at: Date.now(), scope: "all" }); setSource("all"); onTab("changes") }} />
-      </div>
-      <div ref={changesRef} id="panel-changes" role="tabpanel" aria-labelledby="panel-tab-changes" className="min-h-0 flex-1 flex-col overflow-hidden" style={{ display: tab === "changes" ? "flex" : "none" }}>
+      <div ref={changesRef} id="panel-changes" role="tabpanel" aria-labelledby="panel-tab-changes" className="min-h-0 flex-1 flex-col overflow-hidden" style={{ display: shown === "changes" ? "flex" : "none" }}>
         <div className="noa-panel-toolbar noa-turn-scope">
           <button type="button" className="noa-ref-trigger is-source" aria-label="Review source" aria-haspopup="menu" aria-expanded={!!sourceMenu} onClick={(event) => setSourceMenu(sourceMenu ? undefined : { anchor: anchorBelow(event.currentTarget), trigger: event.currentTarget })}>{SOURCES[shownSource]}</button>
           {sourceMenu && (
@@ -222,19 +278,19 @@ export function RightPanel({ state, onStopTask, cwd, tab, onTab, onReference, on
             </div>
           </details>
         </div>
-        <div className="min-h-0 flex-1 flex-col" style={{ display: tab === "changes" && changeMode === "working" ? "flex" : "none" }}>
-          <WorkspaceFiles key={`changes-${cwd}`} cwd={cwd} changes scope={scope} focus={fileChange?.cwd === cwd && (!focusChange || fileChange.at > focusChange.at) ? fileChange : focusChange} foldAll={foldAll} canSplit={canSplit} onRevealInTree={(path) => { setRevealFile({ path, at: Date.now() }); onTab("files") }} active={tab === "changes" && changeMode === "working"} refreshKey={workspaceRefreshKey} onReference={onReference} onUpdated={onWorkspaceChange} />
+        <div className="min-h-0 flex-1 flex-col" style={{ display: shown === "changes" && changeMode === "working" ? "flex" : "none" }}>
+          <WorkspaceFiles key={`changes-${cwd}`} cwd={cwd} changes scope={scope} focus={fileChange?.cwd === cwd && (!focusChange || fileChange.at > focusChange.at) ? fileChange : focusChange} foldAll={foldAll} canSplit={canSplit} onRevealInTree={(path) => { setRevealFile({ path, at: Date.now() }); onTab("files") }} active={shown === "changes" && changeMode === "working"} refreshKey={workspaceRefreshKey} onReference={onReference} onUpdated={onWorkspaceChange} />
         </div>
         {turnDiff && (
-          <div className="min-h-0 flex-1 flex-col" style={{ display: tab === "changes" && changeMode === "turn" ? "flex" : "none" }}>
+          <div className="min-h-0 flex-1 flex-col" style={{ display: shown === "changes" && changeMode === "turn" ? "flex" : "none" }}>
             <TurnReview diff={turnDiff.diff} focusPath={turnDiff.path} focusKey={turnDiff.key} canSplit={canSplit} />
           </div>
         )}
       </div>
-      <div id="panel-activity" role="tabpanel" aria-labelledby="panel-tab-activity" className="min-h-0 flex-1 flex-col overflow-hidden" style={{ display: tab === "activity" ? "flex" : "none" }}>
+      <div id="panel-activity" role="tabpanel" aria-labelledby="panel-tab-activity" className="min-h-0 flex-1 flex-col overflow-hidden" style={{ display: shown === "activity" ? "flex" : "none" }}>
         <ActivityTab state={state} subagents={subagents} onStopTask={onStopTask} />
       </div>
-      <div id="panel-subagents" role="tabpanel" aria-labelledby="panel-tab-subagents" className="min-h-0 flex-1 flex-col overflow-hidden" style={{ display: tab === "subagents" ? "flex" : "none" }}>
+      <div id="panel-subagents" role="tabpanel" aria-labelledby="panel-tab-subagents" className="min-h-0 flex-1 flex-col overflow-hidden" style={{ display: shown === "subagents" ? "flex" : "none" }}>
         <SubagentsPanel tasks={subagents} selectedId={selectedTask} onSelect={setSelectedTask} onStopTask={onStopTask} />
       </div>
     </div>

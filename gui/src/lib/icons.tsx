@@ -114,6 +114,7 @@ export const FileHtml = glyph("file-html");
 export const FilePython = glyph("file-python");
 export const Photo = glyph("photo");
 export const ListDetails = codex("list-bullet");
+export const PanelBottom = codex("dock");
 export const Filter = glyph("filter");
 export const Folder = glyph("folder");
 export const FolderOpen = glyph("folder-open");
