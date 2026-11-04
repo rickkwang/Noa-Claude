@@ -3,6 +3,7 @@ import { Terminal, type ITheme } from "@xterm/xterm"
 import { FitAddon } from "@xterm/addon-fit"
 import { WebLinksAddon } from "@xterm/addon-web-links"
 import { ClipboardAddon } from "@xterm/addon-clipboard"
+import { Unicode11Addon } from "@xterm/addon-unicode11"
 
 // "stalled": the screen stopped taking output (an xterm parser error ends its write loop for good).
 export type TerminalStatus = "connecting" | "ready" | "reconnecting" | "exited" | "failed" | "stalled"
@@ -28,6 +29,17 @@ interface ProjectTabs {
 const STORAGE_KEY = "noa-agent.terminalTabs"
 const RECONNECT_DELAYS = [250, 1000, 2000, 4000]
 const STALL_MS = 5000
+
+// The WebGL renderer draws block and box characters to fill their cells, so pixel art and borders join up;
+// it loads off the startup path, and a terminal without it keeps the DOM renderer.
+const webgl = import("@xterm/addon-webgl").then((module) => module.WebglAddon).catch(() => null)
+
+// Colours a program picks for another background (or theme) are lifted to a readable contrast.
+const MORE_CONTRAST = typeof matchMedia === "undefined" ? undefined : matchMedia("(prefers-contrast: more)")
+function contrastRatio(): number {
+  return MORE_CONTRAST?.matches ? 7 : 4.5
+}
+MORE_CONTRAST?.addEventListener("change", () => restyleTerminals())
 
 // ANSI colours map onto the app's text tiers and five accents, so a shell prompt reads like the rest of the UI.
 const ACCENTS = {
@@ -136,6 +148,7 @@ class TerminalSession {
   message?: string
   private socket?: WebSocket
   private opened = false
+  private renderer: "deferred" | "webgl" | "dom" = "deferred"
   private received = false
   private closing = false
   private attempt = 0
@@ -151,7 +164,7 @@ class TerminalSession {
     this.title = cwd.split("/").pop() || cwd
     this.term = new Terminal({
       allowProposedApi: true,
-      allowTransparency: true,
+      minimumContrastRatio: contrastRatio(),
       cursorStyle: "bar",
       cursorBlink: true,
       letterSpacing: 0,
@@ -163,6 +176,8 @@ class TerminalSession {
     this.term.loadAddon(new ClipboardAddon())
     this.term.loadAddon(this.fit)
     this.term.loadAddon(new WebLinksAddon((_event, uri) => openLink(uri)))
+    this.term.loadAddon(new Unicode11Addon())
+    this.term.unicode.activeVersion = "11"
     this.term.attachCustomKeyEventHandler((event) => this.key(event))
     this.term.onData((data) => this.send({ type: "input", data }))
     this.term.onResize(({ cols, rows }) => this.send({ type: "resize", cols, rows }))
@@ -286,6 +301,29 @@ class TerminalSession {
     }
     this.resize()
     if (!this.socket && !this.closing) this.connect()
+    void this.useWebgl()
+  }
+
+  // Once the terminal has a size; a lost GPU context falls back to the DOM renderer for good.
+  private async useWebgl() {
+    if (this.renderer !== "deferred" || !this.opened || this.host.clientWidth === 0) return
+    this.renderer = "webgl"
+    const Addon = await webgl
+    if (this.closing) return
+    if (!Addon) {
+      this.renderer = "dom"
+      return
+    }
+    try {
+      const addon = new Addon()
+      addon.onContextLoss(() => {
+        addon.dispose()
+        this.renderer = "dom"
+      })
+      this.term.loadAddon(addon)
+    } catch {
+      this.renderer = "dom"
+    }
   }
 
   resize() {
@@ -295,6 +333,7 @@ class TerminalSession {
 
   restyle() {
     this.term.options.theme = terminalTheme()
+    this.term.options.minimumContrastRatio = contrastRatio()
     Object.assign(this.term.options, terminalFont())
     this.resize()
   }

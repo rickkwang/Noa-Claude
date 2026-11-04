@@ -1462,6 +1462,15 @@ html[data-capture-redact="true"] [data-capture-redact]::after {
 /* The close button sits 2px inside the tab's right edge, whatever the tab's inset. */
 .editor-tab .noa-tab-close { margin-right: calc(2px - var(--noa-tab-pad)); }
 .noa-tab-close { color: var(--text-secondary, #7B7974); transition: color 60ms var(--ease-out), background-color 60ms var(--ease-out); }
+/* The selected panel tab sits above the strip: a card in light, a light fill in dark (the dark card is the sunken floor). */
+.noa-panel-tab-selected { background-color: var(--bg-card, #FFFFFF); }
+[data-theme="dark"] .noa-panel-tab-selected { background-color: var(--fill-hover); }
+/* Long tab titles fade out over their last 1rem instead of ending in an ellipsis. */
+.noa-tab-title {
+  display: block; width: 100%; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: clip;
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 1rem), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 1rem), transparent);
+}
 .noa-tab-close:hover { color: var(--text-primary, #2D2D2B); background-color: var(--fill-hover); }
 /* Dragged tab takes an opaque surface so neighbours' titles don't show through; the extra attribute outranks the hover rule. */
 .editor-tab[data-dragging-tab="true"][data-active-tab],

@@ -20,9 +20,14 @@ function legacyFace(family: string, style: unknown): ThemeFontFace | undefined {
   return { family, fullName: `${family} ${name}`, postscriptName: `${family.replace(/\s+/g, '')}-${name.replace(/\s+/g, '')}`, style: name };
 }
 
+function isDefaultFonts(fonts: ThemeFonts | undefined): boolean {
+  return !fonts || (fonts.ui === SYSTEM_DEFAULT_FONT && fonts.content === CONTENT_SAME_AS_UI && fonts.code === SYSTEM_DEFAULT_FONT && !fonts.uiFace && !fonts.contentFace && !fonts.codeFace);
+}
+
 /**
- * Older builds stored one global family per role plus a weight/italic enum. Move those into the
- * per-theme fonts model the reference theme editor uses, and drop the superseded keys.
+ * Older builds stored one global family per role plus a weight/italic enum, and later one font set per theme.
+ * Fonts are now one set for both themes: a per-theme pair keeps the light set, or the dark one when only
+ * dark was ever customised. Superseded keys are dropped.
  */
 export function migrateAppearance(raw: unknown): Partial<AppSettings['appearance']> {
   if (!raw || typeof raw !== 'object') return {};
@@ -34,8 +39,12 @@ export function migrateAppearance(raw: unknown): Partial<AppSettings['appearance
     const code = typeof saved.codeFontFamily === 'string' ? saved.codeFontFamily : SYSTEM_DEFAULT_FONT;
     const uiFace = legacyFace(ui, saved.uiFontStyle);
     const contentFace = legacyFace(content, saved.contentFontStyle);
-    const fonts = (): ThemeFonts => ({ ui, content, code, ...(uiFace && { uiFace }), ...(contentFace && { contentFace }) });
-    saved.fonts = { light: fonts(), dark: fonts() };
+    saved.fonts = { ui, content, code, ...(uiFace && { uiFace }), ...(contentFace && { contentFace }) } satisfies ThemeFonts;
+  } else if ('light' in saved.fonts || 'dark' in saved.fonts) {
+    const { light, dark } = saved.fonts as { light?: ThemeFonts; dark?: ThemeFonts };
+    const kept = isDefaultFonts(light) && !isDefaultFonts(dark) ? dark : light;
+    if (kept) saved.fonts = kept;
+    else delete saved.fonts;
   }
 
   if (typeof saved.translucentSidebar === 'boolean') {

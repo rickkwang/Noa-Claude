@@ -121,8 +121,7 @@ export default function ThemeInjector({ settings }: ThemeInjectorProps) {
       ?.catch(() => { /* desktop-only; ignore if the bridge is unavailable */ });
   }, [isDark, settings.appearance.theme, settings.appearance.contrast, settings.appearance.translucentSidebar, settings.appearance.usePointerCursors, settings.appearance.reduceMotion]);
 
-  const variant = isDark ? 'dark' : 'light';
-  const themeFonts = settings.appearance.fonts?.[variant];
+  const themeFonts = settings.appearance.fonts;
   const uiFamily = themeFonts?.ui ?? SYSTEM_DEFAULT_FONT;
   const contentChoice = themeFonts?.content ?? CONTENT_SAME_AS_UI;
   const contentFamily = contentChoice === CONTENT_SAME_AS_UI ? uiFamily : contentChoice;

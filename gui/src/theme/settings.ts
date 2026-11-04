@@ -10,7 +10,7 @@ const defaultFonts = (): ThemeFonts => ({
 export const defaultSettings: AppSettings = {
   appearance: {
     theme: 'system',
-    fonts: { light: defaultFonts(), dark: defaultFonts() },
+    fonts: defaultFonts(),
     contrast: { light: 45, dark: 60 },
     maxWidth: 800,
     usePointerCursors: true,

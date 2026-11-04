@@ -33,9 +33,8 @@ export function AppearancePage({
   const [fontFamilies, setFontFamilies] = useState<LocalFontFamily[]>([])
   const change = (patch: Partial<AppSettings["appearance"]>) =>
     onChange({ ...settings, appearance: { ...appearance, ...patch } })
-  const activeFonts = appearance.fonts?.[variant] ?? defaultSettings.appearance.fonts[variant]
-  const updateFonts = (patch: Partial<ThemeFonts>) =>
-    change({ fonts: { ...appearance.fonts, [variant]: { ...activeFonts, ...patch } } })
+  const activeFonts = appearance.fonts ?? defaultSettings.appearance.fonts
+  const updateFonts = (patch: Partial<ThemeFonts>) => change({ fonts: { ...activeFonts, ...patch } })
   const facesFor = (family: string) => fontFamilies.find((f) => f.family === family)?.faces ?? []
   const faceLabel = (face: ThemeFontFace) => faceStyle(face).replace(/([a-z])([A-Z])/g, "$1 $2")
   // Prefer the family's Regular face: the platform lists faces in an arbitrary order.
@@ -137,15 +136,6 @@ export function AppearancePage({
         {showAdvanced && (
           <div className="flex flex-col gap-6">
             <Section title={`${isDark ? "Dark" : "Light"} theme`}>
-              <Row label="UI font style" description="Face of the selected family.">
-                {faceSelect({ role: "ui", family: activeFonts.ui, face: activeFonts.uiFace })}
-              </Row>
-              <Row label="Content font" description="Typeface for messages and page content.">
-                {fontPair({ role: "content", family: activeFonts.content, face: activeFonts.contentFace, options: contentFamilyOptions })}
-              </Row>
-              <Row label="Code font" description="Typeface for code blocks and diffs, separate from the interface font.">
-                {fontPair({ role: "code", family: activeFonts.code, face: activeFonts.codeFace, options: codeFamilyOptions })}
-              </Row>
               {supportsSidebarTranslucency() && (
                 <Row label="Translucent sidebar" description="Let the desktop material show behind the sidebar, per theme.">
                   <Toggle
@@ -163,6 +153,15 @@ export function AppearancePage({
               </Row>
             </Section>
             <Section title="Text">
+              <Row label="UI font style" description="Face of the selected family.">
+                {faceSelect({ role: "ui", family: activeFonts.ui, face: activeFonts.uiFace })}
+              </Row>
+              <Row label="Content font" description="Typeface for messages and page content.">
+                {fontPair({ role: "content", family: activeFonts.content, face: activeFonts.contentFace, options: contentFamilyOptions })}
+              </Row>
+              <Row label="Code font" description="Typeface for code blocks and diffs, separate from the interface font.">
+                {fontPair({ role: "code", family: activeFonts.code, face: activeFonts.codeFace, options: codeFamilyOptions })}
+              </Row>
               <Row label="UI font size" description="Base size for interface text (11–16 px).">
                 <NumberField value={appearance.uiFontSize} min={11} max={16} onChange={(uiFontSize) => change({ uiFontSize })} />
               </Row>

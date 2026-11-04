@@ -11,6 +11,8 @@ import { parseAuthorizationCode } from "../src/agent/useAgent"
 import { MessageList } from "../src/components/MessageList"
 import { Markdown } from "../src/components/Markdown"
 import { ToolCard } from "../src/components/ToolCard"
+import { migrateAppearance } from "../src/lib/appearanceMigration"
+import { CONTENT_SAME_AS_UI, SYSTEM_DEFAULT_FONT } from "../src/lib/fontFamily"
 
 const config = mkdtempSync(join(tmpdir(), "noa-gui-agent-test-"))
 const originalConfig = process.env.CLAUDE_CONFIG_DIR
@@ -833,4 +835,14 @@ test("legacy user messages also retain bookmark identity across history reloads"
   expect(first.every(Boolean)).toBe(true)
   expect(new Set(first).size).toBe(2)
   expect(second).toEqual(first)
+})
+
+test("per-theme fonts migrate to one set shared by both themes, keeping the customised one", () => {
+  const plain = { ui: SYSTEM_DEFAULT_FONT, content: CONTENT_SAME_AS_UI, code: SYSTEM_DEFAULT_FONT }
+  const custom = { ui: "OpenAI Sans", content: CONTENT_SAME_AS_UI, code: "JetBrainsMono Nerd Font Mono" }
+  expect(migrateAppearance({ fonts: { light: custom, dark: plain } }).fonts).toEqual(custom)
+  expect(migrateAppearance({ fonts: { light: plain, dark: custom } }).fonts).toEqual(custom)
+  expect(migrateAppearance({ fonts: { light: custom, dark: { ...plain, code: "Menlo" } } }).fonts).toEqual(custom)
+  expect(migrateAppearance({ fonts: custom }).fonts).toEqual(custom)
+  expect(migrateAppearance({ fontFamily: "Inter", codeFontFamily: "Menlo" }).fonts).toEqual({ ui: "Inter", content: CONTENT_SAME_AS_UI, code: "Menlo" })
 })

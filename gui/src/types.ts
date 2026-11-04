@@ -7,7 +7,7 @@ export interface ThemeFontFace {
   style?: string;
 }
 
-/** Font choices for one theme variant; the reference theme editor stores these per theme. */
+/** Font choices, shared by the light and dark themes. */
 export interface ThemeFonts {
   /** Family name, or SYSTEM_DEFAULT_FONT for the platform UI face. */
   ui: string;
@@ -23,7 +23,7 @@ export interface ThemeFonts {
 export interface AppSettings {
   appearance: {
     theme: 'light' | 'dark' | 'system';
-    fonts: { light: ThemeFonts; dark: ThemeFonts };
+    fonts: ThemeFonts;
     /** 0–100 per variant: the light and dark palettes have different resting points. */
     contrast: { light: number; dark: number };
     maxWidth: number;
