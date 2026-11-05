@@ -128,6 +128,15 @@ function terminalFont(): { fontFamily: string; fontSize: number } {
   }
 }
 
+// The WebGL canvas's CSS size is set a hair above its pixel size over the device pixel ratio, so the browser
+// never rounds the backing store below one canvas pixel per device pixel and resamples the glyphs.
+function alignCanvas(canvas: HTMLCanvasElement | undefined) {
+  const ratio = window.devicePixelRatio || 1
+  if (!canvas || ratio === 1 || canvas.width === 0 || canvas.height === 0) return
+  canvas.style.width = `${(canvas.width + 1 / 256) / ratio}px`
+  canvas.style.height = `${(canvas.height + 1 / 256) / ratio}px`
+}
+
 function openLink(uri: string) {
   if (/^https?:\/\//i.test(uri)) window.open(uri, "_blank", "noopener")
 }
@@ -149,6 +158,7 @@ class TerminalSession {
   private socket?: WebSocket
   private opened = false
   private renderer: "deferred" | "webgl" | "dom" = "deferred"
+  private webglCanvas?: HTMLCanvasElement
   private received = false
   private closing = false
   private attempt = 0
@@ -168,7 +178,7 @@ class TerminalSession {
       cursorStyle: "bar",
       cursorBlink: true,
       letterSpacing: 0,
-      lineHeight: 1.2,
+      lineHeight: 1,
       linkHandler: { activate: (_event, uri) => openLink(uri) },
       theme: terminalTheme(),
       ...terminalFont(),
@@ -319,8 +329,11 @@ class TerminalSession {
       addon.onContextLoss(() => {
         addon.dispose()
         this.renderer = "dom"
+        this.webglCanvas = undefined
       })
       this.term.loadAddon(addon)
+      this.webglCanvas = this.term.element?.querySelector<HTMLCanvasElement>(".xterm-screen > canvas:last-of-type") ?? undefined
+      alignCanvas(this.webglCanvas)
     } catch {
       this.renderer = "dom"
     }
@@ -329,6 +342,7 @@ class TerminalSession {
   resize() {
     if (!this.opened || !this.host.isConnected || this.host.clientWidth === 0 || this.host.clientHeight === 0) return
     this.fit.fit()
+    alignCanvas(this.webglCanvas)
   }
 
   restyle() {
