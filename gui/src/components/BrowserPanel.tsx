@@ -29,15 +29,15 @@ export function BrowserPanel({ cwd, tab, visible }: { cwd: string; tab: BrowserT
 
   return (
     <div className="flex h-full min-h-0 flex-col" data-browser-panel="">
-      <div className="noa-browser-toolbar flex shrink-0 items-center gap-1 border-b border-[var(--border-default)] px-2 py-2">
-        <button type="button" aria-label="Go back" title="Go back" disabled={!tab.canBack} onClick={() => void command('back')} className="noa-browser-action"><ArrowLeft size={16} /></button>
-        <button type="button" aria-label="Go forward" title="Go forward" disabled={!tab.canForward} onClick={() => void command('forward')} className="noa-browser-action"><ArrowRight size={16} /></button>
-        <button type="button" aria-label={tab.loading ? 'Stop loading' : 'Reload page'} title={tab.loading ? 'Stop loading' : 'Reload page'} disabled={!tab.url} onClick={() => tab.loading ? void command('stop') : void loadBrowser(cwd, tab)} className="noa-browser-action">{tab.loading ? <X size={16} /> : <RefreshCcw size={16} />}</button>
-        <form className="noa-browser-address flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2.5" onSubmit={event => { event.preventDefault(); void loadBrowser(cwd, tab, address) }}>
-          <Globe size={14} className="shrink-0 text-[var(--text-tertiary)]" />
-          <input aria-label="Local web address" placeholder="localhost:3000" value={address} onChange={event => setAddress(event.target.value)} onFocus={event => event.target.select()} className="min-w-0 flex-1 bg-transparent py-1.5 text-[length:var(--text-chat-sm)] outline-none" spellCheck={false} autoCapitalize="off" autoCorrect="off" />
+      <div className="noa-browser-toolbar flex h-11 shrink-0 items-center gap-0.5 border-b border-[var(--border-light)] px-2">
+        <button type="button" aria-label="Go back" title="Go back" disabled={!tab.canBack} onClick={() => void command('back')} className="noa-browser-action"><ArrowLeft size={15} /></button>
+        <button type="button" aria-label="Go forward" title="Go forward" disabled={!tab.canForward} onClick={() => void command('forward')} className="noa-browser-action"><ArrowRight size={15} /></button>
+        <button type="button" aria-label={tab.loading ? 'Stop loading' : 'Reload page'} title={tab.loading ? 'Stop loading' : 'Reload page'} disabled={!tab.url} onClick={() => tab.loading ? void command('stop') : void loadBrowser(cwd, tab)} className="noa-browser-action">{tab.loading ? <X size={15} /> : <RefreshCcw size={13} />}</button>
+        <form className="noa-browser-address mx-1 flex h-7 min-w-0 flex-1 items-center gap-1.5 rounded-lg px-2" onSubmit={event => { event.preventDefault(); void loadBrowser(cwd, tab, address) }}>
+          <Globe size={13} className="shrink-0 text-[var(--text-tertiary)]" />
+          <input aria-label="Local web address" placeholder="localhost:3000" value={address} onChange={event => setAddress(event.target.value)} onFocus={event => event.target.select()} className="min-w-0 flex-1 bg-transparent text-[length:var(--text-chat-sm)] outline-none placeholder:text-[var(--text-tertiary)]" spellCheck={false} autoCapitalize="off" autoCorrect="off" />
         </form>
-        <button type="button" aria-label="Open in browser" title="Open in browser" disabled={!tab.url} onClick={() => void command('external')} className="noa-browser-action"><ExternalLink size={16} /></button>
+        <button type="button" aria-label="Open in browser" title="Open in browser" disabled={!tab.url} onClick={() => void command('external')} className="noa-browser-action"><ExternalLink size={14} /></button>
       </div>
       <div ref={host} className="relative min-h-0 flex-1 overflow-hidden">
         {(!tab.url || tab.error || tab.loading) && <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-8 text-center text-[length:var(--text-chat-sm)] text-[var(--text-secondary)]" role={tab.error ? 'alert' : 'status'}>
