@@ -1410,6 +1410,17 @@ html[data-capture-redact="true"] [data-capture-redact]::after {
   background-color: var(--border-strong);
   transition: none;
 }
+/* Every other scroller gets the same thin thumb on the heavy border tier; otherwise the native bar follows the light
+   scheme (black in dark mode). In Chromium scrollbar-color disables ::-webkit-scrollbar styling, so
+   .scrollbar-on-scroll opts out; it is set per element, not inherited, so that opt-out stays off its descendants. */
+:where(*) {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+.scrollbar-on-scroll {
+  scrollbar-width: auto;
+  scrollbar-color: auto;
+}
 .hide-scrollbar {
   scrollbar-width: none;
 }
