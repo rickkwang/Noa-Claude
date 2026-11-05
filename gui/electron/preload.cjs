@@ -13,4 +13,9 @@ contextBridge.exposeInMainWorld('noaDesktop', {
   notifications: {
     configure: (settings) => ipcRenderer.invoke('noa:configure-notifications', settings),
   },
+  onSystemResume: (listener) => {
+    const handler = () => listener()
+    ipcRenderer.on('noa:system-resume', handler)
+    return () => ipcRenderer.removeListener('noa:system-resume', handler)
+  },
 })

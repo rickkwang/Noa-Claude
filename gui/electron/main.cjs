@@ -1,7 +1,7 @@
 // Desktop shell: starts the Bun bridge (server/main.ts), serves the
 // built UI from it, and shows it in a native window. The bridge is the only
 // process that talks to the agent; the window is a plain client of it.
-const { app, BrowserWindow, Menu, dialog, ipcMain, nativeImage, nativeTheme, session, shell } = require('electron')
+const { app, BrowserWindow, Menu, dialog, ipcMain, nativeImage, nativeTheme, powerMonitor, session, shell } = require('electron')
 const { spawn } = require('child_process')
 const { randomBytes } = require('crypto')
 const fs = require('fs')
@@ -297,6 +297,8 @@ if (primaryInstance) app.whenReady().then(async () => {
   try {
     createWindow(await startBridge())
     notifier.start()
+    // GPU textures can come back from sleep corrupted while the WebGL context survives; the page rebuilds its caches.
+    powerMonitor.on('resume', () => win?.webContents.send('noa:system-resume'))
   } catch (err) {
     dialog.showErrorBox('Noa Agent could not start', String(err.message ?? err))
     app.quit()
