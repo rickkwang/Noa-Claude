@@ -49,6 +49,8 @@ function glyph(name: string, mirrored = false) {
 
 export const AlertTriangle = glyph("exclamation-mark-triangle");
 export const AlignLeft = glyph("text-alignleft");
+export const TextWrap = glyph("text-wrap");
+export const TextOverflow = glyph("text-overflow");
 export const ArrowUpDown = glyph("arrow-down-arrow-up");
 export const Worktree = glyph("arrow-branch");
 export const ArrowDown = glyph("arrow-down-md");
@@ -122,6 +124,7 @@ export const FolderOpen = glyph("folder-open");
 export const FolderPlus = glyph("folder-badge-plus");
 export const GitBranch = glyph("branch");
 export const Tag = glyph("tag");
+export const Code = glyph("code");
 export const Terminal = glyph("terminal");
 export const Tool = glyph("wrench");
 export const Info = glyph("info-circle");

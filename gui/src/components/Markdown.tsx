@@ -1,11 +1,11 @@
-import { Children, Fragment, cloneElement, isValidElement, createContext, memo, useContext, useEffect, useMemo, useRef, useState, type AnimationEvent, type ReactNode } from "react"
+import { Children, Fragment, cloneElement, isValidElement, createContext, memo, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type AnimationEvent, type ReactNode } from "react"
 import { type Token, type Tokens } from "marked"
 import { MAX_INLINE_LINE, parseBlocks, parseInline, parseStreaming, type MarkdownPrefix } from "./markdownGrammar"
 import { Diagram, MarkdownTable, MathText, PreviewDialog } from "./RichContent"
 export { parseBlocks } from "./markdownGrammar"
 import { Lightbox, type LightboxItem } from "./Lightbox"
 import hljs from "highlight.js/lib/common"
-import { Check, Copy, Terminal } from "../lib/icons"
+import { Check, Code, Copy, TextOverflow, TextWrap } from "../lib/icons"
 import { localWebUrl, openBrowser } from "../lib/browserTabs"
 
 // Parse the existing Markdown grammar as a tree; render React children, never raw HTML.
@@ -302,11 +302,42 @@ function BlockViewImpl({ block, streaming, streamKey, preserveUserText }: { bloc
   }
 }
 
+// Code wrapping is one app-wide preference: toggling it in any block updates every block and survives restarts.
+const CODE_WRAP_KEY = "noa-agent.codeWrap"
+const codeWrapListeners = new Set<() => void>()
+let codeWrap = (() => { try { return localStorage.getItem(CODE_WRAP_KEY) === "true" } catch { return false } })()
+function subscribeCodeWrap(listener: () => void) { codeWrapListeners.add(listener); return () => { codeWrapListeners.delete(listener) } }
+function setCodeWrap(value: boolean) {
+  codeWrap = value
+  try { localStorage.setItem(CODE_WRAP_KEY, String(value)) } catch { /* Storage unavailable. */ }
+  codeWrapListeners.forEach(listener => listener())
+}
+
+// Header names for fenced languages; an alias shares its language's name, an unknown tag shows as written, and no tag reads as plain text.
+const CODE_LANGUAGE_NAMES: Record<string, string> = {
+  arduino: "Arduino", bash: "Bash", c: "C", cpp: "C++", csharp: "C#", css: "CSS", diff: "Diff", go: "Go", graphql: "GraphQL",
+  ini: "INI", java: "Java", javascript: "JavaScript", json: "JSON", kotlin: "Kotlin", latex: "LaTeX", less: "Less", lua: "Lua",
+  makefile: "Makefile", markdown: "Markdown", mermaid: "Mermaid", objectivec: "Objective-C", perl: "Perl", php: "PHP",
+  "php-template": "PHP template", plaintext: "Plain text", python: "Python", "python-repl": "Python REPL", r: "R", ruby: "Ruby",
+  rust: "Rust", scss: "SCSS", shell: "Shell", sql: "SQL", swift: "Swift", typescript: "TypeScript", vbnet: "Visual Basic .NET",
+  wasm: "WebAssembly", xml: "XML", yaml: "YAML",
+}
+const CODE_LANGUAGE_ALIASES: Record<string, string> = {
+  "c#": "csharp", "c++": "cpp", cs: "csharp", gql: "graphql", html: "xml", js: "javascript", jsx: "javascript", math: "latex",
+  md: "markdown", objc: "objectivec", patch: "diff", py: "python", rb: "ruby", rs: "rust", sh: "bash", tex: "latex", text: "plaintext",
+  ts: "typescript", tsx: "typescript", vb: "vbnet", yml: "yaml", zsh: "bash",
+}
+function codeLanguageName(lang: string): string {
+  const key = lang.trim().toLowerCase() || "plaintext"
+  return CODE_LANGUAGE_NAMES[CODE_LANGUAGE_ALIASES[key] ?? key] ?? lang.trim()
+}
+
 export function CodeBlock({ lang, code, complete = true, title }: { lang: string; code: string; complete?: boolean; title?: string }) {
   const [copied, setCopied] = useState(false)
   const [copyError, setCopyError] = useState(false)
-  const [wrap, setWrap] = useState(false)
+  const wrap = useSyncExternalStore(subscribeCodeWrap, () => codeWrap, () => false)
   const [preview, setPreview] = useState(false)
+  const heading = title ?? codeLanguageName(lang)
   const highlighted = useMemo(() => {
     const name = ({
       ts: "typescript",
@@ -333,10 +364,12 @@ export function CodeBlock({ lang, code, complete = true, title }: { lang: string
   return (
     <div className="noa-code-block not-prose my-3 min-w-0 overflow-hidden rounded-[20px] border">
       <div data-copy-exclude className="flex min-h-12 items-center gap-2 py-1.5 ps-5 pe-1.5 font-ui text-[length:var(--text-chat-sm)] font-medium text-[var(--text-primary)]">
-        <Terminal size={16} className="shrink-0" aria-hidden="true" />
-        <span className="min-w-0 flex-1 truncate">{title ?? (lang || "text")}</span>
-        <button type="button" aria-label="Toggle code wrapping" aria-pressed={wrap} onClick={() => setWrap(value => !value)} className="px-2 text-caption">Wrap</button>
-        {complete && ["html", "svg"].includes(lang.toLowerCase()) && <button type="button" onClick={() => setPreview(true)} className="px-2 text-caption">Preview</button>}
+        <Code size={16} className="shrink-0" aria-hidden="true" />
+        <span className="min-w-0 flex-1 truncate">{heading}</span>
+        <button type="button" aria-label={wrap ? "Disable word wrap" : "Enable word wrap"} aria-pressed={wrap} title={wrap ? "Disable word wrap" : "Enable word wrap"} onClick={() => setCodeWrap(!wrap)} className="flex size-8 shrink-0 items-center justify-center rounded-lg text-[var(--text-secondary)] transition-colors hover:bg-[var(--fill-hover)] hover:text-[var(--text-primary)] active:bg-[var(--fill-active)]">
+          {wrap ? <TextWrap size={16} /> : <TextOverflow size={16} />}
+        </button>
+        {complete && ["html", "svg"].includes(lang.toLowerCase()) && <button type="button" onClick={() => setPreview(true)} className="flex h-8 shrink-0 items-center rounded-lg px-2.5 text-caption text-[var(--text-secondary)] transition-colors hover:bg-[var(--fill-hover)] hover:text-[var(--text-primary)] active:bg-[var(--fill-active)]">Preview</button>}
         {complete && <button type="button" onClick={copy} aria-label={copied ? "Copied" : "Copy code"} title={copyError ? "Copy failed. Try again." : copied ? "Copied" : "Copy code"} className="flex size-8 shrink-0 items-center justify-center rounded-lg text-[var(--text-secondary)] hover:bg-[var(--fill-hover)] hover:text-[var(--text-primary)]">
           {copied ? <Check size={16} /> : <Copy size={16} />}
         </button>}

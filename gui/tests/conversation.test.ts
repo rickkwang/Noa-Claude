@@ -70,7 +70,7 @@ test("math renders without interpreting currency or trusting TeX HTML", () => {
 })
 
 test("Mermaid only starts after its fence closes", () => {
-  expect(render(createElement(Markdown, { text: "```mermaid\ngraph LR\nA-->B", streaming: true }))).toContain('aria-label="Toggle code wrapping"')
+  expect(render(createElement(Markdown, { text: "```mermaid\ngraph LR\nA-->B", streaming: true }))).toContain('aria-label="Enable word wrap"')
   expect(render(createElement(Markdown, { text: "```mermaid\ngraph LR\nA-->B\n```" }))).toContain("Rendering diagram")
 })
 
