@@ -129,9 +129,9 @@ export function EnvironmentMenu({ cwd, branch, onBranchChange, worktree, canTogg
         onClick={() => (open ? close() : setOpen(true))}
         aria-label="Configure local environment"
         aria-expanded={open}
-        className={`flex size-7 items-center justify-center rounded-full noa-sidebar-hover-surface-subtle ${open ? "bg-[var(--fill-hover)]" : ""}`}
+        className={`flex h-7 items-center justify-center rounded-full noa-sidebar-hover-surface-subtle ${branch ? "px-2" : "w-7"} ${open ? "bg-[var(--fill-hover)]" : ""}`}
       >
-        <ComposerSettingsIcon />
+        {branch ? <><ComposerBranchIcon /><span className="min-w-0 truncate">{branch}</span></> : <ComposerSettingsIcon />}
       </button>
       {open && (
         <div

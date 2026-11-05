@@ -879,7 +879,8 @@ export function Composer({
             />
           </div>
           <div className="ml-auto flex min-w-0 items-center gap-1">
-            {contextUsage && (
+            {/* A new task has only the baseline prompt, whose sliver reads as a loading spinner. */}
+            {contextUsage && !newTask && (
               <span
                 tabIndex={0}
                 role="img"
