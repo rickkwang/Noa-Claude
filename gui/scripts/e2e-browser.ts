@@ -10,11 +10,15 @@ const gui = resolve(import.meta.dir, '..')
 const temporary = mkdtempSync(join(tmpdir(), 'noa-browser-e2e-'))
 const output = resolve(process.argv[2] ?? join(tmpdir(), 'noa-browser-checks'))
 mkdirSync(output, { recursive: true })
-const cookies: string[] = []
+const cookies: string[] = [], paths: string[] = []
 const website = Bun.serve({ hostname: '127.0.0.1', port: 0, fetch(request) {
   cookies.push(request.headers.get('cookie') ?? '')
   const url = new URL(request.url)
-  if (url.pathname === '/redirect' || url.pathname === '/frame-redirect') return Response.redirect('https://example.com/')
+  paths.push(url.pathname)
+  // public.test is mapped onto this server by --host-rules, so it is a public host that needs no network.
+  if (url.pathname === '/redirect' || url.pathname === '/frame-redirect') return Response.redirect('http://public.test/')
+  if (url.pathname === '/to-local') return Response.redirect(website.url.href)
+  if (url.pathname === '/slow') return new Promise(resolve => setTimeout(() => resolve(new Response('<!doctype html><title>Slow</title><body style="background:#123">slow</body>', { headers: { 'content-type': 'text/html' } })), 800))
   return new Response(`<!doctype html><title>Local studio</title><style>body{font:16px system-ui;margin:36px;color:#292927;background:#f8f7f4}h1{font-size:36px}button,a{display:inline-block;padding:12px;border-radius:10px;border:1px solid #ddd;background:white;color:inherit}header{color:#777;font-size:13px}.card{margin-top:30px;border:1px solid #ddd;border-radius:18px;padding:24px;background:white}</style><header>LOCAL PREVIEW · DEVELOPMENT</header><h1>Your app, beside your code.</h1><p>This page runs in an isolated native browser view.</p><div class="card"><button id="counter" onclick="this.textContent=Number(this.textContent)+1">0</button> <a id="next" href="/next">Next page</a></div><input id="field" aria-label="Preview input"><a id="offline" href="http://127.0.0.1:1/">Offline service</a>${url.pathname === '/with-frame' ? '<iframe src="/frame-redirect"></iframe>' : ''}<script>window.loadedAt=Date.now()</script>`, { headers: { 'content-type': 'text/html; charset=utf-8', 'x-frame-options': 'DENY', 'content-security-policy': "frame-ancestors 'none'" } })
 } })
 const target = website.url.href
@@ -66,7 +70,7 @@ createRoot(document.getElementById('root')).render(<Fixture/>);
   writeFileSync(join(temporary, 'main.cjs'), `
 const {app,BrowserWindow,ipcMain,session,shell}=require('electron'),fs=require('fs'),assert=require('node:assert/strict');
 const {registerPreview}=require(${source('electron/preview.cjs')});
-app.setPath('userData',${JSON.stringify(join(temporary, 'profile'))});let win;const close=registerPreview({ipcMain,getWindow:()=>win,blockedOrigins:()=>[${JSON.stringify(host.url.origin)}]});
+app.commandLine.appendSwitch('host-rules','MAP public.test 127.0.0.1:'+${JSON.stringify(String(new URL(target).port))});app.setPath('userData',${JSON.stringify(join(temporary, 'profile'))});let win;const close=registerPreview({ipcMain,getWindow:()=>win,blockedOrigins:()=>[${JSON.stringify(host.url.origin)}]});
 ipcMain.handle('noa:set-sidebar-translucency',()=>{});const external=[];shell.openExternal=async url=>{external.push(url)};
 app.whenReady().then(async()=>{win=new BrowserWindow({width:1200,height:800,show:true,webPreferences:{sandbox:true,contextIsolation:true,preload:${source('electron/preload.cjs')},backgroundThrottling:false}});
  win.webContents.on('did-navigate',close);
@@ -103,6 +107,10 @@ app.whenReady().then(async()=>{win=new BrowserWindow({width:1200,height:800,show
  await evaluate('window.fixture.menu(true)');await wait(()=>!pages()[0].getVisible(),'menu overlay');await screenshot('menu');await evaluate('window.fixture.menu(false)');await wait(()=>pages()[0].getVisible(),'menu closed');
  await evaluate('document.documentElement.dataset.settingsOpen="true"');await wait(()=>!pages()[0].getVisible(),'settings overlay');await evaluate('delete document.documentElement.dataset.settingsOpen');await wait(()=>pages()[0].getVisible(),'settings closed');check('menus and settings stay above native content');
  for(const zoom of [0.8,1.25]){win.webContents.setZoomFactor(zoom);await evaluate('window.fixture.width(430)');await new Promise(r=>setTimeout(r,150));const rect=await evaluate('(()=>{const r=document.querySelector("[data-browser-panel] > div:last-child").getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height}})()');const actual=pages()[0].getBounds();for(const key of ['x','y','width','height'])assert.ok(Math.abs(actual[key]-Math.round(rect[key]*zoom))<=1,JSON.stringify({zoom,rect,actual}));}win.webContents.setZoomFactor(1);check('native bounds follow resizing and app zoom');
+ {const [startW]=win.getSize();const offsets=()=>{const b=pages()[0].getBounds(),[W,H]=win.getContentSize();return {right:W-b.x-b.width,bottom:H-b.y-b.height}};const anchor=offsets();
+  for(const dw of [-60,-120,-180,-60,0]){win.setSize(startW+dw,800);await new Promise(r=>setImmediate(r));const now=offsets();assert.ok(Math.abs(now.right-anchor.right)<=1&&Math.abs(now.bottom-anchor.bottom)<=1,'before the renderer reports: '+JSON.stringify({dw,anchor,now}))}
+  await new Promise(r=>setTimeout(r,200));const rect=await evaluate('(()=>{const r=document.querySelector("[data-browser-panel] > div:last-child").getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height}})()');const actual=pages()[0].getBounds();for(const key of ['x','y','width','height'])assert.ok(Math.abs(actual[key]-Math.round(rect[key]))<=1,JSON.stringify({rect,actual}));
+  check('native page follows a window resize before the renderer reports and settles on the panel')}
  await guest().executeJavaScript('document.getElementById("next").click()',true);await wait(()=>guest().getURL().endsWith('/next'),'navigation');await wait(()=>evaluate('!document.querySelector(".noa-browser-toolbar button").disabled'),'back enabled');await click('[aria-label="Go back"]');await wait(()=>guest().getURL()===${JSON.stringify(target)},'back');await click('[aria-label="Go forward"]');await wait(()=>guest().getURL().endsWith('/next'),'forward');check('back and forward track native history');
  const id=await evaluate('window.fixture.tabs()[0].id');
 
@@ -113,7 +121,7 @@ app.whenReady().then(async()=>{win=new BrowserWindow({width:1200,height:800,show
    assert.equal(await evaluate('window.fixture.tabs()[0].error??null'),null);assert.equal(pages()[0].getVisible(),true);
  });
  await regression('invalid address errors survive view visibility updates',async()=>{
-   await evaluate('window.fixture.load("https://example.com/")');await new Promise(r=>setTimeout(r,150));assert.match(await evaluate('document.querySelector("[role=alert]")?.textContent??""'),/Enter a local/);
+   await evaluate('window.fixture.load("ftp://example.com/")');await new Promise(r=>setTimeout(r,150));assert.match(await evaluate('document.querySelector("[role=alert]")?.textContent??""'),/Enter a web address/);
  });
  await regression('failed links retain their destination when retrying',async()=>{
    await guest().executeJavaScript('document.getElementById("offline").click()',true);await wait(()=>evaluate('!!window.fixture.tabs()[0].error'),'failed link');assert.equal(await evaluate('window.fixture.tabs()[0].url'),'http://127.0.0.1:1/');
@@ -128,11 +136,65 @@ app.whenReady().then(async()=>{win=new BrowserWindow({width:1200,height:800,show
  await regression('modified terminal links keep the external browser path',async()=>{
    const before=external.length;for(const modifier of ['metaKey','ctrlKey'])await evaluate('window.fixture.terminal().term.options.linkHandler.activate(new MouseEvent("click",{'+modifier+':true}),'+JSON.stringify(${JSON.stringify(target)})+')');await new Promise(r=>setTimeout(r,100));assert.equal(external.length,before+2);await evaluate('window.fixture.terminal().term.options.linkHandler.activate(new MouseEvent("click"),'+JSON.stringify(${JSON.stringify(target)})+')');assert.equal(external.length,before+2);assert.equal(pages().length,1);
  });
+ const publicSite='http://public.test/';
+ await regression('public sites open in the panel',async()=>{
+   await evaluate('window.noaDesktop.preview.command('+JSON.stringify({action:'navigate',id,url:publicSite})+')');await wait(()=>!guest().isLoading()&&guest().getURL()===publicSite,'public page');
+   assert.equal(guest().getTitle(),'Local studio');assert.equal(await evaluate('window.fixture.tabs()[0].error??null'),null);
+ });
+ await regression('public pages cannot link into private addresses',async()=>{
+   await evaluate('window.noaDesktop.preview.command('+JSON.stringify({action:'navigate',id,url:publicSite})+')');await wait(()=>!guest().isLoading()&&guest().getURL()===publicSite,'public page');
+   await guest().executeJavaScript('document.getElementById("offline").click()',true);await wait(()=>evaluate('(window.fixture.tabs()[0].error??"").includes("public page")'),'blocked private link');assert.equal(guest().getURL(),publicSite);
+ });
+ await regression('public redirects cannot reach private addresses',async()=>{
+   await evaluate('window.noaDesktop.preview.command('+JSON.stringify({action:'navigate',id,url:publicSite})+')');await wait(()=>!guest().isLoading()&&guest().getURL()===publicSite,'public page');
+   await guest().executeJavaScript('location.href="/to-local"',true);await wait(()=>evaluate('(window.fixture.tabs()[0].error??"").includes("public page")'),'blocked private redirect');assert.equal(guest().getURL(),publicSite);
+ });
+ await regression('public pages cannot send requests to private addresses',async()=>{
+   await evaluate('window.noaDesktop.preview.command('+JSON.stringify({action:'navigate',id,url:publicSite})+')');await wait(()=>!guest().isLoading()&&guest().getURL()===publicSite,'public page');
+   assert.equal(await guest().executeJavaScript('fetch('+JSON.stringify(${JSON.stringify(target)}+'private-probe')+',{mode:"no-cors"}).then(()=>"sent",()=>"blocked")'),'blocked');
+   assert.equal(await guest().executeJavaScript('fetch('+JSON.stringify(${JSON.stringify(target.replace('127.0.0.1', 'localhost.'))}+'private-dot')+',{mode:"no-cors"}).then(()=>"sent",()=>"blocked")'),'blocked');
+   assert.equal(await guest().executeJavaScript('new Promise(r=>{const f=document.createElement("iframe");f.src='+JSON.stringify(${JSON.stringify(target)}+'private-frame')+';document.body.append(f);setTimeout(()=>r("done"),400)})'),'done');
+ });
+ await regression('an address the user enters still opens local pages from a public page',async()=>{
+   await evaluate('window.noaDesktop.preview.command('+JSON.stringify({action:'navigate',id,url:publicSite})+')');await wait(()=>!guest().isLoading()&&guest().getURL()===publicSite,'public page');
+   await evaluate('window.noaDesktop.preview.command('+JSON.stringify({action:'navigate',id,url:${JSON.stringify(target)}})+')');await wait(()=>!guest().isLoading()&&guest().getURL()===${JSON.stringify(target)},'entered local page');
+ });
+ await regression('bare addresses open over https, local ones over http',async()=>{
+   await evaluate('window.fixture.load("example.com")');assert.equal(await evaluate('window.fixture.tabs()[0].url'),'https://example.com/');
+   await evaluate('window.fixture.load("localhost:3000")');assert.equal(await evaluate('window.fixture.tabs()[0].url'),'http://localhost:3000/');
+   await evaluate('window.fixture.load("api:8080")');assert.equal(await evaluate('window.fixture.tabs()[0].url'),'http://api:8080/');
+   await evaluate('window.fixture.load("not-a-host")');assert.match(await evaluate('window.fixture.tabs()[0].error??""'),/Enter a web address/);
+ });
+ await regression('the address bar shows a short address and edits the full URL',async()=>{
+   const bare=${JSON.stringify(new URL(target).host)};
+   await evaluate('(()=>{const input=document.querySelector(".noa-browser-address input");input.focus();Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set.call(input,'+JSON.stringify(bare)+');input.dispatchEvent(new Event("input",{bubbles:true}));input.form.requestSubmit()})()');
+   await wait(()=>!guest().isLoading()&&guest().getURL()===${JSON.stringify(target)},'typed address');await new Promise(r=>setTimeout(r,100));
+   assert.equal(await evaluate('document.querySelector(".noa-browser-address input").value'),bare);
+   win.focus();win.webContents.focus();await evaluate('document.querySelector(".noa-browser-address input").focus()');await new Promise(r=>setTimeout(r,100));
+   assert.equal(await evaluate('document.querySelector(".noa-browser-address input").value'),${JSON.stringify(target)});
+   await evaluate('document.querySelector(".noa-browser-address input").blur()');
+ });
+ await regression('a new page stays hidden until its document is ready',async()=>{
+   const slow=crypto.randomUUID(),before=pages().length;
+   await evaluate('window.noaDesktop.preview.command('+JSON.stringify({action:'create',id:slow,cwd:'/fixture-slow',url:${JSON.stringify(target)}+'slow'})+')');
+   await evaluate('window.noaDesktop.preview.command('+JSON.stringify({action:'bounds',id:slow,rect:{x:10,y:10,width:200,height:200},viewport:[1200,800]})+')');
+   const view=pages().find(v=>v.webContents.getURL().endsWith('/slow')||v.webContents.isLoading()&&!pages().slice(0,before).includes(v))??pages()[pages().length-1];
+   await new Promise(r=>setTimeout(r,300));assert.equal(view.getVisible(),false,'visible before its document was ready');
+   await wait(()=>view.getVisible(),'revealed after dom-ready');
+   await evaluate('window.noaDesktop.preview.command('+JSON.stringify({action:'close',id:slow})+')');
+ });
+
+ await regression('a page that asks to stay cannot block leaving it',async()=>{
+   await guest().executeJavaScript('window.onbeforeunload=e=>{e.preventDefault();e.returnValue="stay";return "stay"};0',true);
+   await evaluate('window.noaDesktop.preview.command('+JSON.stringify({action:'navigate',id,url:${JSON.stringify(target)}+'next'})+')');
+   await wait(()=>!guest().isLoading()&&guest().getURL().endsWith('/next'),'left a beforeunload page');
+ });
+
  assert.deepEqual(failures,[],failures.join('; '));
  external.length=0;
 
- for(const url of ['file:///etc/passwd','javascript:alert(1)','http://user:pass@localhost:3000',${JSON.stringify(host.url.href)},'https://example.com/']){const result=await evaluate('window.noaDesktop.preview.command('+JSON.stringify({action:'navigate',id,url})+')');assert.ok(result.error,url)}check('IPC rejects external schemes, credentials, and the app server');await guest().executeJavaScript('for(let i=0;i<5;i++)window.open("https://example.com/popup")');assert.equal(external.length,0);await click('[aria-label="Open in browser"]');assert.equal(external.length,1);check('page scripts cannot launch external browsers; the toolbar remains user controlled');
- await evaluate('window.noaDesktop.preview.command('+JSON.stringify({action:'navigate',id,url:${JSON.stringify(target)}+'redirect'})+')');await wait(()=>evaluate('document.querySelector("[role=alert]")?.textContent.includes("only opens local")'),'blocked redirect');assert.ok(!guest().getURL().startsWith('https://example.com'));check('external redirects cannot leave the local preview');
+ for(const url of ['file:///etc/passwd','javascript:alert(1)','http://user:pass@localhost:3000',${JSON.stringify(host.url.href)}]){const result=await evaluate('window.noaDesktop.preview.command('+JSON.stringify({action:'navigate',id,url})+')');assert.ok(result.error,url)}check('IPC rejects non-web schemes, credentials, and the app server');await guest().executeJavaScript('for(let i=0;i<5;i++)window.open("http://public.test/popup")');assert.equal(external.length,0);await click('[aria-label="Open in browser"]');assert.equal(external.length,1);check('page scripts cannot launch external browsers; the toolbar remains user controlled');
+ await evaluate('window.noaDesktop.preview.command('+JSON.stringify({action:'navigate',id,url:${JSON.stringify(target)}+'redirect'})+')');await wait(()=>!guest().isLoading()&&guest().getURL()==='http://public.test/','public redirect');check('local pages may redirect to public sites');
  const offline='http://127.0.0.1:1/';await evaluate('window.noaDesktop.preview.command('+JSON.stringify({action:'navigate',id,url:offline})+')');await wait(()=>evaluate('!!document.querySelector("[role=alert]")'),'load error');assert.equal(await evaluate('window.fixture.tabs()[0].url'),offline);check('failed loads retain their attempted address and show a retry action');await click('[aria-label="Go back"]');await wait(async()=>await evaluate('!window.fixture.tabs()[0].error')&&pages()[0].getVisible(),'back recovers from failure');check('history navigation recovers from a load error');
  await evaluate('window.fixture.newTab()');await wait(()=>evaluate('!!document.querySelector(".noa-suggested-site")'),'suggestions again');await click('.noa-suggested-site > button:last-child');await wait(()=>evaluate('!document.querySelector(".noa-suggested-site")'),'dismissed');assert.equal(pages().length,1);check('dismissing a suggestion keeps its page and server');
  await evaluate('window.fixture.reply()');await wait(()=>evaluate('!!document.querySelector(".noa-suggested-site")'),'reply suggestion');check('completed assistant replies also suggest local URLs');
@@ -150,6 +212,7 @@ app.whenReady().then(async()=>{win=new BrowserWindow({width:1200,height:800,show
   assert.equal(exit, 0, `Electron preview fixture exited ${exit}; screenshots: ${output}`)
   assert.ok(cookies.length > 0)
   assert.ok(cookies.every(cookie => !cookie.includes('fixture-secret')), 'app cookie leaked to preview server')
+  assert.ok(!paths.includes('/private-probe') && !paths.includes('/private-frame') && !paths.includes('/private-dot'), 'a public page reached a private address')
   console.log(`PASS preview requests never carry the app cookie; artifacts: ${output}`)
 } finally {
   process.env.SHELL = originalShell

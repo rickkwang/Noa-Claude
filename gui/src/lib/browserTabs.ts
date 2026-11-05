@@ -41,6 +41,32 @@ export function localWebUrl(raw: string): string | undefined {
   } catch { return }
 }
 
+// Any HTTP(S) address the Browser tab may open, except the app's own origin.
+function webUrl(raw: string): string | undefined {
+  try {
+    const url = new URL(raw)
+    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) return
+    if (url.hostname === '0.0.0.0') url.hostname = '127.0.0.1'
+    if (typeof location !== 'undefined' && url.origin === location.origin) return
+    return url.href
+  } catch { return }
+}
+
+// What the address bar opens: a full URL as typed; otherwise http:// for this machine or the private network and https:// elsewhere.
+// A bare word (no dot, port or brackets) is not treated as a host; one with a port (a container name) is local.
+export function addressUrl(raw: string): string | undefined {
+  const text = raw.trim()
+  if (/^[a-z][a-z\d+.-]*:\/\//i.test(text)) return webUrl(text)
+  if (!text || /\s/.test(text)) return
+  try {
+    const { hostname, port } = new URL(`http://${text}`)
+    const local = hostname === 'localhost' || /\.(localhost|local)$/.test(hostname) || hostname === '0.0.0.0' || hostname === '[::1]' || /^(127|10)\.|^192\.168\.|^172\.(1[6-9]|2\d|3[01])\./.test(hostname)
+    const single = !hostname.includes('.') && !hostname.startsWith('[')
+    if (!local && single && !port) return
+    return webUrl(`${local || single ? 'http' : 'https'}://${text}`)
+  } catch { return }
+}
+
 export function localWebUrls(text: string, complete = true): string[] {
   // Strip terminal colour/OSC sequences before scanning; an unfinished URL waits for the next output chunk.
   const plain = text.replace(/\x1b\][\s\S]*?(?:\x07|\x1b\\)|\x1b\[[0-?]*[ -/]*[@-~]/g, '')
@@ -76,8 +102,8 @@ export function openBrowser(cwd: string, raw?: string) {
 }
 
 export async function loadBrowser(cwd: string, tab: BrowserTab, raw = tab.url) {
-  const url = localWebUrl(raw.includes('://') ? raw : `http://${raw}`)
-  if (!url) { updateBrowser(tab.id, { error: 'Enter a local HTTP or HTTPS address, such as localhost:3000.' }); return }
+  const url = addressUrl(raw)
+  if (!url) { updateBrowser(tab.id, { error: 'Enter a web address, such as example.com or localhost:3000.' }); return }
   const preview = window.noaDesktop?.preview
   if (!preview) return
   const action = created.has(tab.id) ? 'navigate' : 'create'

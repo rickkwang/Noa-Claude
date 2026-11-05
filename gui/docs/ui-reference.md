@@ -44,7 +44,7 @@ about the user's selected palette. No Codex branding or decorative icon is inclu
 
 Noa uses its existing React textarea and stream-json agent bridge. File references,
 model/effort selection, permissions and task execution use real backend behavior.
-Microphone capture and repository publishing are not implemented. The terminal emulator and local Browser preview are implemented.
+Microphone capture and repository publishing are not implemented. The terminal emulator and Browser tab are implemented.
 
 ## Project creation and editing
 
@@ -342,9 +342,9 @@ Open conversation image viewers live above folded or virtualized message rows,
 so turn completion does not dismiss them. Approval preview dismissal also cancels
 its pending hover timer, including when the window resizes.
 
-### Local browser preview
+### Browser tab
 
-The desktop right panel includes a local Browser tab and Suggested website cards discovered from terminal output and completed assistant replies. Local HTTP/HTTPS links open in the panel; Cmd/Ctrl-click keeps the external-browser path. Browser tabs survive panel hiding and project switches, and closing a browser tab does not stop the terminal server. Preview pages use isolated, in-memory Electron sessions without the app authentication cookie or preload. External navigation, downloads and browser permissions are blocked in the preview. Verify with `bun run --cwd gui test:browser`.
+The desktop right panel includes a Browser tab and Suggested website cards discovered from terminal output and completed assistant replies. The address bar opens any HTTP/HTTPS address (bare hosts use https://, this machine and the private network http://); local links in the conversation and terminal open in the panel; Cmd/Ctrl-click keeps the external-browser path. Browser tabs survive panel hiding and project switches, and closing a browser tab does not stop the terminal server. Preview pages use an isolated Electron session per project, persisted so the HTTP cache and sign-ins survive restarts, without the app authentication cookie or preload. Downloads and browser permissions are blocked, and a public page cannot navigate, redirect, frame or send requests to this machine or the private network; only an address the user enters can. Verify with `bun run --cwd gui test:browser`.
 
 ### New-task usage stats
 
