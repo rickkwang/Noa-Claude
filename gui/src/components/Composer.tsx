@@ -25,7 +25,7 @@ import type { ProjectInfo } from "../api"
 import type { AgentState } from "../agent/reducer"
 import type { AppSettings } from "../types"
 
-export const MODE_OPTIONS: { value: PermissionMode; label: string; description: string }[] = [
+const MODE_OPTIONS: { value: PermissionMode; label: string; description: string }[] = [
   { value: "auto", label: "Auto", description: "Noa handles permission decisions" },
   { value: "default", label: "Manual", description: "Always ask before making changes" },
   { value: "acceptEdits", label: "Accept edits", description: "Automatically accept all file edits" },

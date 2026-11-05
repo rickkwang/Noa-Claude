@@ -53,7 +53,7 @@ export async function revealProject(path: string): Promise<void> {
   })
 }
 
-export interface MarketplaceInfo {
+interface MarketplaceInfo {
   name: string
   source: string
   repo?: string
@@ -62,7 +62,7 @@ export interface MarketplaceInfo {
   installLocation?: string
 }
 
-export interface MarketplacePlugin {
+interface MarketplacePlugin {
   pluginId: string
   name: string
   description?: string
@@ -71,7 +71,7 @@ export interface MarketplacePlugin {
   source?: string | { source?: string; url?: string; repo?: string; path?: string }
 }
 
-export interface InstalledPlugin {
+interface InstalledPlugin {
   id: string
   version: string
   scope: string

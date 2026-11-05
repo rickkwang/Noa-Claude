@@ -158,7 +158,7 @@ export function WorkspaceFiles({ cwd, changes = false, scope: scopeProp, focus, 
   const [search, setSearch] = useState("")
   // Diff layout comes from the shared Changes options; the file viewer keeps its own wrap setting.
   // File previews wrap by default so long lines never run past a narrow pane; Word wrap in the menu turns it off.
-  const [codeWrap, setCodeWrap] = useState(() => localStorage.getItem("noa-file-wrap") !== "false")
+  const [codeWrap, setCodeWrap] = useState(() => { try { return localStorage.getItem("noa-file-wrap") !== "false" } catch { return true } })
   const [context, setContext] = useState("")
   const [findRequest, setFindRequest] = useState(0)
   const [editing, setEditing] = useState(false)
@@ -203,7 +203,7 @@ export function WorkspaceFiles({ cwd, changes = false, scope: scopeProp, focus, 
     const timer = setInterval(() => { if (document.visibilityState === "visible") setTick((n) => n + 1) }, 3000)
     return () => clearInterval(timer)
   }, [active, editing])
-  useEffect(() => { localStorage.setItem("noa-file-wrap", String(codeWrap)) }, [codeWrap])
+  useEffect(() => { try { localStorage.setItem("noa-file-wrap", String(codeWrap)) } catch { /* Storage unavailable. */ } }, [codeWrap])
   useEffect(() => {
     if (!active) return
     const controller = new AbortController()

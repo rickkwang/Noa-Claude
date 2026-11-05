@@ -1,16 +1,16 @@
 import type { Block, ToolBlock, SubagentBlock } from "./reducer"
 
-export interface ToolActivityLabel {
+interface ToolActivityLabel {
   action: string
   detail: string
 }
 
-export interface ToolActivitySummary {
+interface ToolActivitySummary {
   label: string
   kind: "commands" | "edits" | "images" | "reads" | "web" | "tools"
 }
 
-export interface ToolDiffStats {
+interface ToolDiffStats {
   additions: number
   deletions: number
 }
@@ -19,7 +19,7 @@ const MAX_DIFF_CELLS = 250_000
 
 export type ThinkingBlock = Extract<Block, { kind: "thinking" }>
 
-export type ActivityUnit =
+type ActivityUnit =
   | { kind: "status"; block: Extract<Block, { kind: "compaction" | "retry" }> }
   | { kind: "tools"; blocks: ToolBlock[] }
   | { kind: "thinking"; block: ThinkingBlock }
@@ -347,13 +347,13 @@ function lineDiffStats(oldText: string, newText: string): ToolDiffStats | undefi
   }
 }
 
-export function isImageActivity(block: Pick<ToolBlock, "name" | "input" | "images">): boolean {
+function isImageActivity(block: Pick<ToolBlock, "name" | "input" | "images">): boolean {
   return !!block.images?.length ||
     block.name === "ViewImage" ||
     (block.name === "Read" && /\.(?:avif|gif|jpe?g|png|webp)$/i.test(oneLine(block.input.file_path)))
 }
 
-export function isStandaloneActivity(block: Pick<ToolBlock, "name" | "input" | "images">): boolean {
+function isStandaloneActivity(block: Pick<ToolBlock, "name" | "input" | "images">): boolean {
   return block.name === "Agent" || block.name === "Task" || block.name === "Hook" || block.name === "ExitPlanMode" || block.name === "AskUserQuestion" || ["TodoWrite", "TaskCreate", "TaskUpdate", "TaskList", "TaskGet"].includes(block.name) || isImageActivity(block)
 }
 

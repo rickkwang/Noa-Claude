@@ -1,5 +1,5 @@
 // Provider types that can be set up with just an endpoint and a key. Sign-in based types stay in /login.
-export interface CatalogEntry {
+interface CatalogEntry {
   type: string
   label: string
   baseUrl: string

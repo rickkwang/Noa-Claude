@@ -1,7 +1,7 @@
 // Single source for the app's surface colours. ThemeInjector publishes these as
 // CSS variables; code that needs a literal (Electron window colour, inline SVG)
 // reads them here.
-export const THEME_SURFACES = {
+const THEME_SURFACES = {
   light: {
     // Codex's Absolutely Light derives these from #F9F9F7 surface + #2D2D2B ink.
     primary: '#F9F9F7',
@@ -18,7 +18,7 @@ export const THEME_SURFACES = {
   },
 } as const;
 
-export type ThemeSurfaces = (typeof THEME_SURFACES)[keyof typeof THEME_SURFACES];
+type ThemeSurfaces = (typeof THEME_SURFACES)[keyof typeof THEME_SURFACES];
 
 export const themeSurfaces = (isDark: boolean): ThemeSurfaces =>
   isDark ? THEME_SURFACES.dark : THEME_SURFACES.light;

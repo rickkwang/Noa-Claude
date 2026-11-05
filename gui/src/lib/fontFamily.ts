@@ -16,7 +16,7 @@ export const SYSTEM_DEFAULT_FONT = 'system-default';
 /** Content font sentinel: messages follow the UI family and style, as the reference editor's "Same as UI font". */
 export const CONTENT_SAME_AS_UI = 'same-as-ui';
 
-export const SYSTEM_FONT_STACK =
+const SYSTEM_FONT_STACK =
   '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
 
 /**
@@ -28,7 +28,7 @@ export const SYSTEM_FONT_STACK =
  */
 const SAFE_FAMILY = /^[\p{L}\p{N} ._-]{1,120}$/u;
 
-export function isSafeFontFamilyName(value: string): boolean {
+function isSafeFontFamilyName(value: string): boolean {
   return SAFE_FAMILY.test(value);
 }
 

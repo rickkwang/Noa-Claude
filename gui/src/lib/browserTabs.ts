@@ -133,7 +133,7 @@ export function closeBrowser(cwd: string, id: string) {
   changed()
 }
 
-export function updateBrowser(id: string, state: Partial<BrowserTab>) {
+function updateBrowser(id: string, state: Partial<BrowserTab>) {
   for (const project of projects.values()) {
     const tab = project.tabs.find(tab => tab.id === id)
     if (tab) { Object.assign(tab, state); changed(); return }

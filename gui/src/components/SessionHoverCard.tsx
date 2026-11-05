@@ -8,7 +8,7 @@ const CLOSE_DELAY_MS = 100
 const SIDE_OFFSET = 2
 const EDGE_PADDING = 8
 
-export function ageLabel(updatedAt: number, now = Date.now()): string {
+function ageLabel(updatedAt: number, now = Date.now()): string {
   const minutes = Math.max(0, Math.floor((now - updatedAt) / 60_000))
   if (minutes < 1) return "now"
   if (minutes < 60) return `${minutes}m`
@@ -18,7 +18,7 @@ export function ageLabel(updatedAt: number, now = Date.now()): string {
   return days < 7 ? `${days}d` : `${Math.floor(days / 7)}w`
 }
 
-export type SessionCardInfo = { title: string; updatedAt?: number; project?: string; worktree?: string }
+type SessionCardInfo = { title: string; updatedAt?: number; project?: string; worktree?: string }
 
 // Hover handlers for a row plus the card they open: right of the row, top aligned, opened after a short
 // delay and kept open while the pointer is on the card.

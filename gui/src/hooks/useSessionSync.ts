@@ -5,14 +5,14 @@ import { fetchSessions, type ProjectInfo, type SessionSummary } from "../api"
 
 const SESSION_LIST_LIMIT = 200
 
-export interface SessionTarget {
+interface SessionTarget {
   cwd: string
   resume?: string
   runtimeId: string
   key: number
 }
 
-export function sessionUpdateKey(cwd: string, id: string): string {
+function sessionUpdateKey(cwd: string, id: string): string {
   return `${cwd}\0${id}`
 }
 

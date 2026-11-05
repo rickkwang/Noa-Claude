@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react"
 import { createPortal } from "react-dom"
 
-export interface ConfirmOptions {
+interface ConfirmOptions {
   title: string
   description?: ReactNode
   confirmLabel?: string

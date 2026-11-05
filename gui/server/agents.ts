@@ -16,7 +16,7 @@ import {
   type ChangeCollector,
   type TreeSnapshot,
 } from "./turnDiff"
-import type { AgentMessage, Envelope, Outgoing, QueuedMessage, TurnDiff, TurnDiffActionResult } from "../src/agent/protocol"
+import type { AgentMessage, Envelope, Outgoing, QueuedMessage, TurnDiffActionResult } from "../src/agent/protocol"
 
 // Modes the composer can start a session in; bypassPermissions is excluded because it is only entered from the menu.
 export const SPAWN_PERMISSION_MODES = new Set(["default", "acceptEdits", "plan", "auto"])

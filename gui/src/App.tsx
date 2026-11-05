@@ -1,5 +1,5 @@
 import { ElicitationCard } from "./components/ElicitationCard"
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useAgent } from "./agent/useAgent"
 import { isSubagentTask } from "./agent/reducer"
 import type { ImageAttachment, ImageBlock, TurnDiff, UserContent } from "./agent/protocol"

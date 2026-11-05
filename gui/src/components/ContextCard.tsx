@@ -11,7 +11,6 @@ function size(label: string): number {
 
 export function ContextCard({ data }: { data: ContextOutput }) {
   const [open, setOpen] = useState(true)
-  const max = size(data.maxLabel) || 1
   const segments = data.categories.filter((category) => category.kind !== "deferred")
   const colorOf = (category: ContextOutput["categories"][number], index: number) =>
     category.kind !== "used" ? "color-mix(in srgb, var(--text-primary, #2d2d2b) 22%, transparent)" : category.color ?? PALETTE[index % PALETTE.length]!

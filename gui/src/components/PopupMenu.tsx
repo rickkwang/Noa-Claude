@@ -4,7 +4,7 @@ import { Check, ChevronRight } from "../lib/icons"
 
 // The sidebar and composer dropdown: optional leading icons, section headings,
 // a trailing check for the chosen option, and submenus that open beside their row.
-export type PopupMenuEntry =
+type PopupMenuEntry =
   | {
       kind?: "item"
       key?: string

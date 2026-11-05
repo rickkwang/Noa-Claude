@@ -2,7 +2,7 @@ import { useState, type ComponentType } from "react"
 import { Globe, MoreHorizontal, PanelBottom, X } from "../lib/icons"
 import { PopupMenu, anchorBelow, type PopupMenuAnchor } from "./PopupMenu"
 
-export interface NewTabTool {
+interface NewTabTool {
   id: string
   title: string
   icon: ComponentType<{ size?: number; className?: string }>

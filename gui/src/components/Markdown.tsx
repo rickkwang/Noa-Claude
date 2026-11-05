@@ -109,7 +109,7 @@ function ReviewComment({ attributes }: { attributes: Record<string, string> }) {
   </section>
 }
 
-export function renderInline(text: string): ReactNode[] {
+function renderInline(text: string): ReactNode[] {
   return inlineTokens(parseInline(text))
 }
 

@@ -15,7 +15,7 @@ function trimBlanks(line: string) {
   return line.slice(start, end)
 }
 
-export type HunkLines = {
+type HunkLines = {
   lines: string[]
   // Real (non-whitespace) changes remain.
   changed: boolean

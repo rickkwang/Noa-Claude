@@ -3,7 +3,7 @@ import type { AccountInfo, ModelInfo } from "../../agent/protocol"
 import { useConfirm } from "../ConfirmDialog"
 import { Row, Section, Select, TextField, Toggle } from "./controls"
 
-export type DefaultMode = AppSettings["agent"]["permissionDefault"]
+type DefaultMode = AppSettings["agent"]["permissionDefault"]
 
 export const permissionOptions: [DefaultMode, string][] = [
   ["inherit", "Follow Noa settings"],

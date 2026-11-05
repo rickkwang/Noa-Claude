@@ -1,4 +1,4 @@
-export interface RecentFile { cwd: string; path: string }
+interface RecentFile { cwd: string; path: string }
 const KEY = "noa-agent.recentFiles"
 
 export function recentFiles(): RecentFile[] {

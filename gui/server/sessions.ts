@@ -43,7 +43,7 @@ export function transcriptPath(cwd: string, id: string): string {
   return join(projectDir(cwd), `${id}.jsonl`)
 }
 
-export interface TurnDiffRecord {
+interface TurnDiffRecord {
   index: number
   userMessageId?: string
   diff: TurnDiff
@@ -103,7 +103,7 @@ export function findTurnUserMessage(cwd: string, id: string, offset: number, onl
   return firstUser(scanEntries(file, offset)) ?? (onlyAfterOffset ? undefined : firstUser(scanEntries(file)))
 }
 
-export interface TurnResultRecord { index: number; userMessageId?: string; durationMs: number; error: string }
+interface TurnResultRecord { index: number; userMessageId?: string; durationMs: number; error: string }
 export function appendTurnResult(cwd: string, id: string, record: TurnResultRecord): void {
   const file = join(projectDir(cwd), `${id}.turn-results.jsonl`)
   mkdirSync(dirname(file), { recursive: true })

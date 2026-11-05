@@ -39,8 +39,8 @@ export type ToolBlock = {
   endedAt?: number
 }
 
-export type CompactionBlock = { kind: "compaction"; status: "running" | "done" | "stopped" | "unknown"; startedAt?: number; trigger?: "manual" | "auto" }
-export type RetryBlock = { kind: "retry"; attempt: number; maxRetries: number; delayMs: number; errorStatus?: number | null; done?: boolean }
+type CompactionBlock = { kind: "compaction"; status: "running" | "done" | "stopped" | "unknown"; startedAt?: number; trigger?: "manual" | "auto" }
+type RetryBlock = { kind: "retry"; attempt: number; maxRetries: number; delayMs: number; errorStatus?: number | null; done?: boolean }
 export type SubagentBlock = { kind: "subagent"; id: string; taskId: string; description: string; status: AgentTask["status"] }
 export type Block =
   | CompactionBlock
@@ -144,7 +144,7 @@ export interface AgentState {
   notice?: string
 }
 
-export type Action =
+type Action =
   | { type: "mcp-pending"; pending: boolean }
   | { type: "context-request" }
   | { type: "context-error"; error: string }

@@ -17,7 +17,7 @@ import { ResizeHandle } from "./ResizeHandle"
 import { TerminalView } from "./TerminalView"
 
 export const TERMINAL_PANEL_DEFAULT_HEIGHT = 280
-export const TERMINAL_PANEL_MIN_HEIGHT = 160
+const TERMINAL_PANEL_MIN_HEIGHT = 160
 
 interface TerminalPanelProps {
   cwd: string
@@ -35,7 +35,7 @@ interface TerminalPanelProps {
   onMovedToRight: () => void
 }
 
-export function clampTerminalHeight(height: number, available: number): number {
+function clampTerminalHeight(height: number, available: number): number {
   return Math.round(Math.max(TERMINAL_PANEL_MIN_HEIGHT, Math.min(height, available * 0.5)))
 }
 

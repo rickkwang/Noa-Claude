@@ -7,7 +7,7 @@ import { Unicode11Addon } from "@xterm/addon-unicode11"
 import { localWebUrl, openBrowser, suggestWebUrls } from "./browserTabs"
 
 // "stalled": the screen stopped taking output (an xterm parser error ends its write loop for good).
-export type TerminalStatus = "connecting" | "ready" | "reconnecting" | "exited" | "failed" | "stalled"
+type TerminalStatus = "connecting" | "ready" | "reconnecting" | "exited" | "failed" | "stalled"
 
 export interface TerminalSnapshot {
   id: string
@@ -17,7 +17,7 @@ export interface TerminalSnapshot {
 }
 
 // A terminal tab sits in the bottom panel or the right panel, and can move between them without restarting.
-export type TerminalLocation = "bottom" | "right"
+type TerminalLocation = "bottom" | "right"
 
 interface ProjectTabs {
   // Bottom-panel tabs.
@@ -410,7 +410,7 @@ export function terminalTabs(cwd: string, location: TerminalLocation = "bottom")
   return location === "bottom" ? { ids: tabs.ids, active: tabs.active } : { ids: tabs.right ?? [], active: tabs.rightActive }
 }
 
-export function terminalLocation(cwd: string, id: string): TerminalLocation | undefined {
+function terminalLocation(cwd: string, id: string): TerminalLocation | undefined {
   const tabs = project(cwd)
   return tabs.ids.includes(id) ? "bottom" : tabs.right?.includes(id) ? "right" : undefined
 }

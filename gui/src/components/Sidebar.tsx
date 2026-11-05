@@ -14,7 +14,6 @@ import { MarqueeText } from "./MarqueeText"
 import { useSessionHoverCard } from "./SessionHoverCard"
 import type { ProjectInfo, SessionSummary } from "../api"
 import {
-  Check,
   ArrowUpDown,
   ChevronRight,
   Folder,
@@ -22,7 +21,6 @@ import {
   FolderPlus,
   MoreHorizontal,
   Pin,
-  Plus,
   Search,
   Settings,
   SquarePen,
@@ -99,7 +97,7 @@ function orderedSessions(prefs: SessionPrefs, path: string, sessions: SessionSum
   })
 }
 
-export interface ActiveSession {
+interface ActiveSession {
   cwd: string
   id?: string
 }
