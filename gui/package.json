@@ -14,7 +14,8 @@
     "test:rendering": "bun scripts/e2e-conversation-remaining.ts",
     "test:session-sync": "bun scripts/e2e-session-sync.ts",
     "test:scroll": "bun scripts/e2e-scroll.ts",
-    "test:terminal": "bun scripts/e2e-terminal.ts"
+    "test:terminal": "bun scripts/e2e-terminal.ts",
+    "test:browser": "bun scripts/e2e-browser.ts"
   },
   "dependencies": {
     "@xterm/addon-clipboard": "0.2.0",

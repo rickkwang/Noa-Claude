@@ -4,6 +4,7 @@ import { FitAddon } from "@xterm/addon-fit"
 import { WebLinksAddon } from "@xterm/addon-web-links"
 import { ClipboardAddon } from "@xterm/addon-clipboard"
 import { Unicode11Addon } from "@xterm/addon-unicode11"
+import { localWebUrl, openBrowser, suggestWebUrls } from "./browserTabs"
 
 // "stalled": the screen stopped taking output (an xterm parser error ends its write loop for good).
 export type TerminalStatus = "connecting" | "ready" | "reconnecting" | "exited" | "failed" | "stalled"
@@ -137,7 +138,8 @@ function alignCanvas(canvas: HTMLCanvasElement | undefined) {
   canvas.style.height = `${(canvas.height + 1 / 256) / ratio}px`
 }
 
-function openLink(uri: string) {
+function openLink(cwd: string, uri: string, event: MouseEvent) {
+  if (window.noaDesktop?.preview && localWebUrl(uri) && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey) { openBrowser(cwd, uri); return }
   if (/^https?:\/\//i.test(uri)) window.open(uri, "_blank", "noopener")
 }
 
@@ -166,6 +168,7 @@ class TerminalSession {
   private pending = 0
   private written = 0
   private watchdog?: ReturnType<typeof setTimeout>
+  private previewOutput = ""
 
   // A new tab waits for its first fit, so the shell draws its first prompt at the panel's real size.
   // A tab restored after a reload attaches at once, before the bridge gives up on its shell.
@@ -179,13 +182,13 @@ class TerminalSession {
       cursorBlink: true,
       letterSpacing: 0,
       lineHeight: 1,
-      linkHandler: { activate: (_event, uri) => openLink(uri) },
+      linkHandler: { activate: (event, uri) => openLink(this.cwd, uri, event) },
       theme: terminalTheme(),
       ...terminalFont(),
     })
     this.term.loadAddon(new ClipboardAddon())
     this.term.loadAddon(this.fit)
-    this.term.loadAddon(new WebLinksAddon((_event, uri) => openLink(uri)))
+    this.term.loadAddon(new WebLinksAddon((event, uri) => openLink(this.cwd, uri, event)))
     this.term.loadAddon(new Unicode11Addon())
     this.term.unicode.activeVersion = "11"
     this.term.attachCustomKeyEventHandler((event) => this.key(event))
@@ -264,6 +267,8 @@ class TerminalSession {
   }
 
   private write(data: string) {
+    this.previewOutput = (this.previewOutput + data).slice(-4096)
+    suggestWebUrls(this.cwd, this.previewOutput)
     this.pending++
     this.term.write(data, () => {
       this.pending--

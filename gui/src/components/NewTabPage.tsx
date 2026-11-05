@@ -1,5 +1,5 @@
 import { useState, type ComponentType } from "react"
-import { MoreHorizontal, PanelBottom } from "../lib/icons"
+import { Globe, MoreHorizontal, PanelBottom, X } from "../lib/icons"
 import { PopupMenu, anchorBelow, type PopupMenuAnchor } from "./PopupMenu"
 
 export interface NewTabTool {
@@ -11,7 +11,7 @@ export interface NewTabTool {
 
 // A panel's New tab page: the tools that can open as a tab, one row each with its shortcut.
 // The terminal row also offers the bottom terminal, as its own menu.
-export function NewTabPage({ tools, onSelect, onOpenBottomTerminal }: { tools: NewTabTool[]; onSelect: (id: string) => void; onOpenBottomTerminal: () => void }) {
+export function NewTabPage({ tools, onSelect, onOpenBottomTerminal, suggested = [], onOpenUrl, onDismissUrl }: { tools: NewTabTool[]; onSelect: (id: string) => void; onOpenBottomTerminal: () => void; suggested?: string[]; onOpenUrl?: (url: string) => void; onDismissUrl?: (url: string) => void }) {
   const [menu, setMenu] = useState<{ anchor: PopupMenuAnchor; trigger: Element }>()
   return (
     <div className="noa-new-tab-page @container h-full min-h-0 overflow-y-auto px-4 py-8 select-none">
@@ -46,6 +46,18 @@ export function NewTabPage({ tools, onSelect, onOpenBottomTerminal }: { tools: N
           })}
         </div>
       </section>
+      {suggested.length > 0 && <section className="mx-auto mt-8 flex w-full max-w-3xl flex-col gap-4" aria-label="Suggested websites">
+        <h3 className="m-0 text-[length:var(--text-chat-sm)] font-normal text-[var(--text-primary)]">Suggested</h3>
+        <div className="grid grid-cols-1 gap-3 @md:grid-cols-2">
+          {suggested.map(url => <div key={url} className="noa-suggested-site relative min-w-0 rounded-xl">
+            <button type="button" title={url} onClick={() => onOpenUrl?.(url)} className="flex min-h-28 w-full flex-col items-center justify-center gap-4 rounded-xl px-8 py-5 text-[length:var(--text-chat-sm)] text-[var(--text-primary)]">
+              <Globe size={28} className="text-[var(--text-secondary)]" />
+              <span className="max-w-full truncate">{new URL(url).host}</span>
+            </button>
+            <button type="button" aria-label={`Dismiss ${new URL(url).host} suggestion`} onClick={() => onDismissUrl?.(url)} className="noa-terminal-action absolute right-2 top-2 flex size-6 items-center justify-center rounded-md text-[var(--text-tertiary)]"><X size={14} /></button>
+          </div>)}
+        </div>
+      </section>}
       {menu && (
         <PopupMenu
           anchor={menu.anchor}

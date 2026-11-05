@@ -149,9 +149,19 @@ function Workspace({ cwd }: { cwd: string }) {
   const [rightTab, selectRightTab] = useState<RightTab>(() => rightTabs[0] ?? "new")
   // Showing a tool opens its tab when it was closed.
   const setRightTab = (tab: RightTab) => {
-    if (tab !== "new" && tab !== "terminal") setRightTabs((tabs) => tabs.includes(tab) ? tabs : [...tabs, tab])
+    if (tab !== "new" && tab !== "terminal" && tab !== "browser") setRightTabs((tabs) => tabs.includes(tab) ? tabs : [...tabs, tab])
     selectRightTab(tab)
   }
+  useEffect(() => {
+    const open = (event: Event) => {
+      if ((event as CustomEvent<{ cwd: string }>).detail.cwd !== session.cwd) return
+      setRightOpen(true)
+      setRightNewTab(false)
+      selectRightTab("browser")
+    }
+    window.addEventListener('noa:open-browser', open)
+    return () => window.removeEventListener('noa:open-browser', open)
+  }, [session.cwd])
   const [focusTask, setFocusTask] = useState<{ id?: string; key: number }>()
   useEffect(() => { setFocusTask(undefined) }, [session.key])
   useEffect(() => { setTurnDiff(undefined) }, [session.key])

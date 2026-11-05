@@ -100,6 +100,7 @@ export const Cloud = glyph("cloud");
 export const Copy = glyph("square-on-square");
 export const Download = glyph("arrow-down-line-horizontal");
 export const ExternalLink = glyph("open-link");
+export const Globe = codex("globe");
 export const ArrowUpRight = glyph("arrow-up-right-md");
 export const Eye = glyph("eye");
 export const FileArchive = glyph("document-zip");

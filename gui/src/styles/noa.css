@@ -3403,6 +3403,13 @@ body.noa-session-dragging * { cursor: grabbing !important; }
 
 /* Panel New tab page: tool rows on a faint fill, shortcuts as keycaps tinted from the row's secondary text. */
 .noa-new-tab-page { background: var(--surface-page, #F9F9F7); }
+.noa-suggested-site { background: color-mix(in srgb, var(--text-primary) 5%, transparent); transition: background-color 120ms ease; }
+.noa-suggested-site:hover { background: var(--fill-hover); }
+.noa-browser-action { display: flex; width: 28px; height: 28px; flex-shrink: 0; align-items: center; justify-content: center; border-radius: 8px; color: var(--text-secondary); }
+.noa-browser-action:hover:not(:disabled) { background: var(--fill-hover); color: var(--text-primary); }
+.noa-browser-action:disabled { opacity: 0.35; }
+.noa-browser-address { background: color-mix(in srgb, var(--text-primary) 4%, transparent); border: 1px solid transparent; }
+.noa-browser-address:focus-within { border-color: var(--border-default); }
 .noa-new-tab-row { background: color-mix(in oklab, var(--text-primary, #2D2D2B) 2.5%, transparent); transition: background-color 120ms ease; }
 .noa-new-tab-row:hover, .noa-new-tab-row:has([aria-expanded="true"]) { background: var(--fill-hover); }
 .noa-new-tab-key { display: inline-flex; padding: 2px 6px; border: 0; border-radius: 6px; background: color-mix(in srgb, currentColor 10%, transparent); color: var(--text-secondary, #7B7974); font-family: var(--font-ui, inherit); font-size: var(--text-micro, 11px); line-height: 1; }

@@ -1,7 +1,9 @@
-import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from "react"
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from "react"
 import type { AgentState, AgentTask } from "../agent/reducer"
 import type { TurnDiff } from "../agent/protocol"
-import { ChevronRight, Folder, Gauge, MoreHorizontal, PanelBottom, Plus, PlusMinus, Terminal, Users } from "../lib/icons"
+import { ChevronRight, Folder, Gauge, Globe, MoreHorizontal, PanelBottom, Plus, PlusMinus, Terminal, Users } from "../lib/icons"
+import { browserVersion, closeBrowser, dismissWebUrl, localWebUrls, openBrowser, projectBrowser, selectBrowser, subscribeBrowser } from "../lib/browserTabs"
+import { BrowserPanel } from "./BrowserPanel"
 import { closeTerminal, moveTerminal, openTerminal, selectTerminal, snapshotTerminals, subscribeTerminals, terminalsVersion, terminalTabs } from "../lib/terminalSessions"
 import { query } from "../api"
 import { SPLIT_MIN_WIDTH, useDiffPref } from "../lib/diffPrefs"
@@ -16,8 +18,8 @@ import { TerminalView } from "./TerminalView"
 
 // Tools that open at most once; terminals open as many tabs as wanted.
 export type PanelTab = "files" | "changes" | "activity" | "subagents"
-// The shown pane: a tool, the New tab page, or the panel's active terminal.
-export type RightTab = PanelTab | "new" | "terminal"
+// The shown pane: a tool, the New tab page, or the panel's active terminal/browser.
+export type RightTab = PanelTab | "new" | "terminal" | "browser"
 export const DEFAULT_RIGHT_TABS: PanelTab[] = ["files", "changes"]
 
 // The panel sits in a no-drag column; its tab row drags the window again, except on the tabs themselves.
@@ -33,6 +35,7 @@ const TOOLS = {
   subagents: { title: "Subagents", icon: Users },
 } as const
 const TERMINAL_KEY = "terminal:"
+const BROWSER_KEY = "browser:"
 
 interface RightPanelProps {
   state: AgentState
@@ -61,14 +64,20 @@ interface RightPanelProps {
 // Right column: one pane under a tab strip.
 export function RightPanel({ state, onStopTask, cwd, open = true, tabs, onTabs, newTab, onNewTab, tab, onTab, terminalFocusKey, onBottomTerminal, onReference, onWorkspaceChange, workspaceRefreshKey, focusChange, focusFile, turnDiff, focusTask }: RightPanelProps) {
   useSyncExternalStore(subscribeTerminals, terminalsVersion, terminalsVersion)
+  useSyncExternalStore(subscribeBrowser, browserVersion, browserVersion)
+  const browser = projectBrowser(cwd)
+  const supportsBrowser = typeof window !== 'undefined' && !!window.noaDesktop?.preview
+  const activeBrowser = browser.tabs.find(page => page.id === browser.active) ?? browser.tabs[0]
+  const replyUrls = useMemo(() => localWebUrls(state.turns.flatMap(turn => turn.role === 'assistant' && !turn.streaming ? turn.blocks.flatMap(block => block.kind === 'text' ? [block.text] : []) : []).join('\n')), [state.turns])
+  const suggested = [...new Set([...browser.suggested, ...replyUrls])].filter(url => !browser.dismissed.has(url))
   const terminals = snapshotTerminals(cwd, "right")
   const activeTerminal = terminals.find((terminal) => terminal.id === terminalTabs(cwd, "right").active) ?? terminals[0]
-  // Strip order: tools, then terminals, then an open New tab.
-  const stripKeys = [...tabs, ...terminals.map((terminal) => TERMINAL_KEY + terminal.id), ...(newTab ? ["new"] : [])]
-  const activeKey = tab === "terminal" ? (activeTerminal ? TERMINAL_KEY + activeTerminal.id : undefined) : tab
+  // Strip order: tools, terminals, browser pages, then an open New tab.
+  const stripKeys = [...tabs, ...terminals.map((terminal) => TERMINAL_KEY + terminal.id), ...browser.tabs.map(page => BROWSER_KEY + page.id), ...(newTab ? ["new"] : [])]
+  const activeKey = tab === "terminal" ? (activeTerminal ? TERMINAL_KEY + activeTerminal.id : undefined) : tab === "browser" ? (activeBrowser ? BROWSER_KEY + activeBrowser.id : undefined) : tab
   const shownKey = activeKey && stripKeys.includes(activeKey) ? activeKey : stripKeys[0]
   // With no tabs at all the New tab page fills the panel, as an empty state.
-  const shown: RightTab = !shownKey || shownKey === "new" ? "new" : shownKey.startsWith(TERMINAL_KEY) ? "terminal" : (shownKey as PanelTab)
+  const shown: RightTab = !shownKey || shownKey === "new" ? "new" : shownKey.startsWith(TERMINAL_KEY) ? "terminal" : shownKey.startsWith(BROWSER_KEY) ? "browser" : (shownKey as PanelTab)
   useEffect(() => {
     if (shownKey && shownKey !== activeKey) select(shownKey)
   })
@@ -76,6 +85,9 @@ export function RightPanel({ state, onStopTask, cwd, open = true, tabs, onTabs, 
     if (key.startsWith(TERMINAL_KEY)) {
       selectTerminal(cwd, key.slice(TERMINAL_KEY.length))
       onTab("terminal")
+    } else if (key.startsWith(BROWSER_KEY)) {
+      selectBrowser(cwd, key.slice(BROWSER_KEY.length))
+      onTab("browser")
     } else onTab(key as RightTab)
   }
   function close(key: string) {
@@ -83,6 +95,7 @@ export function RightPanel({ state, onStopTask, cwd, open = true, tabs, onTabs, 
     const rest = stripKeys.filter((other) => other !== key)
     if (key === "new") onNewTab(false)
     else if (key.startsWith(TERMINAL_KEY)) closeTerminal(cwd, key.slice(TERMINAL_KEY.length))
+    else if (key.startsWith(BROWSER_KEY)) closeBrowser(cwd, key.slice(BROWSER_KEY.length))
     else onTabs(tabs.filter((other) => other !== key))
     if (key === shownKey) {
       const next = rest[Math.min(index, rest.length - 1)]
@@ -93,6 +106,7 @@ export function RightPanel({ state, onStopTask, cwd, open = true, tabs, onTabs, 
   // A tool chosen on the New tab page takes that tab's place; an open tool is focused instead of duplicated.
   function openTool(id: string) {
     onNewTab(false)
+    if (id === "browser") { openBrowser(cwd); onTab("browser"); return }
     if (id === "terminal") {
       openTerminal(cwd, "right")
       onTab("terminal")
@@ -183,6 +197,10 @@ export function RightPanel({ state, onStopTask, cwd, open = true, tabs, onTabs, 
         tabs={stripKeys.map((key) => {
           if (key === "new") return { key, title: "New tab", icon: Plus }
           if (key.startsWith(TERMINAL_KEY)) return { key, title: terminals.find((terminal) => TERMINAL_KEY + terminal.id === key)?.title ?? "Terminal", icon: Terminal }
+          if (key.startsWith(BROWSER_KEY)) {
+            const page = browser.tabs.find(page => BROWSER_KEY + page.id === key)
+            return { key, title: page?.title || (page?.url ? new URL(page.url).host : "Browser"), icon: Globe }
+          }
           return { key, ...TOOLS[key as PanelTab] }
         })}
         activeKey={shownKey}
@@ -205,7 +223,11 @@ export function RightPanel({ state, onStopTask, cwd, open = true, tabs, onTabs, 
           tools={[
             ...(Object.keys(TOOLS) as PanelTab[]).map((id) => ({ id, ...TOOLS[id] })),
             { id: "terminal", title: "Terminal", icon: Terminal, shortcut: "⌃`" },
+            ...(supportsBrowser ? [{ id: "browser", title: "Browser", icon: Globe }] : []),
           ]}
+          suggested={supportsBrowser ? suggested : []}
+          onOpenUrl={url => { onNewTab(false); openBrowser(cwd, url); onTab("browser") }}
+          onDismissUrl={url => dismissWebUrl(cwd, url)}
           onSelect={openTool}
           onOpenBottomTerminal={() => onBottomTerminal?.()}
         />
@@ -215,6 +237,9 @@ export function RightPanel({ state, onStopTask, cwd, open = true, tabs, onTabs, 
           <TerminalView key={activeTerminal.id} cwd={cwd} terminal={activeTerminal} visible={open} focusKey={terminalFocusKey} />
         </div>
       )}
+      {activeBrowser && <div className="min-h-0 flex-1 flex-col" style={{ display: shown === "browser" ? "flex" : "none" }}>
+        <BrowserPanel key={activeBrowser.id} cwd={cwd} tab={activeBrowser} visible={open && shown === "browser"} />
+      </div>}
       <div id="panel-files" role="tabpanel" aria-labelledby="panel-tab-files" className="min-h-0 flex-1 flex-col overflow-hidden" style={{ display: shown === "files" ? "flex" : "none" }}>
         <WorkspaceFiles key={`files-${cwd}`} cwd={cwd} active={shown === "files"} focus={focusFile} reveal={revealFile} refreshKey={workspaceRefreshKey} onReference={onReference} onUpdated={onWorkspaceChange} onOpenChanges={(path) => { if (path) setFileChange({ cwd, path, at: Date.now(), scope: "all" }); setSource("all"); onTab("changes") }} />
       </div>

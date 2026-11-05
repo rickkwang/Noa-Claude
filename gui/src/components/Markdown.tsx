@@ -6,6 +6,7 @@ export { parseBlocks } from "./markdownGrammar"
 import { Lightbox, type LightboxItem } from "./Lightbox"
 import hljs from "highlight.js/lib/common"
 import { Check, Copy, Terminal } from "../lib/icons"
+import { localWebUrl, openBrowser } from "../lib/browserTabs"
 
 // Parse the existing Markdown grammar as a tree; render React children, never raw HTML.
 export const OutputContext = createContext<{ cwd?: string; onOpenFile?: (path: string, line?: number, endLine?: number) => void; onOpenImages?: (items: LightboxItem[], index: number) => void }>({})
@@ -40,7 +41,9 @@ function OutputLink({ href, children }: { href: string; children: ReactNode }) {
   const local = localReference(href, cwd)
   if (local && /\.(?:mp3|wav|m4a|aac|ogg|opus|flac|mp4|m4v|mov|webm)$/i.test(local.path)) return <OutputImage href={href} alt={typeof children === "string" ? children : local.path} />
   if (local) return <button type="button" className="inline cursor-pointer text-[var(--accent-color)] underline underline-offset-2" title={href} onClick={() => onOpenFile?.(local.path, local.line, local.endLine)}>{children}</button>
-  if (/^https?:\/\//i.test(href)) return <a href={href} target="_blank" rel="noreferrer">{children}</a>
+  if (/^https?:\/\//i.test(href)) return <a href={href} target="_blank" rel="noreferrer" onClick={event => {
+    if (cwd && window.noaDesktop?.preview && localWebUrl(href) && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey) { event.preventDefault(); openBrowser(cwd, href) }
+  }}>{children}</a>
   return <span title={href}>{children}</span>
 }
 

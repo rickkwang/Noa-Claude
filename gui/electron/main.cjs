@@ -10,6 +10,7 @@ const net = require('net')
 const os = require('os')
 const path = require('path')
 const { createNotifier } = require('./notifications.cjs')
+const { registerPreview } = require('./preview.cjs')
 
 const GUI_DIR = path.join(__dirname, '..')
 const DIST_DIR = path.join(GUI_DIR, 'dist')
@@ -37,6 +38,7 @@ const notifier = createNotifier({
 const DEV = process.env.NOA_GUI_DEV === '1'
 const VITE_PORT = 5173
 let vite = null
+const closePreviews = registerPreview({ ipcMain, getWindow: () => win, blockedOrigins: () => [`http://127.0.0.1:${bridgePort}`, ...(DEV ? [`http://127.0.0.1:${VITE_PORT}`] : [])] })
 
 // Page zoom goes through Electron's zoom factor, not the default Cmd+/- roles, so the renderer
 // can be told the factor. noa.css reads --noa-zoom-factor to keep the traffic-light clearance fixed
@@ -182,6 +184,7 @@ function createWindow(port) {
   })
 
   win.loadURL(`${origin}/`)
+  win.webContents.on('did-navigate', closePreviews)
   // Reload drops the injected CSS variable, so set it again after every page load.
   win.webContents.on('did-finish-load', syncZoom)
   win.webContents.on('will-prevent-unload', (event) => {
@@ -214,6 +217,7 @@ function createWindow(port) {
   })
   win.on('focus', () => notifier.clearBadge())
   win.on('closed', () => {
+    closePreviews()
     win = null
   })
 }
