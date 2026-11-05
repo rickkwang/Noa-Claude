@@ -153,3 +153,23 @@ export async function renameSession(cwd: string, id: string, title: string): Pro
   if (!response.ok) throw new Error(body.error ?? "Could not rename task")
   return body as SessionSummary[]
 }
+
+export type StatsRange = "7d" | "30d" | "all"
+
+export interface StatsSummary {
+  range: StatsRange
+  days: { date: string; messages: number }[]
+  allTimeMessages: string
+  totalSessions: string
+  totalTokens: string
+  favoriteModel: string | null
+  currentStreak: number
+  longestStreak: number
+  activeDays: number
+}
+
+export async function fetchStats(range: StatsRange): Promise<StatsSummary> {
+  const response = await fetch(`/api/stats?range=${range}`)
+  if (!response.ok) throw new Error(`Could not load stats (HTTP ${response.status})`)
+  return (await response.json()) as StatsSummary
+}

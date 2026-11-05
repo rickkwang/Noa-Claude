@@ -336,3 +336,7 @@ its pending hover timer, including when the window resizes.
 ### Local browser preview
 
 The desktop right panel includes a local Browser tab and Suggested website cards discovered from terminal output and completed assistant replies. Local HTTP/HTTPS links open in the panel; Cmd/Ctrl-click keeps the external-browser path. Browser tabs survive panel hiding and project switches, and closing a browser tab does not stop the terminal server. Preview pages use isolated, in-memory Electron sessions without the app authentication cookie or preload. External navigation, downloads and browser permissions are blocked in the preview. Verify with `bun run --cwd gui test:browser`.
+
+### New-task usage stats
+
+The desktop new-task page shows usage stats under its title, computed by the same aggregation as the CLI's `/stats` across every project: an all-time message count and current streak line that expands into an activity heatmap with sessions, tokens, longest streak and favorite model for All time, 30 days or 7 days. The expanded state and range are remembered per device. Verify with `bun run --cwd gui test:stats`.

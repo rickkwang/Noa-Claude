@@ -1,6 +1,7 @@
 import { useState } from "react"
 import type { ProjectInfo } from "../api"
 import { ProjectPicker } from "./ProjectPicker"
+import { StatsPanel } from "./StatsPanel"
 
 export function EmptyState({
   cwd,
@@ -44,6 +45,9 @@ export function EmptyState({
           />
         )}
       </h1>
+      <div className="-mt-1.5 flex w-full justify-center">
+        <StatsPanel />
+      </div>
     </div>
   )
 }

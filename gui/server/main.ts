@@ -7,6 +7,7 @@ import { addProject, listProjects, removeProject } from "./projects"
 import { isManagedWorktree, mediaResponse, projectWorktrees, workspaceRequest } from "./workspace"
 import { listPlugins, pluginAction } from "./plugins"
 import { skillAction, skillsState } from "./skills"
+import { statsSummary } from "./stats"
 import { attachAgent, agentMessage, detachAgent, listAgentRuns, releaseSessionRuns, SPAWN_PERMISSION_MODES, type SocketData } from "./agents"
 import { attachTerminal, detachTerminal, TERMINAL_ID, terminalMessage, terminalSize, type TerminalSocketData } from "./terminal"
 
@@ -233,6 +234,14 @@ Bun.serve<BridgeSocketData>({
       return json(result.body, result.status)
     }
     if (url.pathname === "/api/runs") return json(listAgentRuns())
+    if (url.pathname === "/api/stats") {
+      if (req.method !== "GET") return json({ error: "Method not allowed" }, 405)
+      try {
+        return json(await statsSummary(url.searchParams.get("range")))
+      } catch (e) {
+        return json({ error: e instanceof Error ? e.message : String(e) }, 500)
+      }
+    }
     if (url.pathname === "/api/info") {
       const cwd = resolveCwd(url.searchParams.get("cwd"))
       return cwd ? json({ cwd }) : json({ error: "cwd is not a directory" }, 400)
