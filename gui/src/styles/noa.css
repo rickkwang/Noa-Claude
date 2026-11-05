@@ -32,12 +32,16 @@
   border-radius: 0;
 }
 /* The right column's leading edge is a straight hairline, no corner: it is the same ring as the conversation
-   surface's edge, but square. */
+   surface's edge, but square. Across the 44px tab row it shrinks to a centred 16px tick, like a toolbar separator.
+   It stays a border (cut by border-image) because the browser tab's native page view paints over anything drawn inside. */
+@property --noa-right-edge { syntax: '<color>'; inherits: false; initial-value: transparent; }
 .noa-right-surface {
-  border-left: 0.5px solid var(--border-default, rgba(45,45,43,0.078));
+  --noa-right-edge: var(--border-default, rgba(45,45,43,0.078));
+  border-left: 0.5px solid transparent;
+  border-image: linear-gradient(to bottom, transparent 14px, var(--noa-right-edge) 14px 30px, transparent 30px 44px, var(--noa-right-edge) 44px) 1;
 }
 .noa-right-surface[data-flush="true"] {
-  border-left-color: transparent;
+  --noa-right-edge: transparent;
 }
 .noa-agent-input {
   border-radius: 22px;

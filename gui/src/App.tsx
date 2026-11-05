@@ -540,7 +540,7 @@ function Workspace({ cwd }: { cwd: string }) {
     return () => { window.removeEventListener("resize", resize); clearTimeout(timer) }
   }, [])
   const moving = resizing || windowResizing
-  const animate = moving ? "" : "transition-[width,--noa-edge-fade,border-radius,border-left-color] duration-500 ease-in-out"
+  const animate = moving ? "" : "transition-[width,--noa-edge-fade,border-radius,--noa-right-edge] duration-500 ease-in-out"
   // Closed panes keep their content width while the outer edge slides away.
   const sidebarTarget = Math.round(Math.max(240, Math.min(sidebar.width, windowSize.width - (rightOpen ? 320 + 352 : 352))))
   const sidebarWidth = sidebarOpen ? sidebarTarget : 0
