@@ -79,8 +79,6 @@ declare global {
       notifications?: {
         configure: (settings: AppSettings['notifications']) => Promise<void>;
       };
-      /** Called when the system wakes from sleep; returns an unsubscribe. */
-      onSystemResume?: (listener: () => void) => () => void;
     };
   }
 }

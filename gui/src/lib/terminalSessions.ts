@@ -477,11 +477,6 @@ export function restyleTerminals() {
   restyleFrame = requestAnimationFrame(() => { for (const session of sessions.values()) session.restyle() })
 }
 
-// WebGL glyph textures can come back from system sleep corrupted (wrong glyphs) while the context survives.
-if (typeof window !== "undefined") {
-  window.noaDesktop?.onSystemResume?.(() => { for (const session of sessions.values()) session.term.clearTextureAtlas() })
-}
-
 // Colours are written to the root element's style; a system light/dark switch only flips data-theme.
 if (typeof MutationObserver !== "undefined") {
   new MutationObserver(restyleTerminals).observe(document.documentElement, { attributes: true, attributeFilter: ["style", "data-theme"] })
