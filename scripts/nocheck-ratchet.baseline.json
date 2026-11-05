@@ -817,7 +817,6 @@
     "src/screens/REPL.tsx",
     "src/screens/ResumeConversation.tsx",
     "src/server/directConnectManager.ts",
-    "src/services/AgentSummary/agentSummary.ts",
     "src/services/MagicDocs/magicDocs.ts",
     "src/services/MagicDocs/prompts.ts",
     "src/services/PromptSuggestion/promptSuggestion.ts",

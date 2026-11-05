@@ -537,7 +537,7 @@ export function updateAgentProgress(taskId: string, progress: AgentProgress, set
 
 /**
  * Update the background summary for an agent task.
- * Called by the periodic summarization service to store a 1-2 sentence progress summary.
+ * Called by the periodic summarization service to store a 3-5 word progress label.
  */
 export function updateAgentSummary(taskId: string, summary: string, setAppState: SetAppState): void {
   let captured: {
