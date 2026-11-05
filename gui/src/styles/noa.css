@@ -2181,6 +2181,22 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
 .noa-file-row.is-sticky { background-color: var(--surface-page, #F9F9F7); }
 .noa-file-row.is-sticky:hover { background-color: var(--fill-hover); }
 .noa-file-row:hover { background-color: var(--fill-hover); }
+.noa-file-row.is-active, .noa-file-row.is-active:hover { background-color: var(--fill-active); }
+/* Wide Files panes: the open file on the left, the tree on the right with a draggable left edge. */
+.noa-files-split { display: flex; flex: 1; min-width: 0; min-height: 0; }
+.noa-files-main { display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; }
+.noa-files-tree { position: relative; display: flex; flex-shrink: 0; flex-direction: column; min-width: 0; min-height: 0; border-left: 1px solid var(--border-light, var(--divider-subtle)); }
+/* The file header and the tree's filter share one 42px row; only the file column has a rule under it. */
+.noa-files-head { min-height: 42px; padding-left: 16px; border-bottom: 1px solid var(--border-light, var(--divider-subtle)); }
+.noa-files-head > .noa-file-root-chip { flex-shrink: 1; }
+/* The file column can be 220px wide, so its menus open rightwards over the tree instead of past the pane's left edge. */
+.noa-files-head .noa-review-menu-content { right: auto; left: 0; }
+.noa-files-tree > .noa-file-search { min-height: 42px; padding: 6px 8px; }
+.noa-files-resize { position: absolute; inset-block: 0; left: -3px; z-index: 30; width: 6px; cursor: col-resize; touch-action: none; }
+.noa-files-placeholder { display: flex; height: 100%; flex-direction: column; align-items: center; justify-content: center; gap: 4px; }
+.noa-files-placeholder > p { margin: 0; color: var(--text-primary); }
+.noa-files-placeholder > span { font-size: var(--text-caption); }
+.noa-panel-button.is-pressed { background: var(--fill-hover); color: var(--text-primary); }
 .noa-file-row > svg, .noa-panel-button > svg { flex-shrink: 0; }
 .noa-file-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* File content search ("?query"): file rows show their folder, match rows a line number and a snippet. */
@@ -2242,6 +2258,8 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
 .noa-review-menu-content { min-width: 200px; }
 .noa-review-menu-content > .noa-panel-button, .noa-review-menu-content > .noa-viewed-label { min-height: 28px; padding: 0 8px; font-size: var(--text-body); color: var(--text-primary); }
 .noa-review-menu-content > .noa-viewed-label:hover { border-radius: 6px; background: var(--fill-hover); }
+.noa-review-menu-check { display: inline-flex; width: 14px; margin-left: auto; padding-left: 12px; box-sizing: content-box; color: var(--text-primary); }
+kbd.noa-review-menu-hint { font-family: inherit; }
 .noa-review-menu-hint { margin-left: auto; padding-left: 12px; color: var(--sidebar-text-muted); font-size: var(--text-caption); }
 .noa-review-menu[open] > summary { background: color-mix(in srgb, var(--text-primary) 7.5%, transparent); color: var(--text-primary); }
 /* One header row per file, as Claude Code's diff file header: square icon buttons, text only for Cancel/Save. */

@@ -191,7 +191,8 @@ export default function CodeView({ path, content, diff = false, split = false, w
   // Claude Code's syntax: "line" or "line:column".
   const gotoTarget = /^(\d+)\s*(?::\s*(\d*))?$/.exec(gotoValue.trim())
   const gotoInvalid = gotoValue.trim().length > 0 && gotoTarget === null
-  const openGoto = () => { if (diff) return; setGoing(true); requestAnimationFrame(() => gotoInput.current?.select()) }
+  // Find and Go to line share the bar slot: opening one closes the other.
+  const openGoto = () => { if (diff) return; closeFind(); setGoing(true); requestAnimationFrame(() => gotoInput.current?.select()) }
   const closeGoto = () => { setGoing(false); setGotoValue("") }
   useEffect(() => { if (gotoRequest) openGoto() }, [gotoRequest]) // eslint-disable-line react-hooks/exhaustive-deps
   const input = useRef<HTMLInputElement>(null)
@@ -200,11 +201,12 @@ export default function CodeView({ path, content, diff = false, split = false, w
   const [match, setMatch] = useState(0)
   const [matches, setMatches] = useState(0)
   const closeFind = () => { setFinding(false); setQuery(""); onCloseFind?.() }
-  useEffect(() => { if (findRequest) setFinding(true) }, [findRequest])
+  const openFind = () => { closeGoto(); setFinding(true) }
+  useEffect(() => { if (findRequest) openFind() }, [findRequest]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     const find = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "f" && root.current?.offsetParent) {
-        event.preventDefault(); setFinding(true)
+        event.preventDefault(); openFind()
       } else if (event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey && event.code === "KeyG" && root.current?.offsetParent && !diff) {
         event.preventDefault(); openGoto()
       }

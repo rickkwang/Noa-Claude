@@ -127,6 +127,12 @@ titlebar checklist. Tabs follow the WAI-ARIA tablist pattern (`role="tab"`, `ari
 arrow-key navigation), as Codex's `TabsList` / `TabsTrigger` do. The titlebar toggle shows or
 hides the column. Not ported from Codex: tab drag-to-move, detached windows, tab thumbnails.
 
+Files splits once the pane is at least 420px wide: the open file on the left and the tree on the
+right (250px by default, 200px to 60% of the pane, always leaving the file 220px), with the active
+file highlighted. Dragging the tree's left edge resizes it; dragging it well below the minimum or the
+header's "Toggle file tree" button hides it, and both choices are remembered. Narrower panes keep one
+column that swaps between the tree and the file. Verify with `bun run --cwd gui test:files-split`.
+
 Overview is not a right-column tab. It is opened from the titlebar button beside the column toggle and
 has the two states of Claude's session rail (its bundled frontend was read for the rules and values).
 The logic is Claude's: a remembered "shown" preference (default on) plus a width test. The docked column is

@@ -4,7 +4,7 @@ import { useConfirm } from "./ConfirmDialog"
 import { FileMenu, loadEditors, openPath, revealLabel, type Editor, type FileMenuTarget } from "./FileMenu"
 import { useDiffPref } from "../lib/diffPrefs"
 import { rememberFile } from "../lib/recentFiles"
-import { ArrowLeft, ArrowUpRight, CheckCircle2, GitBranch, FileCss, FileHtml, FileJavascript, FilePython, FileReact, FileTypescript, ChevronDown, Copy, FileText, Folder, FileJson, ListDetails, FileMarkdown, MoreHorizontal, Photo, PlusMinus, RefreshCcw, Search, SquarePen } from "../lib/icons"
+import { ArrowLeft, ArrowUpRight, Check, CheckCircle2, GitBranch, FileCss, FileHtml, FileJavascript, FilePython, FileReact, FileTypescript, ChevronDown, Copy, FileText, Folder, FileJson, ListDetails, FileMarkdown, MoreHorizontal, Photo, PlusMinus, RefreshCcw, Search, SquarePen } from "../lib/icons"
 
 const CodeView = lazy(() => import("./CodeView"))
 type Entry = { name: string; path: string; directory: boolean }
@@ -28,9 +28,11 @@ export function FileGlyph({ name }: { name: string }) {
   return <Glyph size={15} className={glyph[1]} />
 }
 // Middle truncation for path labels: the directory shrinks first, the file name stays whole.
-function MiddlePath({ path }: { path: string }) {
+// `crumbs` spaces the separators ("src / app / file.ts") for a file header.
+function MiddlePath({ path, crumbs = false }: { path: string; crumbs?: boolean }) {
   const cut = path.lastIndexOf("/")
-  return <span className="noa-middle-path">{cut >= 0 && <span className="noa-middle-path-dir">{path.slice(0, cut + 1)}</span>}<span className="noa-middle-path-base">{path.slice(cut + 1)}</span></span>
+  const dir = path.slice(0, cut + 1)
+  return <span className="noa-middle-path">{cut >= 0 && <span className="noa-middle-path-dir">{crumbs ? `${dir.slice(0, -1).split("/").join(" / ")} / ` : dir}</span>}<span className="noa-middle-path-base">{path.slice(cut + 1)}</span></span>
 }
 
 // Git lane glyphs: a rounded square holding a plus, minus or dot.
@@ -108,6 +110,14 @@ async function load<T>(route: string, cwd: string, params: Record<string, string
   return value as T
 }
 
+const TREE_OPEN_KEY = "noa-files-tree-open"
+const TREE_WIDTH_KEY = "noa-files-tree-width"
+// The tree starts at 250px and stays between 200px and 60% of the pane, always leaving the preview 220px.
+const TREE_DEFAULT = 250
+const TREE_MIN = 200
+const PREVIEW_MIN = 220
+const SPLIT_PANE_MIN = TREE_MIN + PREVIEW_MIN
+
 export function WorkspaceFiles({ cwd, changes = false, scope: scopeProp, focus, reveal, foldAll, canSplit = true, active = true, refreshKey, onReference, onUpdated, onOpenChanges, onRevealInTree }: {
   cwd: string; changes?: boolean; scope?: string; focus?: { path: string; at: number; line?: number; endLine?: number; scope?: "all" }
   // Files tab: show this path in the tree. Changes tab: fold or unfold every folder of the grouped list.
@@ -115,6 +125,18 @@ export function WorkspaceFiles({ cwd, changes = false, scope: scopeProp, focus, 
   active?: boolean; refreshKey: number; onReference: (path: string) => void; onUpdated?: () => void; onOpenChanges?: (path?: string) => void; onRevealInTree?: (path: string) => void
 }) {
   const [selected, setSelected] = useState<string>()
+  // Wide Files panes keep the tree beside the open file; narrow ones swap between them.
+  const rootRef = useRef<HTMLDivElement>(null)
+  const [paneWidth, setPaneWidth] = useState(0)
+  const [treeOpen, setTreeOpen] = useState(() => { try { return localStorage.getItem(TREE_OPEN_KEY) !== "false" } catch { return true } })
+  const [treeWidth, setTreeWidth] = useState(() => { try { return Number(localStorage.getItem(TREE_WIDTH_KEY)) || TREE_DEFAULT } catch { return TREE_DEFAULT } })
+  useLayoutEffect(() => {
+    const element = rootRef.current
+    if (!element) return
+    const observer = new ResizeObserver(() => { if (element.offsetWidth > 0) setPaneWidth(element.offsetWidth) })
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [])
   const [view, setView] = useState(changes ? "diff" : "file")
   const [ownScope, setScope] = useState("all")
   // The Changes tab owns the review source (its toolbar selector); Files keeps its own.
@@ -135,7 +157,8 @@ export function WorkspaceFiles({ cwd, changes = false, scope: scopeProp, focus, 
   const [filter, setFilter] = useState("")
   const [search, setSearch] = useState("")
   // Diff layout comes from the shared Changes options; the file viewer keeps its own wrap setting.
-  const [codeWrap, setCodeWrap] = useState(() => localStorage.getItem("noa-code-wrap") === "true")
+  // File previews wrap by default so long lines never run past a narrow pane; Word wrap in the menu turns it off.
+  const [codeWrap, setCodeWrap] = useState(() => localStorage.getItem("noa-file-wrap") !== "false")
   const [context, setContext] = useState("")
   const [findRequest, setFindRequest] = useState(0)
   const [editing, setEditing] = useState(false)
@@ -180,7 +203,7 @@ export function WorkspaceFiles({ cwd, changes = false, scope: scopeProp, focus, 
     const timer = setInterval(() => { if (document.visibilityState === "visible") setTick((n) => n + 1) }, 3000)
     return () => clearInterval(timer)
   }, [active, editing])
-  useEffect(() => { localStorage.setItem("noa-code-wrap", String(codeWrap)) }, [codeWrap])
+  useEffect(() => { localStorage.setItem("noa-file-wrap", String(codeWrap)) }, [codeWrap])
   useEffect(() => {
     if (!active) return
     const controller = new AbortController()
@@ -385,7 +408,8 @@ export function WorkspaceFiles({ cwd, changes = false, scope: scopeProp, focus, 
     const menuPath = opts.menuPath
     // Open folders stick under their ancestors (one 28px row per level).
     const sticky = opts.directory && opts.opened && depth >= rootDepth ? { position: "sticky" as const, top: (depth - rootDepth) * 28, zIndex: 20 - depth } : undefined
-    return <button key={key} type="button" className={`noa-file-row${tone ? ` is-${tone}` : ""}${sticky ? " is-sticky" : ""}`} role="treeitem" aria-expanded={opts.directory ? !!opts.opened : undefined} style={sticky} title={opts.title ?? key} data-tree-path={opts.treePath} onClick={opts.onClick} onContextMenu={menuPath === undefined ? undefined : (event) => openMenu(event, menuPath, !!opts.directory, !!opts.change?.status.includes("D"))}>
+    const activeRow = !opts.directory && !!selected && opts.menuPath === selected
+    return <button key={key} type="button" className={`noa-file-row${tone ? ` is-${tone}` : ""}${sticky ? " is-sticky" : ""}${activeRow ? " is-active" : ""}`} aria-current={activeRow || undefined} role="treeitem" aria-expanded={opts.directory ? !!opts.opened : undefined} style={sticky} title={opts.title ?? key} data-tree-path={opts.treePath} onClick={opts.onClick} onContextMenu={menuPath === undefined ? undefined : (event) => openMenu(event, menuPath, !!opts.directory, !!opts.change?.status.includes("D"))}>
       {depth > 0 && <span className={`noa-file-guides${opts.directory ? " is-folder" : ""}`} aria-hidden="true">{Array.from({ length: depth }, (_, i) => <span key={i} />)}</span>}
       <span className="noa-file-icon">{opts.directory ? <ChevronDown size={14} className={opts.opened ? undefined : "-rotate-90"} /> : <FileGlyph name={name} />}</span>
       <span className="noa-file-name">{opts.label ?? name}</span>
@@ -451,57 +475,85 @@ export function WorkspaceFiles({ cwd, changes = false, scope: scopeProp, focus, 
       </div>)}
       {grep.truncated && <p className="noa-panel-notice">Only {grep.shown} {grep.shown === 1 ? "match is" : "matches are"} shown. Keep typing to narrow.</p>}</>
 
-  return <div className={`noa-workspace-panel${changes ? " is-review" : ""}`}>
-    {dialog}
-    {menu && <FileMenu cwd={cwd} target={menu} onClose={() => setMenu(undefined)} onReference={onReference} onRevealInTree={onRevealInTree} onError={setActionError} />}
-    {(selected || changes) && <div className="noa-panel-toolbar noa-file-header">
-      {selected && <button type="button" className={button} aria-label="Back to files" title="Back" onClick={() => select()}><ArrowLeft size={14} /></button>}
-      <span className="noa-panel-title" title={selectedChange?.oldPath ? `Renamed from ${selectedChange.oldPath}` : selected ?? cwd}>{selected ? <MiddlePath path={selected} /> : (changes ? <span className="noa-branch">{status?.isGit && <GitBranch size={14} />}{status?.branch || "Changes"}</span> : "Project files")}</span>
+  const split = !changes && paneWidth >= SPLIT_PANE_MIN
+  const showTree = split && treeOpen
+  const shownTreeWidth = Math.min(Math.max(treeWidth, TREE_MIN), Math.max(TREE_MIN, Math.min(paneWidth * 0.6, paneWidth - PREVIEW_MIN)))
+  const toggleTree = () => setTreeOpen((open) => { try { localStorage.setItem(TREE_OPEN_KEY, String(!open)) } catch { /* Ignore unavailable storage. */ } return !open })
+  // Dragging the tree's left edge resizes it; dragging well below the minimum hides it.
+  const startTreeResize = (event: React.PointerEvent) => {
+    if (event.button !== 0) return
+    event.preventDefault()
+    const startX = event.clientX, startWidth = shownTreeWidth
+    let next = startWidth
+    const move = (e: PointerEvent) => { next = startWidth + startX - e.clientX; setTreeWidth(Math.max(TREE_MIN, next)) }
+    const up = () => {
+      window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); window.removeEventListener("pointercancel", up)
+      if (next < TREE_MIN * 0.75) { setTreeWidth(startWidth); toggleTree(); return }
+      try { localStorage.setItem(TREE_WIDTH_KEY, String(Math.round(Math.max(TREE_MIN, next)))) } catch { /* Ignore unavailable storage. */ }
+    }
+    window.addEventListener("pointermove", move); window.addEventListener("pointerup", up); window.addEventListener("pointercancel", up)
+  }
+  // Up/Down move between the open menu's items, wrapping at either end.
+  const menuArrows = (event: KeyboardEvent<HTMLElement>) => {
+    if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return
+    const items = [...event.currentTarget.querySelectorAll<HTMLElement>("[role^=menuitem]:not(:disabled)")]
+    if (!items.length) return
+    event.preventDefault()
+    const at = items.indexOf(document.activeElement as HTMLElement)
+    items[(at + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length]!.focus()
+  }
+  // Menu toggles show a trailing check like the app's other menus instead of a native checkbox.
+  const checkItem = (label: string, checked: boolean, toggle: () => void) => <button type="button" role="menuitemcheckbox" aria-checked={checked} className={button} onClick={toggle}>{label}<span className="noa-review-menu-check">{checked && <Check size={14} />}</span></button>
+  const treeToggle = <button type="button" className={`${button}${showTree ? " is-pressed" : ""}`} aria-label="Toggle file tree" title="Toggle file tree" aria-pressed={showTree} onClick={toggleTree}><ListDetails size={14} /></button>
+  const fileHeaderItems = <>
+      {selected && !showTree && <button type="button" className={button} aria-label="Back to files" title="Back" onClick={() => select()}><ArrowLeft size={14} /></button>}
+      <span className="noa-panel-title" title={selectedChange?.oldPath ? `Renamed from ${selectedChange.oldPath}` : selected ?? cwd}>{selected ? <MiddlePath path={selected} crumbs /> : (changes ? <span className="noa-branch">{status?.isGit && <GitBranch size={14} />}{status?.branch || "Changes"}</span> : "Project files")}</span>
       {selected && changes && view === "diff" && selectedChange && count(selectedChange)}
-      {!selected && changes && currentStatus?.isGit && (currentStatus.additions > 0 || currentStatus.deletions > 0) && <span className="noa-row-stats"><span className="is-added">+{currentStatus.additions}</span><span className="is-removed">-{currentStatus.deletions}</span></span>}
-      {!selected && <button type="button" className={button} aria-label={changes ? "Refresh changes" : "Refresh files"} title="Refresh" disabled={!!action} onClick={() => setTick((n) => n + 1)}><RefreshCcw size={14} /></button>}
       {selected && editing && <><button type="button" className={`${button} is-text`} disabled={!!action} onClick={async () => { if (!dirty || (await confirm({ title: "Discard unsaved edits?", description: `Changes to ${selected} have not been saved.`, confirmLabel: "Discard", danger: true }))) { sessionStorage.removeItem(draftKey); setEditing(false) } }}>Cancel</button><button type="button" className={`${button} is-text is-primary`} disabled={!dirty || !!action} onClick={save}>{action === "save" ? "Saving…" : "Save"}</button></>}
       {selected && !editing && view === "file" && current?.kind === "text" && <button type="button" className={button} aria-label="Edit file" title="Edit" onClick={() => { setDraft(current.content ?? ""); setEditing(true) }}><SquarePen size={14} /></button>}
       {/* Claude Code's diff file header: Open file (or back to the diff), then More actions. */}
       {selected && changes && !editing && <button type="button" className={button} aria-label={view === "diff" ? "Open file" : "Show diff"} title={view === "diff" ? "Open file" : "Show diff"} onClick={() => select(selected, view === "diff" ? "file" : "diff")}>{view === "diff" ? <ArrowUpRight size={14} /> : <PlusMinus size={14} />}</button>}
-      {selected && !editing && <details className="noa-review-menu" onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) event.currentTarget.open = false }} onKeyDown={(event) => { if (event.key === "Escape") event.currentTarget.open = false }} onClick={(event) => { if ((event.target as HTMLElement).closest("button")) event.currentTarget.open = false }}>
+      {selected && !editing && <details className="noa-review-menu" onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) event.currentTarget.open = false }} onKeyDown={(event) => { if (event.key === "Escape") event.currentTarget.open = false; else menuArrows(event) }} onClick={(event) => { if ((event.target as HTMLElement).closest("button")) event.currentTarget.open = false }}>
         <summary role="button" className={button} aria-label="More actions" title="More actions"><MoreHorizontal size={16} /></summary>
-        <div className="noa-review-menu-content noa-floating-panel">
-          {(view === "diff" || current?.kind === "text") && <button type="button" className={button} onClick={() => setFindRequest((n) => n + 1)}>Find in file</button>}
+        <div className="noa-review-menu-content noa-floating-panel" role="menu">
+          {(view === "diff" || current?.kind === "text") && <button type="button" role="menuitem" className={button} onClick={() => setFindRequest((n) => n + 1)}>Find in file<kbd className="noa-review-menu-hint">⌘F</kbd></button>}
           {view === "file" && current?.kind === "text" && <>
-            <button type="button" className={button} onClick={() => setGotoRequest((n) => n + 1)}>Go to line</button>
-            <label className="noa-viewed-label"><input type="checkbox" checked={codeWrap} onChange={(event) => setCodeWrap(event.target.checked)} />Word wrap</label>
+            <button type="button" role="menuitem" className={button} onClick={() => setGotoRequest((n) => n + 1)}>Go to line<kbd className="noa-review-menu-hint">⌃G</kbd></button>
+            {checkItem("Word wrap", codeWrap, () => setCodeWrap(!codeWrap))}
           </>}
           {view === "diff" && current?.snapshot && <>
-            <button type="button" className={button} onClick={() => setContext(context ? "" : "all")}>{context ? "Collapse context" : "Expand context"}</button>
-            <label className="noa-viewed-label"><input type="checkbox" checked={viewed[selected] === current.snapshot} onChange={(event) => setViewed((v) => ({ ...v, [selected]: event.target.checked ? current.snapshot! : "" }))} />Viewed</label>
+            <button type="button" role="menuitem" className={button} onClick={() => setContext(context ? "" : "all")}>{context ? "Collapse context" : "Expand context"}</button>
+            {checkItem("Viewed", viewed[selected] === current.snapshot, () => setViewed((v) => ({ ...v, [selected]: v[selected] === current.snapshot ? "" : current.snapshot! })))}
             {!readOnly && <div className="noa-review-menu-separator" role="separator" />}
-            {!readOnly && scope !== "staged" && selectedChange && selectedChange.status[1] !== " " && <button type="button" className={button} disabled={!!action} onClick={() => gitAction("stage")}>Stage file</button>}
-            {!readOnly && scope !== "unstaged" && selectedChange && selectedChange.status !== "??" && selectedChange.status[0] !== " " && <button type="button" className={button} disabled={!!action} onClick={() => gitAction("unstage")}>Unstage file</button>}
-            {!readOnly && <button type="button" className={button} disabled={!!action} onClick={() => gitAction("revert")}>Revert file</button>}
-          </>}
-          {view === "file" && current && <>
-            {current.kind === "text" && <button type="button" className={button} onClick={() => navigator.clipboard.writeText(current.content ?? "").catch((e) => setActionError(`Copy failed: ${e.message}`))}>Copy file contents</button>}
-            {current.kind !== "binary" && <button type="button" className={button} onClick={download}>Download file</button>}
+            {!readOnly && scope !== "staged" && selectedChange && selectedChange.status[1] !== " " && <button type="button" role="menuitem" className={button} disabled={!!action} onClick={() => gitAction("stage")}>Stage file</button>}
+            {!readOnly && scope !== "unstaged" && selectedChange && selectedChange.status !== "??" && selectedChange.status[0] !== " " && <button type="button" role="menuitem" className={button} disabled={!!action} onClick={() => gitAction("unstage")}>Unstage file</button>}
+            {!readOnly && <button type="button" role="menuitem" className={button} disabled={!!action} onClick={() => gitAction("revert")}>Revert file</button>}
           </>}
           <div className="noa-review-menu-separator" role="separator" />
-          {!selectedChange?.status.includes("D") && <button type="button" className={button} onClick={() => onReference(selected)}>Attach as context</button>}
-          <button type="button" className={button} onClick={copyPath}>Copy path</button>
-          {changes && onRevealInTree && !selectedChange?.status.includes("D") && <button type="button" className={button} onClick={() => onRevealInTree(selected)}>Reveal in file tree</button>}
-          <button type="button" className={button} disabled={!!action} onClick={() => setTick((n) => n + 1)}>{view === "diff" ? "Refresh" : "Reload file"}</button>
+          {!selectedChange?.status.includes("D") && <button type="button" role="menuitem" className={button} onClick={() => onReference(selected)}>Attach as context</button>}
+          <button type="button" role="menuitem" className={button} onClick={copyPath}>Copy path</button>
+          {view === "file" && current?.kind === "text" && <button type="button" role="menuitem" className={button} onClick={() => navigator.clipboard.writeText(current.content ?? "").catch((e) => setActionError(`Copy failed: ${e.message}`))}>Copy file contents</button>}
+          {view === "file" && current && current.kind !== "binary" && <button type="button" role="menuitem" className={button} onClick={download}>Download file</button>}
+          {changes && onRevealInTree && !selectedChange?.status.includes("D") && <button type="button" role="menuitem" className={button} onClick={() => onRevealInTree(selected)}>Reveal in file tree</button>}
           {view === "file" && current && <>
-            {editors.length > 0 && <><div className="noa-review-menu-separator" role="separator" /><div className="noa-review-menu-label">Open in</div>
-              {editors.map((editor) => <button key={editor.type} type="button" className={button} onClick={() => openPath(cwd, selected, editor.type).catch((e) => setActionError(e.message))}>{editor.name}</button>)}</>}
             <div className="noa-review-menu-separator" role="separator" />
-            <button type="button" className={button} onClick={() => openPath(cwd, selected, "finder").catch((e) => setActionError(e.message))}>{revealLabel}</button>
+            {editors.length > 0 && <><div className="noa-review-menu-label">Open in</div>
+              {editors.map((editor) => <button key={editor.type} type="button" role="menuitem" className={button} onClick={() => openPath(cwd, selected, editor.type).catch((e) => setActionError(e.message))}>{editor.name}</button>)}</>}
+            <button type="button" role="menuitem" className={button} onClick={() => openPath(cwd, selected, "finder").catch((e) => setActionError(e.message))}>{revealLabel}</button>
           </>}
+          <div className="noa-review-menu-separator" role="separator" />
+          <button type="button" role="menuitem" className={button} disabled={!!action} onClick={() => setTick((n) => n + 1)}>{view === "diff" ? "Refresh" : "Reload file"}</button>
         </div>
       </details>}
-    </div>}
-    {selected ? <>
-    </> : <>
-      {!changes && <div className="noa-panel-toolbar noa-file-root">
-        <span className="noa-file-root-chip" title={cwd}><Folder size={14} />{cwd.split("/").filter(Boolean).pop() ?? "/"}</span>
+      {split && treeToggle}
+  </>
+  const fileHeader = selected ? <div className="noa-panel-toolbar noa-file-header">{fileHeaderItems}</div> : <div className="noa-panel-toolbar noa-file-header">
+      <span className="noa-panel-title" title={selectedChange?.oldPath ? `Renamed from ${selectedChange.oldPath}` : selected ?? cwd}>{selected ? <MiddlePath path={selected} crumbs /> : (changes ? <span className="noa-branch">{status?.isGit && <GitBranch size={14} />}{status?.branch || "Changes"}</span> : "Project files")}</span>
+      {!selected && changes && currentStatus?.isGit && (currentStatus.additions > 0 || currentStatus.deletions > 0) && <span className="noa-row-stats"><span className="is-added">+{currentStatus.additions}</span><span className="is-removed">-{currentStatus.deletions}</span></span>}
+      {!selected && <button type="button" className={button} aria-label={changes ? "Refresh changes" : "Refresh files"} title="Refresh" disabled={!!action} onClick={() => setTick((n) => n + 1)}><RefreshCcw size={14} /></button>}
+  </div>
+  const rootChip = <span className="noa-file-root-chip" title={cwd}><Folder size={14} />{cwd.split("/").filter(Boolean).pop() ?? "/"}</span>
+  const rootMenu = <>
         <details className="noa-review-menu" onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) event.currentTarget.open = false }} onKeyDown={(event) => { if (event.key === "Escape") event.currentTarget.open = false }} onClick={(event) => { if ((event.target as HTMLElement).closest("button")) event.currentTarget.open = false }}>
           <summary role="button" className={button} aria-label="File actions" title="File actions"><MoreHorizontal size={16} /></summary>
           <div className="noa-review-menu-content noa-floating-panel">
@@ -510,25 +562,55 @@ export function WorkspaceFiles({ cwd, changes = false, scope: scopeProp, focus, 
             <button type="button" className={button} onClick={copyPath}><Copy size={13} />Copy path</button>
           </div>
         </details>
-      </div>}
+  </>
+  const searchBar = <>
       <div className="noa-file-search">
         <div className="noa-file-search-field"><Search size={14} /><input aria-label={changes ? "Filter changed files" : "Search files"} value={filter} onChange={(e) => setFilter(e.target.value)} placeholder={changes ? "Filter changed files" : "Filter, or ? to search in files"} /></div>
       </div>
-    </>}
+  </>
+  const treeTop = <>
+      {!changes && <div className="noa-panel-toolbar noa-file-root">{rootChip}{rootMenu}</div>}
+      {searchBar}
+  </>
+  const notices = <>
     {error && <p className="noa-panel-error" role="alert">{error}</p>}
     {actionError && <p className="noa-panel-error" role="alert">{actionError}</p>}
     {diskNotice && editing && <p className="noa-panel-notice" role="status">{diskNotice}</p>}
     {statusError && <p className="noa-panel-error" role="alert">Could not load changes: {statusError}{currentStatus && " · Showing last result"} <button type="button" className={button} onClick={() => setTick((n) => n + 1)}>Retry</button></p>}
     {loading && !current && selected && <p className="noa-panel-empty" role="status">Loading…</p>}
-    <div className={`noa-panel-body ${selected && !editing ? "is-code" : "scrollbar-on-scroll"}`}>
-      {selected ? current && (editing ? <textarea aria-label="Edit file content" className="noa-file-editor" value={draft} onChange={(e) => setDraft(e.target.value)} spellCheck={false} /> : current.kind === "image" ? <div className="noa-image-preview"><img src={current.dataUrl} alt={selected} /></div> : current.kind === "binary" ? <p className="noa-panel-empty">Binary file cannot be previewed</p> : current.truncated ? <p className="noa-panel-empty">Diff too large to display. Open the file in your editor to review it.</p> : <Suspense fallback={<p className="noa-panel-empty">Loading code viewer…</p>}><CodeView focusRequest={lineTarget?.at} focusLine={lineTarget?.line} focusEndLine={lineTarget && "endLine" in lineTarget ? lineTarget.endLine : undefined} gotoRequest={gotoRequest} path={selected} content={current.content ?? ""} diff={view === "diff"} split={sideBySide && canSplit} wrap={view === "diff" ? wordWrap : codeWrap} wordDiff={wordDiff} hideWhitespace={hideWhitespace} hunkScope={scope !== "all" && !readOnly && !selectedChange?.oldPath && !action ? scope : undefined} onHunkAction={gitAction} fullContent={fullDiff?.key === `${cwd}\0${scope}\0${selected}` ? fullDiff.content : undefined} onNeedFull={view === "diff" && !context ? () => setWantFull(true) : undefined} findRequest={findRequest} onCloseFind={() => setFindRequest(0)} /></Suspense>)
-        : changes ? !currentStatus ? !statusError && <p className="noa-panel-empty" role="status">Loading changes…</p> : currentStatus.isGit === false ? <div className="noa-panel-empty"><p>This folder is not a Git repository</p><button type="button" className={button} disabled={!!action} onClick={() => gitAction("init")}>Create Git repository</button></div> : <div ref={changeList} role="tree" aria-label="Changed files" className={`noa-file-tree${bareNames ? " is-bare-names" : ""}`} onKeyDown={onTreeKey}>{changeFiles.length ? fileTree ? changedRows(changeTree(changeFiles), "", 0) : [...changeFiles].sort((a, b) => a.path.localeCompare(b.path)).map((file) => changedFile(file, 0, <MiddlePath path={file.path} />)) : <div className="noa-panel-empty">{!filter && <CheckCircle2 size={20} />}<p>{filter ? "No matching files" : scope === "staged" ? "No staged changes" : scope === "unstaged" ? "No unstaged changes" : readOnly ? "No differences" : "Working tree clean"}</p></div>}</div>
+  </>
+  const previewBody = current && (editing ? <textarea aria-label="Edit file content" className="noa-file-editor" value={draft} onChange={(e) => setDraft(e.target.value)} spellCheck={false} /> : current.kind === "image" ? <div className="noa-image-preview"><img src={current.dataUrl} alt={selected} /></div> : current.kind === "binary" ? <p className="noa-panel-empty">Binary file cannot be previewed</p> : current.truncated ? <p className="noa-panel-empty">Diff too large to display. Open the file in your editor to review it.</p> : <Suspense fallback={<p className="noa-panel-empty">Loading code viewer…</p>}><CodeView focusRequest={lineTarget?.at} focusLine={lineTarget?.line} focusEndLine={lineTarget && "endLine" in lineTarget ? lineTarget.endLine : undefined} gotoRequest={gotoRequest} path={selected!} content={current.content ?? ""} diff={view === "diff"} split={sideBySide && canSplit} wrap={view === "diff" ? wordWrap : codeWrap} wordDiff={wordDiff} hideWhitespace={hideWhitespace} hunkScope={scope !== "all" && !readOnly && !selectedChange?.oldPath && !action ? scope : undefined} onHunkAction={gitAction} fullContent={fullDiff?.key === `${cwd}\0${scope}\0${selected}` ? fullDiff.content : undefined} onNeedFull={view === "diff" && !context ? () => setWantFull(true) : undefined} findRequest={findRequest} onCloseFind={() => setFindRequest(0)} /></Suspense>)
+  const listBody = changes ? !currentStatus ? !statusError && <p className="noa-panel-empty" role="status">Loading changes…</p> : currentStatus.isGit === false ? <div className="noa-panel-empty"><p>This folder is not a Git repository</p><button type="button" className={button} disabled={!!action} onClick={() => gitAction("init")}>Create Git repository</button></div> : <div ref={changeList} role="tree" aria-label="Changed files" className={`noa-file-tree${bareNames ? " is-bare-names" : ""}`} onKeyDown={onTreeKey}>{changeFiles.length ? fileTree ? changedRows(changeTree(changeFiles), "", 0) : [...changeFiles].sort((a, b) => a.path.localeCompare(b.path)).map((file) => changedFile(file, 0, <MiddlePath path={file.path} />)) : <div className="noa-panel-empty">{!filter && <CheckCircle2 size={20} />}<p>{filter ? "No matching files" : scope === "staged" ? "No staged changes" : scope === "unstaged" ? "No unstaged changes" : readOnly ? "No differences" : "Working tree clean"}</p></div>}</div>
         : contentMode ? <div role="tree" aria-label="File content matches" className="noa-file-tree" onKeyDown={onTreeKey}>{contentResults}</div>
         : <div role="tree" aria-label="Project files" className="noa-file-tree" onKeyDown={onTreeKey}>{!search && onOpenChanges && status?.isGit && <button type="button" role="treeitem" className="noa-file-row" onClick={() => onOpenChanges()}><span className="noa-file-icon"><ListDetails size={15} /></span><span className="noa-file-name">All changes</span></button>}
           {sectioned && <>{section("@changed", "Changed files")}{!closed.has("@changed") && <div role="group">{changedRows(changeTree(status!.files))}</div>}
           <div className="noa-file-divider" role="none" />{section("@all", "All files")}</>}
-          {(search || !closed.has("@all")) && (sectioned ? <div role="group">{treeRows("")}</div> : treeRows(""))}{loading && !tree[""] && <p className="noa-panel-empty" role="status">{search ? "Searching files…" : "Loading directory entries…"}</p>}{!loading && !error && (search ? !matches.length : !tree[""]?.length) && <p className="noa-panel-empty">{search ? "No matching files" : "No files in this folder"}</p>}</div>}
+          {(search || !closed.has("@all")) && (sectioned ? <div role="group">{treeRows("")}</div> : treeRows(""))}{loading && !tree[""] && <p className="noa-panel-empty" role="status">{search ? "Searching files…" : "Loading directory entries…"}</p>}{!loading && !error && (search ? !matches.length : !tree[""]?.length) && <p className="noa-panel-empty">{search ? "No matching files" : "No files in this folder"}</p>}</div>
+  return <div ref={rootRef} className={`noa-workspace-panel${changes ? " is-review" : ""}`}>
+    {dialog}
+    {menu && <FileMenu cwd={cwd} target={menu} onClose={() => setMenu(undefined)} onReference={onReference} onRevealInTree={onRevealInTree} onError={setActionError} />}
+    {(selected || changes) && !showTree ? fileHeader : null}
+    {/* The file and the tree side by side under the tab strip; the file's header row spans only its own column. */}
+    {showTree ? <div className="noa-files-split">
+      <div className="noa-files-main">
+        <div className="noa-panel-toolbar noa-file-header noa-files-head">{selected ? fileHeaderItems : <>{rootChip}<span className="noa-panel-title" />{rootMenu}{treeToggle}</>}</div>
+        {notices}
+        <div className={`noa-panel-body ${selected && !editing ? "is-code" : "scrollbar-on-scroll"}`}>{selected ? previewBody : <div className="noa-panel-empty noa-files-placeholder"><Folder size={20} /><p>Open files appear here</p><span>Pick a file in the tree.</span></div>}</div>
+        {current?.truncated && <p className="noa-panel-notice">Preview limit reached; some content is omitted.</p>}
+      </div>
+      <div className="noa-files-tree" style={{ width: shownTreeWidth }}>
+        <div className="noa-files-resize" role="separator" aria-orientation="vertical" aria-label="Resize file tree" onPointerDown={startTreeResize} />
+        {searchBar}
+        <div className="noa-panel-body scrollbar-on-scroll">{listBody}</div>
+        {truncated && <p className="noa-panel-notice">Preview limit reached; some content is omitted.</p>}
+      </div>
+    </div> : <>
+    {!selected && treeTop}
+    {notices}
+    <div className={`noa-panel-body ${selected && !editing ? "is-code" : "scrollbar-on-scroll"}`}>
+      {selected ? previewBody : listBody}
     </div>
     {(current?.truncated || !selected && truncated) && <p className="noa-panel-notice">Preview limit reached; some content is omitted.</p>}
+    </>}
   </div>
 }
