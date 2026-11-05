@@ -471,10 +471,17 @@ export function startAgentSummarization(
 
       summaryAbortController = new AbortController()
       let reply: string | null | undefined
+      let label: string | null = null
       try {
         reply = fromNotes
           ? await labelFromNotes(transcript.messages, summaryAbortController.signal)
           : await labelFromFork(transcript.messages, summaryAbortController)
+        if (reply) label = parseLabel(reply, fromNotes)
+        // A small model that never follows the format must still reach the
+        // fork fallback, so an unusable reply counts as a failure.
+        if (fromNotes && reply !== undefined && label === null) {
+          throw new Error(`small model returned an unusable reply (${reply === null ? 'no text' : `${reply.length} chars`})`)
+        }
       } catch (e) {
         // A failed request leaves its input unsummarized; retry it next tick.
         lastInputKey = null
@@ -492,10 +499,8 @@ export function startAgentSummarization(
         }
         return
       }
-      if (fromNotes) writerFailures = 0
-
       if (stopped || reply === undefined) return
-      const label = reply === null ? null : parseLabel(reply, fromNotes)
+      if (fromNotes) writerFailures = 0
       if (label === null) {
         logForDebugging(
           `[AgentSummary] Dropping unusable summary reply for ${taskId}: ${reply === null ? 'no text' : `${reply.length} chars`}`,
