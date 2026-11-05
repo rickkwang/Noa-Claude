@@ -1,14 +1,13 @@
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from "react"
-import type { AgentState, AgentTask } from "../agent/reducer"
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties } from "react"
+import { isSubagentTask, type AgentState } from "../agent/reducer"
 import type { TurnDiff } from "../agent/protocol"
-import { ChevronRight, Folder, Gauge, Globe, MoreHorizontal, PanelBottom, Plus, PlusMinus, Terminal, Users } from "../lib/icons"
+import { Folder, Globe, MoreHorizontal, PanelBottom, Plus, PlusMinus, Terminal, Users } from "../lib/icons"
 import { browserVersion, closeBrowser, dismissWebUrl, localWebUrls, openBrowser, projectBrowser, selectBrowser, subscribeBrowser } from "../lib/browserTabs"
 import { BrowserPanel } from "./BrowserPanel"
 import { closeTerminal, moveTerminal, openTerminal, selectTerminal, snapshotTerminals, subscribeTerminals, terminalsVersion, terminalTabs } from "../lib/terminalSessions"
 import { query } from "../api"
 import { SPLIT_MIN_WIDTH, useDiffPref } from "../lib/diffPrefs"
 import { PopupMenu, anchorBelow, type PopupMenuAnchor } from "./PopupMenu"
-import { ToolCard } from "./ToolCard"
 import { TurnReview } from "./TurnReview"
 import { WorkspaceFiles } from "./WorkspaceFiles"
 import { SubagentsPanel } from "./SubagentsPanel"
@@ -17,7 +16,7 @@ import { PanelTabStrip } from "./PanelTabStrip"
 import { TerminalView } from "./TerminalView"
 
 // Tools that open at most once; terminals open as many tabs as wanted.
-export type PanelTab = "files" | "changes" | "activity" | "subagents"
+export type PanelTab = "files" | "changes" | "subagents"
 // The shown pane: a tool, the New tab page, or the panel's active terminal/browser.
 export type RightTab = PanelTab | "new" | "terminal" | "browser"
 export const DEFAULT_RIGHT_TABS: PanelTab[] = ["files", "changes"]
@@ -31,9 +30,10 @@ const SOURCES = { turn: "Last turn", all: "Uncommitted", unstaged: "Unstaged", s
 const TOOLS = {
   files: { title: "Files", icon: Folder },
   changes: { title: "Changes", icon: PlusMinus },
-  activity: { title: "Activity", icon: Gauge },
   subagents: { title: "Subagents", icon: Users },
 } as const
+// Subagents open from the Overview's Tasks card or the conversation, not from the New tab page.
+const NEW_TAB_TOOLS: PanelTab[] = ["files", "changes"]
 const TERMINAL_KEY = "terminal:"
 const BROWSER_KEY = "browser:"
 
@@ -119,7 +119,7 @@ export function RightPanel({ state, onStopTask, cwd, open = true, tabs, onTabs, 
   const [tabMenu, setTabMenu] = useState<{ key: string; anchor: PopupMenuAnchor }>()
   const [selectedTask, setSelectedTask] = useState<string>()
   useEffect(() => { setSelectedTask(focusTask?.id) }, [focusTask, state.sessionId])
-  const subagents = state.tasks.filter(task => !task.taskType || task.taskType === "local_agent" || task.taskType === "remote_agent" || task.taskType === "in_process_teammate")
+  const subagents = state.tasks.filter(isSubagentTask)
   const [fileChange, setFileChange] = useState<{ cwd: string; path: string; at: number; scope: "all" }>()
   // One review source: the last turn's patch or a slice of the working tree.
   const [source, setSource] = useState<"turn" | "all" | "unstaged" | "staged" | "branch" | "commit">("all")
@@ -221,7 +221,7 @@ export function RightPanel({ state, onStopTask, cwd, open = true, tabs, onTabs, 
       {shown === "new" && (
         <NewTabPage
           tools={[
-            ...(Object.keys(TOOLS) as PanelTab[]).map((id) => ({ id, ...TOOLS[id] })),
+            ...NEW_TAB_TOOLS.map((id) => ({ id, ...TOOLS[id] })),
             { id: "terminal", title: "Terminal", icon: Terminal, shortcut: "⌃`" },
             ...(supportsBrowser ? [{ id: "browser", title: "Browser", icon: Globe }] : []),
           ]}
@@ -312,79 +312,9 @@ export function RightPanel({ state, onStopTask, cwd, open = true, tabs, onTabs, 
           </div>
         )}
       </div>
-      <div id="panel-activity" role="tabpanel" aria-labelledby="panel-tab-activity" className="min-h-0 flex-1 flex-col overflow-hidden" style={{ display: shown === "activity" ? "flex" : "none" }}>
-        <ActivityTab state={state} subagents={subagents} onStopTask={onStopTask} />
-      </div>
       <div id="panel-subagents" role="tabpanel" aria-labelledby="panel-tab-subagents" className="min-h-0 flex-1 flex-col overflow-hidden" style={{ display: shown === "subagents" ? "flex" : "none" }}>
         <SubagentsPanel tasks={subagents} selectedId={selectedTask} onSelect={setSelectedTask} onStopTask={onStopTask} />
       </div>
     </div>
   )
-}
-
-function Section({ title, count, open, children }: { title: string; count?: string | number; open?: boolean; children: ReactNode }) {
-  return <details className="noa-panel-section" open={open}>
-    <summary><ChevronRight size={12} className="noa-panel-section-chevron" /><span>{title}</span>{count !== undefined && <span className="noa-panel-section-count">{count}</span>}</summary>
-    <div className="noa-panel-section-body">{children}</div>
-  </details>
-}
-
-function ActivityTab({ state, subagents, onStopTask }: { state: AgentState; subagents: AgentTask[]; onStopTask: (id: string) => void }) {
-  const backgroundTasks = state.tasks.filter(task => !subagents.includes(task))
-  const statusKind = state.connection === "closed" ? "closed" : state.connection === "connecting" ? "connecting" : state.permissions.length || state.elicitations.length ? "waiting" : state.busy ? "running" : "ready"
-  return <div className="noa-panel-details scrollbar-on-scroll">
-    <section className="noa-activity-status" data-kind={statusKind}>
-      <span className="noa-activity-dot" />
-      <div className="min-w-0 flex-1">
-        <div>{statusKind === "closed" ? "Agent disconnected" : statusKind === "connecting" ? "Connecting…" : statusKind === "waiting" ? state.permissions.length && state.elicitations.length ? "Waiting for approval and input" : state.elicitations.length ? "Waiting for input" : "Waiting for approval" : statusKind === "running" ? "Agent is working" : "Ready"}</div>
-        {state.result && <p className="noa-panel-muted tabular-nums">{state.result.interrupted ? "Stopped" : state.result.isError ? "Finished with an error" : "Last run completed"} · {(state.result.durationMs / 1000).toFixed(1)}s{state.result.costUsd !== undefined && ` · $${state.result.costUsd.toFixed(4)}`}</p>}
-      </div>
-    </section>
-    {backgroundTasks.length > 0 && (
-      <div className="noa-panel-sections">
-        <Section title="Background tasks" count={backgroundTasks.length} open>
-          {backgroundTasks.map((task) => (
-            <details key={task.id} className="rounded-lg border border-[var(--border-default)] p-2 text-body">
-              <summary className="cursor-pointer">
-                <span className={task.status === "running" ? "noa-shimmer" : ""}>{task.description}</span>
-                <span className="ml-2 text-caption text-[var(--sidebar-text-muted)]">{task.status}</span>
-              </summary>
-              {task.summary && <p className="whitespace-pre-wrap text-caption">{task.summary}</p>}
-              {task.lastTool && <p className="text-caption text-[var(--sidebar-text-muted)]">Using {task.lastTool}</p>}
-              {task.usage && (
-                <p className="text-caption tabular-nums text-[var(--sidebar-text-muted)]">
-                  {task.usage.tool_uses} tools · {(task.usage.duration_ms / 1000).toFixed(1)}s
-                </p>
-              )}
-              {task.turns.map((turn) =>
-                turn.role === "assistant"
-                  ? turn.blocks.map((block, i) =>
-                      block.kind === "tool" ? (
-                        <ToolCard key={`${turn.id}-${i}`} block={block} tasks={state.tasks} task={state.tasks.find(task => task.id === block.id || task.toolUseId === block.id)} />
-                      ) : (block.kind === "text" || block.kind === "thinking") ? (
-                        <p key={`${turn.id}-${i}`} className="whitespace-pre-wrap text-caption">
-                          {block.text}
-                        </p>
-                      ) : null,
-                    )
-                  : null,
-              )}
-              {task.status === "running" && task.id !== task.toolUseId && (
-                <button
-                  className="noa-confirm-btn mt-2 rounded-md border border-[var(--border-default)] px-2 py-1 text-caption"
-                  onClick={() => onStopTask(task.id)}
-                >
-                  Stop task
-                </button>
-              )}
-              {task.outputFile && (
-                <p className="break-all text-caption text-[var(--sidebar-text-muted)]">Output: {task.outputFile}</p>
-              )}
-            </details>
-          ))}
-        </Section>
-      </div>
-    )}
-    <div className="noa-panel-sections"><Section title="Diagnostics" count={state.logs.length}><pre className="noa-activity-log">{state.logs.join("\n") || "No agent diagnostics"}</pre></Section></div>
-  </div>
 }

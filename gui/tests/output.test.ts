@@ -8,7 +8,6 @@ import { Markdown } from "../src/components/Markdown"
 import { ToolCard } from "../src/components/ToolCard"
 import { PermissionCard } from "../src/components/PermissionCard"
 import { Collapsible } from "../src/components/Collapsible"
-import { RightPanel } from "../src/components/RightPanel"
 
 const agent = (s: AgentState, message: object) => reducer(s, { type: "agent", message } as any)
 const start = () => reducer(initialState, { type: "user-sent", id: "u", text: "task" })
@@ -31,18 +30,6 @@ test("user messages retain reference definitions and extra blank lines", () => {
   expect(html).toContain("world")
   const nested = messages([{ role: "user", id: "nested", text: "> [x]: foo\n>\n> hello" }])
   expect(nested).toContain("[x]: foo")
-})
-
-test("activity distinguishes input from approval", () => {
-  const oldStorage = globalThis.localStorage
-  Object.defineProperty(globalThis, "localStorage", { configurable: true, value: { getItem: () => null } })
-  try {
-    const state = { ...initialState, connection: "ready" as const, historyBefore: 10, elicitations: [{ requestId: "input" }] as any }
-    const html = render(createElement(RightPanel, { state, cwd: "/project", tabs: ["files", "changes", "activity", "subagents"], onTabs: () => {}, newTab: false, onNewTab: () => {}, tab: "activity", onTab: () => {}, onStopTask: () => {}, onReference: () => {}, workspaceRefreshKey: 0 }))
-    expect(html).toContain("Waiting for input")
-    expect(html).not.toContain("Load earlier")
-    expect(html).not.toContain("Waiting for approval")
-  } finally { Object.defineProperty(globalThis, "localStorage", { configurable: true, value: oldStorage }) }
 })
 
 test("context request state retains the last measurement after an error or disconnect", () => {

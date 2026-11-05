@@ -93,6 +93,9 @@ export interface AgentTask {
   turns: Turn[]
 }
 
+// Agent-like tasks get avatars and a transcript; the rest (shells, monitors) are background processes.
+export const isSubagentTask = (task: AgentTask) => !task.taskType || ["local_agent", "remote_agent", "in_process_teammate"].includes(task.taskType)
+
 export interface AgentState {
   connection: "connecting" | "ready" | "closed"
   sessionId?: string

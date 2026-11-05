@@ -15,6 +15,7 @@ import {createElement as h,useState} from ${source("node_modules/react/index.js"
 import {createRoot} from ${source("node_modules/react-dom/client.js")};
 import {MessageList} from ${source("src/components/MessageList.tsx")};
 import {RightPanel} from ${source("src/components/RightPanel.tsx")};
+import {OverviewPanel} from ${source("src/components/OverviewPanel.tsx")};
 import {SubagentAvatar} from ${source("src/components/SubagentAvatar.tsx")};
 import ThemeInjector from ${source("src/theme/ThemeInjector.tsx")};
 import {defaultSettings} from ${source("src/theme/settings.ts")};
@@ -37,7 +38,7 @@ const timelineMessages=[
 let timelineState=reducer(initialState,{type:'user-sent',id:'timeline-user',text:'Review'});for(const message of timelineMessages)timelineState=reducer(timelineState,{type:'agent',message});
 window.fetch=async input=>Response.json(String(input).includes('/api/changes')?{isGit:true,files:[],branch:'master',additions:0,deletions:0}:{entries:[]});
 function Scene({phase,theme='dark'}){
- const [tab,setTab]=useState('activity'),[focusTask,setFocusTask]=useState(),[selected,setSelected]=useState();
+ const [tab,setTab]=useState('files'),[focusTask,setFocusTask]=useState(),[selected,setSelected]=useState();
  let activeTasks=['creating','orphan','failed'].includes(phase)?[]:tasks.map((t,i)=>({...t,status:phase==='done'||phase==='mixed'&&i<2?'completed':t.status}));if(phase==='background')activeTasks.push({id:'shell',description:'Background shell',taskType:'local_bash',status:'running',turns:[]});
  if(phase==='detail')activeTasks[0]={...activeTasks[0],status:'completed',summary:descriptions[0],usage:{tool_uses:66,duration_ms:242000,total_tokens:115658},turns:[{role:'assistant',id:'completed-detail',streaming:false,blocks:[...Array.from({length:8},(_,i)=>[{kind:'thinking',text:'Inspect renderer step '+i,done:true},{kind:'tool',id:'detail-tool-'+i,name:'Bash',input:{command:'git diff --stat',description:'Inspect renderer changes'},partialJson:'',status:'done',output:'Files reviewed'}]).flat(),{kind:'text',text:'## Review result\\n\\nDetail result report. All renderer checks are complete.',done:true}]}]};
  if(phase==='live-child'){activeTasks[0]={...activeTasks[0],status:'completed',turns:[{role:'assistant',id:'parent-finished',streaming:false,blocks:[{...tools[0],id:'nested-live-call'}]}]};activeTasks.push({id:'nested-live-agent',toolUseId:'nested-live-call',description:'Running child',status:'running',turns:[]})}
@@ -47,15 +48,35 @@ function Scene({phase,theme='dark'}){
  let turns=[{role:'assistant',id:'review',streaming:true,blocks:[{kind:'text',done:true,text:'将最近 6 次提交（\\\`0ee28755..ff6a3b26\\\`）拆成后端/运行时与前端两条线并行审查。'},...blocks]}];
  if(phase==='timeline'){activeTasks=timelineState.tasks;turns=timelineState.turns}
  const open=id=>{opened=id;setSelected(id);setFocusTask({id,key:Date.now()});setTab('subagents')};
- return h('div',{style:{display:'flex',height:'100vh',background:'var(--bg-primary)',color:'var(--text-primary)'}},h(ThemeInjector,{settings:{...defaultSettings,appearance:{...defaultSettings.appearance,theme}}}),h('main',{style:{display:'flex',flex:1,minWidth:0,padding:'32px 28px'}},h(MessageList,{turns,busy:true,readingWidth:880,sessionId:'subagents-fixture',cwd:'/fixture',tasks:activeTasks,onOpenTask:open,onStopTask:id=>{stopped=id}})),h('aside',{style:{width:360,borderLeft:'1px solid var(--border-default)',display:'flex',flexDirection:'column'}},h(RightPanel,{state:{...initialState,connection:'ready',tasks:activeTasks,busy:phase!=='done'},cwd:'/fixture',tabs:['files','changes','activity','subagents'],onTabs(){},newTab:false,onNewTab(){},tab,onTab:setTab,onReference(){},onStopTask:id=>{stopped=id},workspaceRefreshKey:0,focusTask})))
+ return h('div',{style:{display:'flex',height:'100vh',background:'var(--bg-primary)',color:'var(--text-primary)'}},h(ThemeInjector,{settings:{...defaultSettings,appearance:{...defaultSettings.appearance,theme}}}),h('main',{style:{display:'flex',flex:1,minWidth:0,padding:'32px 28px'}},h(MessageList,{turns,busy:true,readingWidth:880,sessionId:'subagents-fixture',cwd:'/fixture',tasks:activeTasks,onOpenTask:open,onStopTask:id=>{stopped=id}})),h('aside',{style:{width:360,borderLeft:'1px solid var(--border-default)',display:'flex',flexDirection:'column'}},h(RightPanel,{state:{...initialState,connection:'ready',tasks:activeTasks,busy:phase!=='done'},cwd:'/fixture',tabs:['files','changes','subagents'],onTabs(){},newTab:false,onNewTab(){},tab,onTab:setTab,onReference(){},onStopTask:id=>{stopped=id},workspaceRefreshKey:0,focusTask})))
 }
 window.renderScenario=async(phase='running',theme='dark')=>{root.render(h(Scene,{key:phase+theme,phase,theme}));await pause(250);await document.fonts.ready};
 window.showScrollCheck=async(phase='scroll')=>{await window.renderScenario(phase);document.querySelector('[data-subagent-id="agent-0"]')?.click();await pause();const scroller=document.querySelector('[data-subagent-detail] .noa-activity-scroll')??document.querySelector('[data-subagent-detail] > div:last-child');scroller.scrollTop=160;scroller.dispatchEvent(new Event('scroll'));await pause();const probe=document.createElement('div');probe.style.backgroundColor='var(--border-strong)';document.body.append(probe);const expected=getComputedStyle(probe).backgroundColor;probe.remove();return scroller.scrollHeight>scroller.clientHeight&&scroller.hasAttribute('data-scrolling')&&getComputedStyle(scroller,'::-webkit-scrollbar-thumb').backgroundColor===expected};
 window.showDetailCheck=async()=>{await window.renderScenario('detail');document.querySelector('[data-subagent-id="agent-0"]')?.click();await pause(250)};
+// The Overview's Tasks card: subagents (with avatars) before background processes, capped with a "Show more" row.
+window.overviewChecks=async()=>{
+ const checks={};let overviewOpened,overviewStopped;
+ const render=(taskList,showDiagnostics=false)=>{root.render(h('div',{style:{width:300,padding:16}},h(OverviewPanel,{state:{...initialState,connection:'ready',tasks:taskList,logs:['bridge ready']},cwd:'/fixture',open:true,workspaceRefreshKey:0,endInset:8,bottomInset:0,docked:true,showDiagnostics,onClose(){},onRefreshContext(){},onRefreshMcp(){},onReference(){},onOpenChanges(){},onOpenTask:id=>{overviewOpened=id},onStopTask:id=>{overviewStopped=id}})));return pause(250)};
+ const shell={id:'shell',toolUseId:'shell-call',description:'Background shell',taskType:'local_bash',status:'running',turns:[]};
+ const finished=[3,4,5].map(i=>({...tasks[0],id:'agent-'+i,description:'Finished agent '+i,status:'completed'}));
+ await render([shell,...tasks,...finished]);
+ const card=document.querySelector('[data-rail-card="tasks"]'),rows=[...document.querySelectorAll('[data-overview-task]')];
+ checks.overviewTasksCard=!!card&&card.textContent.includes('Tasks');
+ checks.overviewSubagentsFirst=rows.length===5&&rows.slice(0,5).every(row=>row.querySelector('[data-subagent-avatar]'))&&!rows.some(row=>row.dataset.overviewTask==='shell');
+ const more=[...card.querySelectorAll('button')].find(b=>b.textContent==='Show 2 more');more?.click();await pause();
+ const all=[...document.querySelectorAll('[data-overview-task]')];checks.overviewShowMore=!!more&&all.length===7&&all.at(-1)?.dataset.overviewTask==='shell';
+ all[0]?.querySelector('button')?.click();checks.overviewOpensSubagent=overviewOpened==='agent-0';
+ [...all.at(-1).querySelectorAll('button')].find(b=>b.textContent==='Stop')?.click();checks.overviewStopsProcess=overviewStopped==='shell';
+ card.querySelector('[aria-expanded]')?.click();await pause();checks.overviewCollapsedSummary=card.textContent.includes('4 working · 3 done');
+ checks.diagnosticsHidden=!document.querySelector('[data-rail-card="diagnostics"]');
+ await render([]);checks.overviewNoTasksCard=!document.querySelector('[data-rail-card="tasks"]');
+ await render([],true);checks.diagnosticsOnRequest=!!document.querySelector('[data-rail-card="diagnostics"]')?.textContent.includes('bridge ready');
+ return checks;
+};
 window.runChecks=async()=>{
  await window.renderScenario('creating');const creating=!![...document.querySelectorAll('button')].find(b=>b.textContent.trim()==='Creating an agent');
  await window.renderScenario();const group=document.querySelector('[data-subagent-group]'),header=group?.querySelector('button');const checks={creating,grouped:header?.textContent.trim()==='Created 3 agents',collapsed:header?.getAttribute('aria-expanded')==='false',distinctAgents:document.querySelectorAll('[data-subagent-id]').length===3};
- checks.activityNotDuplicated=!document.querySelector('#panel-activity [data-subagent-avatar]');checks.singleAvatars=document.querySelectorAll('[data-subagent-activity-row] img').length===3&&[...document.querySelectorAll('[data-subagent-avatar]')].every(img=>img.naturalWidth>0);
+ checks.singleAvatars=document.querySelectorAll('[data-subagent-activity-row] img').length===3&&[...document.querySelectorAll('[data-subagent-avatar]')].every(img=>img.naturalWidth>0);
  const avatar=document.querySelector('[data-subagent-avatar]'),darkSrc=avatar?.src;document.documentElement.removeAttribute('data-theme');await pause();checks.avatarTheme=!!avatar&&avatar.src!==darkSrc;document.documentElement.dataset.theme='dark';await pause();
  checks.activityMerged=document.querySelectorAll('[data-subagent-activity-row]').length===1&&document.querySelector('[data-subagent-activity-row]')?.textContent.includes(' and Review backend/runtime commits started working');header?.click();await pause();checks.instructions=!!document.querySelector('[data-agent-instructions]')?.textContent.includes('Inspect changes');
  document.querySelector('[data-subagent-id="agent-1"]')?.click();await pause();checks.targeted=opened==='agent-1'&&!!document.querySelector('[aria-label="Back to subagents"]')&&document.querySelector('[data-subagent-detail]')?.textContent.includes('Report from agent 1');
@@ -72,7 +93,7 @@ window.runChecks=async()=>{
  await window.renderScenario('live-child');document.querySelector('[data-subagent-id="agent-0"]')?.click();await pause();checks.runningChildVisible=document.querySelector('[data-subagent-detail] [data-task-process] > button')?.getAttribute('aria-expanded')==='true'&&!!document.querySelector('[data-subagent-detail] [data-subagent-id="nested-live-agent"]');
  checks.scrollbarThemed=await window.showScrollCheck();checks.finalResultScrollbarThemed=await window.showScrollCheck('long-result');
  root.render(h('div',{style:{display:'grid',gridTemplateColumns:'repeat(7, 80px)',gap:24,padding:32}},Array.from({length:28},(_,i)=>h('div',{key:i,style:{display:'flex',gap:8,alignItems:'center'}},h(SubagentAvatar,{id:String.fromCharCode(65+i),size:24}),h('span',null,String(i+1))))));await pause(250);document.documentElement.removeAttribute('data-theme');await pause(250);checks.lightPalette=[...document.querySelectorAll('[data-subagent-avatar]')].length===28&&[...document.querySelectorAll('[data-subagent-avatar]')].every(img=>img.naturalWidth>0);document.documentElement.dataset.theme='dark';await pause(250);checks.darkPalette=[...document.querySelectorAll('[data-subagent-avatar]')].every(img=>img.naturalWidth>0);
- return checks;
+ return {...checks,...await window.overviewChecks()};
 };
 `)
 const built = await Bun.build({ entrypoints: [join(temporary, "renderer.ts")], outdir: temporary, target: "browser", format: "esm", splitting: true, define: { "process.env.NODE_ENV": '"production"' } })

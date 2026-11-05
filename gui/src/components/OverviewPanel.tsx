@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState, type ReactNode } from "react"
 import { query } from "../api"
-import type { AgentState } from "../agent/reducer"
-import { ChevronRight, Folder, GitBranch, Plug, PlusMinus } from "../lib/icons"
+import { isSubagentTask, type AgentState, type AgentTask } from "../agent/reducer"
+import { ChevronRight, Folder, GitBranch, Plug, PlusMinus, Terminal } from "../lib/icons"
 import { ContextUsageCard } from "./ContextUsageCard"
+import { SubagentAvatar } from "./SubagentAvatar"
 
-// Overview rail: a stack of collapsible cards (Changes, Connectors, Context, Environment).
+// Overview rail: a stack of collapsible cards (Tasks, Changes, Connectors, Context, Environment, Diagnostics).
 const OPEN_KEY = "noa-overview-open"
-const DEFAULT_OPEN: Record<string, boolean> = { changes: true, connectors: false, context: true, environment: true }
+const DEFAULT_OPEN: Record<string, boolean> = { tasks: true, changes: true, connectors: false, context: true, environment: true, diagnostics: true }
 
 function useCardOpen(id: string): [boolean, () => void] {
   const [open, setOpen] = useState(() => {
@@ -90,16 +91,51 @@ function ConnectorsCard({ state, chrome }: { state: AgentState; chrome?: CardChr
   </RailCard>
 }
 
+const TASKS_SHOWN = 5
+const live = (task: AgentTask) => task.status === "running" || task.status === "unknown"
+
+// Subagents first, then background processes; working tasks lead each group.
+function TasksCard({ tasks, chrome, onOpenTask, onStopTask }: { tasks: AgentTask[]; chrome?: CardChrome; onOpenTask: (id: string) => void; onStopTask: (id: string) => void }) {
+  const [all, setAll] = useState(false)
+  if (!tasks.length) return null
+  const sorted = [...tasks].sort((a, b) => Number(isSubagentTask(b)) - Number(isSubagentTask(a)) || Number(live(b)) - Number(live(a)))
+  const working = tasks.filter(live).length
+  const summary = [working && `${working} working`, tasks.length - working && `${tasks.length - working} done`].filter(Boolean).join(" · ")
+  const shown = all ? sorted : sorted.slice(0, TASKS_SHOWN)
+  return <RailCard id="tasks" title="Tasks" chrome={chrome} summary={summary}>
+    <div className="flex flex-col">
+      {shown.map((task) => {
+        const agent = isSubagentTask(task)
+        const status = task.status === "unknown" ? "Disconnected" : task.status === "running" ? "Working" : task.status === "completed" ? "Done" : task.status === "failed" ? "Failed" : "Stopped"
+        const label = <>
+          {agent ? <SubagentAvatar id={task.id} size={16} /> : <Terminal size={16} className={`shrink-0 ${MUTED}`} aria-hidden="true" />}
+          <span className={`min-w-0 flex-1 truncate text-[var(--text-primary)] ${task.status === "running" ? "noa-shimmer" : ""}`}>{task.description}</span>
+        </>
+        return <div key={task.id} data-overview-task={task.id} className="group/task flex min-h-7 min-w-0 items-center gap-[5px] rounded-md px-2 hover:bg-[var(--fill-hover)]" title={task.outputFile ? `Output: ${task.outputFile}` : undefined}>
+          {agent ? <button type="button" onClick={() => onOpenTask(task.id)} className="flex min-h-7 min-w-0 flex-1 items-center gap-[5px] text-start">{label}</button> : <span className="flex min-w-0 flex-1 items-center gap-[5px]">{label}</span>}
+          {task.status === "running" && !agent && task.id !== task.toolUseId
+            ? <button type="button" onClick={() => onStopTask(task.id)} className={`shrink-0 ${MUTED} hover:text-[var(--text-primary)]`}>Stop</button>
+            : <span className={`shrink-0 ${MUTED}`}>{status}</span>}
+        </div>
+      })}
+      {sorted.length > TASKS_SHOWN && <button type="button" onClick={() => setAll(!all)} className={`min-h-7 px-2 text-start ${MUTED} hover:text-[var(--text-primary)]`}>{all ? "Show less" : `Show ${sorted.length - TASKS_SHOWN} more`}</button>}
+    </div>
+  </RailCard>
+}
+
 const CARDS = [
+  { id: "tasks", title: "Tasks" },
   { id: "connectors", title: "Connectors" },
   { id: "changes", title: "Changes" },
   { id: "context", title: "Context" },
   { id: "environment", title: "Environment" },
+  { id: "diagnostics", title: "Diagnostics" },
 ] as const
 type CardId = (typeof CARDS)[number]["id"]
 const LAYOUT_KEY = "noa-overview-layout-v2"
 interface Layout { order: CardId[]; hidden: CardId[] }
-const DEFAULT_LAYOUT: Layout = { order: CARDS.map((card) => card.id), hidden: [] }
+// Diagnostics are raw agent logs, hidden until asked for.
+const DEFAULT_LAYOUT: Layout = { order: CARDS.map((card) => card.id), hidden: ["diagnostics"] }
 const DRAG_DISTANCE = 6
 const SORT_MS = 200
 
@@ -108,8 +144,11 @@ function loadLayout(): Layout {
     const saved = JSON.parse(localStorage.getItem(LAYOUT_KEY) ?? "null") as Partial<Layout> | null
     const known = new Set<string>(DEFAULT_LAYOUT.order)
     const order = (saved?.order ?? []).filter((id) => known.has(id))
-    // Cards added after the layout was saved fall in at their default place.
-    return { order: [...order, ...DEFAULT_LAYOUT.order.filter((id) => !order.includes(id))], hidden: (saved?.hidden ?? []).filter((id) => known.has(id)) }
+    // Cards added after the layout was saved fall in at their default place and visibility.
+    const added = DEFAULT_LAYOUT.order.filter((id) => !order.includes(id))
+    for (const id of added) order.splice(Math.min(order.length, DEFAULT_LAYOUT.order.indexOf(id)), 0, id)
+    const hidden = [...(saved?.hidden ?? []).filter((id) => known.has(id)), ...added.filter((id) => DEFAULT_LAYOUT.hidden.includes(id))]
+    return { order, hidden }
   } catch { return DEFAULT_LAYOUT }
 }
 
@@ -120,9 +159,13 @@ const DOCK_GAP = 10
 // Floating overview, separate from the right column. The layer, panel, fade-in and dismissal follow
 // Claude's flat session-rail popover; cards sort by pointer drag (6px to start, 200ms shift) or by the
 // grip's arrow keys, and the header's context menu hides cards or resets the layout.
-export function OverviewPanel({ state, cwd, open, workspaceRefreshKey, endInset, bottomInset, docked, onClose, onRefreshContext, onRefreshMcp, onReference, onOpenChanges }: {
-  state: AgentState; cwd: string; open: boolean; workspaceRefreshKey: number; endInset: number; bottomInset: number; docked: boolean; onClose: () => void
+export function OverviewPanel({ state, cwd, open, workspaceRefreshKey, endInset, bottomInset, docked, showDiagnostics, onClose, onRefreshContext, onRefreshMcp, onReference, onOpenChanges, onOpenTask, onStopTask }: {
+  state: AgentState; cwd: string; open: boolean; workspaceRefreshKey: number; endInset: number; bottomInset: number; docked: boolean
+  // Shows the Diagnostics card even when the layout hides it (/status, the disconnected banner).
+  showDiagnostics?: boolean
+  onClose: () => void
   onRefreshContext: () => void; onRefreshMcp: () => void; onReference: (path: string) => void; onOpenChanges: () => void
+  onOpenTask: (id: string) => void; onStopTask: (id: string) => void
 }) {
   useEffect(() => { if (open && state.connection === "ready") { onRefreshContext(); onRefreshMcp() } }, [open, state.connection, onRefreshContext, onRefreshMcp])
   const changes = useChangeSummary(cwd, open, workspaceRefreshKey)
@@ -140,7 +183,7 @@ export function OverviewPanel({ state, cwd, open, workspaceRefreshKey, endInset,
     order.splice(Math.max(0, Math.min(order.length, to)), 0, id)
     update({ ...layout, order })
   }
-  const visible = layout.order.filter((id) => !layout.hidden.includes(id))
+  const visible = layout.order.filter((id) => !layout.hidden.includes(id) || (id === "diagnostics" && showDiagnostics))
 
   // Outside press or Escape dismisses; the toggle button handles its own press.
   useEffect(() => {
@@ -228,6 +271,10 @@ export function OverviewPanel({ state, cwd, open, workspaceRefreshKey, endInset,
   })
   const iconRow = "flex min-h-7 min-w-0 items-center gap-[5px] px-2"
   const cards: Record<CardId, ReactNode> = {
+    tasks: <TasksCard tasks={state.tasks} chrome={chromeFor("tasks")} onOpenTask={onOpenTask} onStopTask={onStopTask} />,
+    diagnostics: <RailCard id="diagnostics" title="Diagnostics" chrome={chromeFor("diagnostics")} summary={state.logs.length ? `${state.logs.length} ${state.logs.length === 1 ? "entry" : "entries"}` : undefined}>
+      <pre className="noa-activity-log px-2">{state.logs.join("\n") || "No agent diagnostics"}</pre>
+    </RailCard>,
     changes: changes?.isGit ? <RailCard id="changes" title="Changes" chrome={chromeFor("changes")} summary={<span><span className="text-[#3E8E57]">+{changes.additions}</span> <span className="text-[#C24444]">−{changes.deletions}</span></span>}>
       <div className={iconRow}>
         <PlusMinus size={16} className={`shrink-0 ${MUTED}`} aria-hidden="true" />

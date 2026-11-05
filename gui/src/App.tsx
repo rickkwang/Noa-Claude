@@ -1,6 +1,7 @@
 import { ElicitationCard } from "./components/ElicitationCard"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useAgent } from "./agent/useAgent"
+import { isSubagentTask } from "./agent/reducer"
 import type { ImageAttachment, ImageBlock, TurnDiff, UserContent } from "./agent/protocol"
 import {
   addProject,
@@ -139,7 +140,7 @@ function Workspace({ cwd }: { cwd: string }) {
   const [rightTabs, setRightTabs] = useState<PanelTab[]>(() => {
     try {
       const saved = JSON.parse(localStorage.getItem("noa-agent.rightTabs") ?? "null")
-      return Array.isArray(saved) ? saved.filter((tab): tab is PanelTab => ["files", "changes", "activity", "subagents"].includes(tab)) : DEFAULT_RIGHT_TABS
+      return Array.isArray(saved) ? saved.filter((tab): tab is PanelTab => ["files", "changes", "subagents"].includes(tab)) : DEFAULT_RIGHT_TABS
     } catch { return DEFAULT_RIGHT_TABS }
   })
   useEffect(() => {
@@ -574,6 +575,8 @@ function Workspace({ cwd }: { cwd: string }) {
   useEffect(() => { if (overviewPopover !== null && !overviewPopoverOpen) setOverviewPopover(null) }, [overviewPopover, overviewPopoverOpen])
   // A docked column that stops fitting turns into the popover instead of vanishing.
   useEffect(() => { if (overviewShown && !overviewDocked) { setOverviewShown(false); setOverviewPopover(session.key) } }, [overviewShown, overviewDocked, session.key])
+  const [showDiagnostics, setShowDiagnostics] = useState(false)
+  useEffect(() => { if (!overviewVisible) setShowDiagnostics(false) }, [overviewVisible])
   const toggleOverview = () => {
     if (overviewVisible) {
       setOverviewPopover(null)
@@ -584,6 +587,16 @@ function Workspace({ cwd }: { cwd: string }) {
     else setOverviewPopover(session.key)
   }
   const overviewDockInset = overviewDockedVisible ? 280 + 8 + 12 : 0
+  const openOverview = () => { if (!overviewVisible) toggleOverview() }
+  const openDiagnostics = () => { openOverview(); setShowDiagnostics(true) }
+  // Subagents open their transcript in the right panel; background processes live in the Overview's Tasks card.
+  const openTask = (id?: string) => {
+    const task = id ? state.tasks.find(task => task.id === id) : undefined
+    if (task && !isSubagentTask(task)) { openOverview(); return }
+    setRightOpen(true)
+    setRightTab("subagents")
+    setFocusTask({ id, key: Date.now() })
+  }
 
   const footerRef = useRef<HTMLDivElement>(null)
   const [footerHeight, setFooterHeight] = useState(0)
@@ -825,12 +838,7 @@ function Workspace({ cwd }: { cwd: string }) {
                 onQuote={text => setQuote({ text, key: Date.now() })}
                 tasks={state.tasks}
                 onStopTask={stopTask}
-                onOpenTask={(id) => {
-                  const taskType = state.tasks.find(task => task.id === id)?.taskType
-                  setRightOpen(true)
-                  setRightTab(taskType && !["local_agent", "remote_agent", "in_process_teammate"].includes(taskType) ? "activity" : "subagents")
-                  setFocusTask({ id, key: Date.now() })
-                }}
+                onOpenTask={openTask}
               />
             ) : (
               <EmptyState
@@ -866,7 +874,7 @@ function Workspace({ cwd }: { cwd: string }) {
                       </button>
                     )}
                     {state.connection === "closed" && (
-                      <button className="text-[var(--accent-color)]" onClick={() => { setRightOpen(true); setRightTab("activity") }}>
+                      <button className="text-[var(--accent-color)]" onClick={openDiagnostics}>
                         Diagnostics
                       </button>
                     )}
@@ -949,8 +957,8 @@ function Workspace({ cwd }: { cwd: string }) {
                     else if (action === "resume") {
                       setSearchOpen(true)
                     } else if (action === "settings") setSettingsOpen(true)
-                    else if (action === "context") { if (!overviewVisible) toggleOverview(); refreshContext() }
-                    else if (action === "activity") { setRightOpen(true); setRightTab("activity") }
+                    else if (action === "context") { openOverview(); refreshContext() }
+                    else if (action === "activity") openDiagnostics()
                     else if (action === "plan") setPermissionMode("plan")
                     else if (action === "stop") interrupt()
                     else if (action === "reload") reloadCommands()
@@ -975,6 +983,9 @@ function Workspace({ cwd }: { cwd: string }) {
               onRefreshMcp={refreshMcp}
               onReference={(path) => setReference({ path, key: Date.now() })}
               onOpenChanges={() => { setRightOpen(true); setRightTab("changes") }}
+              showDiagnostics={showDiagnostics}
+              onOpenTask={openTask}
+              onStopTask={stopTask}
             />
           </div>
           <TerminalPanel

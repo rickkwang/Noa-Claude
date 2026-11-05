@@ -121,7 +121,7 @@ order, so the menu would hold a single option.
 
 ## Right panel (rebuilt)
 
-The right column is one pane under a tab strip (Overview, Files, Changes, Activity) with a
+The right column is one pane under a tab strip (Files, Changes, Subagents, terminals, browser pages) with a
 close control, replacing the stacked cards, per-card minimise/expand, move handles and the
 titlebar checklist. Tabs follow the WAI-ARIA tablist pattern (`role="tab"`, `aria-selected`,
 arrow-key navigation), as Codex's `TabsList` / `TabsTrigger` do. The titlebar toggle shows or
@@ -136,7 +136,7 @@ When it does not fit, the column is hidden and the toggle opens a transient flat
 fade-in, closes on an outside press or Escape). Toggling while docked hides it and clears the preference;
 opening the popover sets the preference, so widening later docks it; the popover closes by itself when the
 column becomes visible, and a hidden column never turns into a popover. Cards
-(Changes totals, Connectors from `mcp_status`, Context, Environment) are collapsible, drag to reorder
+(Tasks, Changes totals, Connectors from `mcp_status`, Context, Environment, and Diagnostics) are collapsible, drag to reorder
 from the 80px grip zone at the header's end (6px to start, 200ms shift; the grip's arrow keys also
 move them), and a right-click on a header opens Show / Reset to defaults. The context card lists used
 categories largest first (top series coloured, the rest one neutral series), buffer and free space,
@@ -157,8 +157,11 @@ subagent activity. Noa keeps its existing CLI and stream-json protocol.
 - Follow-ups queue in the bridge and send on the CLI's authoritative idle event.
   Stop pauses the queue; errors also require an explicit next send. Queue items
   can be removed. Unexpected CLI exits retain queued follow-ups for reconnect. Initialize is shared across concurrent/reconnecting clients.
-- Activity consumes task started/progress/completed events and child-agent output,
-  retaining the mapping between task IDs and tool-use IDs. Tasks can be stopped.
+- The Overview's Tasks card consumes task started/progress/completed events and child-agent output,
+  retaining the mapping between task IDs and tool-use IDs. It appears only when the session has tasks:
+  subagents first (they open their transcript in the Subagents tab), then background processes with a
+  Stop action, five rows before "Show N more", and a "N working · N done" summary when collapsed.
+  Diagnostics (raw agent logs) is a card hidden by default; `/status` and the disconnected banner show it.
 - MCP form and URL requests have accept/decline/cancel responses. Unsupported
   request kinds receive an explicit error instead of hanging silently.
 - PNG/JPEG/GIF/WebP images can be chosen, pasted or dropped, previewed and removed.
