@@ -9,13 +9,16 @@ on:
   push:
     tags:
       - 'gui-v*'
+  # Manual build for checking a commit without a tag; it uploads artifacts only.
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
   build:
-    runs-on: macos-14
+    # macos-14 is not offered to this repository; macos-15 is the arm64 image in use.
+    runs-on: macos-15
     timeout-minutes: 45
     permissions:
       contents: read
@@ -27,9 +30,10 @@ jobs:
       - name: Verify tag matches the desktop version
         env:
           TAG: ${{ github.ref_name }}
+          REF_TYPE: ${{ github.ref_type }}
         run: |
           VERSION=$(node -p "require('./gui/package.json').version")
-          if [ "$TAG" != "gui-v$VERSION" ]; then
+          if [ "$REF_TYPE" = "tag" ] && [ "$TAG" != "gui-v$VERSION" ]; then
             echo "Tag $TAG does not match gui/package.json version $VERSION." >&2
             exit 1
           fi
