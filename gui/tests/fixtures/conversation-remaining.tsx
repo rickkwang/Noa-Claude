@@ -1,6 +1,6 @@
 import { App } from "../../src/App"
 import { initialState, reducer } from "../../src/agent/reducer"
-import { TurnDiffCard } from "../../src/components/TurnDiffCard"
+import { DiffActionDialog, LiveDiffSummary, TurnDiffCard } from "../../src/components/TurnDiffCard"
 import { createElement, useState } from "react"
 import { createRoot } from "react-dom/client"
 import { Markdown, OutputContext } from "../../src/components/Markdown"
@@ -314,6 +314,7 @@ window.runChecks = async () => {
     [{ role: "assistant", id: "live-a1", streaming: false, startedAt, blocks: [{ kind: "thinking", text: "", done: true }, bash("done")] }],
     // The next message has started but shown nothing yet.
     [{ role: "assistant", id: "live-a1", streaming: false, startedAt, blocks: [{ kind: "thinking", text: "", done: true }, bash("done")] }, { role: "assistant", id: "live-a2", streaming: true, startedAt: Date.now(), blocks: [] }],
+    ...["", " \n"].map(text => [{ role: "assistant", id: "live-a1", streaming: false, startedAt, blocks: [{ kind: "thinking", text: "", done: true }, bash("done")] }, { role: "assistant", id: "live-a2", streaming: true, startedAt: Date.now(), blocks: [{ kind: "text", text, done: false }] }]),
     [{ role: "assistant", id: "live-a1", streaming: false, startedAt, blocks: [{ kind: "thinking", text: "", done: true }, bash("done")] }, { role: "assistant", id: "live-a2", streaming: true, startedAt: Date.now(), blocks: [{ kind: "thinking", text: "", done: false }] }],
   ]
   const livePhases = []
@@ -326,6 +327,8 @@ window.runChecks = async () => {
   // Commentary looks like the final answer until another tool call follows it; then the turn is working again.
   const commentary = [{ kind: "thinking", text: "", done: true }, bash("done"), { kind: "text", text: "Checking the next file.", done: true }]
   const commentaryTurns = (blocks: any[]) => [{ role: "user", id: "live-u", text: "Inspect" }, { role: "assistant", id: "live-a1", streaming: true, startedAt, blocks }] as any
+  await show(<div style={{ display: "flex", height: 400 }}><MessageList turns={commentaryTurns([{ ...commentary.at(-1)!, done: false }])} busy readingWidth={800} /></div>)
+  results.visibleTextReplacesThinking = await wait(() => document.getElementById("root")!.textContent!.includes("Checking the next file.") && !document.querySelector(".noa-shimmer"))
   await show(<div style={{ display: "flex", height: 400 }}><MessageList turns={commentaryTurns(commentary)} busy readingWidth={800} /></div>)
   const answering = !document.getElementById("root")!.textContent!.includes("Working for")
   // The answer starting stops the same divider in place; nothing above the answer moves.
@@ -354,6 +357,7 @@ window.runChecks = async () => {
     && finishedExplore.rows.slice(-2).join("|") === "Read App.tsx|Searched for needle in components" && runningExplore.top === finishedExplore.top
   results.groupHeadingIgnoresFailures = !!liveAfterFailure && liveAfterFailure === await groupIcon("done", "running") && await groupIcon("done", "done") === await groupIcon("error", "done")
     && !document.querySelector("[data-work-activity] > button")!.textContent!.includes("failed")
+  Object.assign(results, await window.runTurnDiffChecks())
   await show(<Comparison />)
   ;(document.querySelector('[data-case="citation"] button[title]') as HTMLElement)?.click()
   await wait(() => !results.referenceRange || document.querySelectorAll('[data-reference-line="true"]').length === 3)
@@ -660,4 +664,103 @@ window.runApprovalPreviewChecks = async () => {
     return !document.querySelector("[data-approval-diff-preview]") && window.approvalAnswerCount() === 0
   }
   return checks
+}
+
+window.runTurnDiffChecks = async () => {
+  const diff: any = { files: [{ path: "src/a.ts", additions: 1, deletions: 1 }, { path: "src/b.ts", additions: 0, deletions: 1 }], additions: 1, deletions: 2, turnIndex: 0,
+    patch: "--- a/src/a.ts\n+++ b/src/a.ts\n@@ -1 +1 @@\n-beforeA\n+afterA\n--- a/src/b.ts\n+++ /dev/null\n@@ -1 +0,0 @@\n-beforeB\n" }
+  const checks: Record<string, boolean> = {}
+  let reviewed = "", opened = "", action = ""
+  const mount = (value = diff) => show(<><ThemeInjector settings={{ ...defaultSettings, appearance: { ...defaultSettings.appearance, theme: visualTheme } }} /><div style={{ maxWidth: 800, margin: "80px auto" }}><OutputContext value={{ onOpenFile: path => { opened = path } }}><TurnDiffCard diff={value} onOpen={path => { reviewed = path ?? "all" }} onAction={value => { action = value }} /></OutputContext></div></>)
+  await mount()
+  const row = () => document.querySelector<HTMLButtonElement>(".noa-turn-diff-row")!
+  checks.diffAbsolutelyColors = getComputedStyle(document.querySelector(".noa-turn-diff-card .is-added")!).color === "rgb(0, 200, 83)" && getComputedStyle(document.querySelector(".noa-turn-diff-card .is-removed")!).color === "rgb(255, 95, 56)"
+  await show(<LiveDiffSummary diff={diff} onOpen={() => {}} />)
+  checks.diffLiveColorsMatchCard = getComputedStyle(document.querySelector(".noa-live-diff .is-added")!).color === "rgb(0, 200, 83)" && getComputedStyle(document.querySelector(".noa-live-diff .is-removed")!).color === "rgb(255, 95, 56)"
+  await show(<><ThemeInjector settings={{ ...defaultSettings, appearance: { ...defaultSettings.appearance, theme: visualTheme } }} /><div style={{ height: 400 }}><TurnReview diff={diff} focusPath="src/a.ts" focusKey={1} /></div></>)
+  checks.reviewStatsMatchCard =getComputedStyle(document.querySelector(".noa-turn-review .is-added")!).color === "rgb(0, 200, 83)" && getComputedStyle(document.querySelector(".noa-turn-review .is-removed")!).color === "rgb(255, 95, 56)"
+  await mount()
+  row().click()
+  checks.diffNormalClickReviews = reviewed === "src/a.ts" && opened === ""
+  reviewed = ""
+  row().dispatchEvent(new MouseEvent("click", { bubbles: true, metaKey: true }))
+  checks.diffMetaClickOpensFile = opened === "src/a.ts" && reviewed === ""
+  opened = ""
+  row().dispatchEvent(new MouseEvent("click", { bubbles: true, ctrlKey: true }))
+  checks.diffCtrlClickOpensFile = opened === "src/a.ts" && reviewed === ""
+  row().dispatchEvent(new MouseEvent("mouseover", { bubbles: true }))
+  checks.diffHoverPreviewsOnlySelectedFile = await wait(() => !!document.querySelector("[data-turn-diff-preview]")) && document.querySelector("[data-turn-diff-preview]")!.textContent!.includes("afterA") && !document.querySelector("[data-turn-diff-preview]")!.textContent!.includes("beforeB")
+  window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))
+  checks.diffEscapeClosesPreview = await wait(() => !document.querySelector("[data-turn-diff-preview]")) && action === ""
+  document.querySelector<HTMLButtonElement>(".noa-turn-diff-view")!.focus()
+  row().focus()
+  checks.diffFocusPreviews = await wait(() => !!document.querySelector("[data-turn-diff-preview]"))
+  window.dispatchEvent(new Event("resize"))
+  checks.diffResizeClosesPreview = await wait(() => !document.querySelector("[data-turn-diff-preview]"))
+  await show(null)
+  await mount({ ...diff, files: [diff.files[0]!], additions: 1, deletions: 1 })
+  const header = document.querySelector<HTMLButtonElement>(".noa-turn-diff-header")!
+  opened = ""
+  header.dispatchEvent(new MouseEvent("click", { bubbles: true, metaKey: true }))
+  checks.diffSingleFileMetaClick = opened === "src/a.ts" && reviewed === ""
+  document.querySelector<HTMLButtonElement>('[title="Undo"]')!.click()
+  checks.diffUndoStillConfirms = await wait(() => !!document.querySelector('[role="dialog"]')) && action === ""
+  Array.from(document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')).find(button => button.textContent === "Undo changes")?.click()
+  checks.diffUndoAfterConfirm = await wait(() => action === "undo")
+  await show(null)
+  const success = { ok: true, appliedPaths: ["src/a.ts"], skippedPaths: [], conflictedPaths: [] }
+  let dismissed = false
+  await show(<DiffActionDialog action="undo" result={success} onClose={() => { dismissed = true }} />)
+  checks.diffSuccessIsNotification = !!document.querySelector('[role="status"]') && !document.querySelector('[role="dialog"]') && document.body.textContent!.includes("Changes reverted") && !document.body.textContent!.includes("Some changes")
+  checks.diffSuccessDismisses = await wait(() => dismissed, 4500)
+  await show(<DiffActionDialog action="reapply" result={{ ...success, ok: false, conflictedPaths: ["src/b.ts"] }} onClose={() => {}} />)
+  checks.diffPartialFailureStaysDialog = !!document.querySelector('[role="dialog"]') && document.body.textContent!.includes("Some changes reapplied") && document.body.textContent!.includes("src/b.ts")
+  await show(null)
+  await mount({ ...diff, files: [{ ...diff.files[0]!, binary: true }, diff.files[1]!] })
+  row().focus()
+  await new Promise(resolve => setTimeout(resolve, 900))
+  checks.diffBinaryHasNoPreview = !document.querySelector("[data-turn-diff-preview]")
+  const card = document.querySelector<HTMLElement>(".noa-turn-diff-card")!
+  card.style.width = "280px"
+  await new Promise(requestAnimationFrame)
+  checks.diffNarrowLayout = document.querySelector(".noa-turn-diff-view")!.getBoundingClientRect().right <= card.getBoundingClientRect().right
+  await show(null)
+  await mount({ ...diff, files: [{ ...diff.files[0], path: "a.ts", patchPath: "src/a.ts" }] })
+  document.querySelector<HTMLButtonElement>(".noa-turn-diff-header")!.focus()
+  checks.diffSingleFilePreviewUsesPatchPath = await wait(() => !!document.querySelector("[data-turn-diff-preview]")) && document.querySelector("[data-turn-diff-preview]")!.textContent!.includes("afterA")
+  checks.diffPreviewIsVisible = await wait(() => { const panel = document.querySelector("[data-turn-diff-preview]"); return !!panel && panel.matches(":popover-open") && getComputedStyle(panel).opacity === "1" })
+  const previewRect = document.querySelector("[data-turn-diff-preview]")?.getBoundingClientRect()
+  checks.diffPreviewFitsViewport = !!previewRect && previewRect.left >= 8 && previewRect.right <= innerWidth - 8 && previewRect.top >= 0 && previewRect.bottom <= innerHeight
+  return checks
+}
+
+window.prepareTurnDiffHighlightCheck = async () => {
+  await show(<><ThemeInjector settings={{ ...defaultSettings, appearance: { ...defaultSettings.appearance, theme: visualTheme, contrast: { light: 60, dark: 60 } } }} /><div style={{ width: 736, margin: "24px auto" }}><TurnDiffCard diff={{ files: ["gui/tests/fixtures/conversation-remaining.tsx", "gui/src/components/TurnDiffCard.tsx", "gui/src/styles/noa.css"].map(path => ({ path, additions: 1, deletions: 1 })), additions: 3, deletions: 3, turnIndex: 0 }} onOpen={() => {}} onAction={() => {}} /></div></>)
+  const header = document.querySelector(".noa-turn-diff-headrow")!.getBoundingClientRect()
+  return { x: Math.floor(header.left + header.width / 2), y: Math.floor(header.top + header.height / 2) }
+}
+window.turnDiffHighlightState = () => {
+  const card = document.querySelector(".noa-turn-diff-card")!, header = document.querySelector(".noa-turn-diff-headrow")!, row = document.querySelector(".noa-turn-diff-row")!
+  return { card: getComputedStyle(card).backgroundColor, stroke: getComputedStyle(card).boxShadow, radius: getComputedStyle(card).borderRadius, corner: getComputedStyle(card).cornerShape, row: getComputedStyle(row).backgroundColor, hover: getComputedStyle(header, "::before").backgroundColor, hoverRadius: getComputedStyle(header, "::before").borderRadius, hovered: header.matches(":hover") }
+}
+window.checkTurnDiffHighlight = (hovered: boolean) => {
+  // Values from the installed Codex Absolutely theme generator at contrast 45 and its card CSS.
+  const dark = visualTheme === "dark"
+  const probe = document.createElement("div")
+  document.body.append(probe)
+  const color = (value: string) => { probe.style.backgroundColor = value; return getComputedStyle(probe).backgroundColor }
+  const actual = window.turnDiffHighlightState()
+  const checks = {
+    cardSurface: actual.card === color(`color-mix(in oklab, ${dark ? "rgb(60,60,58)" : "rgb(250,250,248)"} 50%, transparent)`),
+    fileRowSurface: actual.row === color(`color-mix(in oklab, ${dark ? "#2d2d2b" : "#f9f9f7"} 70%, transparent)`),
+    headerHighlight: actual.hovered === hovered && actual.hover === (hovered ? color(`color-mix(in oklab, ${dark ? "rgba(249,249,247,.068)" : "rgba(45,45,43,.053)"} 30%, transparent)`) : "rgba(0, 0, 0, 0)"),
+    cardStroke: actual.stroke === `${dark ? "rgba(249, 249, 247, 0.137)" : "rgba(45, 45, 43, 0.118)"} 0px 0px 0px 0.5px`,
+    continuousCorners: actual.radius === (CSS.supports("corner-shape", "superellipse(1.5)") ? "12.5px" : "10px") && actual.corner === (CSS.supports("corner-shape", "superellipse(1.5)") ? "superellipse(1.5)" : "round"),
+    squareHeaderHighlight: actual.hoverRadius === "0px",
+    matchingControls: [".noa-turn-diff-view", ".noa-turn-diff-action"].every(selector => { const style = getComputedStyle(document.querySelector(selector)!); return style.borderTopLeftRadius === actual.radius && style.cornerShape === actual.corner }),
+    sharedInkAndBorders: getComputedStyle(document.querySelector(".noa-turn-diff-row .noa-middle-path-dir")!).color === color(dark ? "rgba(249,249,247,.677)" : "rgba(45,45,43,.695)") && getComputedStyle(document.querySelector(".noa-turn-diff-list")!).borderTopColor === color(dark ? "rgba(249,249,247,.071)" : "rgba(45,45,43,.078)"),
+    contentAboveHighlight: Number(getComputedStyle(document.querySelector(".noa-turn-diff-header")!).zIndex) > (Number(getComputedStyle(document.querySelector(".noa-turn-diff-headrow")!, "::before").zIndex) || 0),
+  }
+  probe.remove()
+  return Object.fromEntries(Object.entries(checks).map(([key, value]) => [`${hovered ? "hover" : "rest"}${key}`, value]))
 }

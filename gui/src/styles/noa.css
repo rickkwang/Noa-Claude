@@ -1517,39 +1517,49 @@ kbd.noa-review-menu-hint { font-family: inherit; }
 .noa-scroll-bottom:hover { color: var(--text-primary); }
 .noa-scroll-bottom[data-show="false"] { opacity: 0; pointer-events: none; }
 /* Per-turn diff card: header + up to three file rows. */
-.noa-turn-diff-card { container-type: inline-size; margin-top: 2px; overflow: hidden; border-radius: 10px; background: color-mix(in srgb, var(--bg-card) 70%, transparent); box-shadow: 0 0 0 .5px var(--border-strong); }
+/* Absolutely at contrast 45, matching the local Codex theme generator's control, hover and stroke tokens. */
+.noa-turn-diff-card, .noa-turn-diff-notice, .noa-live-diff, .noa-turn-review { --turn-diff-elevated: rgb(250,250,248); --turn-diff-under: #F1F1EF; --turn-diff-fill: rgba(45,45,43,.053); --turn-diff-stroke: rgba(45,45,43,.117); --turn-diff-border: rgba(45,45,43,.078); --turn-diff-secondary: rgba(45,45,43,.695); --turn-diff-focus: #CC7D5E; --turn-diff-radius: 10px; --turn-diff-corner: round; --turn-diff-added: #00C853; --turn-diff-removed: #FF5F38; }
+[data-theme="dark"] .noa-turn-diff-card, [data-theme="dark"] .noa-turn-diff-notice, [data-theme="dark"] .noa-live-diff { --turn-diff-elevated: rgb(60,60,58); --turn-diff-under: #272725; --turn-diff-fill: rgba(249,249,247,.068); --turn-diff-stroke: rgba(249,249,247,.137); --turn-diff-border: rgba(249,249,247,.071); --turn-diff-secondary: rgba(249,249,247,.677); --turn-diff-focus: rgba(221,169,149,.727); }
+@supports (corner-shape: superellipse(1.5)) {
+  .noa-turn-diff-card, .noa-turn-diff-notice { --turn-diff-radius: 12.5px; --turn-diff-corner: superellipse(1.5); }
+}
+.noa-turn-diff-card { --text-secondary: var(--turn-diff-secondary); --sidebar-text-muted: var(--turn-diff-secondary); --divider-subtle: var(--turn-diff-border); --border-default: var(--turn-diff-border); container-type: inline-size; margin-top: 2px; overflow: hidden; border-radius: var(--turn-diff-radius); corner-shape: var(--turn-diff-corner); background: color-mix(in oklab, var(--turn-diff-elevated) 50%, transparent); box-shadow: 0 0 0 .5px var(--turn-diff-stroke); font-family: var(--font-ui); font-size: var(--font-text-md-size); }
+.noa-turn-diff-preview, .noa-turn-diff-notice { background: var(--turn-diff-elevated); }
+.noa-turn-diff-preview .noa-code-view, .noa-turn-review .noa-code-view { --diff-add-base: var(--turn-diff-added); --diff-del-base: var(--turn-diff-removed); }
 .noa-live-diff { display: inline-flex; max-width: 100%; align-items: center; gap: 6px; align-self: center; padding: 2px 6px; border-radius: 6px; color: var(--sidebar-text-muted); font-size: var(--text-caption); }
-.noa-live-diff:hover { color: var(--text-primary); background: var(--fill-hover); }
+.noa-live-diff:hover { color: var(--text-primary); background: var(--turn-diff-fill); }
 .noa-turn-diff-headrow { position: relative; display: flex; align-items: center; gap: 8px; padding-right: 12px; }
-.noa-turn-diff-icon { display: flex; width: 40px; height: 40px; align-items: center; justify-content: center; flex-shrink: 0; border-radius: 10px; background: color-mix(in srgb, var(--text-primary) 3%, transparent); color: var(--text-secondary); }
-.noa-turn-diff-heading { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 2px; }
-.noa-turn-diff-view { flex-shrink: 0; padding: 5px 9px; border: 1px solid var(--divider-subtle); border-radius: 10px; font-size: var(--text-caption); color: var(--text-primary); white-space: nowrap; }
-.noa-turn-diff-view:hover { background: var(--fill-hover); }
-.noa-turn-diff-header { display: flex; min-width: 0; flex: 1; min-height: 64px; align-items: center; gap: 10px; padding: 12px; text-align: left; }
-.noa-turn-diff-action { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; height: 26px; padding: 0 8px; border-radius: 6px; font-size: var(--text-caption); color: var(--text-secondary); white-space: nowrap; }
-.noa-turn-diff-action:hover:not(:disabled) { background: var(--fill-hover); color: var(--text-primary); }
-.noa-turn-diff-action:disabled { opacity: .4; cursor: default; }
+.noa-turn-diff-icon { display: flex; width: 40px; height: 40px; align-items: center; justify-content: center; flex-shrink: 0; border-radius: var(--turn-diff-radius); corner-shape: var(--turn-diff-corner); background: color-mix(in oklab, var(--turn-diff-under) 92%, transparent); color: var(--text-secondary); }
+.noa-turn-diff-heading { display: flex; min-width: 0; flex: 1; flex-direction: column; }
+.noa-turn-diff-view { flex-shrink: 0; min-height: 28px; padding: 3px 9px; border: 1px solid var(--border-default); border-radius: var(--turn-diff-radius); corner-shape: var(--turn-diff-corner); font-size: var(--text-caption); color: var(--text-primary); white-space: nowrap; }
+.noa-turn-diff-view:hover { background: var(--turn-diff-fill); }
+.noa-turn-diff-header { position: relative; z-index: 1; display: flex; min-width: 0; flex: 1; min-height: 64px; align-items: center; gap: 10px; padding: 12px; text-align: left; }
+.noa-turn-diff-card button:focus-visible { outline: 2px solid var(--turn-diff-focus); outline-offset: -2px; }
+.noa-turn-diff-header:focus-visible, .noa-turn-diff-row:focus-visible, .noa-turn-diff-more:focus-visible { border-radius: 0; }
+.noa-turn-diff-action { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; height: 28px; padding: 0 8px; border-radius: var(--turn-diff-radius); corner-shape: var(--turn-diff-corner); font-size: var(--text-caption); color: var(--text-primary); white-space: nowrap; }
+.noa-turn-diff-action:hover:not(:disabled) { background: var(--turn-diff-fill); color: var(--text-primary); }
+.noa-turn-diff-action:disabled { opacity: .5; cursor: default; }
 @container (max-width: 440px) {
   .noa-turn-diff-headrow { flex-wrap: wrap; gap: 0 8px; padding-bottom: 12px; }
   .noa-turn-diff-header { flex-basis: 100%; }
   .noa-turn-diff-action, .noa-turn-diff-header + .noa-turn-diff-view { margin-left: auto; }
 }
-/* The hover fill and subtitle swap cover the whole header row, including the Undo and View changes buttons, as in Codex. */
-.noa-turn-diff-headrow::before { content: ""; position: absolute; inset: 0; border-radius: 10px; pointer-events: none; }
-.noa-turn-diff-headrow:hover::before { background: var(--fill-hover); }
+/* The outer card clips the square header fill; its join with the file list stays straight. */
+.noa-turn-diff-headrow::before { content: ""; position: absolute; inset: 0; border-radius: 0; pointer-events: none; }
+.noa-turn-diff-headrow:hover::before { background: color-mix(in oklab, var(--turn-diff-fill) 30%, transparent); }
 .noa-turn-diff-action, .noa-turn-diff-view { position: relative; }
 .noa-turn-diff-default { display: inline-flex; flex-shrink: 0; font-size: var(--text-chat-sm); }
 .noa-turn-diff-hover { display: none; flex-shrink: 0; font-size: var(--text-chat-sm); align-items: center; gap: 2px; color: var(--text-secondary); }
 .noa-turn-diff-headrow:hover .noa-turn-diff-default,
-.noa-turn-diff-header:focus-visible .noa-turn-diff-default { display: none; }
+.noa-turn-diff-headrow:focus-within .noa-turn-diff-default { display: none; }
 .noa-turn-diff-headrow:hover .noa-turn-diff-hover,
-.noa-turn-diff-header:focus-visible .noa-turn-diff-hover { display: inline-flex; }
+.noa-turn-diff-headrow:focus-within .noa-turn-diff-hover { display: inline-flex; }
 .noa-turn-diff-list { display: flex; flex-direction: column; border-top: 1px solid var(--divider-subtle); }
-.noa-turn-diff-row { display: flex; width: 100%; min-width: 0; min-height: 36px; align-items: center; gap: 8px; padding: 4px 12px; text-align: left; color: var(--text-primary); }
-.noa-turn-diff-row:hover { background: var(--fill-hover); }
+.noa-turn-diff-row { display: flex; width: 100%; min-width: 0; min-height: 36px; align-items: center; gap: 8px; padding: 4px 12px; text-align: left; color: var(--text-primary); background: color-mix(in oklab, var(--surface-page) 70%, transparent); }
+.noa-turn-diff-row:hover { background: color-mix(in oklab, var(--turn-diff-fill) 60%, transparent); }
 .noa-turn-diff-row .noa-middle-path { flex: 1; }
-.noa-turn-diff-more { display: flex; width: 100%; min-height: 32px; align-items: center; justify-content: center; gap: 4px; border-top: 1px solid var(--divider-subtle); color: var(--sidebar-text-muted); font-size: var(--text-caption); }
-.noa-turn-diff-more:hover { color: var(--text-primary); background: var(--fill-hover); }
+.noa-turn-diff-more { display: flex; width: 100%; min-height: 36px; align-items: center; gap: 8px; padding: 4px 12px; color: var(--text-primary); font-size: var(--font-text-md-size); }
+.noa-turn-diff-more:hover { color: var(--text-primary); background: color-mix(in oklab, var(--turn-diff-fill) 30%, transparent); }
 .noa-turn-diff-note { font-size: var(--text-caption); color: var(--sidebar-text-muted); }
 .noa-turn-diff-card > .noa-turn-diff-note { margin: 0; padding: 4px 10px 6px; border-top: 1px solid var(--divider-subtle); }
 .noa-turn-review-files { max-height: 40%; overflow-y: auto; scrollbar-gutter: stable; border-bottom: 1px solid var(--divider-subtle); }
@@ -1648,6 +1658,8 @@ kbd.noa-review-menu-hint { font-family: inherit; }
 .noa-turn-diff-stats { display: inline-flex; flex-shrink: 0; gap: 4px; font-size: inherit; font-variant-numeric: tabular-nums; color: var(--sidebar-text-muted); }
 .noa-turn-diff-stats .is-added { color: #168447; } .noa-turn-diff-stats .is-removed { color: #C24444; }
 [data-theme="dark"] .noa-turn-diff-stats .is-added { color: #69C98B; } [data-theme="dark"] .noa-turn-diff-stats .is-removed { color: #EE8A8A; }
+:is(.noa-turn-diff-card, .noa-live-diff, .noa-turn-review) .noa-turn-diff-stats .is-added { color: var(--turn-diff-added); }
+:is(.noa-turn-diff-card, .noa-live-diff, .noa-turn-review) .noa-turn-diff-stats .is-removed { color: var(--turn-diff-removed); }
 
 /* Working dots in the scroll button; hover or focus shows the arrow again. */
 .noa-scroll-bottom-dots { display: inline-flex; gap: 2px; }

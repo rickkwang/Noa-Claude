@@ -1,8 +1,11 @@
-import { useState } from "react"
+import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent } from "react"
+import { formatPatch, parsePatch } from "diff"
 import type { TurnDiff, TurnDiffActionResult, TurnDiffFile } from "../agent/protocol"
-import { ChevronDown, ChevronRight, ChevronUp, RotateCcw } from "../lib/icons"
+import { ChevronDown, ChevronRight, ChevronUp, RotateCcw, X } from "../lib/icons"
 import { useConfirm } from "./ConfirmDialog"
 import { CodexIcon } from "./CodexIcon"
+import CodeView from "./CodeView"
+import { OutputContext } from "./Markdown"
 
 export function TurnDiffCard({ diff, onOpen, onAction, pending }: {
   diff: TurnDiff
@@ -11,6 +14,72 @@ export function TurnDiffCard({ diff, onOpen, onAction, pending }: {
   pending?: boolean
 }) {
   const [expanded, setExpanded] = useState(false)
+  const { onOpenFile } = useContext(OutputContext)
+  const [previewFile, setPreviewFile] = useState<TurnDiffFile>()
+  const trigger = useRef<HTMLButtonElement>(null)
+  const preview = useRef<HTMLDivElement>(null)
+  const timer = useRef<number | undefined>(undefined)
+  const previewPatch = useMemo(() => {
+    if (!previewFile || !diff.patch) return ""
+    const path = previewFile.patchPath ?? previewFile.path
+    try {
+      const patch = parsePatch(diff.patch).find(patch => [patch.newFileName, patch.oldFileName].some(name => name?.replace(/^(a|b)\//, "") === path))
+      return patch ? formatPatch(patch) : ""
+    } catch { return "" }
+  }, [diff.patch, previewFile])
+  useEffect(() => () => window.clearTimeout(timer.current), [])
+  useLayoutEffect(() => {
+    if (!previewPatch || !preview.current || !trigger.current) return
+    const panel = preview.current
+    const rect = trigger.current.getBoundingClientRect()
+    const above = rect.top > innerHeight - rect.bottom
+    const width = Math.min(Math.max(0, rect.width - 64), innerWidth - 16)
+    Object.assign(panel.style, {
+      width: `${width}px`, left: `${Math.max(8, Math.min(rect.left + (rect.width - width) / 2, innerWidth - width - 8))}px`,
+      top: above ? "auto" : `${rect.bottom}px`, bottom: above ? `${innerHeight - rect.top}px` : "auto",
+      maxHeight: `${Math.max(0, Math.min(420, (above ? rect.top : innerHeight - rect.bottom) - 8))}px`,
+    })
+    panel.showPopover()
+    const close = (event: Event) => {
+      if (event.target instanceof Node && (panel.contains(event.target) || trigger.current?.contains(event.target))) return
+      hidePreview()
+    }
+    const escape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return
+      event.preventDefault(); event.stopPropagation()
+      trigger.current?.focus({ preventScroll: true })
+      hidePreview()
+    }
+    window.addEventListener("keydown", escape, true)
+    window.addEventListener("resize", close)
+    window.addEventListener("scroll", close, true)
+    document.addEventListener("pointerdown", close)
+    return () => {
+      if (panel.matches(":popover-open")) panel.hidePopover()
+      window.removeEventListener("keydown", escape, true)
+      window.removeEventListener("resize", close)
+      window.removeEventListener("scroll", close, true)
+      document.removeEventListener("pointerdown", close)
+    }
+  }, [previewPatch])
+  function hidePreview() {
+    window.clearTimeout(timer.current)
+    setPreviewFile(undefined)
+  }
+  function showPreview(file: TurnDiffFile | undefined, button: HTMLButtonElement, delay = 0) {
+    hidePreview()
+    if (!file || file.binary || file.tooLarge || diff.truncated || !diff.patch) return
+    trigger.current = button
+    timer.current = window.setTimeout(() => setPreviewFile(file), delay)
+  }
+  function leavePreview(relatedTarget: EventTarget | null) {
+    if (!(relatedTarget instanceof Node && preview.current?.contains(relatedTarget))) hidePreview()
+  }
+  function open(event: MouseEvent<HTMLButtonElement>, file?: TurnDiffFile) {
+    hidePreview()
+    if (file && (event.metaKey || event.ctrlKey) && onOpenFile) onOpenFile(file.path)
+    else onOpen(file?.path)
+  }
   const { confirm, dialog } = useConfirm()
   const single = diff.files.length === 1
   const shown = expanded ? diff.files : diff.files.slice(0, 3)
@@ -25,12 +94,16 @@ export function TurnDiffCard({ diff, onOpen, onAction, pending }: {
         <button
           type="button"
           className="noa-turn-diff-header group/turn-diff"
-          onClick={() => onOpen(single ? diff.files[0]!.path : undefined)}
+          onClick={event => open(event, single ? diff.files[0] : undefined)}
+          onMouseEnter={event => showPreview(single ? diff.files[0] : undefined, event.currentTarget, 800)}
+          onMouseLeave={event => leavePreview(event.relatedTarget)}
+          onFocus={event => showPreview(single ? diff.files[0] : undefined, event.currentTarget)}
+          onBlur={event => leavePreview(event.relatedTarget)}
           aria-label={`${title}. View changes`}
         >
           <span className="noa-turn-diff-icon"><CardIcon /></span>
           <span className="noa-turn-diff-heading">
-            <span className="truncate text-body font-medium text-[var(--text-primary)]">{title}</span>
+            <span className="truncate text-[length:var(--font-text-md-size)] font-medium text-[var(--text-primary)]">{title}</span>
             <span className="noa-turn-diff-default">
               <Stats file={diff} />
             </span>
@@ -60,8 +133,8 @@ export function TurnDiffCard({ diff, onOpen, onAction, pending }: {
             }}
             title={action === "undo" ? "Undo" : "Reapply"}
           >
-            {pending ? (action === "reapply" ? "Reapplying…" : "Undoing…") : action === "reapply" ? "Reapply" : "Undo"}
-            <RotateCcw size={12} aria-hidden="true"className={action === "reapply" ? "-scale-x-100" : undefined} />
+            {action === "reapply" ? "Reapply" : "Undo"}
+            {pending ? <RotateCcw size={12} aria-hidden="true" className="animate-spin" /> : <CodexIcon name={action} size={12} />}
           </button>
         )}
         <button type="button" className="noa-turn-diff-view" onClick={() => onOpen(single ? diff.files[0]!.path : undefined)}>View changes</button>
@@ -69,13 +142,15 @@ export function TurnDiffCard({ diff, onOpen, onAction, pending }: {
       {!single && (
         <div className="noa-turn-diff-list">
           {shown.map((file) => (
-            <button key={file.path} type="button" className="noa-turn-diff-row" onClick={() => onOpen(file.path)} title={file.path}>
+            <button key={file.path} type="button" className="noa-turn-diff-row" onClick={event => open(event, file)} title={file.path}
+              onMouseEnter={event => showPreview(file, event.currentTarget, 800)} onMouseLeave={event => leavePreview(event.relatedTarget)}
+              onFocus={event => showPreview(file, event.currentTarget)} onBlur={event => leavePreview(event.relatedTarget)}>
               <MiddlePath path={file.path} />
               <RowStats file={file} />
             </button>
           ))}
           {hidden > 0 && (
-            <button type="button" className="noa-turn-diff-more" onClick={() => setExpanded(true)}>
+            <button type="button" className="noa-turn-diff-more" onClick={() => setExpanded(true)} aria-expanded="false">
               Show {hidden} more file{hidden === 1 ? "" : "s"}
               <ChevronDown size={12} aria-hidden="true" />
             </button>
@@ -90,6 +165,15 @@ export function TurnDiffCard({ diff, onOpen, onAction, pending }: {
       )}
       {diff.truncated && <p className="noa-turn-diff-note">Diff too large to preview</p>}
       {diff.undoable === false && <p className="noa-turn-diff-note">Undo is unavailable when a turn changes multiple source folders.</p>}
+      {previewFile && previewPatch && <div ref={preview} popover="manual" role="dialog" aria-label={`Changes to ${previewFile.path}`} data-turn-diff-preview
+        className="noa-turn-diff-preview noa-floating-panel m-0 flex flex-col overflow-hidden rounded-lg p-0 text-[var(--text-primary)]" style={{ position: "fixed", inset: "auto" }}
+        onMouseLeave={event => { if (!(event.relatedTarget instanceof Node && trigger.current?.contains(event.relatedTarget)) && !preview.current?.contains(document.activeElement)) hidePreview() }}>
+        <div className="flex min-w-0 shrink-0 items-center gap-2 border-b border-[var(--divider-subtle)] px-3 py-2 text-body">
+          <span className="min-w-0 flex-1"><MiddlePath path={previewFile.path} /></span><RowStats file={previewFile} />
+          <button type="button" aria-label="Close diff preview" onClick={hidePreview}><X size={14} /></button>
+        </div>
+        <div className="noa-panel-body is-code scrollbar-on-scroll"><CodeView path={previewFile.path} content={previewPatch} diff /></div>
+      </div>}
       {dialog}
     </div>
   )
@@ -129,7 +213,18 @@ export function DiffActionDialog({ action, result, onClose }: {
   result: TurnDiffActionResult
   onClose: () => void
 }) {
+  useEffect(() => {
+    if (!result.ok) return
+    const timer = window.setTimeout(onClose, 3500)
+    return () => window.clearTimeout(timer)
+  }, [result, onClose])
   const reverted = action === "undo"
+  if (result.ok) return (
+    <div role="status" className="noa-turn-diff-notice noa-floating-panel fixed bottom-6 left-1/2 z-50 flex -translate-x-1/2 items-center gap-3 rounded-xl px-4 py-3 text-body text-[var(--text-primary)]">
+      {reverted ? "Changes reverted" : "Changes reapplied"}
+      <button type="button" aria-label="Dismiss notification" onClick={onClose}><X size={14} /></button>
+    </div>
+  )
   const title =
     result.errorCode === "not-git-repo"
       ? `${reverted ? "Undo" : "Reapply"} requires a Git repository`

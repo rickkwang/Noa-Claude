@@ -43,7 +43,7 @@ export function TurnReview({ diff, focusPath, focusKey, canSplit = true }: {
   const content = useMemo(() => patchContent(patchPath, patches), [patchPath, patches])
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className="noa-turn-review flex h-full min-h-0 flex-col">
       <div className="noa-panel-toolbar">
         <span className="min-w-0 flex-1 truncate ps-2 text-caption tabular-nums text-[var(--sidebar-text-muted)]">
           {diff.files.length} {diff.files.length === 1 ? "file" : "files"} changed ·{" "}
@@ -71,7 +71,7 @@ export function TurnReview({ diff, focusPath, focusKey, canSplit = true }: {
           ))}
         </div>
       )}
-      <div className="noa-panel-body scrollbar-on-scroll">
+      <div className="noa-panel-body is-code scrollbar-on-scroll">
         {content
           ? <CodeView path={selected} content={content} diff split={sideBySide && canSplit} wrap={wrap} wordDiff={wordDiff} hideWhitespace={hideWhitespace} findRequest={findRequest} onCloseFind={() => setFindRequest(0)} />
           : <p className="noa-panel-empty">

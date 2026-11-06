@@ -1013,7 +1013,7 @@ function ActivityGroup({ blocks, pending, tasks, onStopTask, onOpenTask }: {
 // What is visibly moving; a message that has started but shown nothing yet still counts as waiting.
 function hasLiveBlock(blocks: Block[]): boolean {
   return blocks.some(block =>
-    block.kind === "text" ? block.done === false
+    block.kind === "text" ? block.done === false && block.text.trim().length > 0
     : block.kind === "thinking" ? !block.done
       : block.kind === "tool" ? block.status === "running"
         : block.kind === "compaction" ? block.status === "running"
