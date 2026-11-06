@@ -71,6 +71,9 @@ interface AgentRun {
   waiting: Map<string, WaitKind>
   activeTasks: Set<string>
   title?: string
+  // A new task names itself after its first real prompt; resumed ones keep their title.
+  titlePending?: boolean
+  titleRequest?: string
   initialization?: Extract<AgentMessage, { type: "control_response" }>
   initializationRequest?: string
   initializeWaiters: Map<ServerWebSocket<SocketData>, string>
@@ -241,6 +244,18 @@ async function startNextSerialized(run: AgentRun) {
   }
   emit(run, queueEnvelope(run))
   emit(run, { kind: "user", id: next.id, content: next.content, at: next.at ?? Date.now() })
+  requestSessionTitle(run, next.content)
+}
+
+// The CLI persists the title as the transcript's ai-title, so the sidebar and the
+// terminal resume picker show the same name.
+function requestSessionTitle(run: AgentRun, content: QueuedMessage["content"]) {
+  if (!run.titlePending) return
+  const text = typeof content === "string" ? content : content.filter((b) => b.type === "text").map((b) => b.text).join("\n")
+  if (!text.trim() || text.trimStart().startsWith("/")) return
+  run.titlePending = false
+  run.titleRequest = crypto.randomUUID()
+  write(run, { type: "control_request", request_id: run.titleRequest, request: { subtype: "generate_session_title", description: text, persist: true } })
 }
 
 function trackTurnResult(run: AgentRun, message: AgentMessage) {
@@ -442,6 +457,7 @@ export function attachAgent(ws: ServerWebSocket<SocketData>, root: string) {
       initializeWaiters: new Map(),
       historyReady: Promise.resolve(),
       exited: false,
+      titlePending: !ws.data.resume,
     }
     if (ws.data.resume) {
       const current = run
@@ -465,6 +481,11 @@ export function attachAgent(ws: ServerWebSocket<SocketData>, root: string) {
         message = JSON.parse(line)
       } catch {
         emit(current, { kind: "log", text: line })
+        return
+      }
+      // The title lands in the transcript; no client asked for this response.
+      if (message.type === "control_response" && message.response.request_id === current.titleRequest) {
+        current.titleRequest = undefined
         return
       }
       if (message.type === "control_response") {

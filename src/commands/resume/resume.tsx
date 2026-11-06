@@ -28,6 +28,7 @@ import { getLastSessionLog, getSessionIdFromLog, isCustomTitleEnabled, isLiteLog
 import { validateUuid } from '../../utils/uuid.js';
 import { getBgJobShort } from '../../utils/background/bgJob.js';
 import { findBackgroundHolder, heldByBackgroundMessage, markBackgroundHeld } from '../../utils/background/jobs.js';
+import { findLiveSessionHolder, heldByLiveSessionMessage } from '../../utils/concurrentSessions.js';
 type ResumeResult = {
   resultType: 'sessionNotFound';
   arg: string;
@@ -385,6 +386,11 @@ export const call: LocalJSXCommandCall = async (onDone, context, args) => {
     const holder = await findBackgroundHolder(sessionId, getBgJobShort(), 'resume');
     if (holder) {
       onDone(heldByBackgroundMessage(holder, 'resume'));
+      return;
+    }
+    const liveHolder = await findLiveSessionHolder(sessionId);
+    if (liveHolder) {
+      onDone(heldByLiveSessionMessage(liveHolder, 'resume'));
       return;
     }
     try {

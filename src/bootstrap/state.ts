@@ -497,6 +497,8 @@ export function regenerateSessionId(
   // null so getTranscriptPath() derives from originalCwd.
   STATE.sessionId = randomUUID() as SessionId
   STATE.sessionProjectDir = null
+  // The PID file must stop naming the old session, or a resume elsewhere is refused.
+  sessionSwitched.emit(STATE.sessionId)
   return STATE.sessionId
 }
 

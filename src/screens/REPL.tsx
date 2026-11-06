@@ -201,7 +201,7 @@ import type { ContentBlockParam, ImageBlockParam } from '@anthropic-ai/sdk/resou
 import type { ProcessUserInputContext } from '../utils/processUserInput/processUserInput.js';
 import type { PastedContent } from '../utils/config.js';
 import { copyPlanForFork, copyPlanForResume, getPlanSlug, setPlanSlug } from '../utils/plans.js';
-import { clearSessionMetadata, resetSessionFilePointer, adoptResumedSessionFile, removeTranscriptMessage, restoreSessionMetadata, getCurrentSessionTitle, isEphemeralToolProgress, isLoggableMessage, saveWorktreeState, getAgentTranscript } from '../utils/sessionStorage.js';
+import { clearSessionMetadata, resetSessionFilePointer, adoptResumedSessionFile, removeTranscriptMessage, restoreSessionMetadata, getCurrentSessionTitle, isEphemeralToolProgress, isLoggableMessage, saveWorktreeState, getAgentTranscript, saveAiGeneratedTitle } from '../utils/sessionStorage.js';
 import { deserializeMessages, restoreSkillStateFromMessages } from '../utils/conversationRecovery.js';
 import { extractReadFilesFromMessages, extractBashToolsFromMessages } from '../utils/queryHelpers.js';
 import { runPostCompactCleanup } from '../services/compact/postCompactCleanup.js';
@@ -2894,8 +2894,13 @@ export function REPL({
       // None of these are the user's topic; wait for real prose.
       if (text && !text.startsWith(`<${LOCAL_COMMAND_STDOUT_TAG}>`) && !text.startsWith(`<${COMMAND_MESSAGE_TAG}>`) && !text.startsWith(`<${COMMAND_NAME_TAG}>`) && !text.startsWith(`<${BASH_INPUT_TAG}>`)) {
         haikuTitleAttemptedRef.current = true;
+        const titledSessionId = getSessionId();
         void generateSessionTitle(text, new AbortController().signal).then(title => {
-          if (title) setHaikuTitle(title);else haikuTitleAttemptedRef.current = false;
+          if (title) {
+            setHaikuTitle(title);
+            // Persisted so the desktop app and the resume picker name the session the same way.
+            if (getSessionId() === titledSessionId) saveAiGeneratedTitle(titledSessionId, title);
+          } else haikuTitleAttemptedRef.current = false;
         }, () => {
           haikuTitleAttemptedRef.current = false;
         });

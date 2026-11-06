@@ -3009,6 +3009,12 @@ async function run(): Promise<CommanderCommand> {
           } = await import('./utils/background/jobs.js');
           const holder = await findBackgroundHolder(result.sessionId, getBgJobShort(), 'continue');
           if (holder) return await exitWithError(root, heldByBackgroundMessage(holder, 'continue'));
+          const {
+            findLiveSessionHolder,
+            heldByLiveSessionMessage
+          } = await import('./utils/concurrentSessions.js');
+          const liveHolder = await findLiveSessionHolder(result.sessionId);
+          if (liveHolder) return await exitWithError(root, heldByLiveSessionMessage(liveHolder, 'continue'));
         }
         const loaded = await processResumedConversation(result, {
           forkSession: !!options.forkSession,
@@ -3495,6 +3501,12 @@ async function run(): Promise<CommanderCommand> {
             } = await import('./utils/background/jobs.js');
             const holder = await findBackgroundHolder(result.sessionId, getBgJobShort(), 'resume');
             if (holder) return await exitWithError(root, heldByBackgroundMessage(holder, 'resume'));
+            const {
+              findLiveSessionHolder,
+              heldByLiveSessionMessage
+            } = await import('./utils/concurrentSessions.js');
+            const liveHolder = await findLiveSessionHolder(result.sessionId);
+            if (liveHolder) return await exitWithError(root, heldByLiveSessionMessage(liveHolder, 'resume'));
           }
           const fullPath = matchedLog?.fullPath ?? result.fullPath;
           processedResume = await processResumedConversation(result, {

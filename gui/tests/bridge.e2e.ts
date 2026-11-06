@@ -75,6 +75,9 @@ const provider = Bun.serve({
     const body = (await request.json()) as any
     if (request.url.includes("count_tokens")) return Response.json({ input_tokens: 100 })
     if (!request.url.includes("messages")) return Response.json({})
+    // The task's AI title request; answered apart from the conversation fixtures.
+    if (JSON.stringify(body.system ?? "").includes("sentence-case title"))
+      return Response.json({ id: `msg_${crypto.randomUUID()}`, type: "message", role: "assistant", model: body.model, content: [{ type: "text", text: JSON.stringify({ title: "GUI fixture title" }) }], stop_reason: "end_turn", stop_sequence: null, usage: { input_tokens: 10, output_tokens: 5 } })
     calls++
     observedModels.add(body.model)
     sawImage ||= body.messages?.some(
@@ -397,7 +400,35 @@ try {
   const acknowledged = second.events.find(event => event.kind === "user") as Extract<Envelope, { kind: "user" }>
   const diskHistory = await (await fetch(`http://127.0.0.1:${port}/api/sessions/${initMessage.message.session_id}?${new URLSearchParams({ cwd })}`)).json() as any[]
   assert.ok(diskHistory.some(item => item.kind === "user" && item.id === acknowledged.id), "Live user identity must survive disk restoration")
+  const titledId = initMessage.message.session_id as string
+  const listedTitle = async () => ((await (await fetch(`http://127.0.0.1:${port}/api/sessions?${new URLSearchParams({ cwd })}`)).json()) as { id: string; title: string }[]).find((s) => s.id === titledId)?.title
+  await wait(async () => (await listedTitle()) === "GUI fixture title", "AI title in the task list")
+  const titledTranscript = readdirSync(join(config, "projects")).map((dir) => join(config, "projects", dir, `${titledId}.jsonl`)).find((file) => existsSync(file))!
+  assert.ok(readFileSync(titledTranscript, "utf8").includes(`"type":"ai-title","aiTitle":"GUI fixture title"`), "The CLI persists the title the terminal resume picker reads")
+  assert.ok(![...first.events, ...second.events].some((e) => e.kind === "agent" && e.message.type === "control_response" && JSON.stringify(e.message).includes("GUI fixture title")), "The title response is not relayed to clients")
+  console.log("PASS a new task's first prompt names it with an AI title both the GUI and the CLI read")
   second.socket.close()
+
+  // A terminal (another parent process) holding the task blocks a GUI resume.
+  const terminal = Bun.spawn(["sh", "-c", `sleep 60 | "${process.execPath}" "${resolve(import.meta.dir, "../../run-noa.js")}" -p --input-format stream-json --output-format stream-json --verbose --resume ${titledId}`], {
+    cwd, env: { ...process.env, CLAUDE_CONFIG_DIR: config, ANTHROPIC_API_KEY: "local-fixture", ANTHROPIC_BASE_URL: `http://127.0.0.1:${provider.port}` }, stdout: "ignore", stderr: "ignore",
+  })
+  let terminalPid: number | undefined
+  const holderPid = () => existsSync(join(config, "sessions")) ? readdirSync(join(config, "sessions")).filter((file) => /^\d+\.json$/.test(file)).map((file) => JSON.parse(readFileSync(join(config, "sessions", file), "utf8"))).find((entry) => entry.sessionId === titledId && entry.ppid === terminal.pid)?.pid as number | undefined : undefined
+  try {
+    await wait(() => holderPid() !== undefined, "terminal holder registered", 30000)
+    terminalPid = holderPid()
+    const blocked = connect(crypto.randomUUID(), titledId)
+    await wait(() => blocked.events.some((e) => e.kind === "agent" && e.message.type === "result" && JSON.stringify(e.message).includes("open in another Noa process")), "GUI resume refused while a terminal holds the task", 30000)
+    console.log("PASS a GUI resume is refused while a terminal process writes the same task")
+  } finally {
+    // Killing the shell leaves its pipeline's CLI running.
+    if (terminalPid) process.kill(terminalPid)
+    terminal.kill()
+    await terminal.exited
+    // The holder stays a writer until its shutdown finishes, not just until its PID file goes.
+    await wait(() => { try { if (terminalPid) process.kill(terminalPid, 0); return !terminalPid } catch { return true } }, "terminal holder exited")
+  }
   const thirdRuntime = crypto.randomUUID()
   const third = connect(thirdRuntime, initMessage.message.session_id)
   await third.initialize()

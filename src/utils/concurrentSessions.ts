@@ -2,6 +2,7 @@ import { randomUUID } from 'crypto'
 import { chmod, mkdir, readdir, readFile, rename, unlink, writeFile } from 'fs/promises'
 import { join } from 'path'
 import {
+  getIsNonInteractiveSession,
   getOriginalCwd,
   getSessionId,
   onSessionSwitch,
@@ -51,29 +52,37 @@ export async function registerSession(): Promise<boolean> {
     }
   })
 
+  // --resume / /resume mutates getSessionId() via switchSession. Without
+  // this, the PID file's sessionId goes stale and `claude ps` sparkline
+  // reads the wrong transcript. Subscribed before the awaits below: a
+  // `-p --resume` switches while processBirth is still running.
+  onSessionSwitch(id => {
+    void updatePidFile({ sessionId: id })
+    const short = getBgJobShort()
+    if (short) void patchJob(short, { sessionId: id }).catch(() => {})
+  })
+
   try {
     await mkdir(dir, { recursive: true, mode: 0o700 })
     await chmod(dir, 0o700)
+    const processStartedAt = await processBirth(process.pid)
+    const sessionId = getSessionId()
     await writeFile(
       pidFile,
       jsonStringify({
         pid: process.pid,
-        sessionId: getSessionId(),
+        ppid: process.ppid,
+        sessionId,
         cwd: getOriginalCwd(),
         startedAt: Date.now(),
-        processStartedAt: await processBirth(process.pid),
+        processStartedAt,
         kind,
+        nonInteractive: getIsNonInteractiveSession(),
         entrypoint: process.env.CLAUDE_CODE_ENTRYPOINT,
       }),
     )
-    // --resume / /resume mutates getSessionId() via switchSession. Without
-    // this, the PID file's sessionId goes stale and `claude ps` sparkline
-    // reads the wrong transcript.
-    onSessionSwitch(id => {
-      void updatePidFile({ sessionId: id })
-      const short = getBgJobShort()
-      if (short) void patchJob(short, { sessionId: id }).catch(() => {})
-    })
+    // A switch during the write found no file to patch.
+    if (getSessionId() !== sessionId) await updatePidFile({ sessionId: getSessionId() })
     return true
   } catch (e) {
     logForDebugging(`[concurrentSessions] register failed: ${errorMessage(e)}`)
@@ -135,6 +144,67 @@ export async function updateSessionActivity(patch: {
   waitingFor?: string
 }): Promise<void> {
   await updatePidFile({ ...patch, updatedAt: Date.now() })
+}
+
+export type LiveSessionHolder = { pid: number; entrypoint?: string }
+
+/**
+ * Another live foreground process (a terminal REPL, or a `-p` stream such as
+ * the desktop app's) whose PID file says it is writing `sessionId`'s
+ * transcript. Background kinds are left to findBackgroundHolder, which can
+ * point at `noa attach`. A `-p` sibling of a `-p` process is skipped: the
+ * desktop server replaces its own CLI for a session and may start the new one
+ * before the old one has exited. Interactive siblings (two REPLs a tmux server
+ * started directly) still conflict.
+ */
+export async function findLiveSessionHolder(
+  sessionId: string,
+): Promise<LiveSessionHolder | undefined> {
+  const dir = getSessionsDir()
+  let files: string[]
+  try {
+    files = await readdir(dir)
+  } catch {
+    return undefined
+  }
+  for (const file of files) {
+    if (!/^\d+\.json$/.test(file)) continue
+    const pid = parseInt(file.slice(0, -5), 10)
+    if (pid === process.pid || !isProcessRunning(pid)) continue
+    let entry: Record<string, unknown>
+    try {
+      entry = jsonParse(await readFile(join(dir, file), 'utf8')) as Record<string, unknown>
+    } catch {
+      continue
+    }
+    if (entry.sessionId !== sessionId || entry.kind !== 'interactive') continue
+    if (
+      entry.nonInteractive === true &&
+      getIsNonInteractiveSession() &&
+      entry.ppid === process.ppid
+    )
+      continue
+    // A recycled PID belongs to some unrelated process, not the writer.
+    if (typeof entry.processStartedAt === 'string') {
+      const birth = await processBirth(pid)
+      if (birth && birth !== entry.processStartedAt) continue
+    }
+    return {
+      pid,
+      entrypoint: typeof entry.entrypoint === 'string' ? entry.entrypoint : undefined,
+    }
+  }
+  return undefined
+}
+
+/** Why a resume refuses a conversation another live process is writing. */
+export function heldByLiveSessionMessage(
+  holder: LiveSessionHolder,
+  via: 'continue' | 'resume',
+): string {
+  const subject =
+    via === 'continue' ? 'Your most recent conversation' : 'This conversation'
+  return `${subject} is open in another Noa process (pid ${holder.pid}). Close it there first, or add --fork-session to branch off a copy.`
 }
 
 /**

@@ -136,6 +136,7 @@ interface Entry {
   mcpMeta?: Record<string, unknown>
   customTitle?: string
   aiTitle?: string
+  lastPrompt?: string
 }
 
 function* scanEntries(file: string, offset = 0): Generator<Entry> {
@@ -167,6 +168,12 @@ function readEntries(file: string): Entry[] { return [...scanEntries(file)] }
 function entryTime(entry: Entry): number | undefined {
   const time = entry.timestamp ? Date.parse(entry.timestamp) : NaN
   return Number.isFinite(time) ? time : undefined
+}
+
+function isCommandEntry(entry: Entry): boolean {
+  const content = entry.message?.content
+  const text = typeof content === "string" ? content : Array.isArray(content) ? content.find((b) => b?.type === "text")?.text : undefined
+  return typeof text === "string" && text.trimStart().startsWith("<command-name>")
 }
 
 function userText(entry: Entry): string | null {
@@ -249,7 +256,8 @@ export function listSessions(cwd: string): SessionSummary[] {
     if (!cached || cached.size !== file.size || cached.mtimeMs !== file.updatedAt) {
       const entries = readEntries(file.path)
       const owner = entries.find((entry) => typeof entry.cwd === "string")?.cwd
-      const first = entries.map(userText).find((t): t is string => t !== null)
+      // A command-only prompt (/model haiku) names nothing; the terminal resume picker skips it too.
+      const first = entries.filter((entry) => !isCommandEntry(entry)).map(userText).find((t): t is string => t !== null)
       // The first timestamped entry is when the task started; the file's birth time is the fallback.
       const started = entries.map((entry) => Date.parse(String(entry.timestamp))).find((time) => Number.isFinite(time))
       cached = {
@@ -262,7 +270,8 @@ export function listSessions(cwd: string): SessionSummary[] {
             .reverse()
             .find((entry) => entry.type === "custom-title")
             ?.customTitle?.trim() || [...entries].reverse().find((entry) => entry.type === "ai-title")
-            ?.aiTitle?.trim() || first?.replace(/\s+/g, " ").trim().slice(0, 80),
+            ?.aiTitle?.trim() || ([...entries].reverse().find((entry) => entry.type === "last-prompt")?.lastPrompt
+            ?? first)?.replace(/\s+/g, " ").trim().slice(0, 80),
       }
       cache.set(file.path, cached)
     }

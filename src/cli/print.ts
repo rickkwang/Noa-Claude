@@ -5179,7 +5179,8 @@ type LoadInitialMessagesResult = {
 
 /**
  * --continue / --resume in place of a conversation a live background session
- * holds: refuse rather than put two writers on one transcript.
+ * or another foreground process holds: refuse rather than put two writers on
+ * one transcript.
  */
 async function refuseIfHeldByBackground(
   sessionId: string | undefined,
@@ -5190,9 +5191,14 @@ async function refuseIfHeldByBackground(
   const { getBgJobShort } = await import('../utils/background/bgJob.js')
   const { findBackgroundHolder, heldByBackgroundMessage } = await import('../utils/background/jobs.js')
   const holder = await findBackgroundHolder(sessionId, getBgJobShort(), via)
-  if (!holder) return false
+  const { findLiveSessionHolder, heldByLiveSessionMessage } = await import('../utils/concurrentSessions.js')
+  const liveHolder = holder ? undefined : await findLiveSessionHolder(sessionId)
+  if (!holder && !liveHolder) return false
   emitLoadError(
-    formatDiagnosticError('CONFIG_ERROR', heldByBackgroundMessage(holder, via)),
+    formatDiagnosticError(
+      'CONFIG_ERROR',
+      holder ? heldByBackgroundMessage(holder, via) : heldByLiveSessionMessage(liveHolder!, via),
+    ),
     options.outputFormat,
   )
   gracefulShutdownSync(1)

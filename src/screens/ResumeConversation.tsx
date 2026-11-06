@@ -25,7 +25,7 @@ import type { LogOption } from '../types/logs.js';
 import type { Message } from '../types/message.js';
 import { agenticSessionSearch } from '../utils/agenticSessionSearch.js';
 import { renameRecordingForSession } from '../utils/asciicast.js';
-import { updateSessionName } from '../utils/concurrentSessions.js';
+import { findLiveSessionHolder, heldByLiveSessionMessage, updateSessionName } from '../utils/concurrentSessions.js';
 import { loadConversationForResume } from '../utils/conversationRecovery.js';
 import { getBgJobShort } from '../utils/background/bgJob.js';
 import { heldByBackgroundMessage, listJobs, markBackgroundHeld } from '../utils/background/jobs.js';
@@ -192,6 +192,12 @@ export function ResumeConversation({
         setExitNotice(heldByBackgroundMessage(job, 'resume'));
         return;
       }
+    }
+    const heldId = log_0.sessionId ?? log_0.messages?.[0]?.sessionId;
+    const liveHolder = heldId && !forkSession ? await findLiveSessionHolder(heldId) : undefined;
+    if (liveHolder) {
+      setExitNotice(heldByLiveSessionMessage(liveHolder, 'resume'));
+      return;
     }
     setResuming(true);
     const resumeStart = performance.now();
