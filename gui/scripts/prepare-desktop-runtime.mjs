@@ -5,6 +5,8 @@ import { cpSync, existsSync, mkdirSync, rmSync, copyFileSync, readdirSync, statS
 import { homedir } from "node:os"
 import { join, resolve } from "node:path"
 import { spawnSync } from "node:child_process"
+import { createHash } from "node:crypto"
+import { readFileSync } from "node:fs"
 
 const gui = resolve(import.meta.dir, "..")
 const repo = resolve(gui, "..")
@@ -61,6 +63,24 @@ copyFileSync(join(gui, "package.json"), join(runtimeGui, "package.json"))
 const bunDir = join(staging, "bun")
 mkdirSync(bunDir, { recursive: true })
 copyFileSync(bunPath(), join(bunDir, "bun"))
+
+// ripgrep: file search runs `rg` from PATH, and Electron puts this directory first (electron/main.cjs),
+// so the app never depends on a Homebrew install. Pinned to the version CI uses, checked against its SHA-256.
+const RG_VERSION = "14.1.1"
+const RG_NAME = `ripgrep-${RG_VERSION}-aarch64-apple-darwin`
+const RG_SHA256 = "24ad76777745fbff131c8fbc466742b011f925bfa4fffa2ded6def23b5b937be"
+const rgDir = join(staging, "rg")
+mkdirSync(rgDir, { recursive: true })
+const rgArchive = join(staging, `${RG_NAME}.tar.gz`)
+const download = spawnSync("curl", ["-fsSL", "--retry", "3", "-o", rgArchive, `https://github.com/BurntSushi/ripgrep/releases/download/${RG_VERSION}/${RG_NAME}.tar.gz`], { stdio: "inherit" })
+if (download.status !== 0) fail("downloading ripgrep failed")
+const digest = createHash("sha256").update(readFileSync(rgArchive)).digest("hex")
+if (digest !== RG_SHA256) fail(`ripgrep checksum mismatch: ${digest}`)
+const extract = spawnSync("tar", ["-xzf", rgArchive, "-C", staging, `${RG_NAME}/rg`], { stdio: "inherit" })
+if (extract.status !== 0) fail("extracting ripgrep failed")
+copyFileSync(join(staging, RG_NAME, "rg"), join(rgDir, "rg"))
+rmSync(join(staging, RG_NAME), { recursive: true, force: true })
+rmSync(rgArchive, { force: true })
 
 function sizeOf(path) {
   let total = 0

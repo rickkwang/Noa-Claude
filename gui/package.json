@@ -66,6 +66,13 @@
         "filter": [
           "**/*"
         ]
+      },
+      {
+        "from": "release-runtime/rg",
+        "to": "rg",
+        "filter": [
+          "**/*"
+        ]
       }
     ],
     "mac": {

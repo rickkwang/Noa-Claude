@@ -16,6 +16,9 @@ const { checkForUpdate } = require('./updateCheck.cjs')
 // A packaged app keeps the bridge and UI beside the repo runtime in Resources (see scripts/prepare-desktop-runtime.mjs).
 const GUI_DIR = app.isPackaged ? path.join(process.resourcesPath, 'repo', 'gui') : path.join(__dirname, '..')
 const DIST_DIR = path.join(GUI_DIR, 'dist')
+// File search runs `rg` from PATH. A Finder launch has a minimal PATH, so put the ripgrep bundled in
+// Resources first; the bridge and agent processes inherit it. Codex does the same with its codex-path dir.
+if (app.isPackaged) process.env.PATH = [path.join(process.resourcesPath, 'rg'), process.env.PATH].filter(Boolean).join(path.delimiter)
 
 let bridge = null
 let win = null
