@@ -1,15 +1,10 @@
 name: desktop-release
 
-# Builds the unsigned macOS (arm64) Noa Agent app for a gui-v* tag and uploads the dmg and zip as
-# workflow artifacts. The job is read-only (scripts/check-workflow-security.mjs forbids write
-# permissions), so the GitHub Release is created separately from those artifacts. The in-app update
-# check (gui/electron/updateCheck.cjs) reads gui-v* releases; keep the tag format and the
-# Noa-Agent-<version>-arm64.dmg asset name.
+# Manual CI build of the unsigned macOS (arm64) Noa Agent app. It uploads the dmg and zip as
+# workflow artifacts only. The public GitHub Release is published from a locally verified build
+# (see README, Desktop App); the in-app update check reads gui-v* releases, so keep the tag format.
+# The job is read-only because scripts/check-workflow-security.mjs forbids write permissions.
 on:
-  push:
-    tags:
-      - 'gui-v*'
-  # Manual build for checking a commit without a tag; it uploads artifacts only.
   workflow_dispatch:
 
 permissions:
@@ -33,6 +28,12 @@ jobs:
           REF_TYPE: ${{ github.ref_type }}
         run: |
           VERSION=$(node -p "require('./gui/package.json').version")
+          CLI_VERSION=$(node -p "require('./package.json').version")
+          # The desktop version tracks the CLI version it bundles.
+          if [ "$VERSION" != "$CLI_VERSION" ]; then
+            echo "gui/package.json ($VERSION) must match the CLI version ($CLI_VERSION)." >&2
+            exit 1
+          fi
           if [ "$REF_TYPE" = "tag" ] && [ "$TAG" != "gui-v$VERSION" ]; then
             echo "Tag $TAG does not match gui/package.json version $VERSION." >&2
             exit 1
