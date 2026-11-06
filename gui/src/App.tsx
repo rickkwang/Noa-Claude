@@ -852,32 +852,23 @@ function Workspace({ cwd }: { cwd: string }) {
                 messages scroll beneath it and a gradient fades them out above the card. */}
             <div ref={footerRef} className={hasTurns ? "noa-conversation-footer" : "shrink-0 px-[29px] pb-3 pt-2"}>
               <div className="mx-auto flex flex-col gap-2" style={{ maxWidth: readingWidth + 22 }}>
-                {(state.connection === "closed") && (
-                  <div
-                    role="status"
-                    className="flex items-center justify-center gap-2 text-caption text-[var(--sidebar-text-muted)]"
-                  >
-                    <span
-                      className={`size-1.5 rounded-full ${state.connection === "closed" ? "bg-red-500" : "animate-pulse bg-[var(--accent-color)]"}`}
-                    />
-                    <span className={state.connection === "closed" ? undefined : "noa-shimmer"}>
-                    {state.connection === "closed"
-                      ? "Agent disconnected"
-                      : "Compacting context…"}
-                    </span>
-                    {state.connection === "closed" && (
-                      <button
-                        className="text-[var(--accent-color)]"
-                        onClick={() => setSession((s) => ({ ...s, resume: activeId, key: s.key + 1 }))}
-                      >
-                        Reconnect
-                      </button>
-                    )}
-                    {state.connection === "closed" && (
-                      <button className="text-[var(--accent-color)]" onClick={openDiagnostics}>
-                        Diagnostics
-                      </button>
-                    )}
+                {state.connection === "closed" && (
+                  <div role="status" className="flex items-center gap-1 px-2 text-caption text-[var(--text-tertiary)]">
+                    <span className="mr-1 text-[color-mix(in_srgb,var(--text-danger)_65%,var(--text-primary))]">Agent disconnected</span>
+                    <button
+                      type="button"
+                      className="h-5 rounded px-1.5 hover:bg-[var(--fill-hover)] hover:text-[var(--text-primary)]"
+                      onClick={() => setSession((s) => ({ ...s, resume: activeId, key: s.key + 1 }))}
+                    >
+                      Reconnect
+                    </button>
+                    <button
+                      type="button"
+                      className="h-5 rounded px-1.5 hover:bg-[var(--fill-hover)] hover:text-[var(--text-primary)]"
+                      onClick={openDiagnostics}
+                    >
+                      Diagnostics
+                    </button>
                   </div>
                 )}
                 {(state.permissions.length > 0 || state.elicitations.length > 0) && (
