@@ -45,12 +45,12 @@ export function TurnReview({ diff, focusPath, focusKey, canSplit = true }: {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="noa-panel-toolbar">
-        <span className="min-w-0 flex-1 truncate text-caption tabular-nums text-[var(--sidebar-text-muted)]">
+        <span className="min-w-0 flex-1 truncate ps-2 text-caption tabular-nums text-[var(--sidebar-text-muted)]">
           {diff.files.length} {diff.files.length === 1 ? "file" : "files"} changed ·{" "}
           {diff.additions > 0 && <span className="noa-turn-diff-stats"><span className="is-added">+{diff.additions}</span></span>}{" "}
           {diff.deletions > 0 && <span className="noa-turn-diff-stats"><span className="is-removed">-{diff.deletions}</span></span>}
         </span>
-        <button type="button" className="noa-panel-button" onClick={() => setFindRequest((value) => value + 1)}>Find</button>
+        <button type="button" className="noa-panel-button is-text" onClick={() => setFindRequest((value) => value + 1)}>Find</button>
       </div>
       {diff.files.length > 1 && (
         <div className="noa-turn-review-files scrollbar-on-scroll" role="listbox" aria-label="Changed files">

@@ -14,21 +14,21 @@ interface NewTabTool {
 export function NewTabPage({ tools, onSelect, onOpenBottomTerminal, suggested = [], onOpenUrl, onDismissUrl }: { tools: NewTabTool[]; onSelect: (id: string) => void; onOpenBottomTerminal: () => void; suggested?: string[]; onOpenUrl?: (url: string) => void; onDismissUrl?: (url: string) => void }) {
   const [menu, setMenu] = useState<{ anchor: PopupMenuAnchor; trigger: Element }>()
   return (
-    <div className="noa-new-tab-page @container h-full min-h-0 overflow-y-auto px-4 py-8 select-none">
+    <div className="noa-new-tab-page @container h-full min-h-0 overflow-y-auto px-2 py-8 select-none">
       <section className="mx-auto flex w-full max-w-3xl flex-col gap-4">
-        <h3 className="m-0 text-[length:var(--text-chat-sm)] font-medium text-[var(--text-primary,#2D2D2B)]">Tools</h3>
+        <h3 className="m-0 ps-2 text-[length:var(--text-chat-sm)] font-medium text-[var(--text-primary,#2D2D2B)]">Tools</h3>
         <div className="grid grid-cols-1 gap-x-4 gap-y-1 @md:grid-cols-2">
           {tools.map((tool) => {
             const Icon = tool.icon
             return (
               <div key={tool.id} className="noa-new-tab-row flex w-full min-w-0 items-center rounded-md">
-                <button type="button" onClick={() => onSelect(tool.id)} className="flex min-h-10 w-full min-w-0 flex-1 items-center gap-2 rounded-md px-2.5 py-2 text-start">
+                <button type="button" onClick={() => onSelect(tool.id)} className="flex min-h-10 w-full min-w-0 flex-1 items-center gap-[5px] rounded-md px-2 py-2 text-start">
                   <span className="flex shrink-0 items-center justify-center text-[var(--text-secondary,#7B7974)]"><Icon size={16} /></span>
                   <span className="min-w-0 flex-1 truncate text-[length:var(--text-chat-sm)] text-[var(--text-primary,#2D2D2B)]">{tool.title}</span>
                   {tool.shortcut && <kbd className="noa-new-tab-key ms-auto shrink-0">{tool.shortcut}</kbd>}
                 </button>
                 {tool.id === "terminal" && (
-                  <div className="shrink-0 pe-2.5">
+                  <div className="shrink-0 pe-[5px]">
                     <button
                       type="button"
                       aria-label="Terminal options"
@@ -47,7 +47,7 @@ export function NewTabPage({ tools, onSelect, onOpenBottomTerminal, suggested = 
         </div>
       </section>
       {suggested.length > 0 && <section className="mx-auto mt-8 flex w-full max-w-3xl flex-col gap-4" aria-label="Suggested websites">
-        <h3 className="m-0 text-[length:var(--text-chat-sm)] font-normal text-[var(--text-primary)]">Suggested</h3>
+        <h3 className="m-0 ps-2 text-[length:var(--text-chat-sm)] font-normal text-[var(--text-primary)]">Suggested</h3>
         <div className="grid grid-cols-1 gap-3 @md:grid-cols-2">
           {suggested.map(url => <div key={url} className="noa-suggested-site relative min-w-0 rounded-xl">
             <button type="button" title={url} onClick={() => onOpenUrl?.(url)} className="flex min-h-28 w-full flex-col items-center justify-center gap-4 rounded-xl px-8 py-5 text-[length:var(--text-chat-sm)] text-[var(--text-primary)]">

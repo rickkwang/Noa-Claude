@@ -47,7 +47,7 @@ export function BrowserPanel({ cwd, tab, visible }: { cwd: string; tab: BrowserT
 
   return (
     <div className="flex h-full min-h-0 flex-col" data-browser-panel="">
-      <div className="noa-browser-toolbar flex h-11 shrink-0 items-center gap-0.5 border-b border-[var(--border-light)] px-2">
+      <div className="noa-browser-toolbar flex h-11 shrink-0 items-center gap-0.5 border-b border-[var(--border-light)] ps-[10px] pe-[13px]">
         <button type="button" aria-label="Go back" title="Go back" disabled={!tab.canBack} onClick={() => void command('back')} className="noa-browser-action"><ArrowLeft size={15} /></button>
         <button type="button" aria-label="Go forward" title="Go forward" disabled={!tab.canForward} onClick={() => void command('forward')} className="noa-browser-action"><ArrowRight size={15} /></button>
         <button type="button" aria-label={tab.loading ? 'Stop loading' : 'Reload page'} title={tab.loading ? 'Stop loading' : 'Reload page'} disabled={!tab.url} onClick={() => tab.loading ? void command('stop') : void loadBrowser(cwd, tab)} className="noa-browser-action">{tab.loading ? <X size={15} /> : <RefreshCcw size={13} />}</button>

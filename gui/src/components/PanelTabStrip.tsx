@@ -82,9 +82,9 @@ export function PanelTabStrip({ tabs, activeKey, label, onSelect, onClose, onCon
                       title={tab.title}
                       onClick={() => onSelect(tab.key)}
                       onAuxClick={(event) => { if (event.button === 1) onClose(tab.key) }}
-                      className={`relative z-10 flex h-full min-w-0 flex-1 items-center rounded-md py-1 ps-2.5 pe-1 text-start text-[length:var(--text-chat-sm)] ${selected ? "text-[var(--text-primary,#2D2D2B)]" : "text-[var(--text-tertiary,#A3A19B)]"}`}
+                      className={`relative z-10 flex h-full min-w-0 flex-1 items-center rounded-md py-1 ps-[9px] pe-1 text-start text-[length:var(--text-chat-sm)] ${selected ? "text-[var(--text-primary,#2D2D2B)]" : "text-[var(--text-tertiary,#A3A19B)]"}`}
                     >
-                      <span className="flex min-w-0 flex-1 items-center gap-2 group-focus-within/tab:pe-5 group-hover/tab:pe-5">
+                      <span className="flex min-w-0 flex-1 items-center gap-1.5 group-focus-within/tab:pe-5 group-hover/tab:pe-5">
                         <Icon size={14} className="shrink-0" />
                         <span className="noa-tab-title">{tab.title}</span>
                       </span>

@@ -1250,7 +1250,9 @@ html[data-translucent-sidebar="enabled"] [data-sidebar-container] .noa-sidebar-t
 
 /* Workspace review: line gutters and change surfaces keep syntax colours readable. */
 .noa-workspace-panel { display: flex; flex: 1; flex-direction: column; min-height: 0; font-size: var(--text-chat-sm); }
-.noa-panel-toolbar { display: flex; align-items: center; gap: 4px; min-height: 32px; padding: 2px 10px; flex-shrink: 0; }
+/* Right-panel grid: boxes inset 8px from both edges, icons centred in a 16px slot at 16px, labels from 37px. Toolbar
+   icon buttons end 15px in, so their centres sit under the titlebar's panel toggle (27px from the edge). */
+.noa-panel-toolbar { display: flex; align-items: center; gap: 4px; min-height: 32px; padding: 2px 15px 2px 8px; flex-shrink: 0; }
 .noa-panel-title { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--sidebar-text); }
 .noa-panel-button { display: inline-flex; flex-shrink: 0; align-items: center; justify-content: center; gap: 4px; min-height: 24px; padding: 2px 6px; border-radius: 6px; font-size: var(--text-caption); line-height: 18px; color: var(--sidebar-text); }
 .noa-panel-button:hover:not(:disabled) { background: var(--fill-hover); color: var(--text-primary); }
@@ -1260,16 +1262,18 @@ html[data-translucent-sidebar="enabled"] [data-sidebar-container] .noa-sidebar-t
 .noa-panel-body { flex: 1; min-width: 0; min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
 /* A code or diff view keeps an overlay scrollbar in the app's thumb colour; it takes no width, so line colours reach the panel edge. */
 .noa-panel-body.is-code { scrollbar-gutter: auto; scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
-.noa-file-root { padding: 8px 10px 0 16px; }
-.noa-file-root-chip { display: inline-flex; min-width: 0; max-width: 70%; align-items: center; gap: 6px; height: 26px; padding: 0; border-radius: 8px; color: var(--text-primary); }
+.noa-file-root { padding-top: 8px; padding-bottom: 0; padding-left: 16px; }
+.noa-file-root-chip { display: inline-flex; min-width: 0; max-width: 70%; align-items: center; gap: 5px; height: 26px; padding: 0; border-radius: 8px; color: var(--text-primary); }
 .noa-file-root-chip > svg { color: var(--sidebar-text-muted); }
 .noa-file-root-chip > svg { flex-shrink: 0; }
 .noa-file-search { display: flex; flex-shrink: 0; align-items: center; gap: 4px; padding: 8px 8px 4px; }
-.noa-file-search-field { display: flex; min-width: 0; flex: 1; align-items: center; gap: 6px; height: 30px; padding: 0 7px; border: 1px solid var(--border-default); border-radius: 8px; background: transparent; color: var(--sidebar-text-muted); transition: border-color 120ms; }
+.noa-file-search-field { display: flex; min-width: 0; flex: 1; align-items: center; gap: 5px; height: 30px; padding: 0 7px; border: 1px solid var(--border-default); border-radius: 8px; background: transparent; color: var(--sidebar-text-muted); transition: border-color 120ms; }
 .noa-file-search-field:focus-within { border-color: var(--border-strong); }
 .noa-file-search-field input { min-width: 0; flex: 1; border: 0; outline: 0; background: transparent; font: inherit; font-size: 13px; color: var(--text-primary); }
 .noa-file-search-field input::placeholder { color: var(--sidebar-text-muted); }
+/* The root and search icons sit centred in the rows' 16px icon slot, so icons and labels share one column. */
 .noa-file-search-field svg { flex-shrink: 0; }
+.noa-file-root-chip > svg, .noa-file-search-field > svg { margin-inline: 1px; }
 /* No right padding: the scroll body already reserves an 8px scrollbar strip there, which makes the gap match the left. */
 .noa-file-tree { padding: 4px 0 8px 8px; font-size: 13px; }
 .noa-file-row { position: relative; display: flex; align-items: center; gap: 5px; height: 28px; width: 100%; padding: 0 8px; border-radius: 6px; text-align: left; color: var(--sidebar-text); }
@@ -1365,7 +1369,8 @@ kbd.noa-review-menu-hint { font-family: inherit; }
 .noa-review-menu[open] > summary { background: color-mix(in srgb, var(--text-primary) 7.5%, transparent); color: var(--text-primary); }
 /* One header row per file, as Claude Code's diff file header: square icon buttons, text only for Cancel/Save. */
 .noa-file-header { gap: 2px; }
-.noa-file-header > .noa-panel-button:not(.is-text), .noa-file-header > .noa-review-menu > summary { width: 24px; height: 24px; padding: 0; }
+/* Toolbar icon buttons share one 24px square, so trailing icons on every row line up on one centre. */
+.noa-panel-toolbar > .noa-panel-button:not(.is-text), .noa-panel-toolbar > .noa-review-menu > summary { width: 24px; height: 24px; padding: 0; }
 .noa-file-header > .noa-review-menu { margin-left: 0; }
 .noa-file-header > .noa-change-count, .noa-file-header > .noa-row-stats { margin-right: 4px; }
 .noa-panel-button.is-primary:not(:disabled) { background: color-mix(in srgb, var(--text-primary) 7.5%, transparent); color: var(--text-primary); }
@@ -1428,8 +1433,8 @@ kbd.noa-review-menu-hint { font-family: inherit; }
 .noa-popup-switch[data-checked]::after { border-color: transparent; background: var(--bg-card, #fff); transform: translateX(14px); }
 .noa-popup-menu .noa-context-menu-entry > button:disabled .noa-popup-switch { opacity: 0.6; }
 
-.noa-branch { display: inline-flex; align-items: center; gap: 6px; color: var(--text-primary); }
-.noa-branch > svg { flex-shrink: 0; color: var(--sidebar-text-muted); }
+.noa-branch { display: inline-flex; align-items: center; gap: 5px; color: var(--text-primary); }
+.noa-branch > svg { flex-shrink: 0; margin-inline: 1px; color: var(--sidebar-text-muted); }
 .noa-panel-empty > svg { margin: 0 auto 8px; color: var(--sidebar-text-muted); opacity: .7; }
 
 .noa-activity-log { max-height: 280px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--font-mono); font-size: var(--code-font-size, 12px); line-height: 1.6; margin: 0; color: var(--sidebar-text); }
@@ -1493,8 +1498,11 @@ kbd.noa-review-menu-hint { font-family: inherit; }
 [data-theme="dark"] .noa-code-view.is-diff .noa-code-line.is-empty .noa-code-number { background: color-mix(in lab, var(--surface-page) 98.5%, #fff); }
 .noa-code-view.is-diff .noa-code-line.is-empty code { background: repeating-linear-gradient(-45deg, transparent, transparent calc(3px * 1.414), var(--diff-buffer) calc(3px * 1.414), var(--diff-buffer) calc(4px * 1.414)) 5px 0 / 8px 8px fixed; }
 /* Panel alignment grid: leading icons and text sit 16px from the panel edge in every tab. */
-.noa-panel-title { padding-left: 6px; }
-.noa-panel-toolbar > .noa-panel-button:first-child + .noa-panel-title { padding-left: 2px; }
+.noa-panel-title { padding-left: 8px; }
+/* A leading icon button (Back) centres on the 24px icon column too. */
+.noa-panel-toolbar > .noa-panel-button:first-child:not(.is-text) { margin-left: 4px; }
+/* The title after it starts on the 37px label column (the file header's 2px gap plus this pulls it back 1px). */
+.noa-panel-toolbar > .noa-panel-button:first-child + .noa-panel-title { padding-left: 0; margin-left: -1px; }
 
 /* Top scroll fade: the top edge fades over 40px once scrolled (scroll-driven); the bottom is covered by the floating composer. */
 @property --top-fade { syntax: "<length>"; inherits: false; initial-value: 0px; }
