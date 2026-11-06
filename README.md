@@ -59,6 +59,16 @@ If `~/.local/bin` is not on your `PATH`, the installer prints the line to add �
 
 Keep your config directory outside the installation directory. Install, update, and ordinary uninstall refuse a config directory inside the installation directory; move it outside first to preserve your settings and history.
 
+## Desktop App (macOS, Apple silicon)
+
+Download `Noa-Agent-<version>-arm64.dmg` from the latest `gui-v*` release on [GitHub Releases](https://github.com/rickkwang/Noa-Claude/releases), open it, and drag **Noa Agent** into Applications.
+
+The app is not code-signed or notarized. On first launch macOS may say it cannot be opened: go to System Settings → Privacy & Security and click **Open Anyway**, or run `xattr -dr com.apple.quarantine "/Applications/Noa Agent.app"` once.
+
+Updates: the app checks GitHub Releases about five seconds after launch and offers a download when a newer `gui-v*` release exists; **Noa Agent → Check for Updates…** runs the same check on demand. Nothing is installed automatically: download the new dmg and drag it over the old app. Set `DISABLE_UPDATES=1` to turn checks off.
+
+Uninstall: quit the app and drag it from Applications to the Trash. To also remove its window state and browser profile, delete `~/Library/Application Support/Noa Agent`. Your CLI configuration and credentials in `~/.noa` are shared with the `noa` CLI and are not removed.
+
 ## Core Features
 
 The session-fork workflow (`/fork`) is smoke-checked. Other listed commands are non-baseline — see [docs/product-governance.md](docs/product-governance.md).

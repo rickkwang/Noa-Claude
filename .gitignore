@@ -40,3 +40,7 @@ CLAUDE.local.md
 # per-run variant dirs and running summaries stay local; only <flow>/_state.json and inputs.md are tracked
 .claude/hillclimb/*/*/
 .claude/hillclimb/*/narrative.md
+
+# Desktop packaging outputs (gui/)
+gui/release/
+gui/release-runtime/

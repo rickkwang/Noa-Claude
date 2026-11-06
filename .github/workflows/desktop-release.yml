@@ -1,0 +1,71 @@
+name: desktop-release
+
+# Builds the unsigned macOS (arm64) Noa Agent app and attaches it to a gui-v* GitHub Release.
+# The in-app update check (gui/electron/updateCheck.cjs) reads these releases, so the tag
+# format and the Noa-Agent-<version>-arm64.dmg asset name must stay as they are.
+on:
+  push:
+    tags:
+      - 'gui-v*'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-14
+    timeout-minutes: 45
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Verify tag matches the desktop version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          VERSION=$(node -p "require('./gui/package.json').version")
+          if [ "$TAG" != "gui-v$VERSION" ]; then
+            echo "Tag $TAG does not match gui/package.json version $VERSION." >&2
+            exit 1
+          fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      # ripgrep is linux-only in the shared setup action, so it stays off on macOS.
+      - uses: ./.github/actions/setup
+        with:
+          ripgrep: 'false'
+          gui: 'true'
+
+      - name: Build CLI bundle
+        run: bun run build
+
+      - name: GUI checks
+        run: |
+          bun run --cwd gui typecheck
+          bun run --cwd gui test
+
+      # No Developer ID certificate: electron-builder falls back to an ad-hoc signature.
+      # Keychain discovery is off so the runner never looks for an identity.
+      - name: Package dmg and zip
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: |
+          export BUN_PATH="$(command -v bun)"
+          bun run --cwd gui desktop:release
+
+      - name: Upload to GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if ! gh release view "$TAG" --json tagName >/dev/null 2>&1; then
+            gh release create "$TAG" --title "Noa Agent $VERSION" --notes "Noa Agent $VERSION for Apple silicon Macs. Unsigned: see the README for first-launch steps."
+          fi
+          gh release upload "$TAG" \
+            "gui/release/Noa-Agent-$VERSION-arm64.dmg" \
+            "gui/release/Noa-Agent-$VERSION-arm64.zip" \
+            --clobber

@@ -17,7 +17,10 @@
     "test:terminal": "bun scripts/e2e-terminal.ts",
     "test:browser": "bun scripts/e2e-browser.ts",
     "test:stats": "bun scripts/e2e-stats.ts",
-    "test:files-split": "bun scripts/e2e-files-split.ts"
+    "test:files-split": "bun scripts/e2e-files-split.ts",
+    "desktop:prepare": "bun scripts/prepare-desktop-runtime.mjs",
+    "desktop:pack": "bun run build && bun scripts/prepare-desktop-runtime.mjs && electron-builder --dir --mac --arm64 --publish never",
+    "desktop:release": "bun run build && bun scripts/prepare-desktop-runtime.mjs && electron-builder --mac dmg zip --arm64 --publish never"
   },
   "dependencies": {
     "@xterm/addon-clipboard": "0.2.0",
@@ -39,9 +42,44 @@
     "@types/react-dom": "19.2.3",
     "@vitejs/plugin-react": "4.3.4",
     "electron": "41.10.6",
+    "electron-builder": "26.8.2",
     "tailwindcss": "4.2.2",
     "typescript": "5.7.2",
     "vite": "5.4.11"
   },
-  "main": "electron/main.cjs"
+  "main": "electron/main.cjs",
+  "version": "1.21.0",
+  "build": {
+    "appId": "com.noa.agent",
+    "productName": "Noa Agent",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "electron/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "release-runtime/bun",
+        "to": "bun",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.productivity",
+      "target": [
+        "dir"
+      ]
+    },
+    "artifactName": "Noa-Agent-${version}-${arch}.${ext}",
+    "dmg": {
+      "size": "2g"
+    },
+    "npmRebuild": false,
+    "publish": null,
+    "afterPack": "./scripts/after-pack.cjs"
+  }
 }

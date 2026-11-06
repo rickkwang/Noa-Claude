@@ -1,7 +1,7 @@
 // Desktop shell: starts the Bun bridge (server/main.ts), serves the
 // built UI from it, and shows it in a native window. The bridge is the only
 // process that talks to the agent; the window is a plain client of it.
-const { app, BrowserWindow, Menu, dialog, ipcMain, nativeImage, nativeTheme, session, shell } = require('electron')
+const { app, BrowserWindow, Menu, dialog, ipcMain, nativeTheme, session, shell } = require('electron')
 const { spawn } = require('child_process')
 const { randomBytes } = require('crypto')
 const fs = require('fs')
@@ -11,10 +11,11 @@ const os = require('os')
 const path = require('path')
 const { createNotifier } = require('./notifications.cjs')
 const { registerPreview } = require('./preview.cjs')
+const { checkForUpdate } = require('./updateCheck.cjs')
 
-const GUI_DIR = path.join(__dirname, '..')
+// A packaged app keeps the bridge and UI beside the repo runtime in Resources (see scripts/prepare-desktop-runtime.mjs).
+const GUI_DIR = app.isPackaged ? path.join(process.resourcesPath, 'repo', 'gui') : path.join(__dirname, '..')
 const DIST_DIR = path.join(GUI_DIR, 'dist')
-const ICON = path.join(__dirname, 'icon.icns')
 
 let bridge = null
 let win = null
@@ -59,11 +60,56 @@ function setZoom(next) {
   syncZoom()
 }
 
+// Only packaged builds check for updates; a development build is not a release.
+const UPDATES_ENABLED = app.isPackaged && process.env.DISABLE_UPDATES !== '1'
+
+function showDialog(options) {
+  return win && !win.isDestroyed() ? dialog.showMessageBox(win, options) : dialog.showMessageBox(options)
+}
+
+// The check only links to the release; it never replaces the running app.
+async function checkForUpdates({ manual }) {
+  let update
+  try {
+    update = await checkForUpdate(app.getVersion())
+  } catch (err) {
+    if (manual) dialog.showErrorBox('Could not check for updates', String(err.message ?? err))
+    return
+  }
+  if (!update) {
+    if (manual) {
+      void showDialog({ type: 'info', message: 'Noa Agent is up to date', detail: `Version ${app.getVersion()} is the latest release.`, buttons: ['OK'] })
+    }
+    return
+  }
+  const { response } = await showDialog({
+    type: 'info',
+    message: `Noa Agent ${update.version} is available`,
+    detail: `You have ${app.getVersion()}. Download the new version and drag it into Applications to replace this app.`,
+    buttons: ['Download', 'Later'], defaultId: 0, cancelId: 1,
+  })
+  if (response === 0) shell.openExternal(update.url)
+}
+
 function buildMenu() {
   const isMac = process.platform === 'darwin'
   Menu.setApplicationMenu(
     Menu.buildFromTemplate([
-      ...(isMac ? [{ role: 'appMenu' }] : []),
+      ...(isMac ? [{
+        label: app.name,
+        submenu: [
+          { role: 'about' },
+          ...(UPDATES_ENABLED ? [{ type: 'separator' }, { label: 'Check for Updates…', click: () => checkForUpdates({ manual: true }) }] : []),
+          { type: 'separator' },
+          { role: 'services' },
+          { type: 'separator' },
+          { role: 'hide' },
+          { role: 'hideOthers' },
+          { role: 'unhide' },
+          { type: 'separator' },
+          { role: 'quit' },
+        ],
+      }] : []),
       { role: 'editMenu' },
       {
         label: 'View',
@@ -92,7 +138,8 @@ app.on('second-instance', () => {
 
 // Electron launched from Finder has a minimal PATH, so look for bun in the usual places.
 function findBun() {
-  const candidates = [process.env.BUN_PATH, path.join(os.homedir(), '.bun', 'bin', 'bun'), '/opt/homebrew/bin/bun', '/usr/local/bin/bun']
+  const bundled = path.join(process.resourcesPath, 'bun', 'bun')
+  const candidates = [app.isPackaged ? bundled : null, process.env.BUN_PATH, path.join(os.homedir(), '.bun', 'bin', 'bun'), '/opt/homebrew/bin/bun', '/usr/local/bin/bun']
   return candidates.find((p) => p && fs.existsSync(p)) ?? 'bun'
 }
 
@@ -295,12 +342,10 @@ async function requestQuit() {
 
 if (primaryInstance) app.whenReady().then(async () => {
   buildMenu()
-  if (process.platform === 'darwin' && fs.existsSync(ICON)) {
-    app.dock.setIcon(nativeImage.createFromPath(ICON))
-  }
   try {
     createWindow(await startBridge())
     notifier.start()
+    if (UPDATES_ENABLED) setTimeout(() => checkForUpdates({ manual: false }).catch(() => {}), 5000)
   } catch (err) {
     dialog.showErrorBox('Noa Agent could not start', String(err.message ?? err))
     app.quit()
