@@ -76,7 +76,7 @@
    switch instantly: a background fade overlaps itself as the pointer sweeps down the list and reads as flicker. */
 .noa-agent-sidebar-row { min-height: 30px; }
 .noa-agent-sidebar-row:hover { background: var(--fill-hover); }
-.noa-agent-sidebar-row.is-active { background: var(--fill-active); }
+.noa-agent-sidebar-row.is-active { background: var(--fill-hover); }
 .noa-resize-indicator {
   position: absolute;
   inset-block: 0;
