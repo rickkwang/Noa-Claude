@@ -1,8 +1,10 @@
 name: desktop-release
 
-# Builds the unsigned macOS (arm64) Noa Agent app and attaches it to a gui-v* GitHub Release.
-# The in-app update check (gui/electron/updateCheck.cjs) reads these releases, so the tag
-# format and the Noa-Agent-<version>-arm64.dmg asset name must stay as they are.
+# Builds the unsigned macOS (arm64) Noa Agent app for a gui-v* tag and uploads the dmg and zip as
+# workflow artifacts. The job is read-only (scripts/check-workflow-security.mjs forbids write
+# permissions), so the GitHub Release is created separately from those artifacts. The in-app update
+# check (gui/electron/updateCheck.cjs) reads gui-v* releases; keep the tag format and the
+# Noa-Agent-<version>-arm64.dmg asset name.
 on:
   push:
     tags:
@@ -16,7 +18,7 @@ jobs:
     runs-on: macos-14
     timeout-minutes: 45
     permissions:
-      contents: write
+      contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -56,16 +58,12 @@ jobs:
           export BUN_PATH="$(command -v bun)"
           bun run --cwd gui desktop:release
 
-      - name: Upload to GitHub Release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          TAG: ${{ github.ref_name }}
-        run: |
-          if ! gh release view "$TAG" --json tagName >/dev/null 2>&1; then
-            gh release create "$TAG" --title "Noa Agent $VERSION" --notes "Noa Agent $VERSION for Apple silicon Macs. Unsigned: see the README for first-launch steps."
-          fi
-          gh release upload "$TAG" \
-            "gui/release/Noa-Agent-$VERSION-arm64.dmg" \
-            "gui/release/Noa-Agent-$VERSION-arm64.zip" \
-            --clobber
+      - name: Upload desktop artifacts
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: noa-agent-${{ env.VERSION }}-arm64
+          if-no-files-found: error
+          retention-days: 30
+          path: |
+            gui/release/Noa-Agent-${{ env.VERSION }}-arm64.dmg
+            gui/release/Noa-Agent-${{ env.VERSION }}-arm64.zip
