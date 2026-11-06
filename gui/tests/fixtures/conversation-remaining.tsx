@@ -312,6 +312,8 @@ window.runChecks = async () => {
   const phases = [
     [{ role: "assistant", id: "live-a1", streaming: false, startedAt, blocks: [{ kind: "thinking", text: "", done: true }, bash("running")] }],
     [{ role: "assistant", id: "live-a1", streaming: false, startedAt, blocks: [{ kind: "thinking", text: "", done: true }, bash("done")] }],
+    // The next message has started but shown nothing yet.
+    [{ role: "assistant", id: "live-a1", streaming: false, startedAt, blocks: [{ kind: "thinking", text: "", done: true }, bash("done")] }, { role: "assistant", id: "live-a2", streaming: true, startedAt: Date.now(), blocks: [] }],
     [{ role: "assistant", id: "live-a1", streaming: false, startedAt, blocks: [{ kind: "thinking", text: "", done: true }, bash("done")] }, { role: "assistant", id: "live-a2", streaming: true, startedAt: Date.now(), blocks: [{ kind: "thinking", text: "", done: false }] }],
   ]
   const livePhases = []
@@ -326,9 +328,12 @@ window.runChecks = async () => {
   const commentaryTurns = (blocks: any[]) => [{ role: "user", id: "live-u", text: "Inspect" }, { role: "assistant", id: "live-a1", streaming: true, startedAt, blocks }] as any
   await show(<div style={{ display: "flex", height: 400 }}><MessageList turns={commentaryTurns(commentary)} busy readingWidth={800} /></div>)
   const answering = !document.getElementById("root")!.textContent!.includes("Working for")
+  // The answer starting stops the same divider in place; nothing above the answer moves.
+  const answeringTop = document.querySelector("[data-work-activity]")?.getBoundingClientRect().top
+  results.answerKeepsDividerInPlace = document.getElementById("root")!.textContent!.includes("Worked for") && answeringTop === livePhases[0]!.top
   await show(<div style={{ display: "flex", height: 400 }}><MessageList turns={commentaryTurns([...commentary, { ...bash("running"), id: "live-bash-2" }])} busy readingWidth={800} /></div>)
   results.workingResumesAfterCommentary = answering && document.getElementById("root")!.textContent!.includes("Working for")
-  // A running row names the current step, so an earlier failure in the group keeps its warning icon until the group settles.
+  // The heading summarises the group and never carries an earlier failure; the failed call says so on its own row.
   const groupIcon = async (first: string, second: string) => {
     const command = (status: string, id: string) => ({ ...bash(status), id, input: { command: "bun test" } })
     await show(<div style={{ display: "flex", height: 400 }}><MessageList turns={commentaryTurns([command(first, "live-bash"), command(second, "live-bash-2")])} busy readingWidth={800} /></div>)
@@ -347,7 +352,8 @@ window.runChecks = async () => {
   const finishedExplore = await exploring("done")
   results.explorationLandsAsActions = runningExplore.heading.includes("Searching files in components folder") && !runningExplore.rows.some(row => row.includes("App.tsx"))
     && finishedExplore.rows.slice(-2).join("|") === "Read App.tsx|Searched for needle in components" && runningExplore.top === finishedExplore.top
-  results.liveRowHidesEarlierFailure = !!liveAfterFailure && liveAfterFailure === await groupIcon("done", "running") && liveAfterFailure !== await groupIcon("error", "done")
+  results.groupHeadingIgnoresFailures = !!liveAfterFailure && liveAfterFailure === await groupIcon("done", "running") && await groupIcon("done", "done") === await groupIcon("error", "done")
+    && !document.querySelector("[data-work-activity] > button")!.textContent!.includes("failed")
   await show(<Comparison />)
   ;(document.querySelector('[data-case="citation"] button[title]') as HTMLElement)?.click()
   await wait(() => !results.referenceRange || document.querySelectorAll('[data-reference-line="true"]').length === 3)

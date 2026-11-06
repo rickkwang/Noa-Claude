@@ -629,8 +629,12 @@ function finalizeAssistant(turns: Turn[], content: ContentBlock[], messageId?: s
   if (index === -1 && messageId && content.length > 0 && content.every(block => hasDelivered(turns, messageId, block))) return turns
   const currentBlocks = index !== -1 ? (turns[index] as Extract<Turn, { role: "assistant" }>).blocks : []
   const currentTurn = index !== -1 ? turns[index] as Extract<Turn, { role: "assistant" }> : undefined
-  const target = messageId && currentTurn?.messageId === messageId && content.length === 1 && currentTurn.stoppedStreamIndex !== undefined
-    ? currentBlocks.findIndex(block => isStreamBlock(block) && "streamIndex" in block && block.streamIndex === currentTurn.stoppedStreamIndex) : -1
+  const single = messageId && currentTurn?.messageId === messageId && content.length === 1 ? content[0]! : undefined
+  // A confirmed tool replaces its own streamed block: another block (an empty text, say) may have stopped since it opened.
+  const ownTool = single?.type === "tool_use" ? currentBlocks.findIndex(block => block.kind === "tool" && block.id === single.id) : -1
+  const target = ownTool !== -1 ? ownTool
+    : single && currentTurn!.stoppedStreamIndex !== undefined
+      ? currentBlocks.findIndex(block => isStreamBlock(block) && "streamIndex" in block && block.streamIndex === currentTurn!.stoppedStreamIndex) : -1
   const streamedBlocks = target === -1 ? currentBlocks.filter(isStreamBlock) : [currentBlocks[target]!]
   let blockIndex = 0
   const blocks: Block[] = content.flatMap((block): Block[] => {

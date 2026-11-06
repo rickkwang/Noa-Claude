@@ -310,7 +310,7 @@ export function MessageList({ turns, cwd, onOpenFile, busy, result, readingWidth
   // Between sending and the first token, and between model messages, nothing on screen
   // is live; keep a Thinking row so the turn never looks stalled.
   const tail = segments[segments.length - 1]
-  const awaitingModel = busy && !!tail && (tail.role === "user" || (!tail.streaming && !hasLiveBlock(tail.blocks)))
+  const awaitingModel = busy && !!tail && (tail.role === "user" || !hasLiveBlock(tail.blocks))
   // A trailing tool group shows the wait in its own row instead (see ActivityGroup's pending).
   const awaitingInGroup = awaitingModel && tail?.role === "assistant" && endsInToolGroup(tail.blocks)
   useLayoutEffect(() => {
@@ -760,7 +760,7 @@ function AssistantSegmentView({ segment, busy, durationMs, interrupted, liveDiff
   // The turn stays live between model messages (tool runs, the wait for the next reply), so
   // the working divider follows the turn rather than whichever message is streaming.
   const working = busy || segment.streaming
-  const pending = busy && !segment.streaming && !hasLiveBlock(segment.blocks)
+  const pending = busy && !hasLiveBlock(segment.blocks)
   const [now, setNow] = useState(Date.now())
   useEffect(() => {
     if (!working) return
@@ -780,8 +780,9 @@ function AssistantSegmentView({ segment, busy, durationMs, interrupted, liveDiff
     if (finalTextStarted && finalStartedAt === undefined) setFinalStartedAt(Date.now())
     else if (!finalTextStarted && finalStartedAt !== undefined) setFinalStartedAt(undefined)
   }, [working, finalTextStarted, finalStartedAt])
-  const liveDuration = working && hasActivity && finalStartedAt === undefined && segment.startedAt !== undefined
-    ? Math.max(0, now - segment.startedAt)
+  // The divider stays where it is for the whole turn; once the answer starts it stops at the work time.
+  const workDivider = working && hasActivity && segment.startedAt !== undefined
+    ? { durationMs: Math.max(0, (finalStartedAt ?? now) - segment.startedAt), live: finalStartedAt === undefined }
     : undefined
   // Everything that happened before the final answer collapses into one disclosure. Noa's
   // protocol has no final-channel flag, so the last text run is the final answer.
@@ -888,9 +889,9 @@ function AssistantSegmentView({ segment, busy, durationMs, interrupted, liveDiff
           onToggle={toggleActivity}
         />
       )}
-      {liveDuration !== undefined && <WorkedFor durationMs={liveDuration} live collapsed={false} />}
+      {workDivider && <WorkedFor durationMs={workDivider.durationMs} live={workDivider.live} collapsed={false} />}
       {runs.map((run, index) => {
-        const workedFor = !canCollapse && index === workedForBefore && displayDuration !== undefined
+        const workedFor = !canCollapse && !working && index === workedForBefore && displayDuration !== undefined
           ? <WorkedFor durationMs={displayDuration} interrupted={interrupted} collapsed={false} />
           : null
         if (run.kind === "text") return renderText(run, index, workedFor)
@@ -918,7 +919,6 @@ function AssistantSegmentView({ segment, busy, durationMs, interrupted, liveDiff
       {turnDiff}
       {interrupted && !hasActivity && <WorkedFor durationMs={durationMs} interrupted collapsed={false} />}
       {segment.error && <div role="alert" className="flex items-start gap-2 text-[length:var(--text-chat-sm)] text-[#C24444]"><AlertTriangle size={16} className="shrink-0" /><span className="whitespace-pre-wrap break-words">{segment.error}</span></div>}
-      {segment.streaming && segment.blocks.length === 0 && <Working />}
     </div>
   )
 }
@@ -953,19 +953,15 @@ function ActivityGroup({ blocks, pending, tasks, onStopTask, onOpenTask }: {
   }, [live])
   const tools = blocks.filter((block): block is ToolBlock => block.kind === "tool")
   const summary = toolActivitySummary(tools)
-  const failedCount = tools.filter(tool => tool.status === "error" || tool.status === "stopped").length
-  const uncertainCount = tools.filter(tool => tool.status === "unknown").length
-  const completedLabel = [summary?.label, tools.some(tool => tool.status === "error") ? `${failedCount} failed` : uncertainCount ? "connection lost" : null]
-    .filter(Boolean)
-    .join(", ") || "Worked"
+  // The heading summarises what the group did; a failed call says so on its own row.
+  const completedLabel = summary?.label || "Worked"
   const liveLabel = liveBlock?.kind === "thinking" || (!liveBlock && pending)
     ? "Thinking"
     : liveBlock?.kind === "tool"
       ? labelForTool(liveBlock, now)
       : completedLabel
-  // The live label describes the current step, so an earlier failure only marks the row once the group settles.
   const SummaryIcon =
-    !live && (failedCount || uncertainCount) ? AlertTriangle : summary?.kind === "edits" ? Edit2
+    summary?.kind === "edits" ? Edit2
       : summary?.kind === "images" ? Photo
         : summary?.kind === "commands" ? Terminal
           : summary?.kind === "reads" ? BookOpen
@@ -1014,9 +1010,11 @@ function ActivityGroup({ blocks, pending, tasks, onStopTask, onOpenTask }: {
   )
 }
 
+// What is visibly moving; a message that has started but shown nothing yet still counts as waiting.
 function hasLiveBlock(blocks: Block[]): boolean {
   return blocks.some(block =>
-    block.kind === "thinking" ? !block.done
+    block.kind === "text" ? block.done === false
+    : block.kind === "thinking" ? !block.done
       : block.kind === "tool" ? block.status === "running"
         : block.kind === "compaction" ? block.status === "running"
           : block.kind === "retry" ? !block.done

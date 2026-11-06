@@ -167,6 +167,22 @@ test("canonical tool confirmation before stop cannot remove parallel tool blocks
   expect(state.turns[0]).toMatchObject({ streaming: true, blocks: [{ id: "t0", input: { file_path: "a.ts" } }, { id: "t1", partialJson: '{"file_path":"b.ts"}' }] })
 })
 
+test("a tool confirmed after a later empty block stopped stays one row", () => {
+  // Recorded from a live provider: an empty text block opens and stops inside the tool block.
+  let state = initialState
+  const stream = (event: object) => { state = agent(state, { type: "stream_event", parent_tool_use_id: null, event }) }
+  stream({ type: "message_start", message: { id: "interleaved" } })
+  stream({ type: "content_block_start", index: 1, content_block: { type: "tool_use", id: "bash", name: "Bash" } })
+  stream({ type: "content_block_start", index: 2, content_block: { type: "text", text: "" } })
+  stream({ type: "content_block_stop", index: 2 })
+  state = agent(state, { type: "assistant", parent_tool_use_id: null, message: { id: "interleaved", content: [{ type: "tool_use", id: "bash", name: "Bash", input: { command: "echo ok" } }] } })
+  stream({ type: "content_block_stop", index: 1 })
+  stream({ type: "message_stop" })
+  state = agent(state, { type: "user", parent_tool_use_id: null, message: { content: [{ type: "tool_result", tool_use_id: "bash", content: "ok" }] } })
+  const tools = state.turns.flatMap(turn => turn.role === "assistant" ? turn.blocks.filter(block => block.kind === "tool") : [])
+  expect(tools).toMatchObject([{ id: "bash", input: { command: "echo ok" }, status: "done", output: "ok" }])
+})
+
 test("journal reattachment preserves unconfirmed parallel blocks", async () => {
   const { emit } = await import("../server/agents")
   const run = { journal: [], clients: new Set() } as any
