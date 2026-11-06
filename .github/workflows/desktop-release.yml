@@ -62,6 +62,14 @@ jobs:
           export BUN_PATH="$(command -v bun)"
           bun run --cwd gui desktop:release
 
+      - name: Diagnose codesign failure
+        if: failure()
+        run: |
+          APP="gui/release/mac-arm64/Noa Agent.app"
+          ls -la "$APP/Contents/Frameworks/Electron Framework.framework/Versions" || true
+          find "$APP/Contents/Frameworks/Electron Framework.framework" -type l -exec ls -l {} \; || true
+          codesign --verify --deep --strict --verbose=2 "$APP" 2>&1 | tail -5 || true
+
       - name: Upload desktop artifacts
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
