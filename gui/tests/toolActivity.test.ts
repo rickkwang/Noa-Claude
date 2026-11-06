@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { formatElapsed, groupActivityBlocks, groupActivityRuns, toolActivityLabel, toolActivitySummary, toolDiffStats, toolElapsedMs } from "../src/agent/toolActivity"
+import { formatElapsed, groupActivityBlocks, groupActivityRuns, shellActivitySteps, shellStepActiveLabel, shellStepLabel, toolActivityLabel, toolActivitySummary, toolDiffStats, toolElapsedMs, toolRowSteps, toolShellSteps } from "../src/agent/toolActivity"
 
 test("tool activity uses action phrases instead of raw tool names", () => {
   expect(toolActivityLabel({ name: "Bash", status: "running", input: { command: "npm test" } }))
@@ -120,4 +120,51 @@ test("activity runs group consecutive reasoning and tool calls", () => {
     { kind: "text" },
     { kind: "activity", blocks: [{ kind: "tool" }] },
   ])
+})
+
+test("shell commands that only read, search or list files become file actions", () => {
+  const steps = (command: string) => shellActivitySteps(command)?.map(step => shellStepLabel(step, true)).map(label => `${label.action} ${label.detail}`.trim())
+  expect(steps(`sed -n 280,340p gui/src/components/MessageList.tsx && echo "===760-1010===" && sed -n '760,1010p' gui/src/agent/toolActivity.ts`))
+    .toEqual(["Read MessageList.tsx", "Read toolActivity.ts"])
+  expect(steps(`grep -n "groupActivityRuns\\|type Block" -r gui/src | head -20`)).toEqual(["Searched for groupActivityRuns\\|type Block in gui"])
+  expect(steps("cat gui/package.json | head -80 && ls gui/tests | head -40")).toEqual(["Read package.json", "Listed files in tests"])
+  expect(steps("nl -ba gui/src/App.tsx | sed -n '150,165p;200,210p'")).toEqual(["Read App.tsx"])
+  expect(steps("rg --files -g 'AGENTS.md' | rg agent | head -100")).toEqual(["Listed files", "Searched for agent"])
+  expect(steps("rg -n -g '*.ts' -e 'a|b' gui/src/components | tail -18; wc -l a.ts")).toEqual(["Searched for a|b in components"])
+  expect(steps("find gui/src -maxdepth 2 -type f")).toEqual(["Listed files in gui"])
+  // Line continuations, comments and the current folder read the way the shell runs them.
+  expect(steps("rg -n needle \\\n  gui/src/components")).toEqual(["Searched for needle in components"])
+  expect(steps("cat a.ts  # quick look")).toEqual(["Read a.ts"])
+  expect(steps("# the header first\nsed -n '1,9p' a.ts &&\n  rg -n b .")).toEqual(["Read a.ts", "Searched for b"])
+  expect(steps("find . -maxdepth 2 -type f; ls -la ./")).toEqual(["Listed files", "Listed files"])
+  // Any step that runs something else, writes, or needs expansion stays a plain command.
+  expect(steps(`git status && echo "---DIFF---" && git diff`)).toBeUndefined()
+  expect(steps("bun run build 2>&1 | tail -15")).toBeUndefined()
+  expect(steps("cat > notes.txt")).toBeUndefined()
+  expect(steps("cat $HOME/notes.txt")).toBeUndefined()
+  expect(steps("ls ~/Applications")).toBeUndefined()
+  expect(steps("sed -i 's/a/b/' file.ts")).toBeUndefined()
+  expect(steps("tail -36 /tmp/debug.log")).toBeUndefined()
+  expect(steps("head -15 gui/src/lib/glyphs.ts")).toBeUndefined()
+  expect(steps("find . -name '*.ts' -delete")).toBeUndefined()
+  expect(steps("ps ax | rg electron")).toBeUndefined()
+  expect(steps("grep needle")).toBeUndefined()
+  expect(steps("rg -n 'unterminated")).toBeUndefined()
+  expect(steps("echo done")).toBeUndefined()
+  expect(steps("")).toBeUndefined()
+})
+
+test("file-action commands read as file actions while running and count as reading", () => {
+  const read = { name: "Bash", input: { command: "sed -n '1,20p' gui/src/App.tsx" } }
+  expect(toolShellSteps({ ...read, status: "running" })?.map(shellStepActiveLabel)).toEqual([{ action: "Reading", detail: "App.tsx" }])
+  expect(shellStepActiveLabel(shellActivitySteps("rg -n needle gui/src/components")![0]!)).toEqual({ action: "Searching", detail: "files in components folder" })
+  // A failed read stays a visible command failure.
+  expect(toolShellSteps({ ...read, status: "error" })).toBeUndefined()
+  // A finished command lands as one row per action; a running or failed one is a single row.
+  const chain = { name: "Bash", input: { command: "sed -n '1,9p' a.ts && rg -n b src" } }
+  expect(toolRowSteps({ ...chain, status: "done" }).map(step => step?.kind)).toEqual(["read", "search"])
+  expect(toolRowSteps({ ...chain, status: "running" })).toEqual([undefined])
+  expect(toolRowSteps({ ...chain, status: "error" })).toEqual([undefined])
+  expect(toolActivitySummary([{ ...read, status: "done" }, { name: "Bash", status: "done", input: { command: "bun test" } }])?.label)
+    .toBe("Read files, ran a command")
 })

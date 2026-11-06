@@ -1,7 +1,7 @@
 import { useContext, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react"
 import { createPortal } from "react-dom"
 import type { AgentTask, Block, ToolBlock } from "../agent/reducer"
-import { formatElapsed, toolActivityLabel, toolDiffStats, toolElapsedMs } from "../agent/toolActivity"
+import { formatElapsed, shellStepLabel, toolActivityLabel, toolDiffStats, toolElapsedMs, toolRowSteps, toolShellSteps, type ShellStep } from "../agent/toolActivity"
 import { BookOpen, Check, ChevronRight, ChevronUp, Copy, Edit2, List, Photo, Search, Stop, Terminal, Tool, Users, X } from "../lib/icons"
 import { diffLines } from "diff"
 import { Collapsible } from "./Collapsible"
@@ -11,8 +11,10 @@ import { SubagentActivity } from "./SubagentActivity"
 import { ThinkingActivity } from "./ThinkingActivity"
 
 // A tool call as a quiet activity line; body details stay collapsed until requested.
-export function ToolCard({ block, defaultOpen = false, active = block.status === "running", task, tasks, onStopTask, onOpenTask }: {
+export function ToolCard({ block, step: stepProp, defaultOpen = false, active = block.status === "running", task, tasks, onStopTask, onOpenTask }: {
   block: ToolBlock
+  // One file action of a shell command shown as its own row; a single-action command picks its own.
+  step?: ShellStep
   defaultOpen?: boolean
   active?: boolean
   task?: AgentTask
@@ -21,7 +23,9 @@ export function ToolCard({ block, defaultOpen = false, active = block.status ===
   onOpenTask?: (id?: string) => void
 }) {
   const { onOpenImages } = useContext(OutputContext)
-  const baseLabel = toolActivityLabel(block)
+  const steps = stepProp ? undefined : toolShellSteps(block)
+  const step = stepProp ?? (steps?.length === 1 ? steps[0] : undefined)
+  const baseLabel = step ? shellStepLabel(step, block.status !== "running") : toolActivityLabel(block)
   const live = task ? task.status === "running" : active && block.status === "running"
   const label = task
     ? {
@@ -35,10 +39,10 @@ export function ToolCard({ block, defaultOpen = false, active = block.status ===
   const [rawOpen, setRawOpen] = useState(false)
   const rawCode = rawOpen ? (block.rawResult !== undefined ? JSON.stringify(block.rawResult, null, 2) : block.output) : undefined
   const [now, setNow] = useState(Date.now())
-  const Icon = toolIcon(block)
+  const Icon = toolIcon(block, step ?? steps?.[0])
   const diffStats = toolDiffStats(block)
   const elapsed = toolElapsedMs(block, now)
-  const elapsedLabel = block.name === "Bash" && elapsed !== undefined
+  const elapsedLabel = block.name === "Bash" && !step && elapsed !== undefined
     ? block.status === "running"
       ? `for ${formatElapsed(elapsed)}`
       : block.status === "stopped"
@@ -171,7 +175,10 @@ function TaskTranscript({ blocks, tasks, active, completed, durationMs }: { bloc
 function TaskBlock({ block, tasks, active }: { block: Block; tasks?: AgentTask[]; active: boolean }) {
   if (block.kind === "text") return <Markdown text={block.text} />
   if (block.kind === "thinking") return <ThinkingActivity block={block} />
-  if (block.kind === "tool") return <ToolCard block={block} active={active} tasks={tasks} task={tasks?.find(task => task.id === block.id || task.toolUseId === block.id)} />
+  if (block.kind === "tool") {
+    const task = tasks?.find(candidate => candidate.id === block.id || candidate.toolUseId === block.id)
+    return <>{toolRowSteps(block).map((step, s) => <ToolCard key={s} block={block} step={step} active={active} tasks={tasks} task={task} />)}</>
+  }
   return null
 }
 
@@ -181,9 +188,11 @@ function rawMcpTitle(name: string): string {
   return `Raw ${server}.${tool.join("__")} tool call output`
 }
 
-function toolIcon(block: ToolBlock) {
+function toolIcon(block: ToolBlock, step?: ShellStep) {
   const file = str(block.input.file_path)
   if (block.status === "stopped" && block.name === "Bash") return Stop
+  // Commands that only read, search or list files take the matching tool's icon.
+  if (step) return step.kind === "read" ? BookOpen : step.kind === "search" ? Search : List
   if (block.name === "Bash") return Terminal
   if (block.name === "Grep" || block.name === "Glob" || block.name === "WebSearch" || block.name === "WebFetch") return Search
   if (block.name === "Agent" || block.name === "Task") return Users

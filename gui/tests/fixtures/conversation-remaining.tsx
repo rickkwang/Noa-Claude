@@ -305,6 +305,49 @@ window.runChecks = async () => {
   results.mcpVisible = document.getElementById("root")!.textContent!.includes("rows") && document.getElementById("root")!.textContent!.includes("Raw result")
   results.todoVisible = document.getElementById("root")!.textContent!.includes("Inspect files") && !!document.querySelector('[aria-label="in progress"]')
   results.hookVisible = document.getElementById("root")!.textContent!.includes("Hook failure details")
+  // Between model messages (a tool running, then the wait for the next reply) the turn is still
+  // working: the divider stays and one live row changes in place instead of rows appearing below.
+  const startedAt = Date.now() - 5000
+  const bash = (status: string) => ({ kind: "tool", id: "live-bash", name: "Bash", input: { command: "sed -n 1,20p src/main.tsx" }, partialJson: "", status, output: status === "done" ? "ok" : undefined })
+  const phases = [
+    [{ role: "assistant", id: "live-a1", streaming: false, startedAt, blocks: [{ kind: "thinking", text: "", done: true }, bash("running")] }],
+    [{ role: "assistant", id: "live-a1", streaming: false, startedAt, blocks: [{ kind: "thinking", text: "", done: true }, bash("done")] }],
+    [{ role: "assistant", id: "live-a1", streaming: false, startedAt, blocks: [{ kind: "thinking", text: "", done: true }, bash("done")] }, { role: "assistant", id: "live-a2", streaming: true, startedAt: Date.now(), blocks: [{ kind: "thinking", text: "", done: false }] }],
+  ]
+  const livePhases = []
+  for (const phase of phases) {
+    await show(<div style={{ display: "flex", height: 400 }}><MessageList turns={[{ role: "user", id: "live-u", text: "Inspect" }, ...phase] as any} busy readingWidth={800} /></div>)
+    const row = document.querySelector("[data-work-activity]")
+    livePhases.push({ divider: document.getElementById("root")!.textContent!.includes("Working for"), live: document.querySelectorAll(".noa-shimmer").length, top: row?.getBoundingClientRect().top })
+  }
+  results.workingDividerStaysBetweenMessages = livePhases.every(phase => phase.divider && phase.live === 1 && phase.top !== undefined && phase.top === livePhases[0]!.top)
+  // Commentary looks like the final answer until another tool call follows it; then the turn is working again.
+  const commentary = [{ kind: "thinking", text: "", done: true }, bash("done"), { kind: "text", text: "Checking the next file.", done: true }]
+  const commentaryTurns = (blocks: any[]) => [{ role: "user", id: "live-u", text: "Inspect" }, { role: "assistant", id: "live-a1", streaming: true, startedAt, blocks }] as any
+  await show(<div style={{ display: "flex", height: 400 }}><MessageList turns={commentaryTurns(commentary)} busy readingWidth={800} /></div>)
+  const answering = !document.getElementById("root")!.textContent!.includes("Working for")
+  await show(<div style={{ display: "flex", height: 400 }}><MessageList turns={commentaryTurns([...commentary, { ...bash("running"), id: "live-bash-2" }])} busy readingWidth={800} /></div>)
+  results.workingResumesAfterCommentary = answering && document.getElementById("root")!.textContent!.includes("Working for")
+  // A running row names the current step, so an earlier failure in the group keeps its warning icon until the group settles.
+  const groupIcon = async (first: string, second: string) => {
+    const command = (status: string, id: string) => ({ ...bash(status), id, input: { command: "bun test" } })
+    await show(<div style={{ display: "flex", height: 400 }}><MessageList turns={commentaryTurns([command(first, "live-bash"), command(second, "live-bash-2")])} busy readingWidth={800} /></div>)
+    return document.querySelector("[data-work-activity] button svg")?.innerHTML
+  }
+  const liveAfterFailure = await groupIcon("error", "running")
+  // A read-only command names its file action in the heading while it runs, then lands as one row per action.
+  const explore = (status: string) => ({ ...bash(status), id: "live-explore", input: { command: "sed -n '1,20p' gui/src/App.tsx && rg -n needle gui/src/components" } })
+  const exploring = async (status: string) => {
+    await show(<div style={{ display: "flex", height: 400 }}><MessageList turns={commentaryTurns([bash("done"), explore(status)])} busy readingWidth={800} /></div>)
+    const heading = document.querySelector<HTMLElement>("[data-work-activity] > button")
+    if (heading?.getAttribute("aria-expanded") === "false") { heading.click(); await new Promise(requestAnimationFrame) }
+    return { heading: heading?.textContent ?? "", top: heading?.getBoundingClientRect().top, rows: Array.from(document.querySelectorAll("[data-work-activity] [data-tool-activity]"), row => row.textContent ?? "") }
+  }
+  const runningExplore = await exploring("running")
+  const finishedExplore = await exploring("done")
+  results.explorationLandsAsActions = runningExplore.heading.includes("Searching files in components folder") && !runningExplore.rows.some(row => row.includes("App.tsx"))
+    && finishedExplore.rows.slice(-2).join("|") === "Read App.tsx|Searched for needle in components" && runningExplore.top === finishedExplore.top
+  results.liveRowHidesEarlierFailure = !!liveAfterFailure && liveAfterFailure === await groupIcon("done", "running") && liveAfterFailure !== await groupIcon("error", "done")
   await show(<Comparison />)
   ;(document.querySelector('[data-case="citation"] button[title]') as HTMLElement)?.click()
   await wait(() => !results.referenceRange || document.querySelectorAll('[data-reference-line="true"]').length === 3)

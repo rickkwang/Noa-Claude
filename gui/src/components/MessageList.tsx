@@ -7,9 +7,12 @@ import {
   formatElapsed,
   groupActivityBlocks,
   groupActivityRuns,
+  shellStepActiveLabel,
   toolActivityLabel,
   toolActivitySummary,
   toolElapsedMs,
+  toolRowSteps,
+  toolShellSteps,
   type ActivityRun,
   type ThinkingBlock as ThinkingBlockData,
 } from "../agent/toolActivity"
@@ -307,13 +310,9 @@ export function MessageList({ turns, cwd, onOpenFile, busy, result, readingWidth
   // Between sending and the first token, and between model messages, nothing on screen
   // is live; keep a Thinking row so the turn never looks stalled.
   const tail = segments[segments.length - 1]
-  const awaitingModel = busy && !!tail && (tail.role === "user" || (
-    !tail.streaming && !tail.blocks.some(block =>
-      block.kind === "thinking" ? !block.done
-        : block.kind === "tool" ? block.status === "running"
-          : block.kind === "compaction" ? block.status === "running"
-            : block.kind === "retry" ? !block.done
-              : false)))
+  const awaitingModel = busy && !!tail && (tail.role === "user" || (!tail.streaming && !hasLiveBlock(tail.blocks)))
+  // A trailing tool group shows the wait in its own row instead (see ActivityGroup's pending).
+  const awaitingInGroup = awaitingModel && tail?.role === "assistant" && endsInToolGroup(tail.blocks)
   useLayoutEffect(() => {
     const el = scrollRef.current
     if (el && awaitingModel && pinnedRef.current) el.scrollTop = el.scrollHeight
@@ -510,7 +509,7 @@ export function MessageList({ turns, cwd, onOpenFile, busy, result, readingWidth
           ))}
         </div>
 
-        {awaitingModel && <Working />}
+        {awaitingModel && !awaitingInGroup && <Working />}
 
         {!busy && result?.isError && !result.interrupted && onRetry && (
           <div className="flex min-w-0 flex-wrap items-center gap-2 text-[length:var(--text-chat-sm)] text-[var(--sidebar-text-muted,#898781)]">
@@ -758,13 +757,17 @@ function AssistantSegmentView({ segment, busy, durationMs, interrupted, liveDiff
   const units = groupActivityBlocks(segment.blocks)
   const runs = groupActivityRuns(units)
   const trackedTaskIds = new Set(segment.blocks.flatMap(block => block.kind === "subagent" ? [block.taskId] : []))
+  // The turn stays live between model messages (tool runs, the wait for the next reply), so
+  // the working divider follows the turn rather than whichever message is streaming.
+  const working = busy || segment.streaming
+  const pending = busy && !segment.streaming && !hasLiveBlock(segment.blocks)
   const [now, setNow] = useState(Date.now())
   useEffect(() => {
-    if (!segment.streaming) return
+    if (!working) return
     setNow(Date.now())
     const timer = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(timer)
-  }, [segment.streaming])
+  }, [working])
   const hasActivity = runs.some((run) => run.kind === "activity" || run.kind === "standalone" || run.kind === "agents" || run.kind === "subagents")
   const finalTextIndex = runs.map((run) => run.kind).lastIndexOf("text")
   const lastActivityIndex = runs.map((run) => run.kind === "standalone" || run.kind === "agents" || run.kind === "subagents" ? "activity" : run.kind).lastIndexOf("activity")
@@ -772,10 +775,12 @@ function AssistantSegmentView({ segment, busy, durationMs, interrupted, liveDiff
   const finalTextStarted = finalRun?.kind === "text" && finalRun.block.text.trim().length > 0
   const [finalStartedAt, setFinalStartedAt] = useState<number>()
   useEffect(() => {
-    if (!segment.streaming || !finalTextStarted || finalStartedAt !== undefined) return
-    setFinalStartedAt(Date.now())
-  }, [segment.streaming, finalTextStarted, finalStartedAt])
-  const liveDuration = segment.streaming && hasActivity && finalStartedAt === undefined && segment.startedAt !== undefined
+    if (!working) return
+    // Text is the final answer only while nothing follows it; commentary followed by more tool calls resumes the work.
+    if (finalTextStarted && finalStartedAt === undefined) setFinalStartedAt(Date.now())
+    else if (!finalTextStarted && finalStartedAt !== undefined) setFinalStartedAt(undefined)
+  }, [working, finalTextStarted, finalStartedAt])
+  const liveDuration = working && hasActivity && finalStartedAt === undefined && segment.startedAt !== undefined
     ? Math.max(0, now - segment.startedAt)
     : undefined
   // Everything that happened before the final answer collapses into one disclosure. Noa's
@@ -897,6 +902,7 @@ function AssistantSegmentView({ segment, busy, durationMs, interrupted, liveDiff
           <ActivityGroup
             key={index}
             blocks={run.blocks}
+            pending={pending && index === runs.length - 1}
             tasks={tasks}
             onStopTask={onStopTask}
             onOpenTask={onOpenTask}
@@ -919,8 +925,10 @@ function AssistantSegmentView({ segment, busy, durationMs, interrupted, liveDiff
 
 // One collapsible summary per run of reasoning and tool calls, an
 // agent-activity group. The body stays folded unless the user opens it.
-function ActivityGroup({ blocks, tasks, onStopTask, onOpenTask }: {
+function ActivityGroup({ blocks, pending, tasks, onStopTask, onOpenTask }: {
   blocks: (ToolBlock | ThinkingBlockData)[]
+  // The turn is waiting on the model after this group; the row keeps the wait instead of a new line below it.
+  pending?: boolean
   tasks?: AgentTask[]
   onStopTask?: (id: string) => void
   onOpenTask?: (id?: string) => void
@@ -935,7 +943,7 @@ function ActivityGroup({ blocks, tasks, onStopTask, onOpenTask }: {
   const liveBlock = [...blocks].reverse().find(
     (block) => block.kind === "thinking" ? !block.done : block.status === "running",
   )
-  const live = liveBlock !== undefined
+  const live = liveBlock !== undefined || !!pending
   const [now, setNow] = useState(Date.now())
   useEffect(() => {
     if (!live) return
@@ -950,13 +958,14 @@ function ActivityGroup({ blocks, tasks, onStopTask, onOpenTask }: {
   const completedLabel = [summary?.label, tools.some(tool => tool.status === "error") ? `${failedCount} failed` : uncertainCount ? "connection lost" : null]
     .filter(Boolean)
     .join(", ") || "Worked"
-  const liveLabel = liveBlock?.kind === "thinking"
+  const liveLabel = liveBlock?.kind === "thinking" || (!liveBlock && pending)
     ? "Thinking"
     : liveBlock?.kind === "tool"
       ? labelForTool(liveBlock, now)
       : completedLabel
+  // The live label describes the current step, so an earlier failure only marks the row once the group settles.
   const SummaryIcon =
-    failedCount || uncertainCount ? AlertTriangle : summary?.kind === "edits" ? Edit2
+    !live && (failedCount || uncertainCount) ? AlertTriangle : summary?.kind === "edits" ? Edit2
       : summary?.kind === "images" ? Photo
         : summary?.kind === "commands" ? Terminal
           : summary?.kind === "reads" ? BookOpen
@@ -981,24 +990,52 @@ function ActivityGroup({ blocks, tasks, onStopTask, onOpenTask }: {
       </button>
       <Collapsible open={open}>
         <div ref={activityRef} onScroll={(event) => { const e = event.currentTarget; following.current = e.scrollHeight - e.clientHeight - e.scrollTop <= 24 }} className="noa-activity-scroll scrollbar-on-scroll mt-2 flex max-h-56 flex-col gap-1 overflow-x-hidden overflow-y-auto overscroll-contain focus-visible:outline-auto" role="region" aria-label="Tool activity" tabIndex={open ? 0 : -1}>
-          {blocks.map((block, i) => block.kind === "thinking" ? <ThinkingActivity key={`thinking-${i}`} block={block} /> : (
+          {blocks.flatMap((block, i) => {
+            if (block.kind === "thinking") return [<ThinkingActivity key={`thinking-${i}`} block={block} />]
+            // A command that only reads, searches or lists shows one row per action once it finishes;
+            // while it runs, the group heading names the action instead.
+            if (block.status === "running" && toolShellSteps(block)) return []
+            return toolRowSteps(block).map((step, s) => (
               <ToolCard
-                key={`tool-${block.id}-${i}`}
+                key={`tool-${block.id}-${i}-${s}`}
                 block={block}
+                step={step}
                 tasks={tasks}
                 task={tasks?.find((candidate) => candidate.id === block.id || candidate.toolUseId === block.id)}
                 defaultOpen={false}
                 onStopTask={onStopTask}
                 onOpenTask={onOpenTask}
               />
-            ))}
+            ))
+          })}
         </div>
       </Collapsible>
     </div>
   )
 }
 
+function hasLiveBlock(blocks: Block[]): boolean {
+  return blocks.some(block =>
+    block.kind === "thinking" ? !block.done
+      : block.kind === "tool" ? block.status === "running"
+        : block.kind === "compaction" ? block.status === "running"
+          : block.kind === "retry" ? !block.done
+            : false)
+}
+
+// Mirrors when AssistantSegment renders its last run as an ActivityGroup summary row.
+function endsInToolGroup(blocks: Block[]): boolean {
+  const last = groupActivityRuns(groupActivityBlocks(blocks)).at(-1)
+  return last?.kind === "activity" && last.blocks.some(block => block.kind === "tool")
+}
+
 function labelForTool(block: ToolBlock, now = Date.now()): string {
+  // A file action names what it is doing, without a timer.
+  const step = toolShellSteps(block)?.at(-1)
+  if (step) {
+    const active = shellStepActiveLabel(step)
+    return `${active.action} ${active.detail}`
+  }
   const label = toolActivityLabel(block)
   const base = label.detail ? `${label.action} ${label.detail}` : label.action
   const elapsed = block.name === "Bash" && block.status === "running" ? toolElapsedMs(block, now) : undefined

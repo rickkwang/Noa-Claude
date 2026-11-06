@@ -222,6 +222,229 @@ export function toolActivityLabel(source: Pick<ToolBlock, "name" | "input" | "st
   }
 }
 
+/** One file action a shell command performs. */
+export type ShellStep =
+  | { kind: "read"; name: string }
+  | { kind: "search"; query?: string; path?: string }
+  | { kind: "list"; path?: string }
+
+/**
+ * The file actions of a shell command that only reads, searches or lists files, one per step, so the command can
+ * show as those actions instead of a generic command. Every step of a `;`/`&&` chain must be recognised; anything
+ * else (other programs, redirects, substitutions) leaves it a plain command.
+ */
+export function shellActivitySteps(command: string): ShellStep[] | undefined {
+  const pipelines = shellSteps(command)
+  if (!pipelines?.length) return undefined
+  const steps: ShellStep[] = []
+  for (const pipeline of pipelines) {
+    const found = pipelineSteps(pipeline)
+    if (found === undefined) return undefined
+    if (found !== "skip") steps.push(...found)
+  }
+  return steps.length ? steps : undefined
+}
+
+/** A Bash call's file actions while it runs or once it succeeds; a failed or stopped one stays a command. */
+export function toolShellSteps(block: Pick<ToolBlock, "name" | "input" | "status">): ShellStep[] | undefined {
+  if (block.name !== "Bash" || (block.status !== "done" && block.status !== "running")) return undefined
+  return typeof block.input.command === "string" ? shellActivitySteps(block.input.command) : undefined
+}
+
+/** The rows a tool call shows: one per file action once a file-action command finishes, otherwise the call itself. */
+export function toolRowSteps(block: Pick<ToolBlock, "name" | "input" | "status">): (ShellStep | undefined)[] {
+  return (block.status === "running" ? undefined : toolShellSteps(block)) ?? [undefined]
+}
+
+/** A finished or running step as a row label. */
+export function shellStepLabel(step: ShellStep, finished: boolean): ToolActivityLabel {
+  switch (step.kind) {
+    case "read":
+      return { action: finished ? "Read" : "Reading", detail: step.name }
+    case "search": {
+      const action = finished ? "Searched for" : "Searching for"
+      if (step.query) return { action, detail: step.path ? `${step.query} in ${step.path}` : step.query }
+      return { action, detail: "files" }
+    }
+    case "list":
+      return step.path
+        ? { action: finished ? "Listed files in" : "Listing files in", detail: step.path }
+        : { action: finished ? "Listed files" : "Listing files", detail: "" }
+  }
+}
+
+/** The running step as the activity group's live heading, which names the place rather than the query. */
+export function shellStepActiveLabel(step: ShellStep): ToolActivityLabel {
+  switch (step.kind) {
+    case "read":
+      return { action: "Reading", detail: step.name }
+    case "search":
+      if (step.path) return { action: "Searching", detail: `files in ${step.path} folder` }
+      return step.query ? { action: "Searching", detail: `for ${step.query}` } : { action: "Searching", detail: "files" }
+    case "list":
+      return { action: "Listing", detail: step.path ? `files in ${step.path} folder` : "files" }
+  }
+}
+
+// Splits into `;`/`&&`/`||`/newline steps of `|` stages of words; undefined for syntax this classifier won't guess at.
+function shellSteps(command: string): string[][][] | undefined {
+  const steps: string[][][] = []
+  let stages: string[][] = []
+  let words: string[] = []
+  let word: string | undefined
+  const endWord = () => { if (word !== undefined) words.push(word); word = undefined }
+  const endStage = () => { endWord(); if (!words.length) return false; stages.push(words); words = []; return true }
+  const endStep = () => { if (!endStage()) return false; steps.push(stages); stages = []; return true }
+  for (let i = 0; i < command.length; i++) {
+    const char = command[i]!
+    if (char === "'") {
+      const close = command.indexOf("'", i + 1)
+      if (close === -1) return undefined
+      word = (word ?? "") + command.slice(i + 1, close)
+      i = close
+    } else if (char === '"') {
+      let text = ""
+      for (i++; i < command.length && command[i] !== '"'; i++) {
+        if (command[i] === "$" || command[i] === "`") return undefined
+        // Inside double quotes a backslash only escapes these; elsewhere it stays, as in "a\(b".
+        if (command[i] === "\\" && i + 1 < command.length && '$`"\\\n'.includes(command[i + 1]!)) i++
+        text += command[i]
+      }
+      if (i >= command.length) return undefined
+      word = (word ?? "") + text
+    } else if (char === "\\") {
+      if (i + 1 >= command.length) return undefined
+      // A backslash before a newline joins the lines.
+      if (command[++i] !== "\n") word = (word ?? "") + command[i]
+    } else if (char === "#" && word === undefined) {
+      // A comment runs to the end of the line.
+      const end = command.indexOf("\n", i)
+      i = (end === -1 ? command.length : end) - 1
+    } else if (char === " " || char === "\t") {
+      endWord()
+    } else if (char === ";" || char === "\n") {
+      // Blank or comment-only lines, and a line after `&&`, separate nothing.
+      if (char === "\n" && word === undefined && !words.length && !stages.length) continue
+      if (!endStep()) return undefined
+    } else if ((char === "&" || char === "|") && command[i + 1] === char) {
+      if (!endStep()) return undefined
+      i++
+    } else if (char === "|") {
+      if (!endStage()) return undefined
+    } else if ("&<>()`$*?{}~".includes(char)) {
+      return undefined
+    } else {
+      word = (word ?? "") + char
+    }
+  }
+  if (word !== undefined || words.length) endStage()
+  if (stages.length) steps.push(stages)
+  return steps
+}
+
+// Later stages may only trim, count or filter the first stage's output; a filtering search is a step of its own.
+function pipelineSteps([head, ...rest]: string[][]): ShellStep[] | "skip" | undefined {
+  if (!head || !rest.every(stage => isOutputFilter(stage))) return undefined
+  const first = stageSteps(head)
+  if (first === undefined) return undefined
+  const filters = rest.flatMap(([program, ...args]): ShellStep[] => program === "rg" || program === "grep" ? [{ kind: "search", query: searchArgs(args)!.query }] : [])
+  if (first === "skip") return filters.length ? filters : "skip"
+  return [...first, ...filters]
+}
+
+// One or more `N,Mp` ranges, as in `sed -n '1,20p;40,60p'`.
+const SED_PRINT = /^\d+(,\d+)?p(;\d+(,\d+)?p)*;?$/
+
+function isOutputFilter([program, ...args]: string[]): boolean {
+  if (program === "head" || program === "tail") return args.length === 0 || (args.length === 1 && /^-n?\d+$/.test(args[0]!)) || (args.length === 2 && args[0] === "-n" && /^\d+$/.test(args[1]!))
+  if (program === "sed") return args.length === 2 && args[0] === "-n" && SED_PRINT.test(args[1]!)
+  if (program === "rg" || program === "grep") return searchArgs(args)?.paths.length === 0
+  return program === "wc" || program === "sort" || program === "uniq" || program === "cut"
+}
+
+function stageSteps([program, ...args]: string[]): ShellStep[] | "skip" | undefined {
+  const files = (list: string[]) => list.length > 0 && list.every(arg => !arg.startsWith("-"))
+  const reads = (list: string[]) => files(list) ? list.map((path): ShellStep => ({ kind: "read", name: basename(path) })) : undefined
+  switch (program) {
+    case "cat":
+      return reads(args)
+    case "head":
+      return args.length === 3 && args[0] === "-n" && /^\d+$/.test(args[1]!) ? reads(args.slice(2)) : undefined
+    case "sed":
+      return args.length === 3 && args[0] === "-n" && SED_PRINT.test(args[1]!) ? reads(args.slice(2)) : undefined
+    case "nl":
+      return reads(args.filter(arg => !/^-b[at]$/.test(arg)))
+    // Counts and section markers between reads don't change what the chain does.
+    case "wc":
+    case "echo":
+    case "printf":
+      return "skip"
+    case "ls": {
+      const path = args.find(arg => !arg.startsWith("-"))
+      return [{ kind: "list", path: displayFolder(path) }]
+    }
+    case "find": {
+      // Only a plain walk of one folder, optionally bounded by depth and entry type.
+      const [path, ...options] = args
+      if (!path || path.startsWith("-")) return undefined
+      for (let i = 0; i < options.length; i += 2) {
+        const [option, value] = [options[i], options[i + 1]]
+        if (!(option === "-maxdepth" && /^\d+$/.test(value ?? "")) && !(option === "-type" && (value === "f" || value === "d"))) return undefined
+      }
+      return [{ kind: "list", path: displayFolder(path) }]
+    }
+    case "rg":
+    case "grep": {
+      const parsed = searchArgs(args)
+      if (!parsed) return undefined
+      if (program === "rg" && args.includes("--files")) {
+        const path = parsed.query ?? parsed.paths[0]
+        return [{ kind: "list", path: displayFolder(path) }]
+      }
+      // grep with no file reads stdin, which only makes sense as a filter.
+      if (!parsed.query || (program === "grep" && !parsed.paths.length && !parsed.recursive)) return undefined
+      return [{ kind: "search", query: parsed.query, path: displayFolder(parsed.paths[0]) }]
+    }
+    default:
+      return undefined
+  }
+}
+
+// Options that take the next word as their value.
+const SEARCH_VALUE_FLAGS = new Set(["-g", "--glob", "-t", "--type", "-T", "--type-not", "-A", "-B", "-C", "-m", "--max-count", "-M", "--max-columns", "--include", "--exclude", "-f", "--file"])
+
+function searchArgs(args: string[]): { query?: string; paths: string[]; recursive: boolean } | undefined {
+  let query: string | undefined
+  const positional: string[] = []
+  let recursive = false
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i]!
+    if (arg === "--") { positional.push(...args.slice(i + 1)); break }
+    if (arg === "-e" || arg === "--regexp") {
+      if (i + 1 >= args.length) return undefined
+      query ??= args[++i]
+    } else if (SEARCH_VALUE_FLAGS.has(arg)) {
+      if (i + 1 >= args.length) return undefined
+      i++
+    } else if (arg.startsWith("-")) {
+      if (/^-[a-zA-Z]*[rR]/.test(arg) || arg === "--recursive") recursive = true
+    } else positional.push(arg)
+  }
+  if (query === undefined) query = positional.shift()
+  return { query, paths: positional, recursive }
+}
+
+// The last meaningful folder or file name; generic build and source folders name their parent instead, and the
+// current folder has no name to show.
+function displayFolder(path: string | undefined): string | undefined {
+  const parts = (path ?? "").split("/").filter(part => part && part !== ".")
+  if (!parts.length) return path?.startsWith("/") ? "/" : undefined
+  for (let i = parts.length - 1; i >= 0; i--) {
+    if (!["src", "build", "dist", "node_modules"].includes(parts[i]!)) return parts[i]!
+  }
+  return parts.at(-1)
+}
+
 /** Elapsed time for the tool row, frozen once the result arrives. */
 export function toolElapsedMs(
   block: Pick<ToolBlock, "startedAt" | "endedAt" | "status">,
@@ -253,6 +476,8 @@ export function toolActivitySummary(blocks: Pick<ToolBlock, "name" | "input" | "
     const file = oneLine(block.input.file_path)
     if ((block.name === "Read" && /\.(?:avif|gif|jpe?g|png|webp)$/i.test(file)) || block.name === "ViewImage") {
       images++
+    } else if (toolShellSteps(block)) {
+      reads++
     } else if (block.name === "Bash") {
       commands++
     } else if (block.name === "Read" || block.name === "Grep" || block.name === "Glob" || block.name === "List") {
