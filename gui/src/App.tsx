@@ -38,7 +38,7 @@ import { SettingsDialog } from "./components/SettingsDialog"
 import { SessionTitle } from "./components/SessionTitle"
 import { SearchDialog } from "./components/SearchDialog"
 import { rateLimitKey } from "./components/RateLimitNotice"
-import { ListDetails, PanelBottom, PanelRight } from "./lib/icons"
+import { ListDetails, PanelRight } from "./lib/icons"
 
 // Noa's default layout widths.
 const SIDEBAR_DEFAULT_WIDTH = 340
@@ -785,16 +785,6 @@ function Workspace({ cwd }: { cwd: string }) {
             aria-pressed={overviewVisible}
           >
             <ListDetails size={16} />
-          </button>
-          <button
-            type="button"
-            onClick={() => setTerminalOpen((open) => !open)}
-            className="flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-[var(--icon-ink,#52514E)] transition-colors hover:bg-[var(--fill-hover)] hover:text-[var(--text-primary,#2D2D2B)] aria-pressed:bg-[var(--fill-active)]"
-            title="Toggle bottom panel (⌘J)"
-            aria-label="Toggle bottom panel"
-            aria-pressed={terminalOpen}
-          >
-            <PanelBottom size={16} />
           </button>
           {panelToggle}
         </div>
