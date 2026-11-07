@@ -11,6 +11,7 @@
 // State is closure-scoped inside initAutoDream() rather than module-level
 // (tests call initAutoDream() in beforeEach for a fresh closure).
 
+import { join, resolve, sep } from 'path'
 import type { REPLHookContext } from '../../utils/hooks/postSamplingHooks.js'
 import {
   createCacheSafeParams,
@@ -19,7 +20,14 @@ import {
 import {
   createUserMessage,
   createMemorySavedMessage,
+  createSystemMessage,
 } from '../../utils/messages.js'
+import {
+  checkRuleBasedPermissions,
+  getAskRuleForTool,
+  getDenyRuleForTool,
+} from '../../utils/permissions/permissions.js'
+import { matchingRuleForInput } from '../../utils/permissions/filesystem.js'
 import type { Message } from '../../types/message.js'
 import { logForDebugging } from '../../utils/debug.js'
 import type { ToolUseContext } from '../../Tool.js'
@@ -35,6 +43,12 @@ import {
   getSessionId,
 } from '../../bootstrap/state.js'
 import { createAutoMemCanUseTool } from '../extractMemories/extractMemories.js'
+import { ENTRYPOINT_NAME } from '../../memdir/memdir.js'
+import { isTeamMemoryEnabled } from '../../memdir/teamMemPaths.js'
+import { BASH_TOOL_NAME } from '../../tools/BashTool/toolName.js'
+import { FILE_READ_TOOL_NAME } from '../../tools/FileReadTool/prompt.js'
+import { GREP_TOOL_NAME } from '../../tools/GrepTool/prompt.js'
+import { GLOB_TOOL_NAME } from '../../tools/GlobTool/prompt.js'
 import { buildConsolidationPrompt } from './consolidationPrompt.js'
 import {
   readLastConsolidatedAt,
@@ -58,6 +72,166 @@ import { isEnvTruthy } from '../../utils/envUtils.js'
 // count; this only bounds the inline bullet list to keep prompt size sane
 // under heavy use.
 const MAX_SESSION_IDS_IN_PROMPT = 30
+
+// Dream may delete top-level topic files with `rm -f`; everything else in Bash
+// stays read-only. Returns the command rewritten to absolute paths, because
+// Bash runs in the project cwd and a bare `rm x.md` could hit a project file.
+const DREAM_DELETABLE_FILE = /^[A-Za-z0-9][A-Za-z0-9._-]*\.md$/
+
+export function rewriteDreamDeleteCommand(
+  command: unknown,
+  memoryRoot: string,
+): string | null {
+  if (typeof command !== 'string') return null
+  const [cmd, ...args] = command.trim().split(/\s+/)
+  if (cmd !== 'rm') return null
+  const names = args[0] === '-f' ? args.slice(1) : args
+  if (names.length === 0) return null
+  for (const name of names) {
+    if (!DREAM_DELETABLE_FILE.test(name) || name === ENTRYPOINT_NAME) {
+      return null
+    }
+  }
+  const quoted = names.map(
+    name => `'${join(memoryRoot, name).replace(/'/g, `'\\''`)}'`,
+  )
+  return `rm -f -- ${quoted.join(' ')}`
+}
+
+// Same entrypoints upstream never runs dream in: SDK and headless `-p` hosts.
+const DREAM_BLOCKED_ENTRYPOINTS = new Set(['sdk-ts', 'sdk-py', 'sdk-cli'])
+
+export function dreamEntrypointBlocked(
+  entrypoint: string | undefined,
+): boolean {
+  return entrypoint !== undefined && DREAM_BLOCKED_ENTRYPOINTS.has(entrypoint)
+}
+
+// A deny/ask rule on Edit/Write (whole tool, or the memory directory by path)
+// would make the dream stall or fail headless, so the run is skipped instead.
+export function findDreamWriteBlockRule(
+  permissionContext,
+  memoryRoot: string,
+) {
+  const tools = [{ name: FILE_EDIT_TOOL_NAME }, { name: FILE_WRITE_TOOL_NAME }]
+  for (const tool of tools) {
+    const rule =
+      getDenyRuleForTool(permissionContext, tool) ??
+      getAskRuleForTool(permissionContext, tool)
+    if (rule) return rule
+  }
+  const probe = join(memoryRoot, ENTRYPOINT_NAME)
+  return (
+    matchingRuleForInput(probe, permissionContext, 'edit', 'deny') ??
+    matchingRuleForInput(probe, permissionContext, 'edit', 'ask')
+  )
+}
+
+// Reads outside the working directory are blocked when the user set
+// permissions.blockReadsOutsideWorkingDirectories. The dream still needs its
+// memory directory and the project's transcripts, which live outside cwd.
+const READ_PATH_KEY: Record<string, string> = {
+  [FILE_READ_TOOL_NAME]: 'file_path',
+  [GREP_TOOL_NAME]: 'path',
+  [GLOB_TOOL_NAME]: 'path',
+}
+
+function isOutsideAllowedReadRoots(
+  tool,
+  input,
+  memoryRoot: string,
+  transcriptDir: string,
+): boolean {
+  const key = READ_PATH_KEY[tool.name]
+  const target = key ? input[key] : undefined
+  if (typeof target !== 'string') return false
+  const abs = resolve(getOriginalCwd(), target)
+  return ![getOriginalCwd(), memoryRoot, transcriptDir].some(
+    root => abs === resolve(root) || abs.startsWith(resolve(root) + sep),
+  )
+}
+
+export function createDreamCanUseTool(memoryRoot: string, toolUseContext) {
+  const baseCanUseTool = createAutoMemCanUseTool(memoryRoot)
+  return async (tool, input, ...rest) => {
+    // /pause-memory (or a settings change) mid-run: stop writing. Checked per
+    // call, not only at gate time, so an in-flight dream stops too.
+    if (!isAutoMemoryEnabled()) {
+      return {
+        behavior: 'deny' as const,
+        message: 'auto-memory was paused during this dream; the call is denied',
+        decisionReason: { type: 'other' as const, reason: 'memory_paused' },
+      }
+    }
+    // A PreToolUse hook asked for confirmation. Headless there is no one to
+    // answer, and the memory allow-list must not override the hook.
+    const forceDecision = rest[3]
+    if (forceDecision !== undefined) {
+      return {
+        behavior: 'deny' as const,
+        message:
+          'a PreToolUse hook requires confirmation for this call, and the memory agent runs headless with no user to answer — the call is denied',
+        decisionReason: { type: 'other' as const, reason: 'hook_ask' },
+      }
+    }
+    // Rewrite before the rule check, so deny/ask rules see the command that
+    // will actually run.
+    const rewrittenCommand =
+      tool.name === BASH_TOOL_NAME
+        ? rewriteDreamDeleteCommand(input.command, memoryRoot)
+        : null
+    const effectiveInput =
+      rewrittenCommand !== null
+        ? { ...input, command: rewrittenCommand }
+        : input
+    // User deny/ask rules apply to every call; headless, an ask can only be denied.
+    let ruleDecision
+    try {
+      ruleDecision = await checkRuleBasedPermissions(
+        tool,
+        effectiveInput,
+        toolUseContext,
+      )
+    } catch (e: unknown) {
+      logForDebugging(`[autoDream] rule check failed: ${(e as Error).message}`)
+      return {
+        behavior: 'deny' as const,
+        message: 'could not evaluate permission rules; failing closed',
+        decisionReason: { type: 'other' as const, reason: 'rule_check_failed' },
+      }
+    }
+    if (ruleDecision) {
+      return {
+        behavior: 'deny' as const,
+        message: ruleDecision.message,
+        decisionReason: ruleDecision.decisionReason,
+      }
+    }
+    const blocksOutsideReads =
+      toolUseContext.getAppState().toolPermissionContext
+        .blockReadsOutsideWorkingDirectories === true
+    if (
+      blocksOutsideReads &&
+      isOutsideAllowedReadRoots(
+        tool,
+        input,
+        memoryRoot,
+        getProjectDir(getOriginalCwd()),
+      )
+    ) {
+      return {
+        behavior: 'deny' as const,
+        message:
+          'reads outside the working directory are blocked (permissions.blockReadsOutsideWorkingDirectories)',
+        decisionReason: { type: 'other' as const, reason: 'read_block' },
+      }
+    }
+    if (rewrittenCommand !== null) {
+      return { behavior: 'allow' as const, updatedInput: effectiveInput }
+    }
+    return baseCanUseTool(tool, input, ...rest)
+  }
+}
 
 type AutoDreamConfig = {
   minHours: number
@@ -109,6 +283,7 @@ function getConfig(): AutoDreamConfig {
 function isGateOpen(): boolean {
   if (getKairosActive()) return false // KAIROS mode uses disk-skill dream
   if (getIsRemoteMode()) return false
+  if (dreamEntrypointBlocked(process.env.CLAUDE_CODE_ENTRYPOINT)) return false
   if (!isAutoMemoryEnabled()) return false
   return isAutoDreamEnabled()
 }
@@ -145,6 +320,7 @@ export function initAutoDream(): void {
   isRunnerStaleRef.current = true
 
   let lastSessionScanAt = 0
+  let permissionNoticeShown = false
 
   runner = async function runAutoDream(context, appendSystemMessage) {
     // If this runner was superseded by a newer initAutoDream call, bail out.
@@ -200,6 +376,29 @@ export function initAutoDream(): void {
       return
     }
 
+    // --- Permission gate ---
+    // Checked before the lock so a skipped run never stamps lastConsolidatedAt.
+    const blockRule = findDreamWriteBlockRule(
+      context.toolUseContext.getAppState().toolPermissionContext,
+      getAutoMemPath(),
+    )
+    if (blockRule) {
+      logForDebugging(
+        '[autoDream] skip — a permission rule blocks memory writes',
+      )
+      logEvent('tengu_auto_dream_skipped', { reason: 'permission_rule' })
+      if (appendSystemMessage && !permissionNoticeShown) {
+        permissionNoticeShown = true
+        appendSystemMessage(
+          createSystemMessage(
+            'Auto-dream skipped: a permission rule blocks writes to the memory directory.',
+            'warning',
+          ),
+        )
+      }
+      return
+    }
+
     // --- Lock ---
     // Under force, skip acquire entirely — use the existing mtime so
     // kill's rollback is a no-op (rewinds to where it already is).
@@ -249,16 +448,24 @@ export function initAutoDream(): void {
       const overflow = sessionIds.length - shown.length
       const extra = `
 
-**Tool constraints for this run:** Bash is restricted to read-only commands (\`ls\`, \`find\`, \`grep\`, \`cat\`, \`stat\`, \`wc\`, \`head\`, \`tail\`, and similar). Anything that writes, redirects to a file, or modifies state will be denied. Plan your exploration with this in mind — no need to probe.
+**Tool constraints for this run:** Bash is restricted to read-only commands (\`ls\`, \`find\`, \`grep\`, \`cat\`, \`stat\`, \`wc\`, \`head\`, \`tail\`, and similar), plus \`rm -f\` of top-level \`.md\` files in the memory directory (not \`${ENTRYPOINT_NAME}\` — overwrite that instead). Anything else that writes, redirects to a file, or modifies state will be denied. Plan your exploration with this in mind — no need to probe.
 
 Sessions since last consolidation (${sessionIds.length}):
 ${shown.map(id => `- ${id}`).join('\n')}${overflow > 0 ? `\n- ...and ${overflow} more` : ''}`
-      const prompt = buildConsolidationPrompt(memoryRoot, transcriptDir, extra)
+      const prompt = buildConsolidationPrompt(
+        memoryRoot,
+        transcriptDir,
+        extra,
+        isTeamMemoryEnabled(),
+      )
 
       const result = await runForkedAgent({
         promptMessages: [createUserMessage({ content: prompt })],
         cacheSafeParams: createCacheSafeParams(context),
-        canUseTool: createAutoMemCanUseTool(memoryRoot),
+        canUseTool: createDreamCanUseTool(
+          memoryRoot,
+          context.toolUseContext,
+        ),
         querySource: 'auto_dream',
         forkLabel: 'auto_dream',
         skipTranscript: true,
