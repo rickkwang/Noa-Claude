@@ -130,6 +130,7 @@ export async function tryHandleImmediateLocalJsxCommand(
         key: `immediate-${immediateCommand.name}`,
         text: result,
         priority: 'immediate',
+        requeueOnPreempt: true,
       })
     }
 

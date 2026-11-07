@@ -80,6 +80,12 @@ describe('survivesPreemption', () => {
     expect(survivesPreemption({ ...toast, heldDuringDiffPanel: true }, confirm)).toBe(true)
   })
 
+  test('requeues an immediate that asked to survive preemption', () => {
+    const result = { ...toast, requeueOnPreempt: true }
+    expect(survivesPreemption(result, confirm)).toBe(true)
+    expect(survivesPreemption(result, { ...confirm, invalidates: [result.key] })).toBe(false)
+  })
+
   test('keeps queued non-immediates unless invalidated', () => {
     expect(survivesPreemption(lowPriority, toast)).toBe(true)
     expect(survivesPreemption(lowPriority, { ...toast, invalidates: ['tip'] })).toBe(false)

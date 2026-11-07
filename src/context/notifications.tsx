@@ -21,6 +21,13 @@ type BaseNotification = {
    */
   heldDuringDiffPanel?: boolean;
   /**
+   * An immediate notification that a later immediate preempts. It is requeued
+   * behind the newcomer and shows again once that one times out, instead of
+   * being dropped. Set it when the message must reach the user even if other
+   * immediate notices arrive in the same window.
+   */
+  requeueOnPreempt?: boolean;
+  /**
    * Keys of notifications that this notification invalidates.
    * If a notification is invalidated, it will be removed from the queue
    * and, if currently displayed, cleared immediately.
@@ -288,7 +295,7 @@ export function isNotificationVisible(
  * waiting out the diff panel's hold.
  */
 export function survivesPreemption(queued: Notification, incoming: Notification): boolean {
-  return (queued.priority !== 'immediate' || queued.heldDuringDiffPanel === true) && !incoming.invalidates?.includes(queued.key);
+  return (queued.priority !== 'immediate' || queued.requeueOnPreempt === true || queued.heldDuringDiffPanel === true) && !incoming.invalidates?.includes(queued.key);
 }
 export function getNext(queue: Notification[]): Notification | undefined {
   if (queue.length === 0) return undefined;

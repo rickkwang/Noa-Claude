@@ -3438,7 +3438,8 @@ export function REPL({
               addNotification({
                 key: `immediate-${matchingCommand.name}`,
                 text: result,
-                priority: 'immediate'
+                priority: 'immediate',
+                requeueOnPreempt: true
               });
               // The notification above is the only user feedback needed.
               // SystemLocalCommandMessage is wrapped as a user message by
