@@ -8,7 +8,7 @@ import {
 
 const root = process.cwd()
 const readme = readFileSync(resolve(root, 'README.md'), 'utf8')
-const matrix = readFileSync(resolve(root, 'FEATURE_AVAILABILITY_MATRIX.md'), 'utf8')
+const matrix = readFileSync(resolve(root, 'FEATURES.md'), 'utf8')
 const operatingGuide = readFileSync(resolve(root, 'docs', 'operating-guide.md'), 'utf8')
 const productGovernance = readFileSync(resolve(root, 'docs', 'product-governance.md'), 'utf8')
 const initPrompt = readFileSync(resolve(root, 'src', 'commands', 'init.ts'), 'utf8')

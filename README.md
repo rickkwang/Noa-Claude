@@ -67,6 +67,8 @@ The app is signed with a self-signed certificate, not an Apple Developer ID, and
 
 Updates: the app checks GitHub Releases shortly after launch and every 15 minutes. A newer `gui-v*` release downloads in the background, with its progress next to **Settings** at the bottom of the sidebar; the download's SHA-512 is checked against the release metadata, and a verified download is kept across restarts. **Update** then asks to confirm, quits (stopping running tasks), replaces the app and reopens it. Nothing installs until you confirm. If the install fails, the old app is kept and the release page opens. **Noa Agent → Check for Updates…** runs the check on demand. Set `DISABLE_UPDATES=1` to turn checks off.
 
+Development notes for the desktop app are in [docs/desktop-gui.md](docs/desktop-gui.md).
+
 The app bundles its own copy of the CLI runtime, so the app and `noa update` update separately. Each version is published as both `vX.Y.Z` (CLI) and `gui-vX.Y.Z` (desktop) with the same number, so the two stay in step when both are updated.
 
 Uninstall: quit the app and drag it from Applications to the Trash. To also remove its window state and browser profile, delete `~/Library/Application Support/Noa Agent`. Your CLI configuration and credentials in `~/.noa` are shared with the `noa` CLI and are not removed.
@@ -237,62 +239,17 @@ All builds require [Bun](https://bun.sh).
 - `DISABLE_UPDATES=1` — Disable automatic update checks
 - `NOA_CLAUDE_STREAMING_TOOL_EXECUTION=0` — Wait for the full model response before running tools (by default tools start while the response is still streaming)
 - `NOA_CLAUDE_MAX_CONCURRENT_AGENTS=N` — Cap concurrent foreground and background ordinary local subagents together (default 20; `0` disables the cap; `CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS` is also read). A parent waiting for a child retains its slot; a full budget rejects new spawns or resumes. Moving a running agent to the background keeps its slot.
-- `NOA_CLAUDE_SIMPLE_SYSTEM_PROMPT=1|0` — Force the compact (`1`) or long (`0`) system prompt instead of letting the model decide. See [System prompt length](#system-prompt-length)
+- `NOA_CLAUDE_SIMPLE_SYSTEM_PROMPT=1|0` — Force the compact (`1`) or long (`0`) system prompt instead of letting the model decide. See [System prompt length](docs/system-prompt.md)
 - `NOA_CLAUDE_BASH_FIRST=1|0` — Enable or disable the Auto/Bypass bash-first tool reminder (default `1`). It applies only when Bash and Edit or Write are available
 - `NOA_CLAUDE_BASH_FIRST_VARIANT=strict|relaxed` — Override the bash-first wording. By default compact-prompt models get `relaxed` (dedicated tools remain preferred for fragile edits); other models get `strict`
 - `NOA_CLAUDE_NEW_INIT=1` — Opt `/init` in to the interview-style setup flow (existing-file branch, proposal review, optional skills/hooks) instead of the single-shot prompt
-- `NOA_CLAUDE_PROMPT_CACHE_1H=1|0|<patterns>` — Opt in to the 1-hour prompt-cache TTL. Off by default, and it should stay off unless your rhythm is genuinely interrupted. See [1-hour prompt cache](#1-hour-prompt-cache)
+- `NOA_CLAUDE_PROMPT_CACHE_1H=1|0|<patterns>` — Opt in to the 1-hour prompt-cache TTL. Off by default, and it should stay off unless your rhythm is genuinely interrupted. See [1-hour prompt cache](docs/prompt-cache.md)
 - `DISABLE_FEEDBACK_COMMAND=1` or `DISABLE_BUG_COMMAND=1` — Turn off `/feedback`
 - `--restricted` / `NOA_CLAUDE_RESTRICTED=1` — Restricted mode. Removes Bash, PowerShell, REPL and WebFetch unless `--tools` names them, ignores user/project/local settings files (managed settings and `--settings` still apply; add `--strict-mcp-config` to skip MCP too), keeps writes inside the working directories (`--add-dir` included), and refuses bypassPermissions. Read confinement and the approval gate for settings/git/tool-config writes are not yet enforced beyond the existing permission checks
 - `--safe-mode` / `NOA_CLAUDE_SAFE_MODE=1` — Start with customizations disabled (CLAUDE.md, skills, plugins, hooks, MCP, custom commands and agents, output styles, keybindings, custom themes) for troubleshooting. Policy-managed settings still apply, and auth, model selection, built-in tools and permissions work normally. Unlike `--bare`, keychain and OAuth reads are not disabled
 - `NOA_CLAUDE_DISABLE_BACKGROUND_DEADLINE=1` — In `--print`/SDK sessions, let background Bash commands run without a time limit. By default a background command is stopped after 30 minutes, or after its `timeout` when started with `run_in_background` (at most 2 hours), and the model is notified; interactive sessions never apply a limit
 
 Legacy `CLAUDE_CODE_*` names are still accepted for compatibility; `NOA_CLAUDE_*` is preferred.
-
-## 1-hour prompt cache
-
-Prompt-cache entries live 5 minutes by default. The API also offers a 1-hour TTL, which writes at **2x** input instead of **1.25x** — you pay more per write in exchange for surviving longer gaps between turns.
-
-Upstream gates this on a GrowthBook allowlist. GrowthBook is hard-disabled here and both of its override paths are additionally internal-only, so off Bedrock the 1-hour TTL could never fire. `NOA_CLAUDE_PROMPT_CACHE_1H` makes the lever reachable without reintroducing a remote-config dependency:
-
-```bash
-export NOA_CLAUDE_PROMPT_CACHE_1H=1                        # main thread + SDK
-export NOA_CLAUDE_PROMPT_CACHE_1H='repl_main_thread*,agent:*'   # explicit query sources
-export NOA_CLAUDE_PROMPT_CACHE_1H=0                        # hard off, outranks ENABLE_PROMPT_CACHING_1H_BEDROCK
-```
-
-A bare `1` covers `repl_main_thread*` and `sdk` only. Subagents and forked side-queries run back-to-back inside a single turn, so a 1-hour write there is pure surcharge on a read that would have hit the 5-minute entry anyway; add `agent:*` explicitly if you want it.
-
-**When it pays.** Because every write gets 1.6x more expensive, the switch only wins when more than **~37.5% of your cache-write volume** follows a gap longer than five minutes — that is the break-even, not a rule of thumb. Note the unit is write *volume*, not request count: the requests that follow a long gap rewrite far more than the ones inside a tool loop, so counting requests understates it. Measured over this repository's own session transcripts that share was 2.6%, i.e. enabling it would have cost about 1.56x the write spend. It pays for a genuinely interrupted rhythm — ask, leave for half an hour, come back to the same session — not for continuous work.
-
-`/doctor` reports which branch fired (`enabled_env`, `disabled_env`, `allowlist_miss`, …). `DISABLE_PROMPT_CACHING=1` still wins over all of it.
-
-## System prompt length
-
-Newer Claude models (Opus 5/5.5, Fable 5/5.1, Mythos 5/5.1, and later) are trained on most of what a long system prompt spells out, so they get a compact prompt head and short tool descriptions. The replaced static head is roughly 90% shorter; total request savings vary with session-specific guidance and the active tool set. Older models (Sonnet, Haiku, Opus 4.7 and earlier, Claude 3.x) keep the long version, which they still need. The choice is automatic; nothing to configure.
-
-**One case needs opting in.** The model id alone decides this, so it only works when that id is trustworthy. On customer-run Bedrock, Vertex or Foundry — and on Anthropic-compatible third-party endpoints — a configured id can be an inference profile, a custom ARN, a cross-region alias, or a proxy serving something else entirely, so those deployments keep the long prompt by default even when the id looks like a current Claude model.
-
-If you know your deployment genuinely serves one, opt in by declaring the capability alongside the pin:
-
-```bash
-export ANTHROPIC_DEFAULT_OPUS_MODEL='us.anthropic.claude-opus-5-5'
-export ANTHROPIC_DEFAULT_OPUS_MODEL_SUPPORTED_CAPABILITIES='lean_prompt'
-```
-
-`ANTHROPIC_DEFAULT_FABLE_MODEL`, `_OPUS_MODEL`, `_SONNET_MODEL`, `_HAIKU_MODEL`, and `ANTHROPIC_CUSTOM_MODEL_OPTION` each have the same capability pair. The `[1m]` context-window suffix is ignored when matching, so pinning either form covers both.
-
-A second capability, `opus_5_prompt_bundle`, selects the companion sections that travel with the compact head (delivering-work, corrections, the shorter action-caution wording, one Bash bullet). It is deliberately not implied by `lean_prompt`: upstream declares it for Opus 5 only, so Opus 5.5, Fable 5/5.1, Opus 4.8 and Mythos 5/5.1 take the compact head *without* those sections. Declare it only if your pin genuinely serves Opus 5:
-
-```bash
-export ANTHROPIC_DEFAULT_OPUS_MODEL_SUPPORTED_CAPABILITIES='lean_prompt,opus_5_prompt_bundle'
-```
-
-First-party models need no configuration either way. For a pinned third-party model, the declaration is authoritative — a pin that lists `lean_prompt` alone gets the compact head without the bundle, even if the id looks like Opus 5, on the same reasoning that makes the pin necessary in the first place. The same rule covers EAP-looking ids and the Fable/Mythos companion section: third-party routes do not inherit those behaviors from the model name alone.
-
-Advanced deployments that deliberately preserve Claude Code's model-name trust semantics can set `NOA_CLAUDE_THIRD_PARTY_PROMPT_POLICY=upstream`. In that mode EAP suffixes and built-in Opus/Fable/Mythos capability facts apply on third-party routes exactly as they do upstream. The default remains conservative.
-
-To force the choice either way — for example to check whether a regression is prompt-related — set `NOA_CLAUDE_SIMPLE_SYSTEM_PROMPT=1` (compact) or `=0` (long).
 
 ## Privacy
 
@@ -358,25 +315,3 @@ This repository is a reconstruction based on publicly exposed source code. The o
 - Not an official Anthropic release or supported product
 - Independently maintained — this project does not actively track or sync upstream Claude Code source changes
 - Anthropic, Claude, and Claude Code are trademarks of their respective owners
-
-### Desktop GUI (development)
-
-Run `bun run --cwd gui desktop` to build and open the local Electron GUI. This is an implemented, non-baseline development surface, separate from the CLI workflow. Its right panel supports a searchable file tree (beside the open file once the pane is wide enough; `bun run --cwd gui test:files-split`), text/image previews, guarded text editing, working-tree/staged/unstaged review with unified or split diffs, per-file and staged/unstaged-hunk stage/unstage/revert, Noa context breakdowns, and tool activity. Git and file actions are local; they do not commit, push, or publish.
-
-Settings support search with control navigation, appearance reset, send-shortcut and context-display preferences, and current-chat model, effort, and permission controls. Configuration sources, permission rules, Hooks, skills, and plugin states come from Noa CLI; Hooks and plugin configuration are read-only. Rules and long descriptions use collapsed, bounded details; Hook visibility and restriction metadata come from the CLI hooks UI logic. MCP status, enable/disable, and reconnect use CLI control requests. Run `bun run --cwd gui scripts/e2e-settings.ts` for isolated Electron checks against the real CLI.
-
-Text/image file previews are limited to 512 KiB and code rendering to 3,000 lines. Local audio/video uses workspace-scoped byte-range streaming. This GUI does not claim complete Codex desktop feature parity. Run `node scripts/e2e-gui-workspace.mjs` for isolated workspace API verification.
-
-Conversation rendering includes local math and Mermaid diagrams, code previews and wrapping, rich table/response copying, workspace citations and review comments, selection quoting, and primitive MCP forms. The bridge preserves structured tool results, Hook and subagent activity, and interrupted history. Earlier messages load in turn pages; unresolved background calls stay with their results. Verify native rendering with `bun run --cwd gui scripts/e2e-conversation.ts` and `bun run --cwd gui test:rendering`. The latter uses HTTP and the production CSP, including native modal/download/navigation checks.
-
-The new-task “Work in” menu shows “This computer” as selected. Cloud execution is unavailable in Noa Claude; the Cloud option is disabled with an explanation.
-
-Subagent creation is grouped into a collapsed summary with named activity rows. The Subagents panel separates Active and Done tasks, opens the selected agent, and keeps its stop action and transcript. Verify with `bun run --cwd gui scripts/e2e-subagents.ts`. The Overview's Tasks card lists subagents and background processes together and opens a subagent's transcript in the Subagents tab; Diagnostics is an Overview card hidden until `/status` or the disconnected banner asks for it. Subagent lifecycle rows follow SDK event order and survive history replay. Returned thinking text has a disclosure, multi-question input supports previous/next navigation, and file-write previews detect syntax from the extension.
-
-The desktop right panel includes a Browser tab and Suggested website cards discovered from terminal output and completed assistant replies. The address bar opens any HTTP/HTTPS address (bare hosts use https://, this machine and the private network http://); local links in the conversation and terminal open in the panel; Cmd/Ctrl-click keeps the external-browser path. Browser tabs survive panel hiding and project switches, and closing a browser tab does not stop the terminal server. Preview pages use an isolated Electron session per project, persisted so the HTTP cache and sign-ins survive restarts, without the app authentication cookie or preload. Downloads and browser permissions are blocked, and a public page cannot navigate, redirect, frame or send requests to this machine or the private network; only an address the user enters can. Verify with `bun run --cwd gui test:browser`.
-
-The desktop new-task page shows usage stats under its title, computed by the same aggregation as the CLI's `/stats` across every project: an all-time message count and current streak line that expands into an activity heatmap with sessions, tokens, longest streak and favorite model for All time, 30 days or 7 days. The expanded state and range are remembered per device. Verify with `bun run --cwd gui test:stats`.
-
-The built desktop GUI uses `http://127.0.0.1:18787` so browser settings and drafts remain available across launches. A second launch focuses the existing window; the desktop bridge requires port 18787 to be free.
-
-Editing a queued message pauses the queue; saving or cancelling leaves it paused until you continue. Closing the desktop app asks for confirmation when tasks are running or messages are queued. Queued messages are discarded on exit, not restored on relaunch. An explicit `?cwd=` workspace takes precedence over the last saved task.

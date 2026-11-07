@@ -97,7 +97,7 @@ Policy:
 
 - keep out of baseline docs
 - keep them out of runtime command registration until implementation exists
-- track implementation status in `FEATURE_AVAILABILITY_MATRIX.md`
+- track implementation status in `FEATURES.md`
 
 Tracked surfaces:
 
@@ -119,7 +119,7 @@ The current gap inventory is split into three buckets:
 
 The authoritative table lives in this document.
 
-Startup modes are not slash commands and are tracked under "Runtime Modes Outside Slash Commands" in `FEATURE_AVAILABILITY_MATRIX.md`. Open gaps for `--restricted`:
+Startup modes are not slash commands and are tracked under "Runtime Modes Outside Slash Commands" in `FEATURES.md`. Open gaps for `--restricted`:
 
 - read confinement to the working directories is not enforced (writes are; `pathInAllowedWorkingPath` in `src/utils/permissions/filesystem.ts` is the hook point for reads in `checkReadPermissionForTool`)
 - the approval gate for settings, git and tool-configuration writes relies on the existing `ask` safety checks (`checkPathSafetyForAutoEdit`), not a dedicated restricted-mode approval path
@@ -154,7 +154,7 @@ Before moving any command to baseline:
 
 1. Implement runtime semantics end-to-end.
 2. Add smoke checks for discoverability and execution boundaries.
-3. Update `README.md`, `FEATURE_AVAILABILITY_MATRIX.md`, and this document in the same change.
+3. Update `README.md`, `FEATURES.md`, and this document in the same change.
 4. Ensure `bun run check:docs` and `bun run smoke:features` pass.
 
 ## Release Checklist
