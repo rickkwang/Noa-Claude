@@ -1,6 +1,5 @@
 import { describe, expect, test } from 'bun:test'
 import { getDefaultAppState, type AppState } from '../../state/AppStateStore.js'
-import { GoalTool, type GoalToolOutput } from '../../tools/GoalTool/GoalTool.js'
 import type { ThreadGoal } from '../../types/goal.js'
 import type { Message } from '../../types/message.js'
 import {
@@ -93,7 +92,19 @@ function goalToolResultMessage(
   })
 }
 
-type SerializedGoal = NonNullable<GoalToolOutput['goal']>
+type SerializedGoal = {
+  objective: string
+  status: string
+  token_budget: number | null
+  verify_command: string | null
+  tokens_used: number
+  time_used_seconds: number
+  auto_continue_turns: number
+  max_auto_continue_turns: number
+  last_evaluator_reason: string | null
+  completed_at: number | null
+  stop_reason: string | null
+}
 
 function serializedGoal(
   overrides: Partial<SerializedGoal> = {},
@@ -112,20 +123,6 @@ function serializedGoal(
     stop_reason: null,
     ...overrides,
   }
-}
-
-async function requestGoalCompletion(goal: ThreadGoal) {
-  let state: AppState = { ...getDefaultAppState(), goal }
-  const result = await GoalTool.call(
-    { operation: 'update_goal', status: 'complete' },
-    {
-      getAppState: () => state,
-      setAppState: (updater: (prev: AppState) => AppState) => {
-        state = updater(state)
-      },
-    } as never,
-  )
-  return { result, state }
 }
 
 describe('goal session restore', () => {
@@ -533,37 +530,7 @@ Continue working toward the active thread goal.`,
   })
 })
 
-describe('goal tool result mapping', () => {
-  test('keeps a goal active until independent evaluation confirms completion', async () => {
-    const { result, state } = await requestGoalCompletion(
-      createThreadGoal({
-        objective: 'Finish work',
-        tokenBudget: null,
-        now: 1,
-      }),
-    )
-
-    expect(result.data.success).toBe(false)
-    expect(state.goal?.status).toBe('active')
-  })
-
-  test('keeps a verified goal active when the model requests completion', async () => {
-    const { result, state } = await requestGoalCompletion(
-      createThreadGoal({
-        objective: 'Finish verification',
-        tokenBudget: null,
-        verifyCommand: 'bun test',
-        now: 1,
-      }),
-    )
-
-    // success:false — the goal is untouched. Reporting success made the model
-    // announce completion before the verify command had run.
-    expect(result.data.success).toBe(false)
-    expect(result.data.message).toContain('NOT marked complete')
-    expect(state.goal?.status).toBe('active')
-  })
-
+describe('goal tool transcript replay', () => {
   test('restore keeps a verified goal active after update_goal requests completion', () => {
     const state = restore([
       goalCommandMessage('Finish verification --verify "bun test"'),
@@ -576,40 +543,9 @@ describe('goal tool result mapping', () => {
     expect(state.goal?.status).toBe('active')
     expect(state.goal?.verifyCommand).toBe('bun test')
   })
-
-  test('includes structured usage and remaining budget in model-visible result', () => {
-    const block = GoalTool.mapToolResultToToolResultBlockParam(
-      {
-        success: true,
-        goal: serializedGoal({
-          token_budget: 500,
-          verify_command: 'bun test',
-          tokens_used: 125,
-          time_used_seconds: 10,
-          auto_continue_turns: 1,
-        }),
-        remaining_tokens: 375,
-        message: 'Current goal: Finish verification (status: active)',
-      },
-      'toolu_goal',
-    )
-
-    expect(block.type).toBe('tool_result')
-    expect(JSON.parse(block.content as string)).toMatchObject({
-      goal: {
-        objective: 'Finish verification',
-        token_budget: 500,
-        verify_command: 'bun test',
-        tokens_used: 125,
-      },
-      remaining_tokens: 375,
-    })
-  })
 })
 
-// A compact boundary sets parentUuid to null, so buildConversationChain stops
-// there and resume never sees the pre-boundary /goal command. The persisted
-// goal-state metadata entry is not part of that chain, so it survives.
+
 describe('goal restore across a compact boundary', () => {
   test('restores the goal when the transcript no longer contains it', () => {
     const persisted: ThreadGoal = {

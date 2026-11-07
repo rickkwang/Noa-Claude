@@ -156,7 +156,7 @@ Runtime behavior:
 
 For tasks with clear acceptance conditions, use `/goal <objective> --verify "python3 independent_check.py"`. Keep that check independent of model-generated tests. A public test passing covers its assertions, not every requirement; completion reports should identify checks run and requirements still unverified. The small opt-in real-model checks in `scripts/evals/coding/README.md` grade finished artifacts separately from the agent's report.
 
-The model can inspect, create, and request completion through the goal tool. Pause, resume, clear, and replace remain user-controlled slash commands.
+The model cannot create, pause, resume, clear, or complete a goal. `/goal` sets and controls it, and the independent evaluator decides completion.
 
 ### Background replies and recovery
 

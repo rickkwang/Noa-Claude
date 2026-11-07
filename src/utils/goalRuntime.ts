@@ -209,7 +209,7 @@ export function buildGoalContinuationMessage(goal: ThreadGoal): string {
   return `${GOAL_CONTINUATION_MARKER}
 ${reasonLine}
 
-Continue working toward the active thread goal. Choose the next concrete action that moves the objective closer to completion, avoid repeating completed work, and call the goal tool with operation "update_goal" and status "complete" only when the objective is actually complete.`
+Continue working toward the active thread goal. Choose the next concrete action that moves the objective closer to completion, avoid repeating completed work. Report completion only when the objective is actually complete; the independent evaluator decides it.`
 }
 
 // maxAutoContinueTurns caps auto-continues WITHIN one user turn, mirroring the

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { getDefaultAppState, type AppState } from '../../state/AppStateStore.js'
-import { call as goalCommand } from '../../commands/goal/goal.js'
+import { runGoalCommand as goalCommand } from '../../commands/goal/goal.js'
 import { createThreadGoal } from '../../utils/goalState.js'
 import type { LocalJSXCommandOnDone } from '../../types/command.js'
 

@@ -308,7 +308,7 @@ const server = createServer(async (req, res) => {
       else content=[{type:'text',text:'AUDIT_OK'}];
     } else if(active.case==='goal-child-usage'){
       const agentName=body.tools.find(t=>t.name==='Task'||t.name==='Agent')?.name||'Task';
-      const steps=[{name:'goal',input:{operation:'create_goal',objective:'Run the explicitly requested isolated child usage test and finish.',token_budget:100000}},{name:agentName,input:{prompt:'CHILD_USAGE_FIXTURE',description:'Read fixture',subagent_type:'general-purpose',run_in_background:false}},{name:'goal',input:{operation:'get_goal'}},{name:'goal',input:{operation:'update_goal',status:'complete'}}];
+      const steps=[{name:agentName,input:{prompt:'CHILD_USAGE_FIXTURE',description:'Read fixture',subagent_type:'general-purpose',run_in_background:false}}];
       const step=steps[n-1];content=step?[{type:'tool_use',id:'goal_'+n,...step}]:[{type:'text',text:'AUDIT_OK'}];stop=step?'tool_use':'end_turn';
     } else if(active.case==='small-window-overflow' && n<=2) {
       content=[{type:'tool_use',id:'small_output_'+n,name:'Bash',input:{command:n===1?'echo prior-round':"head -c 24000 /dev/zero | tr '\\0' x",description:'Generate bounded fixture output'}}];stop='tool_use';
@@ -490,7 +490,7 @@ async function run(executable, scenario, extra = [], input = 'Run the local loop
   // --bare drops run_in_background, so the deadline scenario needs the full startup path too.
   // --bare also keeps only the simple tools, so openai-tools runs it to keep WebFetch and ToolSearch.
   const command = [...(scenario.startsWith('hook-') || scenario.startsWith('mode-') || scenario === 'auto-plan-race' || scenario === 'auto-stage2-error' || scenario.startsWith('concurrency-') ||scenario.startsWith('tool-input-') || scenario === 'background-deadline' || scenario === 'openai-tools' || scenario.startsWith('openai-responses') || harness ? [] : ['--bare']), '--print', '--verbose', '--output-format', 'stream-json', '--model', modelFor(scenario), '--strict-mcp-config', '--setting-sources', '', '--permission-mode', 'dontAsk', '--tools', harness ? (scenario==='agent-custom-fork'?'Read,Bash,Task,SendMessage':scenario.startsWith('agent-effort')?'Task':scenario==='goal-child-usage'?'Read,Task,goal':scenario==='agent-nested'||scenario.startsWith('agent-owned-')||scenario.startsWith('agent-schema')?'Task':scenario==='agent-cascade-stop'||scenario==='agent-stop-pending'?'Task,Bash,TaskStop':scenario==='agent-budget'?'Task,Bash':scenario==='agent-budget-resume'?'Task,Bash,SendMessage':'TaskCreate,TaskUpdate,TaskGet,TaskList') : scenario.startsWith('tool-input-') ? 'Read,Bash,Write' : scenario === 'openai-tools' ? 'Read,Bash,WebFetch,ToolSearch' : scenario.startsWith('openai-responses') ? 'Read,Bash,TaskUpdate' : scenario.startsWith('mode-') ? 'Read,Bash,Edit,Write,Glob,Grep' : scenario === 'auto-plan-race' ? 'Read,Bash,Write' : 'Read,Bash', '--max-turns', harness ? '8' : scenario === 'compact-resume' ? '6' : scenario === 'read-repeat' ? '3' : scenario === 'stale-signature' ? '3' : scenario === 'preserved-thinking' ? '5' : scenario === 'background-deadline' || scenario === 'small-window-overflow' ? '4' : scenario === 'auto-stage2-error' ? '6' : '2'];
-  if (!scenario.startsWith('tool-input-') && scenario !== 'compact-resume' && scenario !== 'tombstone-resume' && scenario !== 'stale-signature' && scenario!=='agent-custom-fork' && scenario!=='agent-budget-resume') command.push('--no-session-persistence');
+  if (!scenario.startsWith('tool-input-') && scenario !== 'compact-resume' && scenario !== 'tombstone-resume' && scenario !== 'stale-signature' && scenario!=='agent-custom-fork' && scenario!=='agent-budget-resume' && scenario!=='goal-child-usage') command.push('--no-session-persistence');
   if (scenario.startsWith('tool-input-')) command.push('--allowedTools', 'Write');
   if (scenario === 'fallback') command.push('--fallback-model', 'claude-haiku-4-5');
   // An allow rule that the narrower deny rule must still beat.
@@ -610,8 +610,15 @@ try {
           assert.equal(runResult.result.result, 'AUDIT_OK');
           assert.ok(active.summaries > 0, 'compaction never executed');
           assert.equal(active.oversized, 1, 'only the pre-compaction request may overflow; an oversized tail reached the endpoint after compaction');
+        } else if (scenario === 'goal-child-usage') {
+          // /goal is a text command, so the goal is set in its own session and the
+          // model turn resumes that session.
+          const seed = await run(executable, scenario, [], '/goal Run the explicitly requested isolated child usage test and finish. --budget 100000');
+          assert.equal(seed.code, 0);
+          active.goalSessionId = seed.result.session_id;
+          runResult = await run(executable, scenario, ['--resume', seed.result.session_id], 'Run the child agent and report its usage.');
         } else {
-          runResult = await run(executable, scenario, [], scenario==='blocking-limit'?'x'.repeat(5_000_000):scenario==='goal-child-usage'?'Create a temporary goal, run a child agent, report its usage and finish.':scenario.endsWith('-overflow')||scenario==='gateway-model-name'?`PROJECT_CONSTRAINT: ${sentinel}. Run the local loop fixture.`:'Run the local loop fixture.');
+          runResult = await run(executable, scenario, [], scenario==='blocking-limit'?'x'.repeat(5_000_000):scenario.endsWith('-overflow')||scenario==='gateway-model-name'?`PROJECT_CONSTRAINT: ${sentinel}. Run the local loop fixture.`:'Run the local loop fixture.');
           const count = active.requests.length;
           // Without --bare the CLI also makes side requests; the loop's own carry the tool list.
           const main = active.requests.filter(r => r.body.tools?.length);
@@ -690,8 +697,10 @@ try {
           if(scenario==='task-metadata-race'){active.finalState=task(1);assert.deepEqual(active.finalState.metadata,{alpha:1,beta:2});}
           if(scenario==='task-dependency-race'){active.finalState=[task(1),task(2),task(3)];assert.deepEqual(active.finalState[0].blocks.sort(),['2','3']);assert.deepEqual(active.finalState[1].blockedBy,['1']);assert.deepEqual(active.finalState[2].blockedBy,['1']);}
           if(scenario==='goal-child-usage'){
-            const goals=active.requests.flatMap(r=>r.body.messages||[]).flatMap(m=>Array.isArray(m.content)?m.content:[]).filter(b=>b.type==='tool_result'&&b.tool_use_id==='goal_3').map(b=>{try{return JSON.parse(b.content).goal}catch{return null}}).filter(Boolean);
-            assert.ok(active.childRequests>=2,'child did not call a real tool');assert.ok(goals.some(g=>g.tokens_used===2*(1+1+5000+4000)+2),'child/cache tokens missing from parent goal');
+            const observed = await run(executable, scenario, ['--resume', active.goalSessionId], '/goal');
+            assert.equal(observed.code, 0);
+            assert.ok(observed.result.result.includes('Tokens: 10.0K / 100.0K'), `parent goal missing child usage: ${observed.result.result}`);
+            assert.ok(active.childRequests>=2,'child did not call a real tool');
           }
           } else if (scenario.endsWith('-overflow')) {
             assert.equal(runResult.code, 0, `overflow surfaced as: ${runResult.result.result}`); assert.equal(runResult.result.result, 'AUDIT_OK');

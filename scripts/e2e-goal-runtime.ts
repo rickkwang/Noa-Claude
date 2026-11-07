@@ -29,7 +29,6 @@ const { getAssistantMessageFromError } = await import('../src/services/api/error
 const { createAssistantMessage, createAssistantAPIErrorMessage, createUserMessage } = await import('../src/utils/messages.js')
 const { getEmptyToolPermissionContext } = await import('../src/Tool.js')
 const { FileStateCache } = await import('../src/utils/fileStateCache.js')
-const { GoalTool } = await import('../src/tools/GoalTool/GoalTool.js')
 const { asSystemPrompt } = await import('../src/utils/systemPromptType.js')
 enableConfigs()
 const recoveryCases = ['truncated-budget', 'truncated-unlimited', 'truncated-no-goal', 'truncated-child-paused', 'max-output-budget', 'refusal-budget']
@@ -42,7 +41,7 @@ writeFileSync(readFixture, 'READ_PROGRESS_FIXTURE')
 const evaluatorContextCases = ['evaluator-half-window', 'evaluator-overflow-retry', 'evaluator-cjk']
 const { getContextWindowForModel } = await import('../src/utils/context.js')
 const { getSmallFastModel } = await import('../src/utils/model/model.js')
-const scenarios = ['quoted-verdict', ...evaluatorContextCases, ...toolProgressCases, ...abortCases, ...compactCases, 'resume-accounting', ...recoveryCases, 'background', 'background-budget', 'background-large-description', 'unrelated-background', 'background-service', 'background-starts-during-evaluation', 'stale', 'fatal', 'mapped-auth', 'provider-quota', 'transient', 'impossible', 'impossible-verify', 'no-progress', 'no-progress-user-reset', 'completion', 'live-created-goal', 'verify', 'child-paused', 'stale-wake', 'restore-cache', 'restore-created-goal', 'fenced-verdict', 'evaluator-garbage', 'evaluator-garbage-print', 'stop-hook-prevented'].filter(name => !process.argv.includes('--case') || name === process.argv[process.argv.indexOf('--case') + 1])
+const scenarios = ['quoted-verdict', ...evaluatorContextCases, ...toolProgressCases, ...abortCases, ...compactCases, 'resume-accounting', ...recoveryCases, 'background', 'background-budget', 'background-large-description', 'unrelated-background', 'background-service', 'background-starts-during-evaluation', 'stale', 'fatal', 'mapped-auth', 'provider-quota', 'transient', 'impossible', 'impossible-verify', 'no-progress', 'no-progress-user-reset', 'completion', 'verify', 'child-paused', 'stale-wake', 'restore-cache', 'restore-created-goal', 'fenced-verdict', 'evaluator-garbage', 'evaluator-garbage-print', 'stop-hook-prevented'].filter(name => !process.argv.includes('--case') || name === process.argv[process.argv.indexOf('--case') + 1])
 assert.ok(scenarios.length, 'unknown case')
 const results: unknown[] = []
 const originalFetch = globalThis.fetch
@@ -53,7 +52,7 @@ try {
     if (['background','background-budget','unrelated-background','background-service'].includes(scenario)) state.tasks.bg = { id: 'bg', type: 'local_bash', status: 'running', isBackgrounded: true, description: ['background','background-budget'].includes(scenario)?'pending shell':'long-running dev server', startTime: goal.createdAt + (scenario==='unrelated-background'?-60000:0) }
     if (scenario==='background-budget') state.goal={...goal,tokensUsed:13,tokenBudget:20,nextCheckInAt:Date.now()-1}
     if (scenario==='background-large-description') state.tasks.bg={id:'bg',type:'local_bash',status:'running',isBackgrounded:true,description:'LONG_BG_MARKER_'+ 'X'.repeat(20000),startTime:goal.createdAt}
-    if (['live-created-goal','truncated-no-goal'].includes(scenario)) state.goal=undefined
+    if (['truncated-no-goal'].includes(scenario)) state.goal=undefined
     if (compactCases.includes(scenario)) state.goal={...goal,status:'paused',stopReason:'rate_limit'}
     if (scenario==='resume-accounting') state.goal={...goal,status:'paused',stopReason:'rate_limit'}
     if (['truncated-budget','max-output-budget','refusal-budget'].includes(scenario)) state.goal={...goal,tokenBudget:100}
@@ -61,11 +60,11 @@ try {
     if (scenario==='tool-progress-mixed') state.goal={...goal,noProgressTurns:2}
     if (scenario==='no-progress-user-reset') state.goal={...goal,noProgressTurns:2}
     const context: ToolUseContext = {
-      options: { commands: [], debug: false, mainLoopModel: 'claude-sonnet-4-5', tools: toolProgressCases.includes(scenario) ? [FileReadTool] : ['completion','live-created-goal'].includes(scenario) ? [GoalTool] : [], verbose: false, thinkingConfig: { type: 'disabled' }, mcpClients: [], mcpResources: {}, isNonInteractiveSession: !['transient', 'evaluator-garbage'].includes(scenario), agentDefinitions: state.agentDefinitions },
+      options: { commands: [], debug: false, mainLoopModel: 'claude-sonnet-4-5', tools: toolProgressCases.includes(scenario) ? [FileReadTool] : [], verbose: false, thinkingConfig: { type: 'disabled' }, mcpClients: [], mcpResources: {}, isNonInteractiveSession: !['transient', 'evaluator-garbage'].includes(scenario), agentDefinitions: state.agentDefinitions },
       abortController: new AbortController(), readFileState: new FileStateCache(100, 100000), getAppState: () => state, setAppState: update => { state = update(state) }, setInProgressToolUseIDs: () => {}, setResponseLength: () => {}, updateFileHistoryState: () => {}, updateAttributionState: () => {}, messages: [],
     } as ToolUseContext
     if(['child-paused','truncated-child-paused','abort-child-usage'].includes(scenario)){context.agentId='fixture-child' as any;context.goalAtStart=goal;context.setAppStateForTasks=context.setAppState;state.goal={...goal,status:'paused'}}
-    let evaluations = 0, calls = 0, compactions = 0, permissionDenials = 0, completionWasPending = false
+    let evaluations = 0, calls = 0, compactions = 0, permissionDenials = 0
     const events: any[] = []
     const evaluatorSizes: number[] = []
     globalThis.fetch = (async (...args:any[]) => {
@@ -144,9 +143,7 @@ try {
               yield error
             } else yield createAssistantMessage({content:'Turn finished.',usage:{input_tokens:4,output_tokens:5,cache_read_input_tokens:6,cache_creation_input_tokens:7} as any})
           }
-          else if (scenario==='live-created-goal' && calls===1) yield createAssistantMessage({content:[{type:'tool_use',id:'create_goal',name:'goal',input:{operation:'create_goal',objective:goal.objective,token_budget:10000}}],usage:{input_tokens:1000,output_tokens:10,cache_read_input_tokens:200,cache_creation_input_tokens:100} as any})
-          else if (scenario === 'completion' && calls === 1) yield createAssistantMessage({ content: [{ type: 'tool_use', id: 'complete_goal', name: 'goal', input: { operation: 'update_goal', status: 'complete' } }] })
-          else { if (scenario === 'completion') completionWasPending = JSON.stringify(params.messages).includes('independent evaluator'); yield createAssistantMessage({ content: 'Turn finished.', ...(scenario==='resume-accounting'?{usage:{input_tokens:1000,output_tokens:10,cache_read_input_tokens:200,cache_creation_input_tokens:100} as any}:scenario==='child-paused'?{usage:{input_tokens:4,output_tokens:5,cache_read_input_tokens:6,cache_creation_input_tokens:7} as any}:{}) }) }
+          else { yield createAssistantMessage({ content: 'Turn finished.', ...(scenario==='resume-accounting'?{usage:{input_tokens:1000,output_tokens:10,cache_read_input_tokens:200,cache_creation_input_tokens:100} as any}:scenario==='child-paused'?{usage:{input_tokens:4,output_tokens:5,cache_read_input_tokens:6,cache_creation_input_tokens:7} as any}:{}) }) }
         },
       }
       for await (const event of query({ messages, systemPrompt: asSystemPrompt([]), userContext: {}, systemContext: {}, canUseTool: async (_tool, input) => {
@@ -253,7 +250,6 @@ try {
     if (scenario === 'fenced-verdict') {assert.equal(evaluations,1);assert.equal(state.goal.status,'complete')}
     if (scenario === 'evaluator-garbage') {assert.equal(evaluations,1);assert.equal(state.goal.status,'active');assert.equal(state.goal.retryCount,1);assert.ok(state.goal.retryAt > Date.now(),'unparseable verdict did not schedule a retry')}
     if (scenario === 'impossible-verify') {assert.equal(state.goal.stopReason,'impossible');assert.equal(evaluations,1);assert.equal(calls,1)}
-    if (scenario === 'live-created-goal') {assert.equal(state.goal.tokensUsed,14);assert.equal(state.goal.status,'complete')}
     if (toolProgressCases.includes(scenario)) {
       if (scenario==='tool-progress-mixed') {assert.equal(state.goal.status,'complete');assert.equal(evaluations,2);assert.equal(state.goal.noProgressTurns,0)}
       else {assert.equal(state.goal.stopReason,'no_progress');assert.equal(evaluations,3);assert.equal(calls,6);assert.ok(events.some(e=>e.type==='user'&&e.message.content.some((b:any)=>b.type==='tool_result'&&b.is_error===true)),'failed tool never ran')}
@@ -261,7 +257,7 @@ try {
     if (scenario==='no-progress-tool-denied') assert.equal(permissionDenials,3,'permission denial path never ran')
     if (scenario === 'no-progress') { assert.equal(state.goal.stopReason, 'no_progress'); assert.equal(evaluations, 3) }
     if (scenario === 'no-progress-user-reset') { assert.equal(state.goal.stopReason, 'no_progress'); assert.equal(evaluations, 3, 'an interrupted chain carried its no-progress count into a new user prompt') }
-    if (scenario === 'completion') { assert.ok(completionWasPending); assert.equal(evaluations, 1); assert.equal(state.goal.status, 'complete') }
+    if (scenario === 'completion') { assert.equal(evaluations, 1); assert.equal(state.goal.status, 'complete') }
     if (scenario === 'child-paused') {assert.equal(state.goal.status,'paused');assert.equal(state.goal.tokensUsed,22);assert.equal(evaluations,0)}
     if (scenario === 'verify') { assert.notEqual(state.goal.status, 'complete'); assert.ok(evaluations > 0) }
     results.push({ scenario, passed: true, calls, evaluations, permissionDenials, goal: state.goal, notices: events.filter(e => e.type === 'system').map(e => e.content) })

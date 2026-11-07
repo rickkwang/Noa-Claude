@@ -1,5 +1,8 @@
 import type { LocalJSXCommandContext } from '../../commands.js'
-import type { LocalJSXCommandOnDone } from '../../types/command.js'
+import type {
+  LocalCommandCall,
+  LocalJSXCommandOnDone,
+} from '../../types/command.js'
 import type { ThreadGoal } from '../../types/goal.js'
 import {
   createThreadGoal,
@@ -100,7 +103,21 @@ function buildGoalSummary(goal: ThreadGoal): string {
   return parts.join('\n')
 }
 
-export async function call(
+// Text-only command: it runs both interactively and in non-interactive mode,
+// so the result is returned as text instead of rendered through onDone.
+export const call: LocalCommandCall = async (args, context) => {
+  let output = ''
+  await runGoalCommand(
+    result => {
+      output = result ?? ''
+    },
+    context,
+    args,
+  )
+  return { type: 'text', value: output }
+}
+
+export async function runGoalCommand(
   onDone: LocalJSXCommandOnDone,
   context: LocalJSXCommandContext,
   args: string,

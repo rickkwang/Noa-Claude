@@ -99,8 +99,8 @@ export function onChangeAppState({
   }
 
   // Thread goal — same choke-point rationale as permission mode above. The
-  // goal is mutated from the /goal command, the goal tool, the evaluator and
-  // token accounting; diffing here persists all of them from one place.
+  // goal is mutated from the /goal command, the evaluator and token
+  // accounting; diffing here persists all of them from one place.
   //
   // This exists because the goal was otherwise reconstructed purely by
   // replaying the transcript, and a compact boundary sets parentUuid to null —

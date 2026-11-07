@@ -16,7 +16,6 @@ const { FileEditTool } = await import('../../../src/tools/FileEditTool/FileEditT
 const { GrepTool } = await import('../../../src/tools/GrepTool/GrepTool.js')
 const { GlobTool } = await import('../../../src/tools/GlobTool/GlobTool.js')
 const { BashTool } = await import('../../../src/tools/BashTool/BashTool.js')
-const { GoalTool } = await import('../../../src/tools/GoalTool/GoalTool.js')
 
 enableConfigs()
 setSessionPersistenceDisabled(true)
@@ -31,7 +30,7 @@ store.setState(state => ({ ...state, goal: createThreadGoal({
   now: Date.now(),
 }) }))
 const engine = new QueryEngine({
-  cwd: cwd!, tools: [FileReadTool, FileWriteTool, FileEditTool, GrepTool, GlobTool, BashTool, GoalTool],
+  cwd: cwd!, tools: [FileReadTool, FileWriteTool, FileEditTool, GrepTool, GlobTool, BashTool],
   commands: [], mcpClients: [], agents: [],
   canUseTool: async (_tool, input) => ({ behavior: 'allow', updatedInput: input }),
   getAppState: store.getState, setAppState: store.setState,
