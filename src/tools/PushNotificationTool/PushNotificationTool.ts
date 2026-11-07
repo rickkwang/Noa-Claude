@@ -1,3 +1,3 @@
 export class PushNotificationTool {
-  static readonly name = 'PushNotificationTool'
+  static readonly name = 'PushNotification'
 }

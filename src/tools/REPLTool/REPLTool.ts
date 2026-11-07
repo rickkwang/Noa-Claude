@@ -1,4 +1,4 @@
 // @ts-nocheck
 export class REPLTool {
-  static readonly name = 'ReplTool'
+  static readonly name = 'REPL'
 }

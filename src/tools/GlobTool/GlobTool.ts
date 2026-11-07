@@ -41,23 +41,60 @@ const inputSchema = lazySchema(() =>
 )
 type InputSchema = ReturnType<typeof inputSchema>
 
+// Upstream wording, kept verbatim: the model reads these strings.
+const TIMED_OUT_NOTE =
+  'The search stopped before it finished, most likely at its time limit, so these results are incomplete: more matches may exist. Search a more specific path or pattern.'
+
 const outputSchema = lazySchema(() =>
   z.object({
     durationMs: z
       .number()
       .describe('Time taken to execute the search in milliseconds'),
-    numFiles: z.number().describe('Total number of files found'),
+    numFiles: z
+      .number()
+      .describe('Number of file paths returned (after any truncation)'),
     filenames: z
       .array(z.string())
       .describe('Array of file paths that match the pattern'),
     truncated: z
       .boolean()
       .describe('Whether results were truncated (limited to 100 files)'),
+    totalMatches: z
+      .number()
+      .optional()
+      .describe(
+        'Total number of matching files before truncation. A lower bound when countIsComplete is false. Absent on results persisted by CLI versions predating this field.',
+      ),
+    countIsComplete: z
+      .boolean()
+      .optional()
+      .describe(
+        'Whether totalMatches is the exact total (true) or a floor because the underlying search truncated its own output (false). Absent on results persisted by CLI versions predating this field.',
+      ),
+    timedOut: z
+      .boolean()
+      .optional()
+      .describe(
+        'True when the time limit stopped the search after these paths were read, so more matches may exist. Absent otherwise.',
+      ),
   }),
 )
+
 type OutputSchema = ReturnType<typeof outputSchema>
 
 export type Output = z.infer<OutputSchema>
+
+function truncationNote(output: Output): string {
+  const shown = output.filenames.length
+  const total = output.totalMatches
+  if (total === undefined) {
+    return '(Results are truncated. Consider using a more specific path or pattern.)'
+  }
+  if (output.countIsComplete) {
+    return `(Showing ${shown} of ${total} matching files; ${total - shown} more are not listed. Narrow the pattern or path to see the rest.)`
+  }
+  return `(Showing the first ${shown} files; there are more than ${total} matches. Narrow the pattern or path to see the rest.)`
+}
 
 export const GlobTool = buildTool({
   name: GLOB_TOOL_NAME,
@@ -166,7 +203,7 @@ export const GlobTool = buildTool({
     const start = Date.now()
     const appState = getAppState()
     const limit = globLimits?.maxResults ?? 100
-    const { files, truncated } = await glob(
+    const { files, truncated, totalMatches, timedOut } = await glob(
       input.pattern,
       GlobTool.getPath(input),
       { limit, offset: 0 },
@@ -180,30 +217,33 @@ export const GlobTool = buildTool({
       durationMs: Date.now() - start,
       numFiles: filenames.length,
       truncated,
+      totalMatches,
+      // A timed-out search has only seen part of the tree, so its total is a floor.
+      countIsComplete: !timedOut,
+      ...(timedOut && { timedOut: true }),
     }
     return {
       data: output,
     }
   },
   mapToolResultToToolResultBlockParam(output, toolUseID) {
+    const prefix = output.timedOut ? `${TIMED_OUT_NOTE}\n\n` : ''
     if (output.filenames.length === 0) {
       return {
         tool_use_id: toolUseID,
         type: 'tool_result',
-        content: 'No files found',
+        content: `${prefix}No files found`,
       }
     }
     return {
       tool_use_id: toolUseID,
       type: 'tool_result',
-      content: [
-        ...output.filenames,
-        ...(output.truncated
-          ? [
-              '(Results are truncated. Consider using a more specific path or pattern.)',
-            ]
-          : []),
-      ].join('\n'),
+      content:
+        prefix +
+        [
+          ...output.filenames,
+          ...(output.truncated ? [truncationNote(output)] : []),
+        ].join('\n'),
     }
   },
 } satisfies ToolDef<InputSchema, Output>)

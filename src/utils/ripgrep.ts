@@ -239,10 +239,16 @@ export async function ripGrepStream(
   })
 }
 
+/**
+ * `onTimeout` fires when rg hits its own time limit. Partial results are still
+ * resolved (or RipgrepTimeoutError is thrown when there are none), so callers
+ * that need to report incompleteness must listen here.
+ */
 export async function ripGrep(
   args: string[],
   target: string,
   abortSignal: AbortSignal,
+  onTimeout?: () => void,
 ): Promise<string[]> {
   // Test ripgrep on first use and cache the result (fire and forget)
   void testRipgrepOnFirstUse().catch(error => {
@@ -332,6 +338,10 @@ export async function ripGrep(
       if (!isTimeout && !isBufferOverflow) {
         reject(error)
         return
+      }
+
+      if (error.signal === 'SIGTERM' || error.signal === 'SIGKILL') {
+        onTimeout?.()
       }
 
       let lines: string[] = []

@@ -8,7 +8,7 @@ import {
 } from './permissions/filesystem.js'
 import { getPlatform } from './platform.js'
 import { getGlobExclusionsForPluginCache } from './plugins/orphanedPluginFilter.js'
-import { ripGrep } from './ripgrep.js'
+import { RipgrepTimeoutError, ripGrep } from './ripgrep.js'
 
 /**
  * Extracts the static base directory from a glob pattern.
@@ -70,7 +70,12 @@ export async function glob(
   { limit, offset }: { limit: number; offset: number },
   abortSignal: AbortSignal,
   toolPermissionContext: ToolPermissionContext,
-): Promise<{ files: string[]; truncated: boolean }> {
+): Promise<{
+  files: string[]
+  truncated: boolean
+  totalMatches: number
+  timedOut: boolean
+}> {
   let searchDir = cwd
   let searchPattern = filePattern
 
@@ -120,7 +125,18 @@ export async function glob(
     args.push('--glob', exclusion)
   }
 
-  const allPaths = await ripGrep(args, searchDir, abortSignal)
+  let timedOut = false
+  let allPaths: string[]
+  try {
+    allPaths = await ripGrep(args, searchDir, abortSignal, () => {
+      timedOut = true
+    })
+  } catch (error) {
+    // rg timed out before producing any path: an empty, incomplete result.
+    if (!(error instanceof RipgrepTimeoutError)) throw error
+    allPaths = []
+    timedOut = true
+  }
 
   // ripgrep returns relative paths, convert to absolute
   const absolutePaths = allPaths.map(p =>
@@ -130,5 +146,10 @@ export async function glob(
   const truncated = absolutePaths.length > offset + limit
   const files = absolutePaths.slice(offset, offset + limit)
 
-  return { files, truncated }
+  return {
+    files,
+    truncated,
+    totalMatches: absolutePaths.length,
+    timedOut,
+  }
 }
