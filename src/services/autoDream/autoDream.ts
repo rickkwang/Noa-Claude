@@ -35,6 +35,7 @@ import { logEvent } from '../analytics/index.js'
 import { getFeatureValue_CACHED_MAY_BE_STALE } from '../analytics/growthbook.js'
 import { isAutoMemoryEnabled, getAutoMemPath } from '../../memdir/paths.js'
 import { isAutoDreamEnabled, getAutoDreamModel } from './config.js'
+import { getInitialSettings } from '../../utils/settings/settings.js'
 import { getProjectDir } from '../../utils/sessionStorage.js'
 import {
   getOriginalCwd,
@@ -246,10 +247,19 @@ const DEFAULTS: AutoDreamConfig = {
   scanIntervalMs: 10 * 60 * 1000,
 }
 
+function positiveNumber(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0
+    ? value
+    : undefined
+}
+
 /**
- * Thresholds from tengu_onyx_plover. The enabled gate lives in config.ts
- * (isAutoDreamEnabled); this returns only the scheduling knobs. Defensive
- * per-field validation since GB cache can return stale wrong-type values.
+ * Thresholds: settings.json (autoDreamMinHours / autoDreamMinSessions) wins,
+ * then tengu_onyx_plover, then DEFAULTS. Settings come first because remote
+ * GrowthBook fetch is disabled in noa, so the GB value is usually absent.
+ * The enabled gate lives in config.ts (isAutoDreamEnabled); this returns only
+ * the scheduling knobs. Defensive per-field validation since GB cache can
+ * return stale wrong-type values.
  */
 function getConfig(): AutoDreamConfig {
   const raw =
@@ -257,19 +267,16 @@ function getConfig(): AutoDreamConfig {
       'tengu_onyx_plover',
       null,
     )
+  const settings = getInitialSettings()
   return {
     minHours:
-      typeof raw?.minHours === 'number' &&
-      Number.isFinite(raw.minHours) &&
-      raw.minHours > 0
-        ? raw.minHours
-        : DEFAULTS.minHours,
+      positiveNumber(settings.autoDreamMinHours) ??
+      positiveNumber(raw?.minHours) ??
+      DEFAULTS.minHours,
     minSessions:
-      typeof raw?.minSessions === 'number' &&
-      Number.isFinite(raw.minSessions) &&
-      raw.minSessions > 0
-        ? raw.minSessions
-        : DEFAULTS.minSessions,
+      positiveNumber(settings.autoDreamMinSessions) ??
+      positiveNumber(raw?.minSessions) ??
+      DEFAULTS.minSessions,
     scanIntervalMs:
       typeof raw?.scanIntervalMs === 'number' &&
       Number.isFinite(raw.scanIntervalMs) &&
@@ -307,7 +314,7 @@ let runner:
 // Flags stale runner instances so they exit early. When initAutoDream()
 // is called again (e.g., test setup), the old runner's async operations will
 // see this flag and bail out before calling setAppState on a stale closure.
-let isRunnerStaleRef = { current: false }
+let activeRunnerState: { stale: boolean } | null = null
 
 /**
  * Call once at startup (from backgroundHousekeeping alongside
@@ -315,8 +322,11 @@ let isRunnerStaleRef = { current: false }
  */
 export function initAutoDream(): void {
   // Mark any existing runner as stale so its async operations exit early
-  // instead of calling setAppState on a now-orphaned closure.
-  isRunnerStaleRef.current = true
+  // instead of calling setAppState on a now-orphaned closure. Each runner
+  // checks its own state object, so the new runner is not affected.
+  if (activeRunnerState) activeRunnerState.stale = true
+  const runnerState = { stale: false }
+  activeRunnerState = runnerState
 
   let lastSessionScanAt = 0
   let permissionNoticeShown = false
@@ -324,10 +334,7 @@ export function initAutoDream(): void {
   runner = async function runAutoDream(context, appendSystemMessage) {
     // If this runner was superseded by a newer initAutoDream call, bail out.
     // The newer runner holds the fresh closure for setAppState.
-    if (isRunnerStaleRef.current) {
-      isRunnerStaleRef.current = false
-      return
-    }
+    if (runnerState.stale) return
     const cfg = getConfig()
     const force = isForced()
     if (!force && !isGateOpen()) return

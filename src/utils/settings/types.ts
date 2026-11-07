@@ -1101,6 +1101,18 @@ export const SettingsSchema = lazySchema(() =>
         .describe(
           'Model used for background memory consolidation. Defaults to inheriting the parent session model. Set to a cheaper alias (e.g. "haiku") to reduce cost — requires that alias to resolve on your provider.',
         ),
+      autoDreamMinHours: z
+        .number()
+        .optional()
+        .describe(
+          'Minimum hours since the last memory consolidation before auto-dream runs. Defaults to 24.',
+        ),
+      autoDreamMinSessions: z
+        .number()
+        .optional()
+        .describe(
+          'Minimum number of sessions since the last memory consolidation before auto-dream runs. Defaults to 5.',
+        ),
       showThinkingSummaries: z
         .boolean()
         .optional()
