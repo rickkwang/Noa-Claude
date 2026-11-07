@@ -16,8 +16,9 @@ interface CliStats {
 }
 
 // Loaded by path at runtime so the GUI typecheck does not pull in the CLI's mostly unchecked sources.
+// No extension: a source checkout resolves the .ts files, a packaged app the bundled .js ones.
 async function cli() {
-  const [stats, format, model] = await Promise.all([import(`${SRC}/stats.ts`), import(`${SRC}/format.ts`), import(`${SRC}/model/model.ts`)])
+  const [stats, format, model] = await Promise.all([import(`${SRC}/stats`), import(`${SRC}/format`), import(`${SRC}/model/model`)])
   return {
     aggregate: stats.aggregateClaudeCodeStatsForRange as (range: StatsDateRange) => Promise<CliStats>,
     formatNumber: format.formatNumber as (n: number) => string,

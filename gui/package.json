@@ -23,17 +23,7 @@
     "desktop:release": "bun run build && bun scripts/prepare-desktop-runtime.mjs && electron-builder --mac dmg zip --arm64 --publish never"
   },
   "dependencies": {
-    "@xterm/addon-clipboard": "0.2.0",
-    "@xterm/addon-fit": "0.11.0",
-    "@xterm/addon-unicode11": "0.9.0",
-    "@xterm/addon-web-links": "0.12.0",
-    "@xterm/addon-webgl": "0.19.0",
-    "@xterm/xterm": "6.0.0",
-    "electron-updater": "6.8.3",
-    "katex": "0.19.1",
-    "mermaid": "12.2.0",
-    "react": "19.2.6",
-    "react-dom": "19.2.6"
+    "electron-updater": "6.8.3"
   },
   "devDependencies": {
     "@tailwindcss/typography": "0.5.20",
@@ -42,8 +32,18 @@
     "@types/react": "19.2.7",
     "@types/react-dom": "19.2.3",
     "@vitejs/plugin-react": "4.3.4",
+    "@xterm/addon-clipboard": "0.2.0",
+    "@xterm/addon-fit": "0.11.0",
+    "@xterm/addon-unicode11": "0.9.0",
+    "@xterm/addon-web-links": "0.12.0",
+    "@xterm/addon-webgl": "0.19.0",
+    "@xterm/xterm": "6.0.0",
     "electron": "41.10.6",
     "electron-builder": "26.8.2",
+    "katex": "0.19.1",
+    "mermaid": "12.2.0",
+    "react": "19.2.6",
+    "react-dom": "19.2.6",
     "tailwindcss": "4.2.2",
     "typescript": "5.7.2",
     "vite": "5.4.11"

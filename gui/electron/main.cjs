@@ -240,7 +240,8 @@ async function startBridge() {
   }
   // Browser storage includes the port in its origin; keep the desktop address stable.
   const port = await freePort(DEV ? 0 : 18787)
-  bridge = spawn(findBun(), [...(DEV ? ['--hot'] : []), 'run', 'server/main.ts'], {
+  // A packaged app ships the bridge bundled into one file (scripts/prepare-desktop-runtime.mjs).
+  bridge = spawn(findBun(), [...(DEV ? ['--hot'] : []), 'run', app.isPackaged ? 'server/main.js' : 'server/main.ts'], {
     cwd: GUI_DIR,
     // A packaged app has no project of its own, so it starts in the home folder, not the bundled repo.
     env: { ...process.env, NOA_GUI_PORT: String(port), NOA_GUI_TOKEN: BRIDGE_TOKEN, ...(app.isPackaged ? { NOA_GUI_DEFAULT_CWD: app.getPath('home') } : {}) },
