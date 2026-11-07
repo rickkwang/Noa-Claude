@@ -80,7 +80,8 @@
       "category": "public.app-category.productivity",
       "target": [
         "dir"
-      ]
+      ],
+      "sign": "./scripts/sign-mac.cjs"
     },
     "artifactName": "Noa-Agent-${version}-${arch}.${ext}",
     "dmg": {

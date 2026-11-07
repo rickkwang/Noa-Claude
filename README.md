@@ -63,7 +63,7 @@ Keep your config directory outside the installation directory. Install, update, 
 
 Download `Noa-Agent-<version>-arm64.dmg` from the latest `gui-v*` release on [GitHub Releases](https://github.com/rickkwang/Noa-Claude/releases), open it, and drag **Noa Agent** into Applications.
 
-The app is not code-signed or notarized. On first launch macOS may say it cannot be opened: go to System Settings → Privacy & Security and click **Open Anyway**, or run `xattr -dr com.apple.quarantine "/Applications/Noa Agent.app"` once.
+The app is signed with a self-signed certificate, not an Apple Developer ID, and is not notarized. On first launch macOS may say it cannot be opened: go to System Settings → Privacy & Security and click **Open Anyway**, or run `xattr -dr com.apple.quarantine "/Applications/Noa Agent.app"` once.
 
 Updates: the app checks GitHub Releases shortly after launch and every 15 minutes. A newer `gui-v*` release downloads in the background, with its progress next to **Settings** at the bottom of the sidebar; the download's SHA-512 is checked against the release metadata, and a verified download is kept across restarts. **Update** then asks to confirm, quits (stopping running tasks), replaces the app and reopens it. Nothing installs until you confirm. If the install fails, the old app is kept and the release page opens. **Noa Agent → Check for Updates…** runs the check on demand. Set `DISABLE_UPDATES=1` to turn checks off.
 
