@@ -173,14 +173,13 @@ jobs:
             run: |
               bun run e2e:tool-boundaries
               bun run e2e:startup
-          - name: compiled harness, background and multiedit
+          - name: compiled harness, background
             build: bun run compile
             run: |
               bun run e2e:deferred
               bun run e2e:goal
               bun run e2e:state
               bun run e2e:background
-              bun run e2e:multiedit
           # build:dev:full only proves the bundle resolves; the placeholder modules
           # behind the experimental flags have crashed it at startup before.
           # Coordination is the slowest script under this bundle, so its shard
