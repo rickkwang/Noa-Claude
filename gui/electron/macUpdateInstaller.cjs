@@ -1,10 +1,10 @@
 const fs = require('fs');
 const https = require('https');
-const os = require('os');
 const path = require('path');
-const { spawn, spawnSync } = require('child_process');
+const { spawn } = require('child_process');
 const { createHash, timingSafeEqual } = require('crypto');
 
+const DOWNLOAD_IDLE_TIMEOUT_MS = 30000;
 const GITHUB_OWNER = 'rickkwang';
 const GITHUB_REPO = 'Noa-Claude';
 const TRUSTED_HOSTS = new Set([
@@ -151,9 +151,11 @@ function downloadFileWithProgress(sourceUrl, outputPath, onProgress) {
         res.pipe(fileStream);
       });
 
-      req.on('error', () => {
+      // A connection that goes quiet mid-download would otherwise hang the update forever.
+      req.setTimeout(DOWNLOAD_IDLE_TIMEOUT_MS, () => req.destroy(new Error('Download stalled.')));
+      req.on('error', (error) => {
         cleanup();
-        reject(new Error('Request failed.'));
+        reject(new Error(error?.message === 'Download stalled.' ? 'Download stalled. Check your connection and try again.' : 'Request failed.'));
       });
     };
 
@@ -182,15 +184,20 @@ async function verifyFileSha512(filePath, expectedDigest) {
   }
 }
 
+// Runs ditto as a child process the main process does not wait on: unpacking takes several seconds,
+// and a blocked main process stops delivering clicks and keys to the window.
 function extractZipArchive(zipPath, extractDir) {
-  const result = spawnSync('/usr/bin/ditto', ['-x', '-k', zipPath, extractDir], {
-    encoding: 'utf8',
+  return new Promise((resolve, reject) => {
+    const child = spawn('/usr/bin/ditto', ['-x', '-k', zipPath, extractDir], { stdio: ['ignore', 'ignore', 'pipe'] });
+    let stderr = '';
+    child.stderr.setEncoding('utf8');
+    child.stderr.on('data', (chunk) => { stderr += chunk; });
+    child.on('error', reject);
+    child.on('close', (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(stderr.trim() || 'Unable to extract update package.'));
+    });
   });
-
-  if (result.status !== 0) {
-    const errorText = (result.stderr || result.stdout || 'Unable to extract update package.').trim();
-    throw new Error(errorText);
-  }
 }
 
 function findAppBundle(dir, appName) {
@@ -316,8 +323,23 @@ function spawnDetachedInstallScript(scriptPath) {
   child.unref();
 }
 
-// Downloads and verifies the update and writes its install script. Nothing is replaced yet:
-// call launch() once the app is quitting, so the script only starts after the quit is confirmed.
+// Verified downloads live here, one folder per version, so a restart does not download the update again.
+function stagedUpdatesRoot(app) {
+  return path.join(app.getPath('userData'), 'updates');
+}
+
+// Removes every staged update except keepVersion: superseded releases, or all of them once none is newer.
+async function pruneStagedUpdates(app, keepVersion) {
+  const root = stagedUpdatesRoot(app);
+  if (!fs.existsSync(root)) return;
+  for (const name of fs.readdirSync(root)) {
+    if (name !== keepVersion) await fs.promises.rm(path.join(root, name), { recursive: true, force: true });
+  }
+}
+
+// Downloads (or reuses an earlier verified download of) the update, verifies it and writes its install
+// script. Nothing is replaced yet: call launch() once the app is quitting, so the script only starts
+// after the quit is confirmed.
 async function prepareMacUpdate({ app, updateInfo, onProgress }) {
   const version = updateInfo?.version || app.getVersion();
   const productName = app.getName();
@@ -325,22 +347,33 @@ async function prepareMacUpdate({ app, updateInfo, onProgress }) {
   const targetAppPath = getInstallTargetAppPath(app);
   assertWritableInstallTarget(targetAppPath);
 
-  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'noa-update-'));
+  await pruneStagedUpdates(app, version);
+  const workDir = path.join(stagedUpdatesRoot(app), version);
   const zipPath = path.join(workDir, 'update.zip');
   const extractDir = path.join(workDir, 'extracted');
   const logPath = path.join(workDir, 'install.log');
 
   let scriptPath = null;
-  // Any failure before the detached installer owns workDir must clean it up, or aborted updates accumulate in tmp.
+  let sourceAppPath = null;
+  // Any failure before the detached installer owns workDir must clean it up, so a bad download is not reused.
   try {
-    fs.mkdirSync(extractDir, { recursive: true });
-
+    fs.mkdirSync(workDir, { recursive: true });
     const updateAsset = selectVerifiedUpdateAsset({ version, updateInfo });
-    await downloadFileWithProgress(updateAsset.url, zipPath, onProgress);
-    await verifyFileSha512(zipPath, updateAsset.sha512);
-    extractZipArchive(zipPath, extractDir);
+    // A zip left by an earlier session counts only if it still matches the release digest; a partial
+    // download from a quit mid-way fails the check and is fetched again.
+    const reusable = fs.existsSync(zipPath) && await verifyFileSha512(zipPath, updateAsset.sha512).then(() => true, () => false);
+    if (reusable) {
+      onProgress?.(100);
+    } else {
+      fs.rmSync(zipPath, { force: true });
+      await downloadFileWithProgress(updateAsset.url, zipPath, onProgress);
+      await verifyFileSha512(zipPath, updateAsset.sha512);
+    }
+    await fs.promises.rm(extractDir, { recursive: true, force: true });
+    fs.mkdirSync(extractDir, { recursive: true });
+    await extractZipArchive(zipPath, extractDir);
 
-    const sourceAppPath = findAppBundle(extractDir, productName);
+    sourceAppPath = findAppBundle(extractDir, productName);
     if (!sourceAppPath) {
       throw new Error(`Extracted update package does not contain ${productName}.app.`);
     }
@@ -362,14 +395,18 @@ async function prepareMacUpdate({ app, updateInfo, onProgress }) {
     );
     fs.chmodSync(scriptPath, 0o755);
   } catch (error) {
-    fs.rmSync(workDir, { recursive: true, force: true });
+    await fs.promises.rm(workDir, { recursive: true, force: true });
     throw error;
   }
 
   return {
     version,
     logPath,
+    // The install script stops without relaunching if the new app is gone, so check before quitting for it.
+    isStaged: () => fs.existsSync(sourceAppPath) && fs.existsSync(scriptPath),
     launch: () => spawnDetachedInstallScript(scriptPath),
+    // Not installed this session: drop the extracted app but keep the verified zip for the next launch.
+    discard: () => fs.rmSync(extractDir, { recursive: true, force: true }),
   };
 }
 
@@ -377,6 +414,7 @@ module.exports = {
   buildInstallScript,
   getReleasePageUrl,
   prepareMacUpdate,
+  pruneStagedUpdates,
   normalizeSha512,
   selectVerifiedUpdateAsset,
   verifyFileSha512,

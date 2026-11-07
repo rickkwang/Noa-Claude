@@ -12,7 +12,7 @@ const path = require('path')
 const { createNotifier } = require('./notifications.cjs')
 const { registerPreview } = require('./preview.cjs')
 const { checkForUpdate } = require('./updateCheck.cjs')
-const { prepareMacUpdate } = require('./macUpdateInstaller.cjs')
+const { prepareMacUpdate, pruneStagedUpdates } = require('./macUpdateInstaller.cjs')
 const { autoUpdater } = require('electron-updater')
 
 // A packaged app keeps the bridge and UI beside the repo runtime in Resources (see scripts/prepare-desktop-runtime.mjs).
@@ -25,8 +25,13 @@ if (app.isPackaged) process.env.PATH = [path.join(process.resourcesPath, 'rg'), 
 let bridge = null
 let win = null
 let quitting = false
-// A verified update whose install script starts when the app quits.
+// A verified update, staged while the app runs; its install script starts at quit only once the user chose Update.
 let pendingInstall = null
+let installRequested = false
+// What the sidebar update button shows: idle, downloading (with percent), ready, or installing.
+let updateState = { status: 'idle' }
+// The check (and download) in progress; a manual check joins it instead of starting another.
+let updateCheck = null
 let checkingQuit = false
 let bridgePort
 // Every bridge request must carry this; other local processes do not know it.
@@ -67,55 +72,85 @@ function setZoom(next) {
   syncZoom()
 }
 
-// Only packaged builds check for updates; a development build is not a release.
-const UPDATES_ENABLED = app.isPackaged && process.env.DISABLE_UPDATES !== '1'
-// Metadata only: the user chooses when to download, and macUpdateInstaller does the swap.
+// Only packaged builds check for updates; a development build is not a release. A development build may
+// pretend to be an older version to exercise the check and download, but it never installs.
+const UPDATE_TEST_VERSION = app.isPackaged ? undefined : process.env.NOA_UPDATE_TEST_VERSION
+const UPDATES_ENABLED = (app.isPackaged || !!UPDATE_TEST_VERSION) && process.env.DISABLE_UPDATES !== '1'
+const UPDATE_RECHECK_MS = 15 * 60 * 1000
+// electron-updater only reads the release metadata; macUpdateInstaller downloads, verifies and swaps the app.
 autoUpdater.autoDownload = false
 autoUpdater.autoInstallOnAppQuit = false
+if (UPDATE_TEST_VERSION) autoUpdater.forceDevUpdateConfig = true
+
+function setUpdateState(next) {
+  updateState = next
+  if (win && !win.isDestroyed()) win.webContents.send('noa:update-state', next)
+}
 
 function showDialog(options) {
   return win && !win.isDestroyed() ? dialog.showMessageBox(win, options) : dialog.showMessageBox(options)
 }
 
-// Finds the newest desktop release, then installs it in place. The release metadata
-// (latest-mac.yml, with the zip sha512) is read by electron-updater from that release.
-async function checkForUpdates({ manual }) {
-  let update
-  try {
-    update = await checkForUpdate(app.getVersion())
-  } catch (err) {
-    if (manual) dialog.showErrorBox('Could not check for updates', String(err.message ?? err))
-    return
-  }
+// Finds the newest desktop release and downloads it in the background; the sidebar button offers the
+// install once it is verified. The release metadata (latest-mac.yml, with the zip sha512) is read by
+// electron-updater from that release.
+async function runUpdateCheck() {
+  const update = await checkForUpdate(UPDATE_TEST_VERSION || app.getVersion())
   if (!update) {
-    if (manual) {
-      void showDialog({ type: 'info', message: 'Noa Agent is up to date', detail: `Version ${app.getVersion()} is the latest release.`, buttons: ['OK'] })
-    }
-    return
+    // Nothing newer: any staged update is installed or superseded.
+    await pruneStagedUpdates(app)
+    return { status: 'up-to-date' }
   }
-  const { response } = await showDialog({
-    type: 'info',
-    message: `Noa Agent ${update.version} is available`,
-    detail: `You have ${app.getVersion()}. Install it now; the app restarts to finish the update.`,
-    buttons: ['Install and Restart', 'Later'], defaultId: 0, cancelId: 1,
-  })
-  if (response !== 0) return
+  const { version } = update
+  setUpdateState({ status: 'downloading', version, percent: 0 })
   try {
     autoUpdater.setFeedURL({ provider: 'generic', url: update.feedUrl })
     const { updateInfo } = await autoUpdater.checkForUpdates()
-    // Staged now; the swap script starts in will-quit, after the quit is confirmed.
-    pendingInstall = await prepareMacUpdate({ app, updateInfo })
+    pendingInstall = await prepareMacUpdate({
+      app,
+      updateInfo,
+      onProgress: (percent) => { if (percent !== updateState.percent) setUpdateState({ status: 'downloading', version, percent }) },
+    })
+    setUpdateState({ status: 'ready', version })
+    return { status: 'ready', version }
   } catch (err) {
-    const { response: failed } = await showDialog({
+    setUpdateState({ status: 'idle' })
+    err.releaseUrl = update.url
+    throw err
+  }
+}
+
+async function checkForUpdates({ manual }) {
+  if (updateState.status === 'installing') return
+  if (updateState.status === 'ready') {
+    if (manual) void showDialog({ type: 'info', message: `Noa Agent ${updateState.version} is ready to install.`, detail: 'Use the Update button next to Settings.', buttons: ['OK'] })
+    return
+  }
+  updateCheck ??= runUpdateCheck().finally(() => { updateCheck = null })
+  let result
+  try {
+    result = await updateCheck
+  } catch (err) {
+    if (!manual) return
+    if (!err.releaseUrl) {
+      dialog.showErrorBox('Could not check for updates', String(err.message ?? err))
+      return
+    }
+    const { response } = await showDialog({
       type: 'error',
-      message: 'Could not install the update',
+      message: 'Could not download the update',
       detail: String(err.message ?? err),
       buttons: ['Download', 'OK'], defaultId: 0, cancelId: 1,
     })
-    if (failed === 0) shell.openExternal(update.url)
+    if (response === 0) shell.openExternal(err.releaseUrl)
     return
   }
-  app.quit()
+  if (!manual) return
+  if (result.status === 'up-to-date') {
+    void showDialog({ type: 'info', message: 'Noa Agent is up to date', detail: `Version ${app.getVersion()} is the latest release.`, buttons: ['OK'] })
+  } else {
+    void showDialog({ type: 'info', message: `Noa Agent ${result.version} is ready to install.`, detail: 'Use the Update button next to Settings.', buttons: ['OK'] })
+  }
 }
 
 function buildMenu() {
@@ -269,7 +304,14 @@ function createWindow(port) {
       buttons: ['Keep editing', 'Discard edits'], defaultId: 0, cancelId: 0,
     })
     if (choice === 1) event.preventDefault()
-    else quitting = false
+    else {
+      quitting = false
+      // Keeping the edits cancels an update's quit too; offer the update again instead of leaving it installing.
+      if (installRequested) {
+        installRequested = false
+        setUpdateState({ status: 'ready', version: updateState.version })
+      }
+    }
   })
 
   // Only the bridge origin renders inside the app; any other link opens in the default browser.
@@ -343,6 +385,25 @@ ipcMain.handle('noa:file-info', async (event, filePath) => {
   const image = await nativeImage.createThumbnailFromPath(filePath, { width: 352, height: 352 }).catch(() => undefined)
   return { directory: false, thumbnail: image && !image.isEmpty() ? image.toDataURL() : undefined }
 })
+ipcMain.handle('noa:update-state', (event) => (win && event.sender === win.webContents ? updateState : undefined))
+// The renderer has already asked the user to confirm, and that prompt says running tasks stop,
+// so the quit skips the running-task check.
+ipcMain.handle('noa:update-install', (event) => {
+  if (!win || event.sender !== win.webContents || updateState.status !== 'ready' || !pendingInstall) return
+  if (!app.isPackaged) return
+  // Staged files removed since the download (e.g. by a cleanup tool): fetch the update again instead of
+  // quitting into an install that cannot run.
+  if (!pendingInstall.isStaged()) {
+    pendingInstall = null
+    setUpdateState({ status: 'idle' })
+    void checkForUpdates({ manual: false })
+    return
+  }
+  installRequested = true
+  setUpdateState({ status: 'installing', version: updateState.version })
+  quitting = true
+  app.quit()
+})
 ipcMain.handle('noa:select-project-directories', (event) => selectProjectDirectories(event, true))
 ipcMain.handle('noa:select-project-directory', async (event) =>
   (await selectProjectDirectories(event, false))[0],
@@ -382,7 +443,10 @@ if (primaryInstance) app.whenReady().then(async () => {
   try {
     createWindow(await startBridge())
     notifier.start()
-    if (UPDATES_ENABLED) setTimeout(() => checkForUpdates({ manual: false }).catch(() => {}), 5000)
+    if (UPDATES_ENABLED) {
+      setTimeout(() => checkForUpdates({ manual: false }).catch(() => {}), 5000)
+      setInterval(() => checkForUpdates({ manual: false }).catch(() => {}), UPDATE_RECHECK_MS)
+    }
   } catch (err) {
     dialog.showErrorBox('Noa Agent could not start', String(err.message ?? err))
     app.quit()
@@ -405,5 +469,6 @@ app.on('before-quit', (event) => {
 app.on('will-quit', () => {
   bridge?.kill('SIGTERM')
   vite?.kill('SIGTERM')
-  pendingInstall?.launch()
+  if (installRequested) pendingInstall?.launch()
+  else pendingInstall?.discard()
 })

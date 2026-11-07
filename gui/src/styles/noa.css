@@ -1656,6 +1656,30 @@ kbd.noa-review-menu-hint { font-family: inherit; }
 .noa-attachment-remove:focus-visible { outline: 2px solid var(--accent-color); outline-offset: -2px; }
 @media (hover: none) { .noa-attachment-remove { opacity: 1; pointer-events: auto; } }
 
+/* Sidebar update control: it scales in when its state changes, and the ring eases between percents. */
+.noa-update-button { animation: noa-update-in 180ms var(--ease-out); }
+.noa-update-ring { transition: stroke-dashoffset 120ms ease-out, opacity 120ms ease-out; }
+.noa-update-pill {
+  background: color-mix(in srgb, var(--accent-color) 12%, transparent); color: var(--accent-color);
+  transition: background-color 160ms var(--ease-out), transform 120ms var(--ease-out);
+}
+.noa-update-pill:not(:disabled):hover { background: color-mix(in srgb, var(--accent-color) 18%, transparent); }
+.noa-update-pill:not(:disabled):active { transform: scale(.97); }
+.noa-update-pill:disabled { opacity: .75; }
+.noa-update-pill:focus-visible { outline: 2px solid var(--accent-color); outline-offset: 2px; }
+/* The arrow dips into the tray on hover, once per entry. */
+.noa-update-pill:not(:disabled):hover .noa-update-arrow { animation: noa-update-arrow-dip 360ms var(--ease-out); }
+@keyframes noa-update-arrow-dip { 40% { transform: translateY(1px); } }
+.noa-update-progress { transition: background-color 120ms var(--ease-out), color 120ms var(--ease-out); }
+.noa-update-progress:hover { background: var(--fill-hover); color: var(--text-primary); }
+.noa-update-spinner { animation: noa-project-dialog-spin 0.8s linear infinite; }
+@keyframes noa-update-in { from { opacity: 0; transform: scale(.8); } }
+@media (prefers-reduced-motion: reduce) {
+  .noa-update-button, .noa-update-spinner { animation: none; }
+  .noa-update-ring, .noa-update-pill, .noa-update-progress { transition: none; }
+  .noa-update-pill:not(:disabled):hover .noa-update-arrow { animation: none; }
+}
+
 .noa-file-drop { animation: noa-file-drop-in 150ms cubic-bezier(0.215, 0.61, 0.355, 1); }
 .noa-file-drop-icon { animation: noa-file-drop-rise 220ms cubic-bezier(0.215, 0.61, 0.355, 1) backwards; }
 @keyframes noa-file-drop-in { from { opacity: 0; } }

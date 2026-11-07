@@ -11,6 +11,7 @@ import {
 import { createPortal } from "react-dom"
 import { PopupMenu, anchorBelow, type PopupMenuAnchor } from "./PopupMenu"
 import { MarqueeText } from "./MarqueeText"
+import { UpdateButton } from "./UpdateButton"
 import { useSessionHoverCard } from "./SessionHoverCard"
 import type { ProjectInfo, SessionSummary } from "../api"
 import {
@@ -714,15 +715,16 @@ export function Sidebar({
         </div>
       </div>
       {dragging && <DragOverlay drag={dragging} />}
-      <div className="shrink-0 border-t-[0.5px] border-[var(--panel-divider)] px-2 py-1.5" style={noDragRegion}>
+      <div className="flex shrink-0 items-center gap-1 border-t-[0.5px] border-[var(--panel-divider)] px-2 py-1.5" style={noDragRegion}>
         <button
           type="button"
           onClick={onSettings}
-          className="noa-sidebar-tree-item noa-sidebar-hover-surface-subtle flex h-[30px] items-center gap-2 rounded-lg pl-[7px] pr-2 text-body text-[var(--sidebar-text-muted)] hover:text-[var(--text-primary,#2D2D2B)]"
+          className="noa-sidebar-tree-item noa-sidebar-hover-surface-subtle flex h-[30px] min-w-0 flex-1 items-center gap-2 rounded-lg pl-[7px] pr-2 text-body text-[var(--sidebar-text-muted)] hover:text-[var(--text-primary,#2D2D2B)]"
         >
           <Settings size={14} className="shrink-0" />
           <span className="min-w-0 flex-1 truncate text-left">Settings</span>
         </button>
+        <UpdateButton />
       </div>
     </div>
   )

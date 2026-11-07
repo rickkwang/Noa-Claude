@@ -7,6 +7,15 @@ contextBridge.exposeInMainWorld('noaDesktop', {
   selectProjectDirectory: () => ipcRenderer.invoke('noa:select-project-directory'),
   getPathForFile: (file) => webUtils.getPathForFile(file),
   fileInfo: (path) => ipcRenderer.invoke('noa:file-info', path),
+  updates: {
+    getState: () => ipcRenderer.invoke('noa:update-state'),
+    install: () => ipcRenderer.invoke('noa:update-install'),
+    subscribe: (listener) => {
+      const receive = (_event, state) => listener(state)
+      ipcRenderer.on('noa:update-state', receive)
+      return () => ipcRenderer.removeListener('noa:update-state', receive)
+    },
+  },
   preview: {
     command: (message) => ipcRenderer.invoke('noa:preview', message),
     subscribe: (listener) => {
