@@ -1,6 +1,6 @@
 {
   "name": "@rickkwang/noa-claude",
-  "version": "1.21.0",
+  "version": "1.22.0",
   "type": "module",
   "private": true,
   "description": "Noa Claude - isolated AI coding assistant",

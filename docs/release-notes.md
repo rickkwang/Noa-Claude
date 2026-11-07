@@ -2,11 +2,37 @@
 
 ## Unreleased
 
+## 1.22.0
+
 - New: in fullscreen, clicking the "to send now" hint under a queued message sends it right away, exactly as its keyboard shortcut does.
 - Changed: task-tracking tools follow upstream gating. Third-party and untrusted model identities no longer get them by default, and agent swarms no longer enable them on their own, so swarm teammates on Claude 5 models lose the task-list tools unless `--tools`/`--allowedTools` names them or `NOA_CLAUDE_ENABLE_TODO_TOOLS=1` is set. `NOA_CLAUDE_ENABLE_TODO_TOOLS=0` no longer forces them off.
 - New: DeepSeek exposes its thinking effort. The DeepSeek preset and an Anthropic-compatible profile at `api.deepseek.com` declare the documented `low`/`medium`/`high`/`xhigh`/`max` ladder, `/effort` offers those levels, and the request sends `reasoning_effort` (DeepSeek maps medium and xhigh to high itself). `max` now reaches the endpoint as `max` instead of being clamped to `xhigh`. Reasoning from OpenAI-compatible endpoints is now sent back on tool-call turns, as DeepSeek requires, including after resume and compaction, and `/effort` no longer warns that the effort may not be sent on routes that do send it.
 - New: WebSearch works beyond Anthropic. With Sign in with ChatGPT it uses OpenAI's hosted web search, and on a Gemini endpoint it uses Google Search grounding. On any provider, `NOA_CLAUDE_WEB_SEARCH_BACKEND=searxng|brave|tavily` sends searches to that service instead (`NOA_CLAUDE_WEB_SEARCH_URL` for SearXNG, `NOA_CLAUDE_WEB_SEARCH_API_KEY` for Brave and Tavily). Off these paths, WebSearch stays unavailable as before.
 - Changed: API requests use Messages API version `2026-10-21`, and the Anthropic SDKs are on 1.x. Requests no longer send `temperature`, because the new version rejects sampling parameters even at their default. `CLAUDE_CODE_AUTO_MODE_TEMPERATURE` no longer has any effect; the auto mode classifier always uses the default temperature of 1. The `tengu_api_query` analytics event no longer carries a `temperature` field. Bedrock keeps the previous SDK line, so Bedrock calls stay on `2023-06-01`.
+- Fixed: `Read` returns the file content on every call.
+- Fixed: a subagent's effort is resolved against its own model.
+- Fixed: a resume is refused while another process is writing the same session. Session titles are shared between the desktop app and the CLI.
+- Fixed: compaction keeps earlier summaries when the head of the transcript is truncated, and recovers from Bedrock context overflow.
+- Fixed: unusable small-model labels count as failures.
+- Faster: background agent labels are written from short notes.
+
+### Desktop app (gui-v1.22.0)
+
+- New: macOS app for Apple silicon, distributed as a dmg and zip from `gui-v*` releases. It is not code-signed; the README explains how to open it. It checks GitHub Releases for updates and never installs them on its own.
+- New: integrated terminal with bottom and right panes, rendered with WebGL.
+- New: isolated local browser previews; web addresses open in the Browser tab.
+- New: command-style search dialog, a pinned task section, and a usage-limit banner.
+- New: usage stats on the new-task page.
+- New: task deletion, with safeguards for running tasks and their history.
+- New: subagent activity panel; subagents and background tasks move into the Overview.
+- New: the file tree stays beside the open file.
+- New: plugins page with a marketplace and skill management; provider settings page with provider switching and a provider picker.
+- New: branch and commit review sources, git-apply export, and Codex-style diff separators.
+- New: icon wrap toggle and language names in code block headers; desktop notifications.
+- Changed: the bridge requires a per-launch token, and its routes are limited to listed projects.
+- Changed: the packaged app starts in your home folder with the right panel closed.
+- Fixed: queued messages keep their order and no longer flash; background task navigation and activity replay; streaming keeps following the newest output; conversation rendering and scrolling; sidebar row alignment; dark-mode scrollbars.
+
 ## 1.21.0
 
 - New: `/code-review` (alias `/review`) reviews the local diff, a PR number or URL, a branch, or a path. Effort tiers `low` to `max` set how many candidates are checked, and each finding is verified before it is reported. `--fix` applies confirmed findings to local changes or a local path, `--comment` posts to a PR, and `--max-findings` caps the count; the last effort and cap are reused.
