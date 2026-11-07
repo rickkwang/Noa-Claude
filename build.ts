@@ -269,7 +269,6 @@ const defines: Record<string, string> = {
   ...(dev
     ? { 'process.env.CLAUDE_CODE_EXPERIMENTAL_BUILD': JSON.stringify('true') }
     : {}),
-  'process.env.CLAUDE_CODE_VERIFY_PLAN': JSON.stringify('false'),
   'process.env.CCR_FORCE_BUNDLE': JSON.stringify('true'),
   'MACRO.VERSION': JSON.stringify(version),
   'MACRO.DISPLAY_VERSION': JSON.stringify(pkg.version),

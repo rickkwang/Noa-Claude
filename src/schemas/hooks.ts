@@ -133,9 +133,8 @@ function buildHookSchemas() {
     // JSON.stringify — a transformed function value is silently dropped,
     // deleting the user's prompt from settings.json (gh-24920, CC-79). The
     // transform (from #10594) wrapped the string in `(_msgs) => prompt`
-    // for a programmatic-construction use case in ExitPlanModeV2Tool that
-    // has since been refactored into VerifyPlanExecutionTool, which no
-    // longer constructs AgentHook objects at all.
+    // for a programmatic-construction use case in ExitPlanModeV2Tool, which
+    // no longer constructs AgentHook objects at all.
     prompt: z
       .string()
       .describe(

@@ -83,14 +83,6 @@ export function clearSessionCaches(
   clearAllSessions()
   if (!hasPreserved) clearAllPendingCallbacks()
 
-  if (process.env.USER_TYPE === 'ant') {
-    void import('../../tools/TungstenTool/TungstenTool.js').then(
-      ({ clearSessionsWithTungstenUsage, resetInitializationState }) => {
-        clearSessionsWithTungstenUsage()
-        resetInitializationState()
-      },
-    ).catch(err => logError(err as Error))
-  }
   // Dynamic import preserves dead code elimination for COMMIT_ATTRIBUTION.
   if (feature('COMMIT_ATTRIBUTION')) {
     void import('../../utils/attributionHooks.js').then(

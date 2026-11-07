@@ -1119,7 +1119,6 @@
     "src/tools/TodoWriteTool/prompt.ts",
     "src/tools/ToolSearchTool/ToolSearchTool.ts",
     "src/tools/ToolSearchTool/prompt.ts",
-    "src/tools/TungstenTool/TungstenTool.ts",
     "src/tools/WebFetchTool/UI.tsx",
     "src/tools/WebFetchTool/WebFetchTool.ts",
     "src/tools/WebFetchTool/preapproved.ts",

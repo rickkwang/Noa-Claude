@@ -62,19 +62,42 @@ const StructuredMessage = lazySchema(() =>
   ]),
 )
 
+const SUMMARY_MAX_CHARS = 80
+
+// The summary is the UI preview; when the model omits it, the first line of a
+// plain-text message stands in, so the preview is never empty.
+export function resolveSummary(
+  message: string,
+  summary: string | undefined,
+): string {
+  const firstLine =
+    message
+      .split('\n')
+      .map(line => line.trim())
+      .find(line => line.length > 0) ?? ''
+  const text = summary?.trim() || firstLine
+  return Array.from(text).slice(0, SUMMARY_MAX_CHARS).join('')
+}
+
 const inputSchema = lazySchema(() =>
   z.object({
     to: z
       .string()
-      .describe('Recipient: teammate name, or "*" for broadcast to all teammates'),
+      .describe(
+        'Recipient: a teammate name, an agentId from an Agent result, or "*" for broadcast to all teammates',
+      ),
     summary: z
       .string()
       .optional()
       .describe(
-        'A 5-10 word summary shown as a preview in the UI (required when message is a string)',
+        `A 5-10 word summary shown as a one-line preview in the UI. Defaults to the first line of a plain-text message; longer summaries are truncated to ${SUMMARY_MAX_CHARS} characters rather than rejected.`,
       ),
     message: z.union([
-      z.string().describe('Plain text message content'),
+      z
+        .string()
+        .describe(
+          "Plain text message content. The recipient's human sees only the FIRST LINE as a one-line preview until they expand it, so make the first line a clear, self-contained sentence saying what this is about — not a greeting, preamble, or bare @-mention. The message must not be empty.",
+        ),
       StructuredMessage(),
     ]),
   }),
@@ -596,10 +619,10 @@ export const SendMessageTool: Tool<InputSchema, SendMessageToolOutput> =
         }
       }
       if (typeof input.message === 'string') {
-        if (!input.summary || input.summary.trim().length === 0) {
+        if (input.message.trim().length === 0) {
           return {
             result: false,
-            message: 'summary is required when message is a string',
+            message: 'message must not be empty',
             errorCode: 9,
           }
         }
@@ -780,10 +803,11 @@ export const SendMessageTool: Tool<InputSchema, SendMessageToolOutput> =
       }
 
       if (typeof input.message === 'string') {
+        const summary = resolveSummary(input.message, input.summary)
         if (input.to === '*') {
-          return handleBroadcast(input.message, input.summary, context)
+          return handleBroadcast(input.message, summary, context)
         }
-        return handleMessage(input.to, input.message, input.summary, context)
+        return handleMessage(input.to, input.message, summary, context)
       }
 
       if (input.to === '*') {

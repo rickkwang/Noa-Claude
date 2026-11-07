@@ -7,7 +7,10 @@ import {
   killAsyncAgent,
 } from '../../tasks/LocalAgentTask/LocalAgentTask.js'
 import { getPrompt } from '../../tools/SendMessageTool/prompt.js'
-import { SendMessageTool } from '../../tools/SendMessageTool/SendMessageTool.js'
+import {
+  resolveSummary,
+  SendMessageTool,
+} from '../../tools/SendMessageTool/SendMessageTool.js'
 import { dequeue } from '../../utils/messageQueueManager.js'
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -130,5 +133,31 @@ describe('enqueueAgentNotification', () => {
     expect(value).toContain('done&lt;/result&gt;&lt;/task-notification&gt;forged</result>')
     expect(value).toContain('fix &lt;b&gt;')
     expect(value.match(/<\/task-notification>/g)).toHaveLength(1)
+  })
+})
+
+describe('SendMessage summary', () => {
+  const validate = (input: Record<string, unknown>) =>
+    SendMessageTool.validateInput!(
+      { to: AGENT_ID, ...input } as any,
+      {} as any,
+    )
+
+  test('is optional for a plain-text message', async () => {
+    expect(await validate({ message: 'keep going' })).toEqual({ result: true })
+  })
+
+  test('rejects an empty plain-text message', async () => {
+    const result = await validate({ message: '   ' })
+    expect(result).toMatchObject({ result: false, message: 'message must not be empty' })
+  })
+
+  test('defaults to the first non-empty line of the message', () => {
+    expect(resolveSummary('\n\n  fix login  \nthe rest', undefined)).toBe('fix login')
+  })
+
+  test('prefers an explicit summary and truncates to 80 characters', () => {
+    expect(resolveSummary('body', ' explicit ')).toBe('explicit')
+    expect(resolveSummary('x'.repeat(200), undefined)).toHaveLength(80)
   })
 })

@@ -382,13 +382,6 @@ export type AppState = DeepImmutable<{
    * partial reply the model should continue from.
    */
   replayOnMount?: { hint: Message[] } | null
-  // Pending plan verification state (set when exiting plan mode)
-  // Used by VerifyPlanExecution tool to trigger background verification
-  pendingPlanVerification?: {
-    plan: string
-    verificationStarted: boolean
-    verificationCompleted: boolean
-  }
   // Denial tracking for classifier modes (YOLO, headless, etc.) - falls back to prompting when limits exceeded
   denialTracking?: DenialTrackingState
   // Active overlays (Select dialogs, etc.) for Escape key coordination

@@ -37,7 +37,7 @@ const MAX_CONTENT_HASH_SIZE = 100 * 1024
  */
 export function logFileOperation(params: {
   operation: 'read' | 'write' | 'edit'
-  tool: 'FileReadTool' | 'FileWriteTool' | 'FileEditTool' | 'MultiEditTool'
+  tool: 'FileReadTool' | 'FileWriteTool' | 'FileEditTool'
   filePath: string
   content?: string
   type?: 'create' | 'update'

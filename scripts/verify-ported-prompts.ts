@@ -215,7 +215,6 @@ const INTERPOLATED = [
   'TodoWrite',
   'WebSearch',
   'WebFetch',
-  'MultiEdit',
   'Bash',
   'Edit',
   'Glob',

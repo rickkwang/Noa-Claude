@@ -93,14 +93,6 @@ constant modules are real and referenced:
 - `REPLTool` and `SuggestBackgroundPRTool` — empty classes behind
   `USER_TYPE === 'ant'`, which `build.ts` pins to `'external'`. `REPLTool/constants.ts`
   (`REPL_TOOL_NAME`, repl-mode logic) and `primitiveTools.ts` are live code.
-- `TungstenTool` — a name-only object behind `USER_TYPE === 'ant'`.
-  `TungstenLiveMonitor.ts` is also an empty class, but `REPL.tsx` imports it
-  unconditionally, so the module must keep resolving.
-- `VerifyPlanExecutionTool` — an empty class, loaded only when
-  `CLAUDE_CODE_VERIFY_PLAN === 'true'`, which `build.ts` defines as `'false'`;
-  the registry then drops it because it has no `isEnabled`. Its `constants.ts`
-  (`VERIFY_PLAN_EXECUTION_TOOL_NAME`) is read from the ant-only branch of
-  `classifierDecision.ts`.
 
 ## Not Unlockable in This Build (by flag-only unlock)
 

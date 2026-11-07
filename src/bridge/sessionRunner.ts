@@ -72,7 +72,6 @@ const TOOL_VERBS: Record<string, string> = {
   Read: 'Reading',
   Write: 'Writing',
   Edit: 'Editing',
-  MultiEdit: 'Editing',
   Bash: 'Running',
   Glob: 'Searching',
   Grep: 'Searching',

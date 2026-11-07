@@ -115,7 +115,6 @@ import type {
 import { EXPLORE_AGENT } from 'src/tools/AgentTool/built-in/exploreAgent.js'
 import { PLAN_AGENT } from 'src/tools/AgentTool/built-in/planAgent.js'
 import { areExplorePlanAgentsEnabled } from 'src/tools/AgentTool/builtInAgents.js'
-import { AGENT_TOOL_NAME } from 'src/tools/AgentTool/constants.js'
 import { ASK_USER_QUESTION_TOOL_NAME } from 'src/tools/AskUserQuestionTool/prompt.js'
 import { BashTool } from 'src/tools/BashTool/BashTool.js'
 import { ExitPlanModeV2Tool } from 'src/tools/ExitPlanModeTool/ExitPlanModeV2Tool.js'
@@ -4573,18 +4572,6 @@ You have exited plan mode. You can now make edits, run tools, and take actions.$
     }
     case 'companion_intro':
       return []
-    case 'verify_plan_reminder': {
-      // Dead code elimination: CLAUDE_CODE_VERIFY_PLAN='false' in external builds, so === 'true' check allows Bun to eliminate the string
-      /* eslint-disable-next-line custom-rules/no-process-env-top-level */
-      const toolName =
-        process.env.CLAUDE_CODE_VERIFY_PLAN === 'true'
-          ? 'VerifyPlanExecution'
-          : ''
-      const content = `You have completed implementing the plan. Please call the "${toolName}" tool directly (NOT the ${AGENT_TOOL_NAME} tool or an agent) to verify that all plan items were completed correctly.`
-      return wrapMessagesInSystemReminder([
-        createUserMessage({ content, isMeta: true }),
-      ])
-    }
     case 'already_read_file':
     case 'command_permissions':
     case 'edited_image_file':

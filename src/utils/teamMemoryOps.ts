@@ -1,7 +1,6 @@
 // @ts-nocheck
 import { isTeamMemFile } from '../memdir/teamMemPaths.js'
 import { FILE_EDIT_TOOL_NAME } from '../tools/FileEditTool/constants.js'
-import { MULTI_EDIT_TOOL_NAME } from '../tools/MultiEditTool/constants.js'
 import { FILE_WRITE_TOOL_NAME } from '../tools/FileWriteTool/prompt.js'
 
 export { isTeamMemFile }
@@ -31,8 +30,7 @@ export function isTeamMemoryWriteOrEdit(
 ): boolean {
   if (
     toolName !== FILE_WRITE_TOOL_NAME &&
-    toolName !== FILE_EDIT_TOOL_NAME &&
-    toolName !== MULTI_EDIT_TOOL_NAME
+    toolName !== FILE_EDIT_TOOL_NAME
   ) {
     return false
   }
