@@ -1083,6 +1083,12 @@ export const SettingsSchema = lazySchema(() =>
         .describe(
           'Custom directory path for auto-memory storage. Supports ~/ prefix for home directory expansion. Ignored if set in projectSettings (checked-in .noa/settings.json) for security. When unset, defaults to ~/.noa/projects/<sanitized-cwd>/memory/.',
         ),
+      autoMemoryExtractEnabled: z
+        .boolean()
+        .optional()
+        .describe(
+          'Enable turn-end memory extraction (a background agent that saves memories from each turn). When set, overrides the server-side default, which is off.',
+        ),
       autoDreamEnabled: z
         .boolean()
         .optional()

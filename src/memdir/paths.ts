@@ -91,13 +91,25 @@ export function isAutoMemoryEnabled(): boolean {
  * directly in an `if` condition.
  */
 export function isExtractModeActive(): boolean {
-  if (!getFeatureValue_CACHED_MAY_BE_STALE('tengu_passport_quail', false)) {
+  if (!isMemoryExtractEnabled()) {
     return false
   }
   return (
     !getIsNonInteractiveSession() ||
+    getInitialSettings().autoMemoryExtractEnabled === true ||
     getFeatureValue_CACHED_MAY_BE_STALE('tengu_slate_thimble', false)
   )
+}
+
+/**
+ * Whether turn-end memory extraction is enabled. The autoMemoryExtractEnabled
+ * setting wins when set; otherwise the tengu_passport_quail gate decides
+ * (in-code default off, since remote GrowthBook fetch is disabled).
+ */
+export function isMemoryExtractEnabled(): boolean {
+  const setting = getInitialSettings().autoMemoryExtractEnabled
+  if (setting !== undefined) return setting
+  return getFeatureValue_CACHED_MAY_BE_STALE('tengu_passport_quail', false)
 }
 
 /**

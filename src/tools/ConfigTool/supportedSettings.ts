@@ -68,6 +68,11 @@ export const SUPPORTED_SETTINGS: Record<string, SettingConfig> = {
     type: 'boolean',
     description: 'Enable auto-memory',
   },
+  autoMemoryExtractEnabled: {
+    source: 'settings',
+    type: 'boolean',
+    description: 'Enable turn-end memory extraction',
+  },
   autoDreamEnabled: {
     source: 'settings',
     type: 'boolean',
