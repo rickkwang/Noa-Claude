@@ -3,6 +3,7 @@ name: desktop-release
 # Manual CI build of the unsigned macOS (arm64) Noa Agent app. It uploads the dmg and zip as
 # workflow artifacts only. The public GitHub Release is published from a locally verified build
 # (see README, Desktop App); the in-app update check reads gui-v* releases, so keep the tag format.
+# Publish gui-v<version> together with v<version> (the CLI release) so both carry the same number.
 # The job is read-only because scripts/check-workflow-security.mjs forbids write permissions.
 on:
   workflow_dispatch:

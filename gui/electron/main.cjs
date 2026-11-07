@@ -183,7 +183,8 @@ async function startBridge() {
   const port = await freePort(DEV ? 0 : 18787)
   bridge = spawn(findBun(), [...(DEV ? ['--hot'] : []), 'run', 'server/main.ts'], {
     cwd: GUI_DIR,
-    env: { ...process.env, NOA_GUI_PORT: String(port), NOA_GUI_TOKEN: BRIDGE_TOKEN },
+    // A packaged app has no project of its own, so it starts in the home folder, not the bundled repo.
+    env: { ...process.env, NOA_GUI_PORT: String(port), NOA_GUI_TOKEN: BRIDGE_TOKEN, ...(app.isPackaged ? { NOA_GUI_DEFAULT_CWD: app.getPath('home') } : {}) },
     stdio: ['ignore', 'inherit', 'inherit'],
   })
   bridge.on('exit', (code) => {

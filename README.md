@@ -67,6 +67,8 @@ The app is not code-signed or notarized. On first launch macOS may say it cannot
 
 Updates: the app checks GitHub Releases about five seconds after launch and offers a download when a newer `gui-v*` release exists; **Noa Agent → Check for Updates…** runs the same check on demand. Nothing is installed automatically: download the new dmg and drag it over the old app. Set `DISABLE_UPDATES=1` to turn checks off.
 
+The app bundles its own copy of the CLI runtime, so the app and `noa update` update separately. Each version is published as both `vX.Y.Z` (CLI) and `gui-vX.Y.Z` (desktop) with the same number, so the two stay in step when both are updated.
+
 Uninstall: quit the app and drag it from Applications to the Trash. To also remove its window state and browser profile, delete `~/Library/Application Support/Noa Agent`. Your CLI configuration and credentials in `~/.noa` are shared with the `noa` CLI and are not removed.
 
 ## Core Features

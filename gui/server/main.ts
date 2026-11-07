@@ -16,7 +16,7 @@ const DIST_DIR = resolve(import.meta.dir, "../dist")
 const PORT = Number(process.env.NOA_GUI_PORT ?? 8787)
 
 function resolveCwd(raw: string | null): string | null {
-  if (!raw) return REPO_ROOT
+  if (!raw) return process.env.NOA_GUI_DEFAULT_CWD || REPO_ROOT
   const dir = resolve(raw)
   return statSync(dir, { throwIfNoEntry: false })?.isDirectory() ? dir : null
 }
@@ -53,7 +53,8 @@ function authorized(req: Request): boolean {
 }
 
 function inListedProject(cwd: string): boolean {
-  return isManagedWorktree(cwd) || listProjects(REPO_ROOT).some((project) =>
+  // The packaged app's home default is open even before any project is listed.
+  return (!!process.env.NOA_GUI_DEFAULT_CWD && cwd === process.env.NOA_GUI_DEFAULT_CWD) || isManagedWorktree(cwd) || listProjects(REPO_ROOT).some((project) =>
     project.sources.some((source) => cwd === source || cwd.startsWith(source + sep))
   )
 }

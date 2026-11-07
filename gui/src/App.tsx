@@ -105,7 +105,7 @@ function Workspace({ cwd }: { cwd: string }) {
     const timer = setTimeout(() => setDockMotion(false), 520)
     return () => clearTimeout(timer)
   }, [dockMotion, sidebarOpen])
-  const [rightOpen, setRightOpen] = useState(true)
+  const [rightOpen, setRightOpen] = useState(false)
   // The bottom terminal panel: hiding it keeps its shells running.
   const [terminalOpen, setTerminalOpen] = useState(false)
   const [terminalFocus, setTerminalFocus] = useState(0)
