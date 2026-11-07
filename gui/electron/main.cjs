@@ -1,7 +1,7 @@
 // Desktop shell: starts the Bun bridge (server/main.ts), serves the
 // built UI from it, and shows it in a native window. The bridge is the only
 // process that talks to the agent; the window is a plain client of it.
-const { app, BrowserWindow, Menu, dialog, ipcMain, nativeTheme, session, shell } = require('electron')
+const { app, BrowserWindow, Menu, dialog, ipcMain, nativeImage, nativeTheme, session, shell } = require('electron')
 const { spawn } = require('child_process')
 const { randomBytes } = require('crypto')
 const fs = require('fs')
@@ -333,6 +333,15 @@ ipcMain.handle('noa:set-sidebar-translucency', (event, enabled, surfaceColor, th
 ipcMain.handle('noa:configure-notifications', (event, settings) => {
   if (!win || event.sender !== win.webContents) return
   notifier.configure(settings)
+})
+// What a file card in the composer shows: whether the path is a folder, and its system thumbnail if it has one.
+ipcMain.handle('noa:file-info', async (event, filePath) => {
+  if (!win || event.sender !== win.webContents || typeof filePath !== 'string' || !path.isAbsolute(filePath)) return
+  const stat = await fs.promises.stat(filePath).catch(() => undefined)
+  if (!stat) return
+  if (stat.isDirectory() || process.platform !== 'darwin' && process.platform !== 'win32') return { directory: stat.isDirectory() }
+  const image = await nativeImage.createThumbnailFromPath(filePath, { width: 352, height: 352 }).catch(() => undefined)
+  return { directory: false, thumbnail: image && !image.isEmpty() ? image.toDataURL() : undefined }
 })
 ipcMain.handle('noa:select-project-directories', (event) => selectProjectDirectories(event, true))
 ipcMain.handle('noa:select-project-directory', async (event) =>

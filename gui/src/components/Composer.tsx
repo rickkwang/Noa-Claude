@@ -6,6 +6,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEve
 import { startEffortMaxFill } from "./effortMaxFill"
 import type { ContextUsage, ImageAttachment, RateLimitInfo, UserContent, ModelInfo, ProviderInfo, PermissionMode, SlashCommand } from "../agent/protocol"
 import { RateLimitNotice } from "./RateLimitNotice"
+import { FileAttachmentCard } from "./FileAttachmentCard"
 import { Check, Cloud, Edit2, FileText, List, Queue, RotateCcw, Steer, X } from "../lib/icons"
 import { Lightbox } from "./Lightbox"
 import { useConfirm } from "./ConfirmDialog"
@@ -63,6 +64,9 @@ interface ComposerProps {
   reference?: { path: string; key: number }
   quote?: { text: string; key: number }
   onQuoteConsumed?: () => void
+  // Files dropped anywhere on the conversation pane.
+  dropped?: { files: File[]; key: number }
+  onDroppedConsumed?: () => void
   // Loads an existing user message back into the composer when the user clicks Edit.
   // Text dropped into the draft from outside, e.g. a skill invocation chosen in settings.
   prefill?: { text: string; key: number }
@@ -94,6 +98,8 @@ interface ComposerProps {
   onDismissRateLimit?: () => void
 }
 
+const IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"]
+
 // Noa-styled composer: a rounded card with a hairline ring, slash menu, model and mode pickers.
 export function Composer({
   connection,
@@ -113,6 +119,8 @@ export function Composer({
   reference,
   quote,
   onQuoteConsumed,
+  dropped,
+  onDroppedConsumed,
   prefill,
   onPrefillConsumed,
   editDraft,
@@ -144,6 +152,14 @@ export function Composer({
       return []
     }
   })
+  // Files and folders dropped from outside, kept as absolute paths and shown as cards beside the images.
+  const [files, setFiles] = useState<string[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem(`${draftKey}:files`) ?? "[]")
+    } catch {
+      return []
+    }
+  })
   const [images, setImages] = useState<ImageAttachment[]>([])
   const [imagesLoaded, setImagesLoaded] = useState(false)
   const initialDraftKey = useRef(draftKey)
@@ -163,10 +179,7 @@ export function Composer({
   const [attachmentError, setAttachmentError] = useState<string>()
   const [loadingImages, setLoadingImages] = useState(false)
   const [pendingImages, setPendingImages] = useState(0)
-  const [removedImage, setRemovedImage] = useState<{ image: ImageAttachment; index: number }>()
-  const removedImageTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const fileRef = useRef<HTMLInputElement>(null)
-  useEffect(() => () => clearTimeout(removedImageTimer.current), [])
   async function addImages(files: File[]) {
     if (!imagesLoaded) return
     setAttachmentError(undefined)
@@ -175,7 +188,7 @@ export function Composer({
     try {
       const loaded: ImageAttachment[] = []
       for (const file of files) {
-        if (!["image/png", "image/jpeg", "image/gif", "image/webp"].includes(file.type)) throw new Error("Use PNG, JPEG, GIF or WebP images.")
+        if (!IMAGE_TYPES.includes(file.type)) throw new Error("Use PNG, JPEG, GIF or WebP images.")
         if (file.size > 5 * 1024 * 1024) throw new Error(`${file.name} exceeds the 5 MB image limit.`)
         const dataUrl = await new Promise<string>((resolve, reject) => {
           const reader = new FileReader()
@@ -195,25 +208,24 @@ export function Composer({
     } catch (error) { setAttachmentError((error as Error).message) }
     finally { setLoadingImages(false); setPendingImages(0) }
   }
+  // Images become attachments; any other file or folder is attached by its absolute path.
+  useEffect(() => {
+    if (!dropped) return
+    const isImage = (file: File) => IMAGE_TYPES.includes(file.type)
+    const paths = dropped.files.filter((file) => !isImage(file)).map((file) => window.noaDesktop?.getPathForFile?.(file))
+    const found = paths.filter((path): path is string => !!path)
+    if (found.length) setFiles((items) => [...items, ...found.filter((path) => !items.includes(path))])
+    const droppedImages = dropped.files.filter(isImage)
+    // addImages clears the error first, so report unusable files after it starts.
+    if (droppedImages.length) void addImages(droppedImages)
+    if (paths.some((path) => !path)) setAttachmentError("Use PNG, JPEG, GIF or WebP images.")
+    onDroppedConsumed?.()
+    textareaRef.current?.focus()
+  }, [dropped?.key])
   function removeImage(image: ImageAttachment) {
-    const index = images.findIndex((candidate) => candidate.id === image.id)
-    if (index === -1) return
     setImages((current) => current.filter((candidate) => candidate.id !== image.id))
-    setRemovedImage({ image, index })
-    clearTimeout(removedImageTimer.current)
-    removedImageTimer.current = setTimeout(() => setRemovedImage(undefined), 5000)
   }
-  function undoRemoveImage() {
-    if (!removedImage) return
-    clearTimeout(removedImageTimer.current)
-    setImages((current) => {
-      if (current.some((image) => image.id === removedImage.image.id)) return current
-      const next = [...current]
-      next.splice(Math.min(removedImage.index, next.length), 0, removedImage.image)
-      return next
-    })
-    setRemovedImage(undefined)
-  }
+
   const [composing, setComposing] = useState(false)
   // macOS Electron dispatches a final Enter with isComposing=false just after compositionend.
   // The timestamp guard keeps that phantom key from sending a half-finished CJK sentence.
@@ -242,6 +254,10 @@ export function Composer({
     if (references.length) localStorage.setItem(`${draftKey}:references`, JSON.stringify(references))
     else localStorage.removeItem(`${draftKey}:references`)
   }, [references, draftKey])
+  useEffect(() => {
+    if (files.length) localStorage.setItem(`${draftKey}:files`, JSON.stringify(files))
+    else localStorage.removeItem(`${draftKey}:files`)
+  }, [files, draftKey])
 
   useEffect(() => {
     if (!reference) return
@@ -287,8 +303,7 @@ export function Composer({
     setText(editDraft.text)
     setImages(editDraft.images)
     setReferences([])
-    setRemovedImage(undefined)
-    clearTimeout(removedImageTimer.current)
+    setFiles([])
     requestAnimationFrame(() => {
       const el = textareaRef.current
       if (!el) return
@@ -418,16 +433,18 @@ export function Composer({
 
   function submit() {
     const trimmed = text.trim()
-    if ((!trimmed && !images.length) || disabled || loadingImages || !imagesLoaded) return
+    if ((!trimmed && !images.length && !files.length) || disabled || loadingImages || !imagesLoaded) return
     const parsed = trimmed.match(/^\/([\w:.-]+)(?:\s+([\s\S]*))?$/)
     if (parsed) {
       const command = findComposerCommand(allCommands, parsed[1]!)
       if (!command) { setAttachmentError(`Unknown command /${parsed[1]}. Use /help to browse available commands.`); return }
       if (command.action) { runGuiCommand(command, parsed[2]?.trim() ?? ""); return }
     } else if (trimmed === "/") { setMenuDismissed(false); return }
-    const prompt = references.length
-        ? `${trimmed}\n\nReferenced project files:\n${references.map((path) => `- ${JSON.stringify(path)}`).join("\n")}`
-        : trimmed
+    const prompt = [
+      trimmed,
+      references.length ? `Referenced project files:\n${references.map((path) => `- ${JSON.stringify(path)}`).join("\n")}` : "",
+      files.length ? `Attached files:\n${files.map((path) => `- ${JSON.stringify(path)}`).join("\n")}` : "",
+    ].filter(Boolean).join("\n\n")
     const content: UserContent = images.length ? [
       ...images.map((image) => ({ type: "image" as const, source: { type: "base64" as const, media_type: image.dataUrl.slice(5, image.dataUrl.indexOf(";")), data: image.dataUrl.slice(image.dataUrl.indexOf(",") + 1) } })),
       ...(prompt ? [{ type: "text" as const, text: prompt }] : []),
@@ -435,10 +452,9 @@ export function Composer({
     if (!onSend(content)) { setAttachmentError("Message was not sent. Reconnect and try again."); return }
     setAttachmentError(undefined)
     setImages([])
-    setRemovedImage(undefined)
-    clearTimeout(removedImageTimer.current)
     setText("")
     setReferences([])
+    setFiles([])
   }
 
   function runGuiCommand(command: ComposerCommand, value: string) {
@@ -704,7 +720,7 @@ export function Composer({
         />
       )}
 
-      <div className="noa-agent-input relative flex flex-col" onDragOver={(event) => { if (event.dataTransfer.types.includes("Files")) event.preventDefault() }} onDrop={(event) => { event.preventDefault(); void addImages(Array.from(event.dataTransfer.files)) }}>
+      <div className="noa-agent-input relative flex flex-col">
         {editDraft && (
           <div className="flex items-center gap-2 border-b border-[var(--divider-subtle)] px-3 py-1.5 text-caption text-[var(--sidebar-text-muted)]">
             <Edit2 size={12} />
@@ -715,6 +731,7 @@ export function Composer({
                 setText("")
                 setImages([])
                 setReferences([])
+                setFiles([])
                 onCancelEdit?.()
               }}
               className="rounded p-0.5 hover:bg-[var(--fill-hover)] hover:text-[var(--text-primary)]"
@@ -725,10 +742,13 @@ export function Composer({
           </div>
         )}
         <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple hidden onChange={(event) => { void addImages(Array.from(event.target.files ?? [])); event.target.value = "" }} />
-        {images.length > 0 && (
+        {(images.length > 0 || files.length > 0) && (
           <div className="flex flex-wrap gap-2 px-3 pt-3">
+            {files.map((path) => (
+              <FileAttachmentCard key={path} path={path} onRemove={() => setFiles((items) => items.filter((item) => item !== path))} />
+            ))}
             {images.map((image) => (
-              <div key={image.id} className="relative">
+              <div key={image.id} className="noa-attachment relative">
                 <button
                   type="button"
                   aria-label={`Preview ${image.name}`}
@@ -736,17 +756,18 @@ export function Composer({
                     const index = images.findIndex((item) => item.id === image.id)
                     if (index >= 0) setImagePreview(index)
                   }}
-                  className="block cursor-zoom-in overflow-hidden rounded-lg border border-[var(--border-default)] noa-press"
+                  className="block size-[122px] cursor-zoom-in overflow-hidden rounded-2xl"
                 >
-                  <img src={image.dataUrl} alt={image.name} className="size-16 object-cover" />
+                  <img src={image.dataUrl} alt={image.name} className="size-full object-cover" />
                 </button>
+                <span aria-hidden="true" className="noa-attachment-ring" />
                 <button
                   type="button"
                   aria-label={`Remove image ${image.name}`}
                   onClick={() => removeImage(image)}
-                  className="absolute -right-1 -top-1 rounded-full bg-[var(--bg-card)] p-0.5 shadow-sm"
+                  className="noa-attachment-remove"
                 >
-                  <X size={12} />
+                  <X size={10} />
                 </button>
               </div>
             ))}
@@ -755,16 +776,8 @@ export function Composer({
         {pendingImages > 0 && (
           <div className="flex flex-wrap gap-2 px-3 pt-3" aria-label="Adding images">
             {Array.from({ length: pendingImages }, (_, index) => (
-              <div key={index} className="noa-attachment-pending size-16 rounded-lg border border-[var(--border-default)]" />
+              <div key={index} className="noa-attachment-pending size-[122px] rounded-2xl border border-[var(--border-default)]" />
             ))}
-          </div>
-        )}
-        {removedImage && (
-          <div role="status" className="mx-3 mt-2 flex items-center justify-between gap-3 rounded-md bg-[var(--surface-page)] px-2.5 py-1.5 text-caption text-[var(--text-secondary)]">
-            <span className="truncate">Image removed</span>
-            <button type="button" onClick={undoRemoveImage} className="text-[var(--accent-color)]">
-              Undo
-            </button>
           </div>
         )}
         {attachmentError && <p role="alert" className="m-0 px-3 pt-2 text-caption text-[#C24444]">{attachmentError}</p>}
@@ -952,14 +965,14 @@ export function Composer({
             />
             <button
               type="button"
-              onClick={busy && !editDraft?.queued && !text.trim() && !images.length ? onInterrupt : submit}
-              disabled={(!busy || editDraft?.queued) && (disabled || loadingImages || !imagesLoaded || (!text.trim() && !images.length))}
-              aria-label={editDraft?.queued ? "Save queued message" : busy && !text.trim() && !images.length ? "Stop (Esc)" : busy ? followUpMode === "steer" ? "Steer" : "Queue message" : "Run task"}
-              title={editDraft?.queued ? "Save queued message; queue stays paused" : busy && !text.trim() && !images.length ? "Stop (Esc)" : busy ? followUpMode === "steer" ? "Submit without interrupting the model" : "Queue after the current turn" : "Run task"}
-              data-action={busy && !text.trim() && !images.length ? "stop" : busy ? followUpMode : "send"}
+              onClick={busy && !editDraft?.queued && !text.trim() && !images.length && !files.length ? onInterrupt : submit}
+              disabled={(!busy || editDraft?.queued) && (disabled || loadingImages || !imagesLoaded || (!text.trim() && !images.length && !files.length))}
+              aria-label={editDraft?.queued ? "Save queued message" : busy && !text.trim() && !images.length && !files.length ? "Stop (Esc)" : busy ? followUpMode === "steer" ? "Steer" : "Queue message" : "Run task"}
+              title={editDraft?.queued ? "Save queued message; queue stays paused" : busy && !text.trim() && !images.length && !files.length ? "Stop (Esc)" : busy ? followUpMode === "steer" ? "Submit without interrupting the model" : "Queue after the current turn" : "Run task"}
+              data-action={busy && !text.trim() && !images.length && !files.length ? "stop" : busy ? followUpMode : "send"}
               className="noa-primary-action ml-1 flex size-7 shrink-0 items-center justify-center rounded-full bg-[var(--text-primary,#2D2D2B)] text-[var(--surface-page,#FFFFFF)] transition-[opacity,transform] hover:opacity-90 disabled:opacity-50 noa-press"
             >
-              {busy && !editDraft?.queued && !text.trim() && !images.length
+              {busy && !editDraft?.queued && !text.trim() && !images.length && !files.length
                 ? <span aria-hidden="true" className="block size-[11px] rounded-[1.25px] bg-current" />
                 : busy && !editDraft?.queued ? followUpMode === "steer" ? <Steer size={16} /> : <Queue size={16} /> : <ComposerSendIcon />}
             </button>

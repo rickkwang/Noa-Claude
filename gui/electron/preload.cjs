@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('noaDesktop', {
   selectProjectDirectories: () => ipcRenderer.invoke('noa:select-project-directories'),
   selectProjectDirectory: () => ipcRenderer.invoke('noa:select-project-directory'),
   getPathForFile: (file) => webUtils.getPathForFile(file),
+  fileInfo: (path) => ipcRenderer.invoke('noa:file-info', path),
   preview: {
     command: (message) => ipcRenderer.invoke('noa:preview', message),
     subscribe: (listener) => {

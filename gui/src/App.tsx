@@ -18,6 +18,7 @@ import { AddProjectDialog } from "./components/AddProjectDialog"
 import { useConfirm } from "./components/ConfirmDialog"
 import { Composer } from "./components/Composer"
 import { EmptyState } from "./components/EmptyState"
+import { FileDropOverlay } from "./components/FileDropOverlay"
 import { MessageList } from "./components/MessageList"
 import { DiffActionDialog } from "./components/TurnDiffCard"
 import { PermissionCard, type QuestionDraft } from "./components/PermissionCard"
@@ -129,6 +130,8 @@ function Workspace({ cwd }: { cwd: string }) {
   const [addingProject, setAddingProject] = useState(false)
   const [editingProject, setEditingProject] = useState<ProjectInfo>()
   const [quote, setQuote] = useState<{ text: string; key: number }>()
+  const [dropped, setDropped] = useState<{ files: File[]; key: number }>()
+  const [draggingFiles, setDraggingFiles] = useState(false)
   const [reference, setReference] = useState<{ path: string; key: number }>()
   const [prefill, setPrefill] = useState<{ text: string; key: number }>()
   const [editDraft, setEditDraft] = useState<{ text: string; images: ImageAttachment[]; key: number }>()
@@ -806,8 +809,29 @@ function Workspace({ cwd }: { cwd: string }) {
           {/* The conversation and its floating composer sit above the terminal panel. */}
           <div
             className="relative flex min-h-0 flex-1 flex-col"
+            onDragEnter={(event) => {
+              if (event.dataTransfer.types.includes("Files")) setDraggingFiles(true)
+            }}
+            onDragOver={(event) => {
+              if (!event.dataTransfer.types.includes("Files")) return
+              event.preventDefault()
+              event.dataTransfer.dropEffect = "copy"
+            }}
+            onDragLeave={(event) => {
+              // Crossing between children also fires dragleave; only leaving the pane (or a cancelled drag,
+              // whose relatedTarget is null) ends the overlay.
+              if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDraggingFiles(false)
+            }}
+            onDrop={(event) => {
+              if (!event.dataTransfer.types.includes("Files")) return
+              event.preventDefault()
+              setDraggingFiles(false)
+              const files = Array.from(event.dataTransfer.files)
+              if (files.length) setDropped({ files, key: Date.now() })
+            }}
             style={{ paddingRight: overviewDockInset, "--noa-overview-dock": `${overviewDockInset}px`, "--composer-overlay": `${footerHeight}px` } as React.CSSProperties}
           >
+            {draggingFiles && <FileDropOverlay />}
             {hasTurns ? (
               <MessageList
                 key={session.key}
@@ -912,6 +936,8 @@ function Workspace({ cwd }: { cwd: string }) {
                   reference={reference}
                   quote={quote}
                   onQuoteConsumed={() => setQuote(undefined)}
+                  dropped={dropped}
+                  onDroppedConsumed={() => setDropped(undefined)}
                   prefill={prefill}
                   onPrefillConsumed={() => setPrefill(undefined)}
                   editDraft={editDraft ? { ...editDraft, queued: !!queueEditId, label: queueEditId ? "Edit queued message" : "Edit and resend" } : undefined}

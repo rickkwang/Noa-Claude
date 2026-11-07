@@ -1637,6 +1637,32 @@ kbd.noa-review-menu-hint { font-family: inherit; }
 @keyframes noa-attachment-shimmer {
   to { background-position: -120% 0; }
 }
+/* Composer attachment frame: an inset ring drawn over the content so thumbnails don't cover the edge. */
+.noa-attachment-ring {
+  position: absolute; inset: 0; border-radius: 16px; pointer-events: none;
+  box-shadow: inset 0 0 0 1px var(--border-default); transition: background-color 120ms var(--ease-out);
+}
+.noa-attachment:hover .noa-attachment-ring { background: color-mix(in srgb, var(--text-primary) 5%, transparent); }
+/* Its remove button: a small dark disc on the corner, hidden until the attachment is hovered or holds focus,
+   always shown where there is no hover. */
+.noa-attachment-remove {
+  position: absolute; top: -2px; right: -2px; display: flex; width: 16px; height: 16px; align-items: center; justify-content: center;
+  border-radius: 9999px; background: var(--text-primary); color: var(--bg-card);
+  box-shadow: 0 0 0 2px var(--bg-card), 0 1px 2px rgb(0 0 0 / 0.08); opacity: 0; pointer-events: none;
+  transition: opacity 120ms var(--ease-out), background-color 120ms var(--ease-out);
+}
+.noa-attachment:hover .noa-attachment-remove, .noa-attachment:focus-within .noa-attachment-remove { opacity: 1; pointer-events: auto; }
+.noa-attachment-remove:hover { background: color-mix(in srgb, var(--text-primary) 80%, transparent); }
+.noa-attachment-remove:focus-visible { outline: 2px solid var(--accent-color); outline-offset: -2px; }
+@media (hover: none) { .noa-attachment-remove { opacity: 1; pointer-events: auto; } }
+
+.noa-file-drop { animation: noa-file-drop-in 150ms cubic-bezier(0.215, 0.61, 0.355, 1); }
+.noa-file-drop-icon { animation: noa-file-drop-rise 220ms cubic-bezier(0.215, 0.61, 0.355, 1) backwards; }
+@keyframes noa-file-drop-in { from { opacity: 0; } }
+@keyframes noa-file-drop-rise { from { opacity: 0; transform: translateY(6px); } }
+@media (prefers-reduced-motion: reduce) {
+  .noa-file-drop, .noa-file-drop-icon { animation: none; }
+}
 
 .group\/queue[data-exiting="true"] {
   pointer-events: none;

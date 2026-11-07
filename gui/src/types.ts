@@ -72,6 +72,7 @@ declare global {
       selectProjectDirectories?: () => Promise<string[]>;
       selectProjectDirectory?: () => Promise<string | undefined>;
       getPathForFile?: (file: File) => string;
+      fileInfo?: (path: string) => Promise<{ directory: boolean; thumbnail?: string } | undefined>;
       preview?: {
         command: (message: { action: string; id: string; cwd?: string; url?: string; rect?: { x: number; y: number; width: number; height: number } | null; viewport?: number[] }) => Promise<{ error?: string } | undefined>;
         subscribe: (listener: (state: { id: string; url: string; title: string; loading: boolean; canBack: boolean; canForward: boolean; error?: string }) => void) => () => void;
