@@ -1,5 +1,5 @@
-// Checks GitHub Releases for a newer desktop build. It only reports the release and
-// links to its download; it never replaces the running app. Desktop releases are tagged
+// Checks GitHub Releases for a newer desktop build. It only reports the release; installing it is
+// appUpdate.cjs's job. Desktop releases are tagged
 // gui-v<version>, which the CLI installer ignores (it accepts only vX.Y.Z tags).
 const http = require('http')
 const https = require('https')
@@ -32,10 +32,14 @@ function pickLatest(releases) {
     if (!best || isNewer(version, best.version)) best = { version, release }
   }
   if (!best) return null
-  const asset = (best.release.assets ?? []).find((item) => /arm64\.dmg$/.test(item?.name ?? ''))
+  const assets = best.release.assets ?? []
+  const dmg = assets.find((item) => /arm64\.dmg$/.test(item?.name ?? ''))
+  const version = best.version.join('.')
   return {
-    version: best.version.join('.'),
-    url: asset?.browser_download_url ?? best.release.html_url,
+    version,
+    url: dmg?.browser_download_url ?? best.release.html_url,
+    // electron-updater reads latest-mac.yml from the folder that holds this release's assets.
+    feedUrl: dmg?.browser_download_url ? new URL('.', dmg.browser_download_url).href : `https://github.com/rickkwang/Noa-Claude/releases/tag/${TAG_PREFIX}${version}`,
     notes: best.release.html_url,
   }
 }

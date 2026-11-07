@@ -81,3 +81,4 @@ jobs:
           path: |
             gui/release/Noa-Agent-${{ env.VERSION }}-arm64.dmg
             gui/release/Noa-Agent-${{ env.VERSION }}-arm64.zip
+            gui/release/latest-mac.yml

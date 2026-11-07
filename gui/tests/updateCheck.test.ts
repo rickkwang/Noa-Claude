@@ -8,7 +8,9 @@ const release = (tag: string, extra: Record<string, unknown> = {}) => ({
   draft: false,
   prerelease: false,
   html_url: `https://example.invalid/${tag}`,
-  assets: [{ name: `Noa-Agent-${tag.replace("gui-v", "")}-arm64.dmg`, browser_download_url: `https://example.invalid/${tag}.dmg` }],
+  assets: [
+    { name: `Noa-Agent-${tag.replace("gui-v", "")}-arm64.dmg`, browser_download_url: `https://example.invalid/${tag}.dmg` },
+  ],
   ...extra,
 })
 
@@ -22,6 +24,7 @@ test("picks the newest published gui release and its arm64 dmg", () => {
   ])
   expect(latest?.version).toBe("1.21.1")
   expect(latest?.url).toBe("https://example.invalid/gui-v1.21.1.dmg")
+  expect(latest?.feedUrl).toBe("https://example.invalid/")
 })
 
 test("compares versions numerically, not lexically", () => {

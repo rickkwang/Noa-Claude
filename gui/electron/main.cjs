@@ -12,6 +12,8 @@ const path = require('path')
 const { createNotifier } = require('./notifications.cjs')
 const { registerPreview } = require('./preview.cjs')
 const { checkForUpdate } = require('./updateCheck.cjs')
+const { installMacUpdate } = require('./macUpdateInstaller.cjs')
+const { autoUpdater } = require('electron-updater')
 
 // A packaged app keeps the bridge and UI beside the repo runtime in Resources (see scripts/prepare-desktop-runtime.mjs).
 const GUI_DIR = app.isPackaged ? path.join(process.resourcesPath, 'repo', 'gui') : path.join(__dirname, '..')
@@ -65,12 +67,16 @@ function setZoom(next) {
 
 // Only packaged builds check for updates; a development build is not a release.
 const UPDATES_ENABLED = app.isPackaged && process.env.DISABLE_UPDATES !== '1'
+// Metadata only: the user chooses when to download, and macUpdateInstaller does the swap.
+autoUpdater.autoDownload = false
+autoUpdater.autoInstallOnAppQuit = false
 
 function showDialog(options) {
   return win && !win.isDestroyed() ? dialog.showMessageBox(win, options) : dialog.showMessageBox(options)
 }
 
-// The check only links to the release; it never replaces the running app.
+// Finds the newest desktop release, then installs it in place. The release metadata
+// (latest-mac.yml, with the zip sha512) is read by electron-updater from that release.
 async function checkForUpdates({ manual }) {
   let update
   try {
@@ -88,10 +94,26 @@ async function checkForUpdates({ manual }) {
   const { response } = await showDialog({
     type: 'info',
     message: `Noa Agent ${update.version} is available`,
-    detail: `You have ${app.getVersion()}. Download the new version and drag it into Applications to replace this app.`,
-    buttons: ['Download', 'Later'], defaultId: 0, cancelId: 1,
+    detail: `You have ${app.getVersion()}. Install it now; the app restarts to finish the update.`,
+    buttons: ['Install and Restart', 'Later'], defaultId: 0, cancelId: 1,
   })
-  if (response === 0) shell.openExternal(update.url)
+  if (response !== 0) return
+  try {
+    autoUpdater.setFeedURL({ provider: 'generic', url: update.feedUrl })
+    const { updateInfo } = await autoUpdater.checkForUpdates()
+    // Hands off to a detached script that swaps the bundle after this process exits.
+    await installMacUpdate({ app, updateInfo })
+  } catch (err) {
+    const { response: failed } = await showDialog({
+      type: 'error',
+      message: 'Could not install the update',
+      detail: String(err.message ?? err),
+      buttons: ['Download', 'OK'], defaultId: 0, cancelId: 1,
+    })
+    if (failed === 0) shell.openExternal(update.url)
+    return
+  }
+  app.quit()
 }
 
 function buildMenu() {
