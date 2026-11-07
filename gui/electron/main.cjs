@@ -12,7 +12,7 @@ const path = require('path')
 const { createNotifier } = require('./notifications.cjs')
 const { registerPreview } = require('./preview.cjs')
 const { checkForUpdate } = require('./updateCheck.cjs')
-const { installMacUpdate } = require('./macUpdateInstaller.cjs')
+const { prepareMacUpdate } = require('./macUpdateInstaller.cjs')
 const { autoUpdater } = require('electron-updater')
 
 // A packaged app keeps the bridge and UI beside the repo runtime in Resources (see scripts/prepare-desktop-runtime.mjs).
@@ -25,6 +25,8 @@ if (app.isPackaged) process.env.PATH = [path.join(process.resourcesPath, 'rg'), 
 let bridge = null
 let win = null
 let quitting = false
+// A verified update whose install script starts when the app quits.
+let pendingInstall = null
 let checkingQuit = false
 let bridgePort
 // Every bridge request must carry this; other local processes do not know it.
@@ -101,8 +103,8 @@ async function checkForUpdates({ manual }) {
   try {
     autoUpdater.setFeedURL({ provider: 'generic', url: update.feedUrl })
     const { updateInfo } = await autoUpdater.checkForUpdates()
-    // Hands off to a detached script that swaps the bundle after this process exits.
-    await installMacUpdate({ app, updateInfo })
+    // Staged now; the swap script starts in will-quit, after the quit is confirmed.
+    pendingInstall = await prepareMacUpdate({ app, updateInfo })
   } catch (err) {
     const { response: failed } = await showDialog({
       type: 'error',
@@ -394,4 +396,5 @@ app.on('before-quit', (event) => {
 app.on('will-quit', () => {
   bridge?.kill('SIGTERM')
   vite?.kill('SIGTERM')
+  pendingInstall?.launch()
 })

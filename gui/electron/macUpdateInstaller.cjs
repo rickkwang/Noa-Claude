@@ -316,7 +316,9 @@ function spawnDetachedInstallScript(scriptPath) {
   child.unref();
 }
 
-async function installMacUpdate({ app, updateInfo, onProgress }) {
+// Downloads and verifies the update and writes its install script. Nothing is replaced yet:
+// call launch() once the app is quitting, so the script only starts after the quit is confirmed.
+async function prepareMacUpdate({ app, updateInfo, onProgress }) {
   const version = updateInfo?.version || app.getVersion();
   const productName = app.getName();
   const releasePageUrl = getReleasePageUrl(version);
@@ -328,6 +330,7 @@ async function installMacUpdate({ app, updateInfo, onProgress }) {
   const extractDir = path.join(workDir, 'extracted');
   const logPath = path.join(workDir, 'install.log');
 
+  let scriptPath = null;
   // Any failure before the detached installer owns workDir must clean it up, or aborted updates accumulate in tmp.
   try {
     fs.mkdirSync(extractDir, { recursive: true });
@@ -342,7 +345,7 @@ async function installMacUpdate({ app, updateInfo, onProgress }) {
       throw new Error(`Extracted update package does not contain ${productName}.app.`);
     }
     const backupAppPath = `${targetAppPath}.backup.${Date.now()}`;
-    const scriptPath = path.join(workDir, 'install.sh');
+    scriptPath = path.join(workDir, 'install.sh');
     fs.writeFileSync(
       scriptPath,
       buildInstallScript({
@@ -358,25 +361,22 @@ async function installMacUpdate({ app, updateInfo, onProgress }) {
       'utf8',
     );
     fs.chmodSync(scriptPath, 0o755);
-    spawnDetachedInstallScript(scriptPath);
   } catch (error) {
     fs.rmSync(workDir, { recursive: true, force: true });
     throw error;
   }
 
   return {
-    ok: true,
-    reason: 'external-installer-started',
-    message: `Downloaded v${version}. Restarting to install...`,
     version,
     logPath,
+    launch: () => spawnDetachedInstallScript(scriptPath),
   };
 }
 
 module.exports = {
   buildInstallScript,
   getReleasePageUrl,
-  installMacUpdate,
+  prepareMacUpdate,
   normalizeSha512,
   selectVerifiedUpdateAsset,
   verifyFileSha512,
