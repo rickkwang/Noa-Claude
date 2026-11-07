@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## 1.22.1
+
+No CLI changes; this version is released with the desktop app so the two stay in step.
+
+### Desktop app (gui-v1.22.1)
+
+- New: the app installs updates itself. The update prompt downloads the release zip, checks its SHA-512 against the release metadata (`latest-mac.yml`), replaces the app and reopens it. A failed install keeps the current app and opens the release page.
+- Changed: the release must include `latest-mac.yml`; 1.22.0 and earlier have no in-app install, so install 1.22.1 once by hand to get it.
+
 ## 1.22.0
 
 - New: in fullscreen, clicking the "to send now" hint under a queued message sends it right away, exactly as its keyboard shortcut does.
