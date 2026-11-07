@@ -25,10 +25,8 @@ function store(key: string, value: string) {
 function dateKey(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`
 }
-function shortDate(key: string): string {
-  const [y, m, d] = key.split("-").map(Number)
-  return new Date(y!, m! - 1, d!).toLocaleDateString("en-US", { month: "short", day: "numeric" })
-}
+// One formatter for every cell: toLocaleDateString builds a new one per call, which is slow across a year of cells.
+const SHORT_DATE = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" })
 
 // Mirrors src/utils/heatmap.ts: weeks start on Sunday, end at today, and
 // non-zero days are bucketed by the 25th/50th/75th percentile of message counts.
@@ -41,10 +39,11 @@ function heatmap(days: StatsSummary["days"], weeks: number) {
   today.setHours(0, 0, 0, 0)
   const start = new Date(today)
   start.setDate(today.getDate() - today.getDay() - (weeks - 1) * 7)
-  const cells: { key: string; messages: number; level: number; future: boolean }[] = []
+  const cells: { key: string; level: number; future: boolean; title?: string }[] = []
   for (const date = new Date(start); cells.length < weeks * 7; date.setDate(date.getDate() + 1)) {
-    const key = dateKey(date), messages = counts.get(key) ?? 0
-    cells.push({ key, messages, level: level(messages), future: date > today })
+    const key = dateKey(date), messages = counts.get(key) ?? 0, future = date > today
+    const title = future ? undefined : `${SHORT_DATE.format(date)}: ${messages} ${messages === 1 ? "message" : "messages"}`
+    cells.push({ key, level: level(messages), future, title })
   }
   return cells
 }
@@ -69,7 +68,7 @@ function Heatmap({ days }: { days: StatsSummary["days"] }) {
         {cells.map(cell => (
           <span
             key={cell.key}
-            title={cell.future ? undefined : `${shortDate(cell.key)}: ${cell.messages} ${cell.messages === 1 ? "message" : "messages"}`}
+            title={cell.title}
             className="aspect-square rounded-[3px]"
             style={{ background: cell.future ? "transparent" : cell.level ? `color-mix(in srgb, var(--accent-color) ${LEVELS[cell.level]}%, transparent)` : "color-mix(in srgb, var(--text-primary) 6%, transparent)" }}
           />
