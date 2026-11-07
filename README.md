@@ -11,7 +11,7 @@ Prerequisites: [Bun](https://bun.sh) (CI tests 1.3.9) and [ripgrep](https://gith
 Install with `curl`:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/rickkwang/Noa-Claude/v1.22.1/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/rickkwang/Noa-Claude/v1.23.0/install.sh | bash
 ```
 
 Install from a repository checkout:
@@ -65,7 +65,7 @@ Download `Noa-Agent-<version>-arm64.dmg` from the latest `gui-v*` release on [Gi
 
 The app is not code-signed or notarized. On first launch macOS may say it cannot be opened: go to System Settings → Privacy & Security and click **Open Anyway**, or run `xattr -dr com.apple.quarantine "/Applications/Noa Agent.app"` once.
 
-Updates: the app checks GitHub Releases about five seconds after launch and offers to install a newer `gui-v*` release; **Noa Agent → Check for Updates…** runs the same check on demand. Installing downloads the zip, checks its SHA-512 against the release metadata, replaces the app and reopens it. Nothing installs until you confirm. If the install fails, the old app is kept and the release page opens. Set `DISABLE_UPDATES=1` to turn checks off.
+Updates: the app checks GitHub Releases shortly after launch and every 15 minutes. A newer `gui-v*` release downloads in the background, with its progress next to **Settings** at the bottom of the sidebar; the download's SHA-512 is checked against the release metadata, and a verified download is kept across restarts. **Update** then asks to confirm, quits (stopping running tasks), replaces the app and reopens it. Nothing installs until you confirm. If the install fails, the old app is kept and the release page opens. **Noa Agent → Check for Updates…** runs the check on demand. Set `DISABLE_UPDATES=1` to turn checks off.
 
 The app bundles its own copy of the CLI runtime, so the app and `noa update` update separately. Each version is published as both `vX.Y.Z` (CLI) and `gui-vX.Y.Z` (desktop) with the same number, so the two stay in step when both are updated.
 

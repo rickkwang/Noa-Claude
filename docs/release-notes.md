@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+## 1.23.0
+
+- New: the `autoMemoryExtractEnabled` setting turns turn-end memory extraction on or off.
+- Changed: `/goal` is a text command and also works in non-interactive mode. The model no longer creates or completes goals through a tool; an independent evaluator decides when a goal is done.
+- Changed: the MultiEdit tool is removed; edits go through Edit. SendMessage no longer requires a summary and uses the message's first line.
+- Fixed: `/dream` reads and writes `MEMORY.md`, not `CLAUDE.md`, and every dream follows your permission rules.
+- Fixed: Glob says when a search timed out and how many files matched in total.
+- Fixed: a slash command's result (such as `/effort`) no longer disappears when a background notice arrives right after it.
+
+### Desktop app (gui-v1.23.0)
+
+- New: drop files anywhere on the conversation. Images become attachments; other files and folders become cards with a preview and are sent as their paths.
+- New: updates download in the background, with progress next to Settings, and an Update button installs them after you confirm. A downloaded update is kept across restarts, and the app checks every 15 minutes. Updating from 1.22.1 still uses the old prompt; the new flow applies from 1.23.0 on.
+- Changed: the title bar no longer has a bottom-panel button; ⌘J still opens and closes it. Removing an image attachment no longer shows an Undo bar.
+- Faster: resizing the window on the new-task page no longer stutters.
+
 ## 1.22.1
 
 No CLI changes; this version is released with the desktop app so the two stay in step.
