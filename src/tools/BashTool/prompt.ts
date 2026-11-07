@@ -325,8 +325,21 @@ function getLeanCommitAndPRInstructions(): string {
   return `${undercoverSection}# Git
 - Interactive flags (\`-i\`, e.g. \`git rebase -i\`, \`git add -i\`) are not supported in this environment.
 - Use the \`gh\` CLI for GitHub operations (PRs, issues, API).
-- Commit or push only when the user asks. If on the default branch, branch first.${attribution ? `\n${attribution}` : ''}`
+- Commit or push only when the user asks. If on the default branch, branch first.${attribution ? `\n${attribution}` : ''}
+
+# Writing commit messages and PR descriptions
+
+Write for a reader with zero context who was not part of this session:
+- Say what the change is in plain words before any mechanism or implementation detail
+- One idea per sentence; one fact per bullet; no nested clauses or stacked parentheticals
+- Define project- or team-specific shorthand the first time it appears
+- Short beats complete: after one pass the reader should know what the change does and what to check`
 }
+
+// Verbatim from upstream 2.1.319. Its runtime also honours
+// CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR, which upstream's prompt does not mention.
+const WORKING_DIRECTORY_PARAGRAPH =
+  'Every call starts in the start folder: a `cd` does not carry over.\n`cd` carries to the next call only in the main session, if the command succeeds and ends inside the working directories. Outside them the shell returns to the start folder; otherwise it stays where it was.'
 
 /**
  * Lean variant, ported from upstream's `bash_lean` builder — same bullets, same
@@ -360,7 +373,6 @@ function getLeanPrompt(model?: string): string {
   return [
     'Executes a bash command and returns its output.',
     '',
-    "- Working directory persists between calls, but prefer absolute paths — `cd` in a compound command can trigger a permission prompt. Shell state (env vars, functions) does not persist; the shell is initialized from the user's profile.",
     `- IMPORTANT: Avoid using this tool to run ${avoidCommands} commands, unless explicitly instructed or after you have verified that a dedicated tool cannot accomplish your task. Instead, use the appropriate dedicated tool as this will provide a much better experience for the user.`,
     '- Command output is displayed to you, not reliably to the user.',
     `- \`timeout\` is in milliseconds: default ${getDefaultTimeoutMs()}, max ${getMaxTimeoutMs()} for a foreground command.`,
@@ -371,6 +383,8 @@ function getLeanPrompt(model?: string): string {
       : []),
     ...(sandboxSection ? [sandboxSection] : []),
     ...(gitSection ? ['', gitSection] : []),
+    '',
+    WORKING_DIRECTORY_PARAGRAPH,
   ].join('\n')
 }
 
@@ -434,7 +448,7 @@ export function getSimplePrompt(model?: string): string {
   return [
     'Executes a given bash command and returns its output.',
     '',
-    "The working directory persists between commands, but shell state does not. The shell environment is initialized from the user's profile (bash or zsh).",
+    'Shell state does not persist. The shell environment is initialized from the user\'s profile (bash or zsh).',
     '',
     `IMPORTANT: Avoid using this tool to run ${avoidCommands} commands, unless explicitly instructed or after you have verified that a dedicated tool cannot accomplish your task. Instead, use the appropriate dedicated tool as this will provide a much better experience for the user:`,
     '',
@@ -445,5 +459,7 @@ export function getSimplePrompt(model?: string): string {
     ...prependBullets(instructionItems),
     getSimpleSandboxSection(),
     ...(getCommitAndPRInstructions() ? ['', getCommitAndPRInstructions()] : []),
+    '',
+    WORKING_DIRECTORY_PARAGRAPH,
   ].join('\n')
 }

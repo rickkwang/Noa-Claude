@@ -72,7 +72,10 @@ describe('ported lean text inside interpolated descriptions', () => {
       'Executes a bash command and returns its output.',
     )
     expect(bash).toContain(
-      "- Working directory persists between calls, but prefer absolute paths — `cd` in a compound command can trigger a permission prompt. Shell state (env vars, functions) does not persist; the shell is initialized from the user's profile.",
+      'Every call starts in the start folder: a `cd` does not carry over.\n`cd` carries to the next call only in the main session, if the command succeeds and ends inside the working directories. Outside them the shell returns to the start folder; otherwise it stays where it was.',
+    )
+    expect(bash).toContain(
+      '# Writing commit messages and PR descriptions\n\nWrite for a reader with zero context who was not part of this session:',
     )
     expect(bash).toContain(
       '- Command output is displayed to you, not reliably to the user.',
