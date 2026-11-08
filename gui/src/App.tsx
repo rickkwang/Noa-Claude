@@ -35,6 +35,7 @@ import { Sidebar } from "./components/Sidebar"
 import TopBar from "./components/TopBar"
 import ThemeInjector from "./theme/ThemeInjector"
 import { SettingsDialog } from "./components/SettingsDialog"
+import { SessionActions, RewindDialog } from "./components/SessionActions"
 import { SessionTitle } from "./components/SessionTitle"
 import { SearchDialog } from "./components/SearchDialog"
 import { rateLimitKey } from "./components/RateLimitNotice"
@@ -170,7 +171,7 @@ function Workspace({ cwd }: { cwd: string }) {
   useEffect(() => { setFocusTask(undefined) }, [session.key])
   useEffect(() => { setTurnDiff(undefined) }, [session.key])
 
-  const { state, sendMessage, reloadCommands, loadEarlier, interrupt, answerPermission, answerElicitation, removeQueued, moveQueued, updateQueued, steerQueued, setQueuePaused, runQueued, stopTask, setModel, setProvider, saveProvider, deleteProvider, setPermissionMode, setEffort, refreshSettings, changeMcp, refreshContext, refreshMcp, turnDiffAction, clearDiffAction, startAuthentication, waitForAuthentication, submitAuthenticationCode, closeAuthentication } =
+  const { state, request, sendMessage, reloadCommands, loadEarlier, interrupt, answerPermission, answerElicitation, removeQueued, moveQueued, updateQueued, steerQueued, setQueuePaused, runQueued, stopTask, setModel, setProvider, saveProvider, deleteProvider, setPermissionMode, setEffort, refreshSettings, changeMcp, refreshContext, refreshMcp, turnDiffAction, clearDiffAction, startAuthentication, waitForAuthentication, submitAuthenticationCode, closeAuthentication } =
     useAgent({
       cwd: session.cwd,
       resume: session.resume,
@@ -180,6 +181,9 @@ function Workspace({ cwd }: { cwd: string }) {
     })
   const [dismissedRateLimit, setDismissedRateLimit] = useState<string>()
   const visibleRateLimit = state.rateLimit && rateLimitKey(state.rateLimit) !== dismissedRateLimit ? state.rateLimit : undefined
+  const [forkPending, setForkPending] = useState(false)
+  const [rewindMessage, setRewindMessage] = useState<{ id: string; text: string; images?: ImageBlock[] }>()
+  useEffect(() => setRewindMessage(undefined), [session.key])
   const activeId = state.sessionId ?? session.resume
   useEffect(() => {
     fetchProjects().then(setProjects)
@@ -757,6 +761,14 @@ function Workspace({ cwd }: { cwd: string }) {
             key={activeId ?? session.key}
             project={session.cwd.split("/").pop() ?? session.cwd}
             title={title}
+            actions={activeId && <SessionActions disabled={state.connection !== "ready" || state.busy || !!state.queue.length || state.tasks.some(task => task.status === "running")} onFork={async () => {
+              setForkPending(true)
+              try {
+                const result = await request({ subtype: "session_action", action: "fork" })
+                setRefreshTick(n => n + 1)
+                selectSession(session.cwd, result.sessionId)
+              } finally { setForkPending(false) }
+            }} />}
             onRename={
               activeId && !state.busy
                 ? async (name) => {
@@ -849,6 +861,7 @@ function Workspace({ cwd }: { cwd: string }) {
                 diffActionPending={pendingDiffAction}
                 onRetry={retryLast}
                 onEdit={editMessage}
+                onRewind={(id, text, images) => setRewindMessage({ id, text, images })}
                 onQuote={text => setQuote({ text, key: Date.now() })}
                 tasks={state.tasks}
                 onStopTask={stopTask}
@@ -950,7 +963,7 @@ function Workspace({ cwd }: { cwd: string }) {
                   sendShortcut={settings.composer.sendShortcut}
                   followUpMode={settings.composer.followUpMode}
                   showFullAccess={settings.composer.showFullAccess}
-                  connection={state.connection}
+                  connection={forkPending ? "connecting" : state.connection}
                   busy={state.busy}
                   models={state.models}
                   providers={state.providers}
@@ -1011,6 +1024,12 @@ function Workspace({ cwd }: { cwd: string }) {
       </div>
 
       {addingProject && <AddProjectDialog onAdd={addProjectPaths} onClose={() => setAddingProject(false)} />}
+      {rewindMessage && <RewindDialog message={rewindMessage} request={request} onClose={() => setRewindMessage(undefined)} onDone={restorePrompt => {
+        if (restorePrompt) editMessage(rewindMessage.text, rewindMessage.images)
+        setRewindMessage(undefined)
+        setRefreshTick(n => n + 1)
+        refreshContext()
+      }} />}
       {searchOpen && <SearchDialog cwd={session.cwd} projects={projects} sessions={sessionsByProject} onNewSession={() => newSession()} onOpenFolder={() => { setEditingProject(undefined); setAddingProject(true) }} onSelectSession={selectSession} onOpenFile={openFile} onClose={() => setSearchOpen(false)} />}
       {confirmDialog}
       {editingProject && (
@@ -1043,6 +1062,16 @@ function Workspace({ cwd }: { cwd: string }) {
           }
           settings={settings}
           agent={state}
+          request={request}
+          onReconnect={async () => {
+            const response = await fetch(`/api/restart${query(session.cwd)}`, {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ runtimeId: session.runtimeId, sessionId: activeId }),
+            })
+            if (!response.ok) throw new Error((await response.json()).error ?? "Could not reconnect this chat.")
+            setSession(current => ({ ...current, resume: activeId, runtimeId: crypto.randomUUID(), key: current.key + 1 }))
+          }}
           onRefreshSettings={refreshSettings}
           onRefreshMcp={refreshMcp}
           onChangeMcp={changeMcp}

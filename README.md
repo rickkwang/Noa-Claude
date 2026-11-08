@@ -67,6 +67,8 @@ The app is signed with a self-signed certificate, not an Apple Developer ID, and
 
 Updates: the app checks GitHub Releases shortly after launch and every 15 minutes. A newer `gui-v*` release downloads in the background, with its progress next to **Settings** at the bottom of the sidebar; the download's SHA-512 is checked against the release metadata, and a verified download is kept across restarts. **Update** then asks to confirm, quits (stopping running tasks), replaces the app and reopens it. Nothing installs until you confirm. If the install fails, the old app is kept and the release page opens. **Noa Agent → Check for Updates…** runs the check on demand. Set `DISABLE_UPDATES=1` to turn checks off.
 
+The desktop app supports conversation forks, confirmed conversation/file rewind, and scoped permission-rule and MCP-server editing through the CLI.
+
 Development notes for the desktop app are in [docs/desktop-gui.md](docs/desktop-gui.md).
 
 The app bundles its own copy of the CLI runtime, so the app and `noa update` update separately. Each version is published as both `vX.Y.Z` (CLI) and `gui-vX.Y.Z` (desktop) with the same number, so the two stay in step when both are updated.

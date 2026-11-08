@@ -54,6 +54,7 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
   const socketRef = useRef<WebSocket | null>(null)
   const modeRef = useRef<PermissionMode | undefined>(undefined)
   const pendingRef = useRef(new Map<string, ResponseKind>())
+  const requestsRef = useRef(new Map<string, { resolve: (value: any) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }>())
   const mcpTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const contextTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const contextRefreshAfterRef = useRef<"summary" | "full" | undefined>(undefined)
@@ -99,10 +100,29 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
     [write],
   )
 
+  const request = useCallback((request: ControlRequest): Promise<any> => new Promise((resolve, reject) => {
+    const requestId = crypto.randomUUID()
+    const timer = setTimeout(() => {
+      requestsRef.current.delete(requestId)
+      reject(new Error("Request timed out. Reconnect before trying again."))
+    }, 60000)
+    requestsRef.current.set(requestId, { resolve, reject, timer })
+    if (!write({ type: "control_request", request_id: requestId, request })) {
+      clearTimeout(timer)
+      requestsRef.current.delete(requestId)
+      reject(new Error("Noa is disconnected."))
+    }
+  }), [write])
+
   useEffect(() => {
     ownerRef.current = runtimeId
     dispatch({ type: "reset" })
     pendingRef.current.clear()
+    for (const pending of requestsRef.current.values()) {
+      clearTimeout(pending.timer)
+      pending.reject(new Error("Noa disconnected before the request completed."))
+    }
+    requestsRef.current.clear()
     contextRefreshAfterRef.current = undefined
     modeRef.current = undefined
 
@@ -198,6 +218,13 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
           const message = envelope.message
           if (message.type === "system" && (message.subtype === "init" || message.subtype === "status") && message.permissionMode) modeRef.current = message.permissionMode
           if (message.type === "control_response") {
+            const pending = requestsRef.current.get(message.response.request_id)
+            if (pending) {
+              clearTimeout(pending.timer)
+              requestsRef.current.delete(message.response.request_id)
+              if (message.response.subtype === "error") pending.reject(new Error(message.response.error ?? "Request failed"))
+              else pending.resolve(message.response.response)
+            }
             const kind = pendingRef.current.get(message.response.request_id)
             if (kind) {
               pendingRef.current.delete(message.response.request_id)
@@ -238,6 +265,11 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
           dispatch({ type: "log", text: envelope.text })
           break
         case "exit":
+          for (const pending of requestsRef.current.values()) {
+            clearTimeout(pending.timer)
+            pending.reject(new Error("Noa exited before the request completed. Reconnect to continue."))
+          }
+          requestsRef.current.clear()
           dispatch({ type: "log", text: `agent exited (code ${envelope.code ?? "null"})` })
           dispatch({ type: "exit", code: envelope.code })
           break
@@ -247,6 +279,11 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
     socket.onclose = () => {
       clearInitializationTimer()
       if (isCurrent()) {
+        for (const pending of requestsRef.current.values()) {
+          clearTimeout(pending.timer)
+          pending.reject(new Error("Noa disconnected before the request completed."))
+        }
+        requestsRef.current.clear()
         clearTimeout(mcpTimerRef.current)
         mcpTimerRef.current = undefined
         clearTimeout(contextTimerRef.current)
@@ -343,6 +380,11 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
     }
 
     return () => {
+      for (const pending of requestsRef.current.values()) {
+        clearTimeout(pending.timer)
+        pending.reject(new Error("Noa disconnected before the request completed."))
+      }
+      requestsRef.current.clear()
       if (deltaFrame !== undefined) cancelAnimationFrame(deltaFrame)
       pendingDeltas = []
       clearInitializationTimer()
@@ -483,7 +525,7 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
   }, [control])
   const closeAuthentication = useCallback(() => dispatch({ type: "auth-close" }), [])
 
-  return { state: ownerRef.current === runtimeId ? state : initialState, sendMessage, reloadCommands, loadEarlier, answerElicitation, removeQueued, moveQueued, updateQueued, steerQueued, setQueuePaused, runQueued, stopTask, interrupt, answerPermission, setModel, setProvider, saveProvider, deleteProvider, setPermissionMode, setEffort, refreshSettings, changeMcp, refreshContext, refreshMcp, turnDiffAction, clearDiffAction, startAuthentication, waitForAuthentication, submitAuthenticationCode, closeAuthentication }
+  return { state: ownerRef.current === runtimeId ? state : initialState, request, sendMessage, reloadCommands, loadEarlier, answerElicitation, removeQueued, moveQueued, updateQueued, steerQueued, setQueuePaused, runQueued, stopTask, interrupt, answerPermission, setModel, setProvider, saveProvider, deleteProvider, setPermissionMode, setEffort, refreshSettings, changeMcp, refreshContext, refreshMcp, turnDiffAction, clearDiffAction, startAuthentication, waitForAuthentication, submitAuthenticationCode, closeAuthentication }
 }
 
 export function parseAuthorizationCode(raw: string): { authorizationCode: string; state: string } | undefined {

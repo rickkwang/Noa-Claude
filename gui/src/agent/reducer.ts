@@ -240,10 +240,10 @@ export function reducer(state: AgentState, action: Action): AgentState {
       }
       return { ...state, historyBefore: action.before, historyLoading: false,
         turns: combined,
-        tasks: [...tasks.filter(task => !state.tasks.some(current => current.id === task.id)), ...state.tasks.map(current => {
+        tasks: action.prepend ? [...tasks.filter(task => !state.tasks.some(current => current.id === task.id)), ...state.tasks.map(current => {
           const earlier = tasks.find(task => task.id === current.id)
           return earlier && !current.turns.length ? { ...earlier, ...current, turns: earlier.turns, usage: current.usage ?? earlier.usage } : current
-        })] }
+        })] : tasks }
     }
     case "queue":
       return { ...state, queue: action.messages, queuePaused: action.paused ?? state.queuePaused }

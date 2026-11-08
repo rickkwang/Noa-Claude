@@ -2319,10 +2319,10 @@ function applySnipRemovals(messages: Map<UUID, TranscriptMessage>): void {
   // Structural check — snipMetadata only exists on the boundary subtype.
   // Avoids the subtype literal, which must not leak into external builds
   // (HISTORY_SNIP is ant-only).
-  type WithSnipMeta = { snipMetadata?: { removedUuids?: UUID[] } }
+  type WithSnipMeta = { snipMetadata?: { removedUuids?: UUID[] }; rewindMetadata?: { removedUuids?: UUID[] } }
   const toDelete = new Set<UUID>()
   for (const entry of messages.values()) {
-    const removedUuids = (entry as WithSnipMeta).snipMetadata?.removedUuids
+    const removedUuids = (entry as WithSnipMeta).snipMetadata?.removedUuids ?? (entry as WithSnipMeta).rewindMetadata?.removedUuids
     if (!removedUuids) continue
     for (const uuid of removedUuids) toDelete.add(uuid)
   }
@@ -3480,7 +3480,7 @@ export async function loadFullLog(log: LogOption): Promise<LogOption> {
       messages.values(),
       msg =>
         leafUuids.has(msg.uuid) &&
-        (msg.type === 'user' || msg.type === 'assistant'),
+        (msg.type === 'user' || msg.type === 'assistant' || !!msg.rewindMetadata),
     )
     if (!mostRecentLeaf) {
       return log
@@ -4342,6 +4342,11 @@ export async function loadTranscriptFile(
     }
   }
 
+  if (!leafUuids.size) {
+    const rewind = allMessages.findLast(message => message.rewindMetadata && !message.isSidechain)
+    if (rewind) leafUuids.add(rewind.uuid)
+  }
+
   if (hasCycle) {
     logEvent('tengu_transcript_parent_cycle', {})
   }
@@ -4483,7 +4488,7 @@ export async function getLastSessionLog(
       m =>
         leafUuids.has(m.uuid) &&
         !m.isSidechain &&
-        (m.type === 'user' || m.type === 'assistant'),
+        (m.type === 'user' || m.type === 'assistant' || !!m.rewindMetadata),
     ) ??
     (leafUuids.size === 0
       ? findLatestMessage(messages.values(), m => !m.isSidechain)

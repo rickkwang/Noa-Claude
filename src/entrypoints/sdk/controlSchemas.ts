@@ -577,8 +577,32 @@ export const SDKControlElicitationResponseSchema = lazySchema(() =>
 // Control Request/Response Wrappers
 // ============================================================================
 
+export const SDKControlSessionActionRequestSchema = lazySchema(() =>
+  z.object({
+    subtype: z.literal('session_action'),
+    action: z.enum(['fork', 'rewind']),
+    user_message_id: z.string().optional(),
+    mode: z.enum(['conversation', 'files', 'both']).optional(),
+    dry_run: z.boolean().optional(),
+  }),
+)
+
+export const SDKControlConfigurationRequestSchema = lazySchema(() =>
+  z.object({
+    subtype: z.literal('configuration'),
+    kind: z.enum(['permissions', 'mcp']),
+    scope: z.enum(['user', 'project', 'local']),
+    action: z.enum(['get', 'save', 'remove']),
+    revision: z.string().optional(),
+    name: z.string().optional(),
+    value: z.record(z.string(), z.unknown()).optional(),
+  }),
+)
+
 export const SDKControlRequestInnerSchema = lazySchema(() =>
   z.union([
+    SDKControlSessionActionRequestSchema(),
+    SDKControlConfigurationRequestSchema(),
     SDKControlInterruptRequestSchema(),
     SDKControlPermissionRequestSchema(),
     SDKControlInitializeRequestSchema(),

@@ -1,14 +1,17 @@
 import { useState } from "react"
 import { Check, ChevronRight, X } from "../lib/icons"
+import type { ReactNode } from "react"
 
 export function SessionTitle({
   project,
   title,
   onRename,
+  actions,
 }: {
   project: string
   title?: string
   onRename?: (title: string) => Promise<void>
+  actions?: ReactNode
 }) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState("")
@@ -87,6 +90,7 @@ export function SessionTitle({
           {name}
         </button>
       )}
+      {actions}
       {error && (
         <span
           role="alert"

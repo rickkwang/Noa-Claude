@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { feature } from 'bun:bundle'
+import { isDeepStrictEqual } from 'node:util'
 import { existsSync } from 'fs'
 import { chmod, mkdir, open, rename, stat, unlink } from 'fs/promises'
 import mapValues from 'lodash-es/mapValues.js'
@@ -18,6 +19,8 @@ import {
   saveGlobalConfig,
 } from '../../utils/config.js'
 import { getCwd } from '../../utils/cwd.js'
+import { getGlobalClaudeFile } from '../../utils/env.js'
+import { lock } from '../../utils/lockfile.js'
 import { logForDebugging } from '../../utils/debug.js'
 import { getErrnoCode } from '../../utils/errors.js'
 import { getFsImplementation } from '../../utils/fsOperations.js'
@@ -179,6 +182,23 @@ async function writeMcpjsonFile(config: McpJsonConfig): Promise<void> {
       // Best-effort cleanup
     }
     throw e
+  }
+}
+
+type McpConfigWriteGuard = (servers: Record<string, McpServerConfig>) => void
+
+async function withMcpConfigLock(scope: ConfigScope, update: () => Promise<void>): Promise<void> {
+  const filePath = scope === 'project' ? getPrimaryProjectMcpPath(getCwd()) : getGlobalClaudeFile()
+  await mkdir(dirname(filePath), { recursive: true })
+  const release = await lock(filePath, {
+    realpath: false,
+    lockfilePath: `${filePath}.mcp.lock`,
+    retries: { retries: 40, minTimeout: 10, maxTimeout: 50 },
+  })
+  try {
+    await update()
+  } finally {
+    await release()
   }
 }
 
@@ -676,6 +696,8 @@ export async function addMcpConfig(
   name: string,
   config: unknown,
   scope: ConfigScope,
+  replace = false,
+  checkRevision?: McpConfigWriteGuard,
 ): Promise<void> {
   if (name.match(/[^a-zA-Z0-9_-]/)) {
     throw new Error(
@@ -715,88 +737,60 @@ export async function addMcpConfig(
     )
   }
 
-  // Check if server already exists in the target scope
-  switch (scope) {
-    case 'project': {
-      const { configPath, servers } = getProjectMcpConfigsFromCwd()
-      if (servers[name]) {
-        throw new Error(
-          `MCP server ${name} already exists in ${configPath ?? 'project MCP config'}`,
-        )
+  await withMcpConfigLock(scope, async () => {
+    switch (scope) {
+      case 'project': {
+        const { configPath, servers: existingServers, errors } =
+          getProjectMcpConfigsFromCwd(false)
+        if (errors.length) throw new Error(errors.map(error => error.message).join('\n'))
+
+        const mcpServers: Record<string, McpServerConfig> = {}
+        for (const [serverName, serverConfig] of Object.entries(
+          existingServers,
+        )) {
+          const { scope: _, sourceDir: _sourceDir, ...configWithoutScope } = serverConfig
+          mcpServers[serverName] = configWithoutScope
+        }
+        checkRevision?.(mcpServers)
+        if (!replace && mcpServers[name]) throw new Error(`MCP server ${name} already exists in ${configPath ?? 'project MCP config'}`)
+        mcpServers[name] = validatedConfig
+        const mcpConfig = { mcpServers }
+
+        // Write back to the product project MCP config path.
+        try {
+          await writeMcpjsonFile(mcpConfig)
+        } catch (error) {
+          throw new Error(`Failed to write project MCP config: ${error}`)
+        }
+        break
       }
-      break
-    }
-    case 'user': {
-      const globalConfig = getGlobalConfig()
-      if (globalConfig.mcpServers?.[name]) {
-        throw new Error(`MCP server ${name} already exists in user config`)
+
+      case 'user': {
+        saveGlobalConfig(current => {
+          checkRevision?.(current.mcpServers ?? {})
+          if (!replace && current.mcpServers?.[name]) throw new Error(`MCP server ${name} already exists in ${scope} config`)
+          return { ...current, mcpServers: { ...current.mcpServers, [name]: validatedConfig } }
+        })
+        break
       }
-      break
-    }
-    case 'local': {
-      const projectConfig = getCurrentProjectConfig()
-      if (projectConfig.mcpServers?.[name]) {
-        throw new Error(`MCP server ${name} already exists in local config`)
+
+      case 'local': {
+        saveCurrentProjectConfig(current => {
+          checkRevision?.(current.mcpServers ?? {})
+          if (!replace && current.mcpServers?.[name]) throw new Error(`MCP server ${name} already exists in ${scope} config`)
+          return { ...current, mcpServers: { ...current.mcpServers, [name]: validatedConfig } }
+        })
+        break
       }
-      break
+
+      default:
+        throw new Error(`Cannot add MCP server to scope: ${scope}`)
     }
-    case 'dynamic':
-      throw new Error('Cannot add MCP server to scope: dynamic')
-    case 'enterprise':
-      throw new Error('Cannot add MCP server to scope: enterprise')
-    case 'claudeai':
-      throw new Error('Cannot add MCP server to scope: claudeai')
-  }
-
-  switch (scope) {
-    case 'project': {
-      const { configPath, servers: existingServers } =
-        getProjectMcpConfigsFromCwd()
-
-      const mcpServers: Record<string, McpServerConfig> = {}
-      for (const [serverName, serverConfig] of Object.entries(
-        existingServers,
-      )) {
-        const { scope: _, ...configWithoutScope } = serverConfig
-        mcpServers[serverName] = configWithoutScope
-      }
-      mcpServers[name] = validatedConfig
-      const mcpConfig = { mcpServers }
-
-      // Write back to the product project MCP config path.
-      try {
-        await writeMcpjsonFile(mcpConfig)
-      } catch (error) {
-        throw new Error(`Failed to write project MCP config: ${error}`)
-      }
-      break
+    if (scope === 'user' || scope === 'local') {
+      const saved = (scope === 'user' ? getGlobalConfig() : getCurrentProjectConfig()).mcpServers?.[name]
+      if (!isDeepStrictEqual(saved, validatedConfig)) throw new Error('MCP configuration was not saved. Reload configuration before trying again.')
     }
-
-    case 'user': {
-      saveGlobalConfig(current => ({
-        ...current,
-        mcpServers: {
-          ...current.mcpServers,
-          [name]: validatedConfig,
-        },
-      }))
-      break
-    }
-
-    case 'local': {
-      saveCurrentProjectConfig(current => ({
-        ...current,
-        mcpServers: {
-          ...current.mcpServers,
-          [name]: validatedConfig,
-        },
-      }))
-      break
-    }
-
-    default:
-      throw new Error(`Cannot add MCP server to scope: ${scope}`)
-  }
+  })
 }
 
 /**
@@ -808,71 +802,80 @@ export async function addMcpConfig(
 export async function removeMcpConfig(
   name: string,
   scope: ConfigScope,
+  checkRevision?: McpConfigWriteGuard,
 ): Promise<void> {
-  switch (scope) {
-    case 'project': {
-      const { configPath, servers: existingServers } =
-        getProjectMcpConfigsFromCwd()
+  await withMcpConfigLock(scope, async () => {
+    switch (scope) {
+      case 'project': {
+        const { configPath, servers: existingServers, errors } =
+          getProjectMcpConfigsFromCwd(false)
+        if (errors.length) throw new Error(errors.map(error => error.message).join('\n'))
 
-      if (!existingServers[name]) {
-        throw new Error(
-          `No MCP server found with name: ${name} in ${configPath ?? 'project MCP config'}`,
-        )
-      }
+        if (!existingServers[name]) {
+          throw new Error(
+            `No MCP server found with name: ${name} in ${configPath ?? 'project MCP config'}`,
+          )
+        }
 
-      // Strip scope information when writing back to the product project MCP config.
-      const mcpServers: Record<string, McpServerConfig> = {}
-      for (const [serverName, serverConfig] of Object.entries(
-        existingServers,
-      )) {
-        if (serverName !== name) {
-          const { scope: _, ...configWithoutScope } = serverConfig
+        // Strip scope information when writing back to the product project MCP config.
+        const mcpServers: Record<string, McpServerConfig> = {}
+        for (const [serverName, serverConfig] of Object.entries(
+          existingServers,
+        )) {
+          const { scope: _, sourceDir: _sourceDir, ...configWithoutScope } = serverConfig
           mcpServers[serverName] = configWithoutScope
         }
-      }
-      const mcpConfig = { mcpServers }
-      try {
-        await writeMcpjsonFile(mcpConfig)
-      } catch (error) {
-        throw new Error(`Failed to update project MCP config: ${error}`)
-      }
-      break
-    }
-
-    case 'user': {
-      const config = getGlobalConfig()
-      if (!config.mcpServers?.[name]) {
-        throw new Error(`No user-scoped MCP server found with name: ${name}`)
-      }
-      saveGlobalConfig(current => {
-        const { [name]: _, ...restMcpServers } = current.mcpServers ?? {}
-        return {
-          ...current,
-          mcpServers: restMcpServers,
+        checkRevision?.(mcpServers)
+        delete mcpServers[name]
+        const mcpConfig = { mcpServers }
+        try {
+          await writeMcpjsonFile(mcpConfig)
+        } catch (error) {
+          throw new Error(`Failed to update project MCP config: ${error}`)
         }
-      })
-      break
-    }
-
-    case 'local': {
-      // Check if server exists before updating
-      const config = getCurrentProjectConfig()
-      if (!config.mcpServers?.[name]) {
-        throw new Error(`No project-local MCP server found with name: ${name}`)
+        break
       }
-      saveCurrentProjectConfig(current => {
-        const { [name]: _, ...restMcpServers } = current.mcpServers ?? {}
-        return {
-          ...current,
-          mcpServers: restMcpServers,
-        }
-      })
-      break
-    }
 
-    default:
-      throw new Error(`Cannot remove MCP server from scope: ${scope}`)
-  }
+      case 'user': {
+        const config = getGlobalConfig()
+        if (!config.mcpServers?.[name]) {
+          throw new Error(`No user-scoped MCP server found with name: ${name}`)
+        }
+        saveGlobalConfig(current => {
+          checkRevision?.(current.mcpServers ?? {})
+          const { [name]: _, ...restMcpServers } = current.mcpServers ?? {}
+          return {
+            ...current,
+            mcpServers: restMcpServers,
+          }
+        })
+        break
+      }
+
+      case 'local': {
+        // Check if server exists before updating
+        const config = getCurrentProjectConfig()
+        if (!config.mcpServers?.[name]) {
+          throw new Error(`No project-local MCP server found with name: ${name}`)
+        }
+        saveCurrentProjectConfig(current => {
+          checkRevision?.(current.mcpServers ?? {})
+          const { [name]: _, ...restMcpServers } = current.mcpServers ?? {}
+          return {
+            ...current,
+            mcpServers: restMcpServers,
+          }
+        })
+        break
+      }
+
+      default:
+        throw new Error(`Cannot remove MCP server from scope: ${scope}`)
+    }
+    if ((scope === 'user' || scope === 'local') && (scope === 'user' ? getGlobalConfig() : getCurrentProjectConfig()).mcpServers?.[name]) {
+      throw new Error('MCP configuration was not removed. Reload configuration before trying again.')
+    }
+  })
 }
 
 /**
@@ -882,7 +885,7 @@ export async function removeMcpConfig(
  *
  * @returns Servers with scope information and any validation errors from current directory's .mcp.json
  */
-export function getProjectMcpConfigsFromCwd(): {
+export function getProjectMcpConfigsFromCwd(expandVars = true): {
   configPath: string | null
   servers: Record<string, ScopedMcpServerConfig>
   errors: ValidationError[]
@@ -900,7 +903,7 @@ export function getProjectMcpConfigsFromCwd(): {
 
   const { config, errors } = parseMcpConfigFromFilePath({
     filePath: mcpJsonPath,
-    expandVars: true,
+    expandVars,
     scope: 'project',
   })
 

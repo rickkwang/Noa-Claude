@@ -231,6 +231,8 @@ const bridge = Bun.spawn([process.execPath, "run", "server/main.ts"], {
     ...process.env,
     NOA_GUI_PORT: String(port),
     NOA_GUI_INSECURE: "1",
+    NOA_GUI_TOKEN: "",
+    NOA_GUI_DEFAULT_CWD: cwd,
     CLAUDE_CONFIG_DIR: config,
     CLAUDE_CODE_PRODUCT_DIR: config,
     CLAUDE_CODE_CACHE_DIR: join(directory, "cache"),
@@ -358,6 +360,26 @@ try {
   await first.request({ subtype: "mcp_reconnect", serverName: "fixture" })
   assert.equal((await first.request({ subtype: "mcp_status" })).mcpServers.find((server: any) => server.name === "fixture").status, "connected")
   console.log("PASS MCP settings disable, enable, and reconnect through the real CLI")
+
+  const rulesBefore = await first.request({ subtype: "configuration", action: "get", kind: "permissions", scope: "local" })
+  const rulesSaved = await first.request({ subtype: "configuration", action: "save", kind: "permissions", scope: "local", revision: rulesBefore.revision, value: { allow: ["Read"], ask: ["Bash(git push:*)"], deny: ["Read(.env)"] } })
+  assert.deepEqual(rulesSaved.value.allow, ["Read"])
+  assert.deepEqual((await first.request({ subtype: "get_settings" })).effective.permissions.deny, ["Read(.env)"])
+  await assert.rejects(first.request({ subtype: "configuration", action: "save", kind: "permissions", scope: "local", revision: rulesBefore.revision, value: { allow: [], ask: [], deny: [] } }), /changed outside/)
+  await first.request({ subtype: "configuration", action: "save", kind: "permissions", scope: "local", revision: rulesSaved.revision, value: { allow: [], ask: [], deny: [] } })
+  assert.equal(JSON.parse(readFileSync(settingsPath, "utf8")).permissions.defaultMode, "default")
+  console.log("PASS scoped permission editing applies immediately and rejects stale saves without changing other settings")
+  let editableMcp = await first.request({ subtype: "configuration", action: "get", kind: "mcp", scope: "project" })
+  const originalMcp = readFileSync(join(cwd, ".noa", "mcp.json"), "utf8")
+  editableMcp = await first.request({ subtype: "configuration", action: "save", kind: "mcp", scope: "project", revision: editableMcp.revision, name: "gui_edit", value: { type: "stdio", command: process.execPath, args: [mcpScript], env: { PRESERVED: "${PATH}" } } })
+  assert.equal(editableMcp.value.gui_edit.env.PRESERVED, "${PATH}")
+  editableMcp = await first.request({ subtype: "configuration", action: "save", kind: "mcp", scope: "project", revision: editableMcp.revision, name: "gui_edit", value: { ...editableMcp.value.gui_edit, args: [mcpScript, "edited"] } })
+  assert.equal(editableMcp.value.gui_edit.env.PRESERVED, "${PATH}")
+  await assert.rejects(first.request({ subtype: "configuration", action: "save", kind: "mcp", scope: "project", revision: editableMcp.revision, name: "bad", value: { type: "http" } }), /Invalid configuration/)
+  editableMcp = await first.request({ subtype: "configuration", action: "remove", kind: "mcp", scope: "project", revision: editableMcp.revision, name: "gui_edit" })
+  assert.ok(!editableMcp.value.gui_edit)
+  assert.deepEqual(JSON.parse(readFileSync(join(cwd, ".noa", "mcp.json"), "utf8")), JSON.parse(originalMcp))
+  console.log("PASS MCP add, edit and remove use CLI validation and preserve environment references and other servers")
 
   first.send({ type: "user", message: { role: "user", content: "GUI_SLOW first" }, parent_tool_use_id: null })
   await wait(() => first.events.some((e) => e.kind === "user"), "user acknowledgement")
@@ -920,6 +942,118 @@ try {
   assert.equal((await fetch(deleteUrl)).status, 404)
   assert.equal((await fetch(deleteUrl, { method: "DELETE" })).status, 400)
   console.log("PASS deleting a task removes its transcript and files")
+
+  const rewindRun = connect(crypto.randomUUID())
+  await rewindRun.initialize()
+  rewindRun.send({ type: "user", message: { role: "user", content: "GUI_REWIND_KEEP" }, parent_tool_use_id: null })
+  await wait(() => rewindRun.results().length === 1, "rewind first turn")
+  rewindRun.send({ type: "user", message: { role: "user", content: "GUI_REWIND_REMOVE" }, parent_tool_use_id: null })
+  await wait(() => rewindRun.results().length === 2, "rewind second turn")
+  await wait(async () => !(await (await fetch(`http://127.0.0.1:${port}/api/runs`)).json() as any[]).some(run => run.busy), "rewind idle")
+  const rewindId = (rewindRun.results()[0] as any).message.session_id
+  const removedMessage = rewindRun.events.find(event => event.kind === "user" && event.content === "GUI_REWIND_REMOVE") as Extract<Envelope, { kind: "user" }>
+  const forked = await rewindRun.request({ subtype: "session_action", action: "fork" })
+  assert.notEqual(forked.sessionId, rewindId)
+  const historyUrl = (id: string) => `http://127.0.0.1:${port}/api/sessions/${id}?${new URLSearchParams({ cwd })}`
+  assert.ok(JSON.stringify(await (await fetch(historyUrl(forked.sessionId))).json()).includes("GUI_REWIND_REMOVE"))
+  console.log("PASS GUI fork creates a separate resumable conversation through the CLI")
+  const otherFork = await rewindRun.request({ subtype: "session_action", action: "fork" })
+  const forkResume = connect(crypto.randomUUID(), otherFork.sessionId)
+  await forkResume.initialize()
+  await forkResume.request({ subtype: "session_action", action: "rewind", user_message_id: removedMessage.id, mode: "conversation" })
+  assert.ok(!JSON.stringify(await (await fetch(historyUrl(otherFork.sessionId))).json()).includes("GUI_REWIND_REMOVE"))
+  forkResume.socket.close()
+  console.log("PASS a resumed fork rewinds durably before sending its first new prompt")
+
+  await assert.rejects(rewindRun.request({ subtype: "session_action", action: "rewind", user_message_id: crypto.randomUUID(), mode: "conversation" }), /no longer in the active context/)
+  const preview = await rewindRun.request({ subtype: "session_action", action: "rewind", user_message_id: removedMessage.id, mode: "conversation", dry_run: true })
+  assert.ok(preview.turnsRemoved >= 1)
+  assert.ok(JSON.stringify(await (await fetch(historyUrl(rewindId))).json()).includes("GUI_REWIND_REMOVE"))
+  await rewindRun.request({ subtype: "session_action", action: "rewind", user_message_id: removedMessage.id, mode: "conversation" })
+  const rewoundHistory = await (await fetch(historyUrl(rewindId))).json()
+  assert.ok(JSON.stringify(rewoundHistory).includes("GUI_REWIND_KEEP"))
+  assert.ok(!JSON.stringify(rewoundHistory).includes("GUI_REWIND_REMOVE"), JSON.stringify(rewoundHistory))
+  assert.ok(JSON.stringify(await (await fetch(historyUrl(forked.sessionId))).json()).includes("GUI_REWIND_REMOVE"))
+  const rawRewindFile = readdirSync(join(config, "projects")).map(dir => join(config, "projects", dir, `${rewindId}.jsonl`)).find(file => existsSync(file))!
+  assert.ok(readFileSync(rawRewindFile, "utf8").includes("GUI_REWIND_REMOVE"), "Rewind preserves original records on disk")
+  rewindRun.socket.close()
+  await Bun.sleep(100)
+  const rewindResume = connect(crypto.randomUUID(), rewindId)
+  await rewindResume.initialize()
+  assert.ok(!JSON.stringify(rewindResume.events.filter(event => event.kind === "history")).includes("GUI_REWIND_REMOVE"))
+  rewindResume.send({ type: "user", message: { role: "user", content: "GUI_REWIND_CONTINUE" }, parent_tool_use_id: null })
+  await wait(() => rewindResume.results().length === 1, "rewind continuation")
+  assert.ok(!JSON.stringify(await (await fetch(historyUrl(rewindId))).json()).includes("GUI_REWIND_REMOVE"))
+  console.log("PASS conversation rewind previews safely, survives fresh CLI resume, preserves the fork and continues without removed history")
+  await wait(async () => !(await (await fetch(`http://127.0.0.1:${port}/api/runs`)).json() as any[]).some(run => run.busy), "all turns finalized before restoring files")
+  await Bun.sleep(100)
+  const writeUser = diffRun.events.find(event => event.kind === "user" && event.content === "GUI_WRITE") as Extract<Envelope, { kind: "user" }>
+  const filesPreview = await diffRun.request({ subtype: "session_action", action: "rewind", user_message_id: writeUser.id, mode: "files", dry_run: true })
+  assert.ok(filesPreview.filesChanged.some((file: string) => file.endsWith("turn-diff.txt")), JSON.stringify(filesPreview))
+  assert.ok(existsSync(join(cwd, "turn-diff.txt")))
+  rmSync(join(cwd, "turn-diff.txt"))
+  mkdirSync(join(cwd, "turn-diff.txt"))
+  await assert.rejects(diffRun.request({ subtype: "session_action", action: "rewind", user_message_id: writeUser.id, mode: "both" }), /Could not restore/)
+  assert.ok(!diffRun.events.some(event => event.kind === "history" && !JSON.stringify(event).includes("GUI_WRITE")), "Failed file restoration must not trim conversation")
+  rmSync(join(cwd, "turn-diff.txt"), { recursive: true })
+  writeFileSync(join(cwd, "turn-diff.txt"), "one\ntwo\n")
+  await diffRun.request({ subtype: "session_action", action: "rewind", user_message_id: writeUser.id, mode: "files" })
+  assert.ok(!existsSync(join(cwd, "turn-diff.txt")))
+  const filesOnlyHistory = diffRun.events.filter(event => event.kind === "history").at(-1) as any
+  assert.ok(JSON.stringify(filesOnlyHistory).includes("GUI_WRITE"))
+  await diffRun.request({ subtype: "session_action", action: "rewind", user_message_id: writeUser.id, mode: "both" })
+  const bothHistory = diffRun.events.filter(event => event.kind === "history").at(-1) as any
+  assert.ok(!JSON.stringify(bothHistory).includes("GUI_WRITE"), JSON.stringify(bothHistory))
+  console.log("PASS file-only rewind restores the checkpoint without removing chat, and combined rewind restores files and conversation")
+  const clearedId = (diffRun.results()[0] as any).message.session_id
+  diffRun.socket.close()
+  await Bun.sleep(100)
+  const clearedResume = connect(crypto.randomUUID(), clearedId)
+  await clearedResume.initialize()
+  clearedResume.send({ type: "user", message: { role: "user", content: "GUI_AFTER_FULL_REWIND" }, parent_tool_use_id: null })
+  await wait(() => clearedResume.results().length === 1, "continued after full rewind")
+  console.log("PASS a fully rewound conversation resumes and accepts a new prompt")
+  const currentUser = clearedResume.events.find(event => event.kind === "user") as Extract<Envelope, { kind: "user" }>
+  await wait(async () => !(await (await fetch(`http://127.0.0.1:${port}/api/runs`)).json() as any[]).some(run => run.busy), "idle before protocol validation")
+  for (const request of [
+    { subtype: "session_action", action: "rewind", user_message_id: currentUser.id, mode: "conversation_only", dry_run: true },
+    { subtype: "session_action", action: "typo", user_message_id: currentUser.id, mode: "conversation", dry_run: true },
+    { subtype: "configuration", kind: "mcp", scope: "bogus", action: "get" },
+    { subtype: "configuration", kind: "bogus", scope: "project", action: "get" },
+    { subtype: "configuration", kind: "mcp", scope: "project", action: "typo" },
+  ]) await assert.rejects(clearedResume.request(request as any), /Invalid option/)
+  console.log("PASS invalid session and configuration controls are rejected before mutation")
+
+  const sessionToRestart = (clearedResume.results()[0] as any).message.session_id
+  const observer = connect(crypto.randomUUID(), sessionToRestart)
+  const beforeRestart = await observer.initialize()
+  const mcpBeforeRestart = await observer.request({ subtype: "configuration", action: "get", kind: "mcp", scope: "local" })
+  await observer.request({ subtype: "configuration", action: "save", kind: "mcp", scope: "local", revision: mcpBeforeRestart.revision, name: "gui_restart", value: { type: "stdio", command: process.execPath, args: [mcpScript] } })
+  const restart = (sessionId?: string, runtimeId = crypto.randomUUID()) => fetch(`http://127.0.0.1:${port}/api/restart?${new URLSearchParams({ cwd })}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ runtimeId, sessionId }) })
+  assert.equal((await restart(sessionToRestart)).status, 200)
+  await wait(() => observer.socket.readyState === WebSocket.CLOSED && clearedResume.socket.readyState === WebSocket.CLOSED, "all old clients disconnected")
+  const replacement = connect(crypto.randomUUID(), sessionToRestart)
+  const afterRestart = await replacement.initialize()
+  assert.notEqual(afterRestart.pid, beforeRestart.pid)
+  assert.ok((await replacement.request({ subtype: "mcp_status" })).mcpServers.some((server: any) => server.name === "gui_restart"))
+  console.log("PASS explicit reconnect replaces the CLI even with multiple attached clients and loads saved MCP configuration")
+  replacement.send({ type: "user", message: { role: "user", content: "GUI_SLOW restart refusal" }, parent_tool_use_id: null })
+  await wait(() => replacement.events.some(event => event.kind === "user" && event.content === "GUI_SLOW restart refusal"), "restart refusal running turn")
+  replacement.send({ type: "user", message: { role: "user", content: "GUI_RESTART_QUEUED" }, parent_tool_use_id: null })
+  await wait(() => replacement.events.some(event => event.kind === "queue" && event.messages.some(message => message.content === "GUI_RESTART_QUEUED")), "restart refusal queue")
+  assert.equal((await restart(sessionToRestart)).status, 409)
+  assert.equal(replacement.socket.readyState, WebSocket.OPEN)
+  process.kill(afterRestart.pid, 0)
+  console.log("PASS reconnect refuses running and queued work without killing the CLI or losing messages")
+  const emptyRuntime = crypto.randomUUID()
+  const emptyReconnect = connect(emptyRuntime)
+  const emptyBefore = await emptyReconnect.initialize()
+  assert.equal((await restart(undefined, emptyRuntime)).status, 200)
+  const emptyReplacement = connect(crypto.randomUUID())
+  assert.notEqual((await emptyReplacement.initialize()).pid, emptyBefore.pid)
+  console.log("PASS a new empty task reconnects before a session id exists")
+
+
 } finally {
   for (const socket of sockets) socket.close()
   bridge.kill("SIGTERM")

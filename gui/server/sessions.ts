@@ -419,11 +419,13 @@ export async function loadHistory(cwd: string, id: string): Promise<HistoryItem[
   const restoredAgents = new Set<string>()
   const byUser = new Map<string, TurnDiff>()
   const byIndex = new Map<number, TurnDiff>()
+  const activeIds = new Set(entries.map(entry => entry.uuid))
   for (const record of readTurnDiffs(cwd, id)) {
+    if (record.userMessageId && !activeIds.has(record.userMessageId)) continue
     // Old records predate turnIndex; derive it so Undo works on their cards.
     const diff = { ...record.diff, turnIndex: record.diff.turnIndex ?? record.index }
     if (record.userMessageId) byUser.set(record.userMessageId, diff)
-    byIndex.set(record.index, diff)
+    if (!record.userMessageId) byIndex.set(record.index, diff)
   }
   const results = new Map<string | number, TurnResultRecord>()
   const resultFile = join(projectDir(cwd), `${id}.turn-results.jsonl`)

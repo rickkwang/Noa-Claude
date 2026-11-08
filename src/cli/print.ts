@@ -220,7 +220,13 @@ import {
   saveMode,
   saveAiGeneratedTitle,
   restoreSessionMetadata,
+  recordTranscript,
+  flushSessionStorage,
+  adoptResumedSessionFile,
 } from 'src/utils/sessionStorage.js'
+import { createConversationFork } from 'src/commands/branch/branch.js'
+import { guiConfiguration } from 'src/cli/guiConfiguration.js'
+import { SDKControlConfigurationRequestSchema, SDKControlSessionActionRequestSchema } from 'src/entrypoints/sdk/controlSchemas.js'
 import { incrementPromptCount } from 'src/utils/commitAttribution.js'
 import {
   setupSdkMcpClients,
@@ -265,6 +271,7 @@ import {
   toSDKRateLimitInfo,
 } from 'src/utils/messages/mappers.js'
 import {
+  createSystemMessage,
   createModelSwitchBreadcrumbs,
   stripSignatureBlocks,
 } from 'src/utils/messages.js'
@@ -3184,6 +3191,53 @@ function runHeadlessStreaming(
             sdkClient.client.transport.onmessage(mcpRequest.message)
           }
           sendControlResponseSuccess(message)
+        } else if (message.request.subtype === 'configuration') {
+          try {
+            if (running && message.request.action !== 'get') throw new Error('Wait for the current turn to finish before saving configuration.')
+            sendControlResponseSuccess(message, await guiConfiguration(SDKControlConfigurationRequestSchema().parse(message.request)))
+          } catch (error) {
+            sendControlResponseError(message, errorMessage(error))
+          }
+        } else if (message.request.subtype === 'session_action') {
+          try {
+            const request = SDKControlSessionActionRequestSchema().parse(message.request)
+            if (running || hasCommandsInQueue() || Object.values(getAppState().tasks).some(task => task.status === 'running')) {
+              throw new Error('Stop running tasks and clear queued messages before changing this conversation.')
+            }
+            await flushSessionStorage()
+            if (request.action === 'fork') {
+              const fork = await createConversationFork()
+              sendControlResponseSuccess(message, { sessionId: fork.sessionId })
+            } else {
+              const index = mutableMessages.findIndex(m => m.uuid === request.user_message_id && m.type === 'user' && !m.isMeta)
+              if (index < 0) throw new Error('This message is no longer in the active context. Choose a more recent message.')
+              const mode = request.mode ?? 'conversation'
+              const files = mode === 'conversation' ? undefined : await handleRewindFiles(request.user_message_id as UUID, getAppState(), setAppState, true)
+              if (files && !files.canRewind) throw new Error(files.error ?? 'No file checkpoint found.')
+              if (request.dry_run) {
+                sendControlResponseSuccess(message, { ...files, turnsRemoved: mutableMessages.slice(index).filter(m => m.type === 'user' && !m.isMeta && (typeof m.message.content === 'string' || m.message.content.some(block => block.type === 'text' || block.type === 'image'))).length })
+                continue
+              }
+              if (files) {
+                const restored = await handleRewindFiles(request.user_message_id as UUID, getAppState(), setAppState, false)
+                if (!restored.canRewind) throw new Error(restored.error ?? 'Could not restore files.')
+              }
+              if (mode !== 'files') {
+                const marker = { ...createSystemMessage('Conversation rewound.', 'info'), rewindMetadata: { removedUuids: mutableMessages.slice(index).map(m => m.uuid) } }
+                const kept = mutableMessages.slice(0, index)
+                adoptResumedSessionFile()
+                await recordTranscript([...kept, marker])
+                await flushSessionStorage()
+                mutableMessages.splice(0, mutableMessages.length, ...kept, marker)
+                bridgeLastForwardedIndex = mutableMessages.length
+              }
+              readFileState.clear()
+              pendingSeeds.clear()
+              sendControlResponseSuccess(message, { ok: true })
+            }
+          } catch (error) {
+            sendControlResponseError(message, errorMessage(error))
+          }
         } else if (message.request.subtype === 'rewind_files') {
           const appState = getAppState()
           const result = await handleRewindFiles(

@@ -62,7 +62,9 @@ function ConfirmDialog({
 
   // Destructive dialogs start on Cancel, so Enter cannot discard work by reflex.
   useEffect(() => {
+    const previous = document.activeElement as HTMLElement | null
     ;(danger ? cancelRef.current : confirmRef.current)?.focus()
+    return () => { if (previous?.isConnected) previous.focus() }
   }, [danger])
 
   function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {

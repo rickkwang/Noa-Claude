@@ -79,12 +79,14 @@ interface AgentRun {
   initializeWaiters: Map<ServerWebSocket<SocketData>, string>
   historyReady: Promise<void>
   exited: boolean
+  restarting?: boolean
+  sessionAction?: { requestId: string; rewind: boolean; filesFrom?: string; release: () => void }
 }
 const runs = new Map<string, AgentRun>()
 const workspaceOperations = new Map<string, Promise<void>>()
 
 function reclaimIfIdle(run: AgentRun): void {
-  if (!run.clients.size && !run.busy && !run.queue.length && !run.waiting.size && !run.activeTasks?.size && !run.exited) {
+  if (!run.clients.size && !run.busy && !run.queue.length && !run.waiting.size && !run.activeTasks?.size && !run.sessionAction && !run.restarting && !run.exited) {
     run.proc.kill()
     runs.delete(run.id)
   }
@@ -177,7 +179,7 @@ function write(run: AgentRun, message: unknown): boolean {
     return false
   }
 }
-async function lines(stream: ReadableStream<Uint8Array>, onLine: (line: string) => void) {
+async function lines(stream: ReadableStream<Uint8Array>, onLine: (line: string) => void | Promise<void>) {
   const reader = stream.getReader()
   const decoder = new TextDecoder()
   let buffer = ""
@@ -187,11 +189,11 @@ async function lines(stream: ReadableStream<Uint8Array>, onLine: (line: string) 
     buffer += decoder.decode(value, { stream: true })
     let at: number
     while ((at = buffer.indexOf("\n")) !== -1) {
-      onLine(buffer.slice(0, at))
+      await onLine(buffer.slice(0, at))
       buffer = buffer.slice(at + 1)
     }
   }
-  if (buffer) onLine(buffer)
+  if (buffer) await onLine(buffer)
 }
 function flushTimeline(run: AgentRun) {
   run.pendingTimeline = (run.pendingTimeline ?? []).filter(record => {
@@ -302,7 +304,7 @@ async function turnDiffAction(run: AgentRun, turnIndex: number, action: "undo" |
   const fail = (result: TurnDiffActionResult) =>
     emit(run, { kind: "turn-diff-action", turnIndex, action, result })
   await afterWorkspaceOperation(run.cwd, async () => {
-    if ([...runs.values()].some((active) => active.cwd === run.cwd && !active.exited && (active.busy || active.waiting.size || active.activeTasks.size)))
+    if ([...runs.values()].some((active) => active.cwd === run.cwd && !active.exited && (active.busy || active.sessionAction || active.waiting.size || active.activeTasks.size)))
       return fail({ ok: false, errorCode: "apply-failed", error: "Wait for running tasks in this workspace to finish before changing a workspace snapshot.", appliedPaths: [], skippedPaths: [], conflictedPaths: [] })
     if (!run.sessionId)
       return fail({ ok: false, errorCode: "no-patch", appliedPaths: [], skippedPaths: [], conflictedPaths: [] })
@@ -310,7 +312,7 @@ async function turnDiffAction(run: AgentRun, turnIndex: number, action: "undo" |
     if (!record)
       return fail({ ok: false, errorCode: "no-patch", appliedPaths: [], skippedPaths: [], conflictedPaths: [] })
     if (record.diff.undoable === false)
-      return fail({ ok: false, errorCode: "apply-failed", error: "Undo is unavailable when a turn changes multiple source folders.", appliedPaths: [], skippedPaths: [], conflictedPaths: [] })
+      return fail({ ok: false, errorCode: "apply-failed", error: "Undo is unavailable for this turn’s current file state.", appliedPaths: [], skippedPaths: [], conflictedPaths: [] })
     const result = await applyTurnDiff(
       run.cwd,
       record.patch ?? record.diff.patch,
@@ -391,8 +393,12 @@ export function attachAgent(ws: ServerWebSocket<SocketData>, root: string) {
         !r.exited &&
         // A replacement can start while the previous CLI finalizes; the
         // workspace operation queue orders its snapshot after the old one.
-        (r.clients.size > 0 || (r.busy && !r.turn?.finalizing) || r.queue.length > 0 || r.waiting.size > 0),
+        (r.restarting || r.clients.size > 0 || (r.busy && !r.turn?.finalizing) || r.queue.length > 0 || r.waiting.size > 0),
     )
+  if (run?.restarting) {
+    ws.close(1012, "Noa is restarting. Reconnect to continue.")
+    return
+  }
   if (run && run.cwd !== ws.data.cwd) {
     ws.close(1008, "Workspace mismatch")
     return
@@ -474,7 +480,7 @@ export function attachAgent(ws: ServerWebSocket<SocketData>, root: string) {
     }
     runs.set(run.id, run)
     const current = run
-    lines(proc.stdout, (line) => {
+    lines(proc.stdout, async (line) => {
       if (!line.trim()) return
       let message: AgentMessage
       try {
@@ -489,6 +495,28 @@ export function attachAgent(ws: ServerWebSocket<SocketData>, root: string) {
         return
       }
       if (message.type === "control_response") {
+        if (current.sessionAction?.requestId === message.response.request_id) {
+          try {
+          if (message.response.subtype === "success" && current.sessionAction.rewind && current.sessionId) {
+            if (current.sessionAction.filesFrom) {
+              const records = readTurnDiffs(current.cwd, current.sessionId)
+              const target = records.find(record => record.userMessageId === current.sessionAction?.filesFrom)
+              if (target) for (const record of records) if (record.index >= target.index) appendTurnDiff(current.cwd, current.sessionId, { ...record, diff: { ...record.diff, undoable: false } })
+            }
+            const items = await loadHistory(current.cwd, current.sessionId) ?? []
+            current.history = items
+            current.journal = [{ kind: "history", ...historyPage(items) }, queueEnvelope(current)]
+            current.turnCounter = countUserTurns(current.cwd, current.sessionId)
+            current.lastTranscriptUuid = undefined
+            for (const client of current.clients) for (const envelope of current.journal) client.send(JSON.stringify(envelope))
+          }
+          } catch (error) {
+            message = { type: "control_response", response: { subtype: "error", request_id: message.response.request_id, error: `Conversation changed, but its view could not refresh. Reconnect before continuing. ${String(error)}` } }
+          } finally {
+            current.sessionAction.release()
+          }
+          current.sessionAction = undefined
+        }
         const refreshedCommands = (message.response.response as { commands?: unknown } | undefined)?.commands
         if (message.response.subtype === "success" && Array.isArray(refreshedCommands) && current.initialization) {
           const original = current.initialization.response.response as Record<string, unknown>
@@ -512,6 +540,7 @@ export function attachAgent(ws: ServerWebSocket<SocketData>, root: string) {
           current.initializeWaiters.clear()
           current.initializationRequest = undefined
         } else for (const client of current.clients) client.send(JSON.stringify({ kind: "agent", message }))
+        reclaimIfIdle(current)
         return
       }
       if ((message.type === "assistant" || message.type === "user" || message.type === "result") && !message.parent_tool_use_id) flushTimeline(current)
@@ -556,6 +585,8 @@ export function attachAgent(ws: ServerWebSocket<SocketData>, root: string) {
     }).catch((error) => emit(current, { kind: "log", text: String(error) }))
     lines(proc.stderr, (text) => emit(current, { kind: "log", text })).catch(() => {})
     proc.exited.then((code) => {
+      current.sessionAction?.release()
+      current.sessionAction = undefined
       try { flushTimeline(current) } catch (error) { emit(current, { kind: "log", text: `Could not save activity: ${String(error)}` }) }
       if (current.turn && current.sessionId && current.turnSucceeded === undefined && !current.turn.interrupted) {
         try {
@@ -585,7 +616,7 @@ export function attachAgent(ws: ServerWebSocket<SocketData>, root: string) {
 }
 export async function agentMessage(ws: ServerWebSocket<SocketData>, raw: string | Buffer) {
   const run = ws.data.run
-  if (!run || run.exited || typeof raw !== "string") return
+  if (!run || run.exited || run.restarting || typeof raw !== "string") return
   await run.historyReady
   if (run.exited) return
   let message: Outgoing
@@ -597,6 +628,25 @@ export async function agentMessage(ws: ServerWebSocket<SocketData>, raw: string 
   if (message.type === "history_before") {
     if (Number.isInteger(message.before) && message.before > 0 && run.history && message.before <= run.history.length)
       ws.send(JSON.stringify({ kind: "history", prepend: true, ...historyPage(run.history, message.before) }))
+    return
+  }
+  if (message.type === "control_request" && message.request.subtype === "session_action") {
+    if (run.sessionAction || run.busy || run.turn || run.queue.length || run.waiting.size || run.activeTasks.size || [...runs.values()].some(active => active.cwd === run.cwd && !active.exited && (active.busy || active.sessionAction || active.activeTasks.size)) || workspaceOperations.has(run.cwd)) {
+      ws.send(JSON.stringify({ kind: "agent", message: { type: "control_response", response: { subtype: "error", request_id: message.request_id, error: "Stop running tasks and clear queued messages before changing this conversation." } } }))
+      return
+    }
+    let release!: () => void
+    const operation = new Promise<void>(resolve => { release = () => { clearTimeout(timer); resolve() } })
+    // A CLI that never answers would hold the workspace lock until exit; restart it instead.
+    const timer = setTimeout(() => { if (run.sessionAction?.release === release) run.proc.kill() }, 60000)
+    workspaceOperations.set(run.cwd, operation)
+    operation.then(() => { if (workspaceOperations.get(run.cwd) === operation) workspaceOperations.delete(run.cwd) })
+    run.sessionAction = { release, requestId: message.request_id, rewind: message.request.action === "rewind" && !message.request.dry_run, filesFrom: !message.request.dry_run && message.request.mode && message.request.mode !== "conversation" ? message.request.user_message_id : undefined }
+    if (!write(run, message)) {
+      run.sessionAction.release()
+      run.sessionAction = undefined
+      ws.send(JSON.stringify({ kind: "agent", message: { type: "control_response", response: { subtype: "error", request_id: message.request_id, error: "Noa could not receive the request. Reconnect to continue." } } }))
+    }
     return
   }
   if (message.type === "turn_diff_action") {
@@ -724,14 +774,17 @@ export function listAgentRuns() {
     }))
 }
 // Stops the idle CLI process holding a task so its files can be deleted; false while the task is still working.
-export function releaseSessionRuns(cwd: string, sessionId: string): boolean {
+export async function releaseSessionRuns(cwd: string, sessionId?: string, runtimeId?: string): Promise<boolean> {
   const owner = canonicalCwd(cwd)
-  const held = [...runs.values()].filter((run) => run.sessionId === sessionId && !run.exited && canonicalCwd(run.cwd) === owner)
-  if (held.some((run) => run.busy || run.queue.length || run.waiting.size || run.activeTasks?.size)) return false
+  const held = [...runs.values()].filter((run) => (sessionId ? run.sessionId === sessionId : run.id === runtimeId) && !run.exited && canonicalCwd(run.cwd) === owner)
+  if (held.some((run) => run.busy || run.turn || run.queue.length || run.waiting.size || run.activeTasks?.size || run.sessionAction || run.restarting)) return false
   for (const run of held) {
+    run.restarting = true
+    for (const client of run.clients) client.close(1012, "Noa restarted. Reconnect to continue.")
     run.proc.kill()
-    runs.delete(run.id)
   }
+  await Promise.all(held.map(run => run.proc.exited))
+  for (const run of held) if (runs.get(run.id) === run) runs.delete(run.id)
   return true
 }
 function shutdown() {

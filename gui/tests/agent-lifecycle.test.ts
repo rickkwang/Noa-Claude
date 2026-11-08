@@ -56,3 +56,19 @@ test("non-git turn clears its live diff when a shell restores the file", async (
     expect(run.journal.at(-1).diff.files).toEqual([])
   } finally { await rm(cwd, { recursive: true, force: true }) }
 })
+
+test("a failed session action write releases its workspace and replies with an error", async () => {
+  const responses: any[] = []
+  const socket: any = { data: {}, send: (raw: string) => responses.push(JSON.parse(raw)) }
+  const run: any = {
+    id: "failed-write", cwd: "/fixture/failed-write", clients: new Set([socket]), journal: [],
+    historyReady: Promise.resolve(), busy: false, exited: false, queue: [], waiting: new Map(), activeTasks: new Set(),
+    proc: { stdin: { write: () => { throw new Error("pipe closed") } } },
+  }
+  socket.data.run = run
+  for (const requestId of ["first", "retry"]) {
+    await agentMessage(socket, JSON.stringify({ type: "control_request", request_id: requestId, request: { subtype: "session_action", action: "fork" } }))
+    expect(run.sessionAction).toBeUndefined()
+    expect(responses.some(event => event.kind === "agent" && event.message.type === "control_response" && event.message.response.request_id === requestId && event.message.response.subtype === "error")).toBe(true)
+  }
+})

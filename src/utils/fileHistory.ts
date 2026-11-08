@@ -563,6 +563,7 @@ async function applySnapshot(
   targetSnapshot: FileHistorySnapshot,
 ): Promise<string[]> {
   const filesChanged: string[] = []
+  const failures: string[] = []
   for (const trackingPath of state.trackedFiles) {
     try {
       const filePath = maybeExpandFilePath(trackingPath)
@@ -573,6 +574,7 @@ async function applySnapshot(
         : getBackupFileNameFirstVersion(trackingPath, state)
 
       if (backupFileName === undefined) {
+        failures.push(trackingPath)
         // Error resolving the backup, so don't touch the file
         logError(
           new Error('FileHistory: Error finding the backup file to apply'),
@@ -605,12 +607,14 @@ async function applySnapshot(
         filesChanged.push(filePath)
       }
     } catch (error) {
+      failures.push(trackingPath)
       logError(error)
       logEvent('tengu_file_history_rewind_restore_file_failed', {
         dryRun: false,
       })
     }
   }
+  if (failures.length) throw new Error(`Could not restore ${failures.join(", ")}. Other files may already have been restored.`)
   return filesChanged
 }
 

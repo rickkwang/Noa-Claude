@@ -28,6 +28,7 @@ import { SubagentActivity, SubagentStatus } from "./SubagentActivity"
 import { splitReferences } from "../lib/references"
 import { contextCardFor } from "./ContextCard"
 import { stripAnsi } from "../lib/contextOutput"
+import { RewindButton } from "./SessionActions"
 import { LiveDiffSummary, TurnDiffCard } from "./TurnDiffCard"
 
 interface MessageListProps {
@@ -42,6 +43,7 @@ interface MessageListProps {
   onTurnDiffAction?: (diff: TurnDiff, action: "undo" | "reapply") => void
   diffActionPending?: number
   onRetry?: () => void
+  onRewind?: (id: string, text: string, images?: ImageBlock[]) => void
   onEdit?: (text: string, images?: ImageBlock[]) => void
   onQuote?: (text: string) => void
   tasks?: AgentTask[]
@@ -64,7 +66,7 @@ const ESTIMATED_TURN_HEIGHT = 160
 const TODO_TOOLS = ["TodoWrite", "TaskCreate", "TaskUpdate", "TaskList", "TaskGet"]
 const scrollPositions = new Map<string, { top: number; pinned: boolean; heights: Map<string, number> }>()
 
-export function MessageList({ turns, cwd, onOpenFile, busy, result, readingWidth, liveDiff, onTurnDiff, onTurnDiffAction, diffActionPending, onRetry, onEdit, onQuote, tasks, onStopTask, onOpenTask, sessionId, historyBefore, historyLoading, onLoadEarlier }: MessageListProps) {
+export function MessageList({ turns, cwd, onOpenFile, busy, result, readingWidth, liveDiff, onTurnDiff, onTurnDiffAction, diffActionPending, onRetry, onEdit, onRewind, onQuote, tasks, onStopTask, onOpenTask, sessionId, historyBefore, historyLoading, onLoadEarlier }: MessageListProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
   const layoutRef = useRef<HTMLDivElement>(null)
@@ -456,6 +458,8 @@ export function MessageList({ turns, cwd, onOpenFile, busy, result, readingWidth
             text={prose}
             kind="user"
             sentAt={segment.sentAt}
+            onRewind={onRewind ? () => onRewind(segment.id, segment.text, segment.images) : undefined}
+            rewindDisabled={busy}
             onEdit={onEdit && index === lastUserIndex ? () => onEdit(segment.text, segment.images) : undefined}
           />
         </div>
@@ -1157,9 +1161,11 @@ function formatSentAt(sentAt: number, now = new Date()): string {
   return date.toLocaleString(undefined, { ...time, month: "short", day: "numeric" })
 }
 
-function MessageActions({ text, kind = "assistant", onEdit, complete = true, sentAt }: {
+function MessageActions({ text, kind = "assistant", onEdit, onRewind, rewindDisabled, complete = true, sentAt }: {
   text: string
   kind?: "user" | "assistant"
+  onRewind?: () => void
+  rewindDisabled?: boolean
   onEdit?: () => void
   complete?: boolean
   sentAt?: number
@@ -1190,6 +1196,7 @@ function MessageActions({ text, kind = "assistant", onEdit, complete = true, sen
         {copied ? <Check size={kind === "assistant" ? 16 : 14} /> : <Copy size={kind === "assistant" ? 16 : 14} />}
       </button>
       {copyError && <span role="status" className="self-center text-caption text-[#C24444]">Could not copy. Try again.</span>}
+      {onRewind && <RewindButton disabled={!!rewindDisabled} onClick={onRewind} />}
       {onEdit && (
         <button
           type="button"

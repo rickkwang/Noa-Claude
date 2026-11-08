@@ -129,6 +129,19 @@ cwdRoutes["/api/sessions"] = {
   },
 }
 
+cwdRoutes["/api/restart"] = {
+  methods: ["POST"],
+  async handler({ req, cwd }) {
+    const body = await req.json().catch(() => null) as { runtimeId?: unknown; sessionId?: unknown } | null
+    if (typeof body?.runtimeId !== "string" || !SESSION_ID.test(body.runtimeId) ||
+        (body.sessionId !== undefined && (typeof body.sessionId !== "string" || !SESSION_ID.test(body.sessionId))))
+      return json({ error: "Invalid task identifier" }, 400)
+    if (!await releaseSessionRuns(cwd, body.sessionId as string | undefined, body.runtimeId))
+      return json({ error: "Stop running tasks and clear queued messages before reconnecting." }, 409)
+    return json({ ok: true })
+  },
+}
+
 async function sessionRequest(req: Request, cwd: string, id: string): Promise<Response> {
   if (req.method === "PATCH") {
     try {
@@ -141,7 +154,7 @@ async function sessionRequest(req: Request, cwd: string, id: string): Promise<Re
     }
   }
   if (req.method === "DELETE") {
-    if (!releaseSessionRuns(cwd, id)) return json({ error: "Stop the task before deleting it" }, 409)
+    if (!await releaseSessionRuns(cwd, id)) return json({ error: "Stop the task before deleting it" }, 409)
     try {
       deleteSession(cwd, id)
       return json({ ok: true })

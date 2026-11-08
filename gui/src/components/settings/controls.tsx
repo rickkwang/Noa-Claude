@@ -121,15 +121,18 @@ export function Select({
   options,
   onChange,
   disabled,
+  label,
 }: {
   value: string
   options: [string, string][]
   onChange: (value: string) => void
   disabled?: boolean
+  label?: string
 }) {
   return (
     <div className="relative shrink-0">
       <select
+        aria-label={label}
         value={value}
         disabled={disabled}
         onChange={(e) => onChange(e.target.value)}

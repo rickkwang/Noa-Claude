@@ -2,12 +2,14 @@ import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent as 
 import { createPortal } from "react-dom"
 import type { AppSettings } from "../types"
 import type { AgentState } from "../agent/reducer"
-import type { PermissionMode, AccountInfo } from "../agent/protocol"
+import type { PermissionMode, AccountInfo, ControlRequest } from "../agent/protocol"
 import { ArrowLeft, Download, Keyboard, Palette, Search, Settings, Plug, SlidersHorizontal, List } from "../lib/icons"
 import { findModel } from "../lib/models"
 import type { ProviderDraft } from "../lib/providerCatalog"
+import { useConfirm } from "./ConfirmDialog"
 import { AuthDialog } from "./AuthDialog"
 import { AppearancePage } from "./settings/AppearancePage"
+import { ConfigurationEditor } from "./settings/ConfigurationEditor"
 import { ConfigurationPage, HooksPage, McpPage, RefreshBar } from "./settings/ConfigurationPages"
 import { GeneralPage } from "./settings/GeneralPage"
 import { PluginsPage } from "./settings/PluginsPage"
@@ -61,11 +63,11 @@ const pages: { key: Page; label: string; group: string; icon: ReactNode; rows: s
     label: "Configuration",
     group: "Coding",
     icon: <SlidersHorizontal size={16} />,
-    rows: ["Model", "Reasoning effort", "Current permissions", "Configuration sources", "Permission rules"],
+    rows: ["Model", "Reasoning effort", "Current permissions", "Configuration sources", "Permission rules", "Edit permission rules"],
   },
   { key: "providers", label: "Providers", group: "Coding", icon: <Plug size={16} />, rows: ["Providers", "API key", "Base URL"] },
   { key: "hooks", label: "Hooks", group: "Coding", icon: <List size={16} />, rows: ["Configured hooks"] },
-  { key: "mcp", label: "MCP servers", group: "Integrations", icon: <Plug size={16} />, rows: ["Connected servers"] },
+  { key: "mcp", label: "MCP servers", group: "Integrations", icon: <Plug size={16} />, rows: ["Connected servers", "Manage server configurations"] },
   {
     key: "skills",
     label: "Plugins",
@@ -81,6 +83,8 @@ export function SettingsDialog({
   settings,
   agent,
   onRefreshSettings,
+  request,
+  onReconnect,
   onRefreshMcp,
   onChangeMcp,
   onReloadCommands,
@@ -106,6 +110,8 @@ export function SettingsDialog({
   navResizeHandle: ReactNode
   settings: AppSettings
   agent: AgentState
+  request: (request: ControlRequest) => Promise<any>
+  onReconnect: () => Promise<void>
   onRefreshSettings: () => void
   onRefreshMcp: () => void
   onChangeMcp: (name: string, enabled?: boolean) => void
@@ -133,6 +139,18 @@ export function SettingsDialog({
   const dialogRef = useRef<HTMLDivElement>(null)
   const backRef = useRef<HTMLButtonElement>(null)
   const [advancedOpen, setAdvancedOpen] = useState(false)
+  const [configurationDirty, setConfigurationDirty] = useState(false)
+  const [mcpDirty, setMcpDirty] = useState(false)
+  const { confirm: confirmClose, dialog: closeDialog } = useConfirm()
+  async function requestClose() {
+    if ((!configurationDirty && !mcpDirty) || await confirmClose({ title: "Discard unsaved changes?", description: "Your configuration changes have not been saved.", confirmLabel: "Discard", cancelLabel: "Keep editing", danger: true })) onClose()
+  }
+  useEffect(() => {
+    if (!configurationDirty && !mcpDirty) return
+    const prevent = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = "" }
+    window.addEventListener("beforeunload", prevent)
+    return () => window.removeEventListener("beforeunload", prevent)
+  }, [configurationDirty, mcpDirty])
   const searchTerms = query.trim().toLowerCase().split(/\s+/).filter(Boolean)
   const searchResults = pages.flatMap((p) => p.rows.map((label) => ({ page: p, label })))
     .filter(({ page, label }) => searchTerms.every((term) => `${page.label} ${label}`.toLowerCase().includes(term)))
@@ -170,17 +188,18 @@ export function SettingsDialog({
 
   useEffect(() => {
     const onKey = (e: globalThis.KeyboardEvent) => {
-      if (e.key === "Escape" && !authOpen) onClose()
+      if (e.key === "Escape" && !authOpen) void requestClose()
     }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
-  }, [authOpen, onClose])
+  }, [authOpen, onClose, configurationDirty, mcpDirty, confirmClose])
 
   function onKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
+    if (event.target instanceof Element && event.target.closest("[data-config-server]")) return
     if (event.key !== "Tab") return
-    const focusable = dialogRef.current?.querySelectorAll<HTMLElement>(
-      'button:not([disabled]), input:not([disabled]), select:not([disabled]), [href], summary, [tabindex]:not([tabindex="-1"])',
-    )
+    const focusable = [...(dialogRef.current?.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [href], summary, [tabindex]:not([tabindex="-1"])',
+    ) ?? [])].filter(element => element.getClientRects().length > 0)
     if (!focusable?.length) return
     const first = focusable[0]!
     const last = focusable[focusable.length - 1]!
@@ -216,7 +235,7 @@ export function SettingsDialog({
         >
           <button
             ref={backRef}
-            onClick={onClose}
+            onClick={() => void requestClose()}
             aria-label="Back to app"
             style={noDragRegion}
             className="flex size-7 items-center justify-center rounded-md text-[var(--sidebar-text-muted)] hover:bg-[var(--settings-fill-hover)]"
@@ -296,7 +315,7 @@ export function SettingsDialog({
       {/* The content card has no titlebar of its own, so this strip keeps the top of the window draggable. */}
       <div aria-hidden className="absolute inset-x-0 top-0 z-10 h-11" style={{ ...dragRegion, left: navWidth }} />
       <main className="noa-settings-main scrollbar-on-scroll min-w-0 flex-1 overflow-y-auto bg-[var(--bg-primary,#FCFCFB)] px-5 pt-[120px] pb-5">
-        <div key={page} className="mx-auto flex max-w-3xl flex-col gap-10">
+        <div className="mx-auto flex max-w-3xl flex-col gap-10">
           {page !== "skills" && <h1 className="text-[26px] leading-8 font-normal">{current?.label}</h1>}
 
           {page === "general" && (
@@ -322,7 +341,7 @@ export function SettingsDialog({
           {(page === "configuration" || page === "hooks" || page === "mcp") && (
             <RefreshBar agent={agent} onRefresh={page === "mcp" ? onRefreshMcp : onRefreshSettings} />
           )}
-          {page === "configuration" && <ConfigurationPage agent={agent} onModel={onModel} onEffort={onEffort} onMode={onMode} />}
+          <div style={{ display: page === "configuration" ? "contents" : "none" }}><ConfigurationPage agent={agent} onModel={onModel} onEffort={onEffort} onMode={onMode} /><ConfigurationEditor kind="permissions" disabled={disconnected || agent.busy} request={request} onSaved={() => onRefreshSettings()} onDirtyChange={setConfigurationDirty} /></div>
           {page === "providers" && (
             <ProvidersPage
               providers={agent.providers}
@@ -333,12 +352,13 @@ export function SettingsDialog({
               onDelete={onDeleteProvider}
             />
           )}
-          {page === "mcp" && <McpPage agent={agent} onChangeMcp={onChangeMcp} />}
+          <div style={{ display: page === "mcp" ? "contents" : "none" }}><McpPage agent={agent} onChangeMcp={onChangeMcp} /><ConfigurationEditor kind="mcp" disabled={disconnected || agent.busy || !!agent.queue.length || agent.tasks.some(task => task.status === "running")} request={request} onDirtyChange={setMcpDirty} onSaved={restart => restart ? onReconnect() : onRefreshMcp()} /></div>
           {page === "hooks" && <HooksPage agent={agent} />}
           {page === "skills" && <PluginsPage skills={allSkills} onReloadCommands={onReloadCommands} onOpenMcp={() => setPage("mcp")} onTrySkill={(name) => { onClose(); onTrySkill(name) }} />}
           {page === "shortcuts" && <ShortcutsPage sendShortcut={settings.composer.sendShortcut} />}
         </div>
       </main>
+      {closeDialog}
       {authOpen && auth && (
         <AuthDialog
           auth={auth}
