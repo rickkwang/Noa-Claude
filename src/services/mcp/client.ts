@@ -55,6 +55,10 @@ import { ListMcpResourcesTool } from '../../tools/ListMcpResourcesTool/ListMcpRe
 import { type MCPProgress, MCPTool } from '../../tools/MCPTool/MCPTool.js'
 import { createMcpAuthTool } from '../../tools/McpAuthTool/McpAuthTool.js'
 import { ReadMcpResourceTool } from '../../tools/ReadMcpResourceTool/ReadMcpResourceTool.js'
+import {
+  ReadMcpResourceDirTool,
+  serverDeclaresDirectoryRead,
+} from '../../tools/ReadMcpResourceDirTool/ReadMcpResourceDirTool.js'
 import { createAbortController } from '../../utils/abortController.js'
 import { count } from '../../utils/array.js'
 import {
@@ -222,7 +226,7 @@ function getMaxMcpDescriptionLength(): number {
  * Gets the timeout for MCP tool calls in milliseconds.
  * Uses MCP_TOOL_TIMEOUT environment variable if set, otherwise defaults to 10 minutes.
  */
-function getMcpToolTimeoutMs(): number {
+export function getMcpToolTimeoutMs(): number {
   const configured = parseInt(process.env.MCP_TOOL_TIMEOUT || '', 10)
   return configured > 0 ? configured : DEFAULT_MCP_TOOL_TIMEOUT_MS
 }
@@ -2208,6 +2212,10 @@ export async function reconnectMcpServerImpl(
         resourceTools.push(ListMcpResourcesTool, ReadMcpResourceTool)
       }
     }
+    if (serverDeclaresDirectoryRead(client.capabilities)) {
+      const hasDirTool = tools.some(t => toolMatchesName(t, ReadMcpResourceDirTool.name))
+      if (!hasDirTool) resourceTools.push(ReadMcpResourceDirTool)
+    }
 
     return {
       client,
@@ -2251,6 +2259,7 @@ export async function getMcpToolsCommandsAndResources(
   mcpConfigs?: Record<string, ScopedMcpServerConfig>,
 ): Promise<void> {
   let resourceToolsAdded = false
+  let directoryToolAdded = false
 
   const allConfigEntries = Object.entries(
     mcpConfigs ?? (await getAllMcpConfigs()).servers,
@@ -2373,6 +2382,10 @@ export async function getMcpToolsCommandsAndResources(
       if (supportsResources && !resourceToolsAdded) {
         resourceToolsAdded = true
         resourceTools.push(ListMcpResourcesTool, ReadMcpResourceTool)
+      }
+      if (serverDeclaresDirectoryRead(client.capabilities) && !directoryToolAdded) {
+        directoryToolAdded = true
+        resourceTools.push(ReadMcpResourceDirTool)
       }
 
       onConnectionAttempt({
