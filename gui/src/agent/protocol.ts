@@ -232,6 +232,8 @@ export interface TurnDiffActionResult {
 export type Envelope =
   | { kind: "interrupt" }
   | { kind: "attached"; runtimeId: string; mode?: PermissionMode }
+  // Another Noa process (usually a terminal) is writing this task; the GUI only follows it.
+  | { kind: "external"; pid: number; status?: string }
   | { kind: "history"; items: HistoryItem[]; before?: number; prepend?: boolean }
   | { kind: "user"; id: string; content: UserContent; at?: number }
   | { kind: "queue"; messages: QueuedMessage[]; paused?: boolean }

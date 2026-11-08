@@ -98,6 +98,8 @@ export const isSubagentTask = (task: AgentTask) => !task.taskType || ["local_age
 
 export interface AgentState {
   connection: "connecting" | "ready" | "closed"
+  // Set while another Noa process writes this task and the view is read-only.
+  external?: { pid: number; status?: string }
   sessionId?: string
   model?: string
   effort?: string
@@ -153,6 +155,7 @@ type Action =
   | { type: "reset" }
   | { type: "queue"; messages: QueuedMessage[]; paused?: boolean }
   | { type: "connection"; status: AgentState["connection"] }
+  | { type: "external"; pid: number; status?: string }
   | { type: "user-sent"; id: string; text?: string; content?: UserContent; sentAt?: number }
   | { type: "history-user"; id: string; text: string; images?: ImageBlock[]; sentAt?: number }
   | { type: "turn-duration"; durationMs: number; interrupted?: boolean; error?: string }
@@ -249,6 +252,8 @@ export function reducer(state: AgentState, action: Action): AgentState {
       return { ...state, queue: action.messages, queuePaused: action.paused ?? state.queuePaused }
     case "reset":
       return initialState
+    case "external":
+      return { ...state, external: { pid: action.pid, status: action.status }, error: undefined }
     case "compaction":
       return { ...state, turns: updateCompaction(state.turns, "done", action.trigger) }
     case "exit": {

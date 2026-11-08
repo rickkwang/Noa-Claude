@@ -861,7 +861,7 @@ function Workspace({ cwd }: { cwd: string }) {
                 diffActionPending={pendingDiffAction}
                 onRetry={retryLast}
                 onEdit={editMessage}
-                onRewind={(id, text, images) => setRewindMessage({ id, text, images })}
+                onRewind={state.external ? undefined : (id, text, images) => setRewindMessage({ id, text, images })}
                 onQuote={text => setQuote({ text, key: Date.now() })}
                 tasks={state.tasks}
                 onStopTask={stopTask}
@@ -879,6 +879,11 @@ function Workspace({ cwd }: { cwd: string }) {
                 messages scroll beneath it and a gradient fades them out above the card. */}
             <div ref={footerRef} className={hasTurns ? "noa-conversation-footer" : "shrink-0 px-[29px] pb-3 pt-2"}>
               <div className="mx-auto flex flex-col gap-2" style={{ maxWidth: readingWidth + 22 }}>
+                {state.external && (
+                  <p role="status" className="m-0 px-2 text-caption text-[var(--text-tertiary)]">
+                    {state.external.status === "busy" ? "Working in a terminal" : "Open in a terminal"} (pid {state.external.pid}). Updates appear here; close it there to continue in this window.
+                  </p>
+                )}
                 {state.connection === "closed" && (
                   <div role="status" className="flex items-center gap-1 px-2 text-caption text-[var(--text-tertiary)]">
                     <span className="mr-1 text-[color-mix(in_srgb,var(--text-danger)_65%,var(--text-primary))]">Agent disconnected</span>
@@ -964,6 +969,7 @@ function Workspace({ cwd }: { cwd: string }) {
                   followUpMode={settings.composer.followUpMode}
                   showFullAccess={settings.composer.showFullAccess}
                   connection={forkPending ? "connecting" : state.connection}
+                  readOnly={!!state.external}
                   busy={state.busy}
                   models={state.models}
                   providers={state.providers}

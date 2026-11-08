@@ -431,25 +431,38 @@ try {
   console.log("PASS a new task's first prompt names it with an AI title both the GUI and the CLI read")
   second.socket.close()
 
-  // A terminal (another parent process) holding the task blocks a GUI resume.
-  const terminal = Bun.spawn(["sh", "-c", `sleep 60 | "${process.execPath}" "${resolve(import.meta.dir, "../../run-noa.js")}" -p --input-format stream-json --output-format stream-json --verbose --resume ${titledId}`], {
-    cwd, env: { ...process.env, CLAUDE_CONFIG_DIR: config, ANTHROPIC_API_KEY: "local-fixture", ANTHROPIC_BASE_URL: `http://127.0.0.1:${provider.port}` }, stdout: "ignore", stderr: "ignore",
+  // A terminal (another parent process) holding the task: the GUI follows its transcript read-only,
+  // then attaches its own CLI once the terminal exits.
+  const terminal = Bun.spawn([process.execPath, resolve(import.meta.dir, "../../run-noa.js"), "-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--model", "claude-sonnet-4-6", "--resume", titledId], {
+    cwd, env: { ...process.env, CLAUDE_CONFIG_DIR: config, ANTHROPIC_API_KEY: "local-fixture", ANTHROPIC_BASE_URL: `http://127.0.0.1:${provider.port}` }, stdin: "pipe", stdout: "ignore", stderr: "ignore",
   })
-  let terminalPid: number | undefined
-  const holderPid = () => existsSync(join(config, "sessions")) ? readdirSync(join(config, "sessions")).filter((file) => /^\d+\.json$/.test(file)).map((file) => JSON.parse(readFileSync(join(config, "sessions", file), "utf8"))).find((entry) => entry.sessionId === titledId && entry.ppid === terminal.pid)?.pid as number | undefined : undefined
+  const holderPid = () => existsSync(join(config, "sessions")) ? readdirSync(join(config, "sessions")).filter((file) => /^\d+\.json$/.test(file)).map((file) => JSON.parse(readFileSync(join(config, "sessions", file), "utf8"))).find((entry) => entry.sessionId === titledId && entry.pid === terminal.pid)?.pid as number | undefined : undefined
   try {
     await wait(() => holderPid() !== undefined, "terminal holder registered", 30000)
-    terminalPid = holderPid()
-    const blocked = connect(crypto.randomUUID(), titledId)
-    await wait(() => blocked.events.some((e) => e.kind === "agent" && e.message.type === "result" && JSON.stringify(e.message).includes("open in another Noa process")), "GUI resume refused while a terminal holds the task", 30000)
-    console.log("PASS a GUI resume is refused while a terminal process writes the same task")
-  } finally {
-    // Killing the shell leaves its pipeline's CLI running.
-    if (terminalPid) process.kill(terminalPid)
+    const follower = connect(crypto.randomUUID(), titledId)
+    let closeCode: number | undefined
+    follower.socket.addEventListener("close", (event) => { closeCode = event.code })
+    await wait(() => follower.events.some((e) => e.kind === "external" && e.pid === terminal.pid), "GUI follows a task a terminal holds", 30000)
+    assert.ok(!follower.events.some((e) => e.kind === "agent" && e.message.type === "result"), "Following must not start a second CLI on the task")
+    terminal.stdin.write(JSON.stringify({ type: "user", message: { role: "user", content: "GUI_FROM_TERMINAL" }, parent_tool_use_id: null }) + "\n")
+    terminal.stdin.flush()
+    await wait(() => follower.events.some((e) => e.kind === "history" && JSON.stringify(e.items).includes("GUI_FROM_TERMINAL") && e.items.some(item => item.kind === "agent" && item.message.type === "assistant")) && JSON.stringify(follower.events.filter(e => e.kind === "history").at(-1)).match(/GUI_REPLY_\d+/) !== null, "terminal turn appears in the GUI", 30000)
+    follower.send({ type: "history_before", before: 1 })
+    await wait(() => follower.events.some((e) => e.kind === "history" && e.prepend === true), "earlier history pages while following")
+    console.log("PASS a GUI view follows a task a terminal process writes, without a second writer")
+    terminal.stdin.end()
     terminal.kill()
     await terminal.exited
-    // The holder stays a writer until its shutdown finishes, not just until its PID file goes.
-    await wait(() => { try { if (terminalPid) process.kill(terminalPid, 0); return !terminalPid } catch { return true } }, "terminal holder exited")
+    await wait(() => closeCode === 4000, "GUI is told the terminal released the task", 30000)
+    const takeover = connect(crypto.randomUUID(), titledId)
+    await takeover.initialize()
+    takeover.send({ type: "user", message: { role: "user", content: "GUI_AFTER_TERMINAL" }, parent_tool_use_id: null })
+    await wait(() => takeover.results().length === 1, "GUI continues the released task", 30000)
+    takeover.socket.close()
+    console.log("PASS once the terminal exits the GUI attaches its own CLI and continues the task")
+  } finally {
+    terminal.kill()
+    await terminal.exited
   }
   const thirdRuntime = crypto.randomUUID()
   const third = connect(thirdRuntime, initMessage.message.session_id)

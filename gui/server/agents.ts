@@ -1,4 +1,6 @@
 import type { ServerWebSocket, Subprocess } from "bun"
+import { readdirSync, readFileSync, statSync } from "node:fs"
+import { homedir } from "node:os"
 import { join } from "node:path"
 import { SESSION_ID, appendTimelineEvent, appendTurnResult, appendTurnDiff, canonicalCwd, countUserTurns, findTurnDiff, findTurnUserMessage, historyPage, loadHistory, readTurnDiffs, setTurnDiffReverted, transcriptPath } from "./sessions"
 import { projectAdditionalDirectories } from "./projects"
@@ -30,6 +32,8 @@ export interface SocketData {
   runtimeId: string
   mode?: string
   run?: AgentRun
+  // History of a task another process holds, for paging while it is followed.
+  following?: import("./sessions").HistoryItem[]
 }
 // What a pending control request waits on; the desktop notifies per kind.
 type WaitKind = "permission" | "question" | "elicitation" | "other"
@@ -383,6 +387,89 @@ export function finalizeTurnDiff(run: AgentRun): Promise<void> {
   })
   return turn.finalizing
 }
+function processAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM"
+  }
+}
+// A CLI outside this server (a terminal REPL, another GUI) registered as writing this task.
+// Mirrors the CLI's own resume refusal, so the GUI follows instead of starting a second writer.
+function externalHolder(sessionId: string): { pid: number; status?: string } | undefined {
+  const dir = join(process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".noa"), "sessions")
+  let files: string[]
+  try { files = readdirSync(dir) } catch { return undefined }
+  const own = new Set([...runs.values()].map(run => run.proc.pid))
+  for (const file of files) {
+    if (!/^\d+\.json$/.test(file)) continue
+    const pid = Number(file.slice(0, -5))
+    if (own.has(pid) || !processAlive(pid)) continue
+    try {
+      const entry = JSON.parse(readFileSync(join(dir, file), "utf8"))
+      if (entry.sessionId !== sessionId || entry.kind !== "interactive" || entry.ppid === process.pid) continue
+      // A crashed holder leaves its file behind; a recycled PID is not the writer.
+      if (typeof entry.processStartedAt === "string") {
+        const birth = Bun.spawnSync(["ps", "-p", String(pid), "-o", "lstart="], { env: { ...process.env, LC_ALL: "C", TZ: "UTC" } }).stdout.toString().trim()
+        if (birth && birth !== entry.processStartedAt) continue
+      }
+      return { pid, status: entry.status }
+    } catch {}
+  }
+  return undefined
+}
+function holderStatus(pid: number, sessionId: string): { held: boolean; status?: string } {
+  if (!processAlive(pid)) return { held: false }
+  const dir = join(process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".noa"), "sessions")
+  try {
+    const entry = JSON.parse(readFileSync(join(dir, `${pid}.json`), "utf8"))
+    return entry.sessionId === sessionId ? { held: true, status: entry.status } : { held: false }
+  } catch {
+    // The PID file goes before shutdown finishes; the process still writes until it exits.
+    return { held: true }
+  }
+}
+// Shows the holder's transcript as it grows; once the holder lets go, the client reconnects and resumes normally.
+function followExternal(ws: ServerWebSocket<SocketData>, sessionId: string, holder: { pid: number; status?: string }) {
+  const path = transcriptPath(ws.data.cwd, sessionId)
+  let size = -1
+  let status = holder.status
+  let refreshing = false
+  ws.send(JSON.stringify({ kind: "external", pid: holder.pid, status }))
+  const tick = async () => {
+    if (ws.readyState !== 1) return clearInterval(timer)
+    if (refreshing) return
+    refreshing = true
+    try {
+      const current = holderStatus(holder.pid, sessionId)
+      if (!current.held) {
+        clearInterval(timer)
+        ws.close(4000, "Released by the other Noa process")
+        return
+      }
+      if (current.status && current.status !== status) {
+        status = current.status
+        ws.send(JSON.stringify({ kind: "external", pid: holder.pid, status }))
+      }
+      let next = size
+      try { next = statSync(path).size } catch {}
+      if (next !== size) {
+        size = next
+        const items = await loadHistory(ws.data.cwd, sessionId)
+        if (items) ws.data.following = items
+        if (items && ws.readyState === 1) ws.send(JSON.stringify({ kind: "history", ...historyPage(items) }))
+      }
+    } catch (error) {
+      if (ws.readyState === 1) ws.send(JSON.stringify({ kind: "log", text: `Could not follow the task: ${String(error)}` }))
+    } finally {
+      refreshing = false
+    }
+  }
+  const timer = setInterval(tick, 500)
+  // Show the transcript right away instead of an empty view until the first poll.
+  void tick()
+}
 export function attachAgent(ws: ServerWebSocket<SocketData>, root: string) {
   let run = runs.get(ws.data.runtimeId)
   if (!run && ws.data.resume)
@@ -404,6 +491,11 @@ export function attachAgent(ws: ServerWebSocket<SocketData>, root: string) {
     return
   }
   if (!run || run.exited) {
+    const holder = ws.data.resume ? externalHolder(ws.data.resume) : undefined
+    if (holder && ws.data.resume) {
+      followExternal(ws, ws.data.resume, holder)
+      return
+    }
     const args = [
       process.execPath,
       join(root, "run-noa.js"),
@@ -616,6 +708,14 @@ export function attachAgent(ws: ServerWebSocket<SocketData>, root: string) {
 }
 export async function agentMessage(ws: ServerWebSocket<SocketData>, raw: string | Buffer) {
   const run = ws.data.run
+  if (!run && ws.data.following && typeof raw === "string") {
+    let message: Outgoing | undefined
+    try { message = JSON.parse(raw) } catch {}
+    const items = ws.data.following
+    if (message?.type === "history_before" && Number.isInteger(message.before) && message.before > 0 && message.before <= items.length)
+      ws.send(JSON.stringify({ kind: "history", prepend: true, ...historyPage(items, message.before) }))
+    return
+  }
   if (!run || run.exited || run.restarting || typeof raw !== "string") return
   await run.historyReady
   if (run.exited) return

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useReducer, useRef } from "react"
+import { useCallback, useEffect, useReducer, useRef, useState } from "react"
 import type {
   AccountInfo,
   CliSettings,
@@ -48,6 +48,8 @@ const INITIALIZE_TIMEOUT_MS = 20_000
 
 export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermissionMode }: AgentOptions) {
   const [state, dispatch] = useReducer(reducer, initialState)
+  // Bumped when another process releases the task this view was following, to attach a CLI of its own.
+  const [followEnded, setFollowEnded] = useState(0)
   const ownerRef = useRef(runtimeId)
   const defaultModeRef = useRef(defaultPermissionMode)
   defaultModeRef.current = defaultPermissionMode
@@ -191,6 +193,10 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
         case "attached":
           if (envelope.mode) modeRef.current = envelope.mode
           break
+        case "external":
+          clearInitializationTimer()
+          dispatch({ type: "external", pid: envelope.pid, status: envelope.status })
+          break
         case "turn-diff":
           dispatch({ type: "turn-diff", diff: envelope.diff, updateOnly: envelope.updateOnly })
           break
@@ -276,8 +282,12 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
       }
     }
 
-    socket.onclose = () => {
+    socket.onclose = (event) => {
       clearInitializationTimer()
+      if (isCurrent() && event.code === 4000) {
+        setFollowEnded(n => n + 1)
+        return
+      }
       if (isCurrent()) {
         for (const pending of requestsRef.current.values()) {
           clearTimeout(pending.timer)
@@ -395,7 +405,7 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
       socketRef.current = null
       socket.close()
     }
-  }, [cwd, resume, sessionKey, runtimeId, control])
+  }, [cwd, resume, sessionKey, runtimeId, control, followEnded])
 
   const sendMessage = useCallback(
     (content: UserContent, delivery?: "queue" | "steer") =>

@@ -48,6 +48,7 @@ function mentionAtCaret(value: string, caret: number): { query: string; start: n
 
 interface ComposerProps {
   connection: AgentState["connection"]
+  readOnly?: boolean
   busy: boolean
   models: ModelInfo[]
   providers?: ProviderInfo[]
@@ -103,6 +104,7 @@ const IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"]
 // Noa-styled composer: a rounded card with a hairline ring, slash menu, model and mode pickers.
 export function Composer({
   connection,
+  readOnly,
   busy,
   models,
   providers = [],
@@ -826,7 +828,7 @@ export function Composer({
           aria-activedescendant={mentionOpen && mentionItems[mentionIndex] ? `noa-file-option-${mentionIndex}` : menuOpen && menuItems[menuIndex] ? `noa-slash-option-${menuIndex}` : undefined}
           onCompositionStart={() => setComposing(true)}
           onCompositionEnd={() => { setComposing(false); compositionEndAt.current = performance.now() }}
-          placeholder={connection === "closed" ? "Noa disconnected" : disabled ? "Starting Noa…" : busy ? followUpMode === "steer" ? "Add a follow-up…" : "Add a follow-up to the queue…" : newTask ? "Do anything" : "Work with Noa"}
+          placeholder={readOnly ? "Running in a terminal" : connection === "closed" ? "Noa disconnected" : disabled ? "Starting Noa…" : busy ? followUpMode === "steer" ? "Add a follow-up…" : "Add a follow-up to the queue…" : newTask ? "Do anything" : "Work with Noa"}
           aria-label="Task instruction"
           disabled={disabled}
           rows={1}
