@@ -111,6 +111,7 @@ type ShellNotificationOptions = {
 };
 function enqueueShellNotification(taskId: string, description: string, status: 'completed' | 'failed' | 'killed', exitCode: number | undefined, setAppState: SetAppState, {
   toolUseId,
+  kind,
   agentId,
   stopCause
 }: ShellNotificationOptions = {}): void {
@@ -147,6 +148,14 @@ function enqueueShellNotification(taskId: string, description: string, status: '
     case 'killed':
       summary = `${BACKGROUND_BASH_SUMMARY_PREFIX}"${description}" was ${stopCause ? BACKGROUND_STOP_CAUSES[stopCause].summary : 'stopped'}`;
       break;
+  }
+  if (kind === 'monitor') {
+    // Monitor copy is its own wording, not the background-command summary.
+    summary = status === 'completed'
+      ? `Monitor "${description}" stream ended`
+      : status === 'failed'
+        ? `Monitor "${description}" script failed${exitCode !== undefined ? ` (exit ${exitCode})` : ''}`
+        : `Monitor "${description}" stopped`;
   }
   const outputPath = getTaskOutputPath(taskId);
   const toolUseIdLine = toolUseId ? `\n<${TOOL_USE_ID_TAG}>${toolUseId}</${TOOL_USE_ID_TAG}>` : '';

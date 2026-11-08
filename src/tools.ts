@@ -96,6 +96,9 @@ const TerminalCaptureTool = feature('TERMINAL_PANEL')
   ? require('./tools/TerminalCaptureTool/TerminalCaptureTool.js')
       .TerminalCaptureTool
   : null
+const MonitorTool = feature('MONITOR_TOOL')
+  ? require('./tools/MonitorTool/MonitorTool.js').MonitorTool
+  : null
 const WebBrowserTool = feature('WEB_BROWSER_TOOL')
   ? require('./tools/WebBrowserTool/WebBrowserTool.js').WebBrowserTool
   : null
@@ -187,6 +190,7 @@ export function getAllBaseTools(): Tools {
     ...(process.env.USER_TYPE === 'ant' ? [ConfigTool] : []),
     ...(SuggestBackgroundPRTool ? [SuggestBackgroundPRTool] : []),
     ...(WebBrowserTool ? [WebBrowserTool] : []),
+    ...(MonitorTool ? [MonitorTool] : []),
     ...(isTodoV2Enabled()
       ? [TaskCreateTool, TaskGetTool, TaskUpdateTool, TaskListTool]
       : []),

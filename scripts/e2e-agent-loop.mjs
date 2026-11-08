@@ -20,7 +20,7 @@ const model = 'claude-sonnet-4-6';
 // A 200k-window model, so a gateway naming a 1M model in its responses offers a "larger window".
 const modelFor = scenario => option('--model') || (scenario === 'gateway-model-name' ? 'claude-haiku-4-5' : scenario === 'preserved-thinking' ? 'claude-opus-5-5' : scenario === 'opus-1m-cache-off' ? 'claude-opus-4-6[1m]' : scenario === 'mandatory-thinking' ? 'kimi/k3.1-pro' : scenario === 'agent-effort-plan' ? 'opusplan' : scenario.startsWith('openai-responses') ? 'gpt-6.1-sol' : model);
 const sentinel = 'KEEP_IDENTIFIER=loop-sentinel-42';
-const cases = ['agent-nested', 'agent-budget', 'agent-budget-resume', 'agent-stop-pending', 'agent-owned-results', 'agent-owned-auto', 'auto-plan-race', 'auto-stage2-error', 'agent-cascade-stop', 'agent-schema', 'agent-schema-bg', 'hook-output', 'hook-output-null', 'blocking-limit', 'image-error', 'small-window-overflow', 'read', 'read-repeat', 'large-output', 'max-turns', 'malformed', 'empty', 'alternating', 'fallback', 'provider-quota', 'refusal', 'refusal-repeat', 'truncated', 'tool-input-streaming', 'tool-input-nonstream', 'stale-signature', 'budget-streaming', 'budget-nonstream', 'permission-deny', 'deny-rule', 'mode-auto', 'mode-bypass', 'mode-bypass-off', 'hook-block', 'compact-resume', 'task-crud', 'task-metadata-race', 'task-dependency-race', 'goal-child-usage', 'agent-custom-fork', 'agent-effort', 'agent-effort-plan', 'hook-composition', 'tombstone-resume', 'concurrency-streaming', 'concurrency-nonstream', 'background-deadline', 'openai-overflow', 'openai-usage', 'openai-usage-nonstream', 'openai-tools', 'openai-max-tokens-cap', 'openai-max-tokens-vllm', 'openai-responses', 'openai-responses-effort', 'bedrock-overflow', 'bedrock-bare-overflow', 'bedrock-media-overflow', 'opus-1m-cache-off', 'field-reject', 'gateway-model-name', 'preserved-thinking', 'mandatory-thinking'].filter(name => !option('--case') || name === option('--case')).filter((_, i) => {
+const cases = ['agent-nested', 'agent-budget', 'agent-budget-resume', 'agent-stop-pending', 'agent-owned-results', 'agent-owned-auto', 'auto-plan-race', 'auto-stage2-error', 'agent-cascade-stop', 'agent-schema', 'agent-schema-bg', 'hook-output', 'hook-output-null', 'blocking-limit', 'image-error', 'small-window-overflow', 'read', 'read-repeat', 'large-output', 'max-turns', 'malformed', 'empty', 'alternating', 'fallback', 'provider-quota', 'refusal', 'refusal-repeat', 'truncated', 'tool-input-streaming', 'tool-input-nonstream', 'stale-signature', 'budget-streaming', 'budget-nonstream', 'permission-deny', 'deny-rule', 'mode-auto', 'mode-bypass', 'mode-bypass-off', 'hook-block', 'compact-resume', 'task-crud', 'task-metadata-race', 'task-dependency-race', 'goal-child-usage', 'agent-custom-fork', 'agent-effort', 'agent-effort-plan', 'hook-composition', 'tombstone-resume', 'concurrency-streaming', 'concurrency-nonstream', 'background-deadline', 'monitor', 'monitor-timeout', 'monitor-persistent', 'openai-overflow', 'openai-usage', 'openai-usage-nonstream', 'openai-tools', 'openai-max-tokens-cap', 'openai-max-tokens-vllm', 'openai-responses', 'openai-responses-effort', 'bedrock-overflow', 'bedrock-bare-overflow', 'bedrock-media-overflow', 'opus-1m-cache-off', 'field-reject', 'gateway-model-name', 'preserved-thinking', 'mandatory-thinking'].filter(name => !option('--case') || name === option('--case')).filter((_, i) => {
   // --shard K/N runs every Nth case starting at K, so CI can split the suite across runners.
   const shard = option('--shard')?.match(/^(\d+)\/(\d+)$/);
   return !shard || i % Number(shard[2]) === Number(shard[1]) - 1;
@@ -74,7 +74,7 @@ const server = createServer(async (req, res) => {
     const effortChild=active.case.startsWith('agent-effort')&&JSON.stringify(body.system||'').includes('EFFORT_PROBE_RULE');
     const child = customChild || effortChild || active.case === 'goal-child-usage' && (lastText.includes('CHILD_USAGE_FIXTURE') || body.messages?.at(-1)?.content?.some?.(b => b.type === 'tool_result' && b.tool_use_id === 'child_read'));
     active.requests.at(-1).child = child;
-    const n = active.requests.filter(r => active.case !== 'openai-usage-nonstream' || !r.body.stream).filter(r => (harness || active.case.startsWith('hook-') || active.case.startsWith('concurrency-') || active.case === 'background-deadline') ? r.body.tools?.length && !r.child : !r.summary).length;
+    const n = active.requests.filter(r => active.case !== 'openai-usage-nonstream' || !r.body.stream).filter(r => (harness || active.case.startsWith('hook-') || active.case.startsWith('concurrency-') || active.case === 'background-deadline' || active.case.startsWith('monitor')) ? r.body.tools?.length && !r.child : !r.summary).length;
     const error = (status, type, message) => {
       res.writeHead(status, { 'content-type': 'application/json', 'retry-after': '0', 'x-should-retry': status === 529 ? 'true' : 'false' });
       res.end(JSON.stringify({ type: 'error', error: { type, message } }));
@@ -364,6 +364,16 @@ const server = createServer(async (req, res) => {
       content = [1, 2].map(i => ({ type: 'tool_use', id: 'write_' + i, name: 'Bash', input: { command: 'pwd' } })); stop = 'tool_use';
     } else if (active.case === 'auto-plan-race' && !body.messages.some(m => Array.isArray(m.content) && m.content.some(b => b.type === 'tool_result' && b.tool_use_id === 'race_write'))) {
       content = [{ type: 'tool_use', id: 'race_write', name: 'Write', input: { file_path: join(active.dir, '..', 'auto-plan-race-target.txt'), content: 'MUST_NOT_WRITE' } }]; stop = 'tool_use';
+    } else if (active.case.startsWith('monitor') && n <= 2) {
+      const start = active.case === 'monitor-timeout'
+        ? { command: 'echo MONITOR_BEFORE_TIMEOUT; sleep 30', description: 'fixture timeout monitor', timeout_ms: 1000 }
+        : active.case === 'monitor-persistent'
+          // timeout_ms must be ignored: the second line arrives after it.
+          ? { command: 'echo PERSIST_1; sleep 3; echo PERSIST_2', description: 'fixture persistent monitor', persistent: true, timeout_ms: 1000 }
+          : { command: 'echo MONITOR_LINE_1; echo MONITOR_ERR_1 >&2; echo ' + 'x'.repeat(1200) + '; sleep 1; echo MONITOR_LINE_2; sleep 1; echo MONITOR_LINE_3', description: 'fixture monitor', timeout_ms: 60000 };
+      content = n === 1
+        ? [{ type: 'tool_use', id: 'monitor_start', name: 'Monitor', input: start }]
+        : [{ type: 'tool_use', id: 'monitor_wait', name: 'Bash', input: { command: active.case === 'monitor-persistent' ? 'sleep 5' : 'sleep 4', description: 'Wait for monitor events' } }]; stop = 'tool_use';
     } else if (active.case === 'max-turns' || (active.case === 'read-repeat' && n <= 2) || ((active.case === 'read' || active.case.startsWith('mode-') || active.case.startsWith('openai-usage') || active.case === 'openai-tools' || active.case.startsWith('openai-max-tokens') || active.case.startsWith('openai-responses') || active.case.endsWith('-overflow') || active.case.startsWith('hook-')) && n === 1) || (active.case === 'compact-resume' && n <= 3) || (active.case === 'field-reject' && n === 2)) {
       content = [
         ...(active.case === 'compact-resume' ? [{ type: 'text', text: 'prior-context '.repeat(5000) }] : []),
@@ -489,7 +499,7 @@ async function run(executable, scenario, extra = [], input = 'Run the local loop
   // Hooks are off under --bare, so the hook scenario runs the full startup path.
   // --bare drops run_in_background, so the deadline scenario needs the full startup path too.
   // --bare also keeps only the simple tools, so openai-tools runs it to keep WebFetch and ToolSearch.
-  const command = [...(scenario.startsWith('hook-') || scenario.startsWith('mode-') || scenario === 'auto-plan-race' || scenario === 'auto-stage2-error' || scenario.startsWith('concurrency-') ||scenario.startsWith('tool-input-') || scenario === 'background-deadline' || scenario === 'openai-tools' || scenario.startsWith('openai-responses') || harness ? [] : ['--bare']), '--print', '--verbose', '--output-format', 'stream-json', '--model', modelFor(scenario), '--strict-mcp-config', '--setting-sources', '', '--permission-mode', 'dontAsk', '--tools', harness ? (scenario==='agent-custom-fork'?'Read,Bash,Task,SendMessage':scenario.startsWith('agent-effort')?'Task':scenario==='goal-child-usage'?'Read,Task,goal':scenario==='agent-nested'||scenario.startsWith('agent-owned-')||scenario.startsWith('agent-schema')?'Task':scenario==='agent-cascade-stop'||scenario==='agent-stop-pending'?'Task,Bash,TaskStop':scenario==='agent-budget'?'Task,Bash':scenario==='agent-budget-resume'?'Task,Bash,SendMessage':'TaskCreate,TaskUpdate,TaskGet,TaskList') : scenario.startsWith('tool-input-') ? 'Read,Bash,Write' : scenario === 'openai-tools' ? 'Read,Bash,WebFetch,ToolSearch' : scenario.startsWith('openai-responses') ? 'Read,Bash,TaskUpdate' : scenario.startsWith('mode-') ? 'Read,Bash,Edit,Write,Glob,Grep' : scenario === 'auto-plan-race' ? 'Read,Bash,Write' : 'Read,Bash', '--max-turns', harness ? '8' : scenario === 'compact-resume' ? '6' : scenario === 'read-repeat' ? '3' : scenario === 'stale-signature' ? '3' : scenario === 'preserved-thinking' ? '5' : scenario === 'background-deadline' || scenario === 'small-window-overflow' ? '4' : scenario === 'auto-stage2-error' ? '6' : '2'];
+  const command = [...(scenario.startsWith('hook-') || scenario.startsWith('mode-') || scenario === 'auto-plan-race' || scenario === 'auto-stage2-error' || scenario.startsWith('concurrency-') ||scenario.startsWith('tool-input-') || scenario === 'background-deadline' || scenario.startsWith('monitor') || scenario === 'openai-tools' || scenario.startsWith('openai-responses') || harness ? [] : ['--bare']), '--print', '--verbose', '--output-format', 'stream-json', '--model', modelFor(scenario), '--strict-mcp-config', '--setting-sources', '', '--permission-mode', 'dontAsk', '--tools', harness ? (scenario==='agent-custom-fork'?'Read,Bash,Task,SendMessage':scenario.startsWith('agent-effort')?'Task':scenario==='goal-child-usage'?'Read,Task,goal':scenario==='agent-nested'||scenario.startsWith('agent-owned-')||scenario.startsWith('agent-schema')?'Task':scenario==='agent-cascade-stop'||scenario==='agent-stop-pending'?'Task,Bash,TaskStop':scenario==='agent-budget'?'Task,Bash':scenario==='agent-budget-resume'?'Task,Bash,SendMessage':'TaskCreate,TaskUpdate,TaskGet,TaskList') : scenario.startsWith('tool-input-') ? 'Read,Bash,Write' : scenario.startsWith('monitor') ? 'Bash,Monitor' : scenario === 'openai-tools' ? 'Read,Bash,WebFetch,ToolSearch' : scenario.startsWith('openai-responses') ? 'Read,Bash,TaskUpdate' : scenario.startsWith('mode-') ? 'Read,Bash,Edit,Write,Glob,Grep' : scenario === 'auto-plan-race' ? 'Read,Bash,Write' : 'Read,Bash', '--max-turns', harness ? '8' : scenario === 'compact-resume' ? '6' : scenario === 'read-repeat' ? '3' : scenario === 'stale-signature' ? '3' : scenario === 'preserved-thinking' ? '5' : scenario === 'background-deadline' || scenario.startsWith('monitor') || scenario === 'small-window-overflow' ? '4' : scenario === 'auto-stage2-error' ? '6' : '2'];
   if (!scenario.startsWith('tool-input-') && scenario !== 'compact-resume' && scenario !== 'tombstone-resume' && scenario !== 'stale-signature' && scenario!=='agent-custom-fork' && scenario!=='agent-budget-resume' && scenario!=='goal-child-usage') command.push('--no-session-persistence');
   if (scenario.startsWith('tool-input-')) command.push('--allowedTools', 'Write');
   if (scenario === 'fallback') command.push('--fallback-model', 'claude-haiku-4-5');
@@ -938,6 +948,40 @@ try {
             const followUp = JSON.stringify(main[1]?.body.messages);
             assert.ok(followUp.includes('HOOK_BLOCKED_42'), 'hook block reason did not reach the model');
             assert.ok(!followUp.includes('LOCAL_FIXTURE_42'), 'Read ran despite the blocking hook');
+          } else if (scenario === 'monitor-persistent') {
+            assert.equal(runResult.code, 0); assert.equal(runResult.result.result, 'AUDIT_OK');
+            assert.ok(JSON.stringify(active.requests[1].body.messages).includes('persistent'), 'persistent monitor result text missing');
+            const events = JSON.stringify(active.requests[2].body.messages);
+            const eventBodies = [...events.matchAll(/<event>(.*?)<\/event>/gs)].map(m => m[1]).join('\n');
+            assert.ok(eventBodies.includes('PERSIST_1'), 'first line not delivered');
+            assert.ok(eventBodies.includes('PERSIST_2'), 'line after timeout_ms was not delivered; persistent monitor was stopped by the timeout');
+            assert.ok(!events.includes('[Monitor timed out'), 'persistent monitor reported a timeout');
+            assert.ok(events.includes('Monitor \\"fixture persistent monitor\\" stream ended'), 'completion notification missing');
+          } else if (scenario === 'monitor-timeout') {
+            assert.equal(runResult.code, 0); assert.equal(runResult.result.result, 'AUDIT_OK');
+            const events = JSON.stringify(active.requests[2].body.messages);
+            const eventBodies = [...events.matchAll(/<event>(.*?)<\/event>/gs)].map(m => m[1]).join('\n');
+            assert.ok(eventBodies.includes('MONITOR_BEFORE_TIMEOUT'), 'output before the timeout was not delivered');
+            assert.ok(events.includes('[Monitor timed out'), 'timeout notice missing');
+            // The shell's own "killed" notification must be suppressed: one stop notice only.
+            assert.equal(events.split('[Monitor timed out').length - 1, 1, 'timeout notice duplicated');
+            assert.ok(events.includes('Monitor \\"fixture timeout monitor\\" stopped'), 'timeout stop summary missing');
+            assert.ok(!events.includes('Background command'), 'shell completion notice leaked after timeout');
+          } else if (scenario === 'monitor') {
+            assert.equal(runResult.code, 0); assert.equal(runResult.result.result, 'AUDIT_OK');
+            assert.ok(JSON.stringify(active.requests[1].body.messages).includes('Monitor started'), 'Monitor tool did not start');
+            // Lines are batched into events; the model must see every line and the completion.
+            const events = JSON.stringify(active.requests[2].body.messages);
+            // Match event bodies only: the start command also contains these strings.
+            const eventBodies = [...events.matchAll(/<event>(.*?)<\/event>/gs)].map(m => m[1]).join('\n');
+            for (const line of ['MONITOR_LINE_1', 'MONITOR_LINE_2', 'MONITOR_LINE_3']) assert.ok(eventBodies.includes(line), `${line} not delivered`);
+            // Events carry stdout only, as upstream does.
+            assert.ok(!eventBodies.includes('MONITOR_ERR_1'), 'stderr line was reported as a monitor event');
+            // A 1200-character line is cut to the per-line limit and marked.
+            const longLine = eventBodies.split(/\\n|\n/).find(l => l.startsWith('xxxx'));
+            assert.ok(longLine && longLine.endsWith('...(truncated)') && longLine.length <= 515, 'long line was not truncated to the per-line limit');
+            assert.ok(events.includes('Monitor event: \\"fixture monitor\\"'), 'monitor event notification missing');
+            assert.ok(events.includes('Monitor \\"fixture monitor\\" stream ended'), 'monitor completion notification missing');
           } else {
             assert.equal(runResult.code, 0); assert.equal(runResult.result.result, 'AUDIT_OK'); assert.equal(count, 2);
             if (scenario === 'truncated') assert.ok(JSON.stringify(active.requests[1].body.messages).includes('cut off mid-stream'), 'truncated output was returned as complete');

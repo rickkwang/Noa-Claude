@@ -135,6 +135,7 @@ Bridge/remote runtime modules can exist in source, but this build does not regis
 - `LODESTONE`
 - `MCP_RICH_OUTPUT`
 - `MESSAGE_ACTIONS`
+- `MONITOR_TOOL` (the `Monitor` tool: runs a shell command in the background and reports its output lines as batched task-notification events; not in the baseline build — enable with `--feature=MONITOR_TOOL` or `dev-full`)
 - `POWERSHELL_AUTO_MODE`
 - `PROMPT_CACHE_BREAK_DETECTION`
 - `QUICK_SEARCH`
