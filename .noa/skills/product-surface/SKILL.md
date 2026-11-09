@@ -1,6 +1,6 @@
 ---
 name: product-surface
-description: Use when adding, removing, or re-bucketing Noa Claude commands, features, or docs surface. Runs check:docs and smoke:features and keeps README.md, FEATURE_AVAILABILITY_MATRIX.md, and docs/product-governance.md in sync.
+description: Use when adding, removing, or re-bucketing Noa Claude commands, features, or docs surface. Runs check:docs and smoke:features and keeps README.md, FEATURES.md, and docs/product-governance.md in sync.
 ---
 
 # Product surface
@@ -11,4 +11,4 @@ description: Use when adding, removing, or re-bucketing Noa Claude commands, fea
 - **Build-excluded** (`/proactive`, `/peers`, `/remote-control`, `/force-snip`, `/subscribe-pr`) — deliberately unregistered; stable `E_BUILD_EXCLUDED_*` IDs in `src/commands/buildExcluded.ts`.
 - **Stub** — placeholders, kept out of runtime and baseline docs.
 
-When changing product surface, run `check:docs` + `smoke:features` and keep `README.md`, `FEATURE_AVAILABILITY_MATRIX.md`, `docs/product-governance.md` in sync.
+When changing product surface, run `check:docs` + `smoke:features` and keep `README.md`, `FEATURES.md`, `docs/product-governance.md` in sync.
