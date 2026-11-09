@@ -79,6 +79,7 @@ export interface ProviderInfo {
   active: boolean
   baseUrl?: string
   model?: string
+  models?: string[]
   hasKey?: boolean
 }
 
@@ -284,6 +285,7 @@ export type ControlRequest =
   | { subtype: "set_model"; model: string }
   | { subtype: "set_provider"; providerId: string }
   | { subtype: "provider_save"; id?: string; type?: string; name: string; baseUrl: string; apiKey: string; model: string }
+  | { subtype: "provider_models"; id?: string; type?: string; baseUrl: string; apiKey: string }
   | { subtype: "provider_delete"; providerId: string }
   | { subtype: "set_permission_mode"; mode: PermissionMode }
   | { subtype: "get_context_usage"; detail?: "summary" | "full" }

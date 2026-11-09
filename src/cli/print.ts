@@ -2856,10 +2856,12 @@ function runHeadlessStreaming(
   // needs to redraw after the active provider or a profile changed.
   const sendProviderState = async (
     message: Parameters<typeof sendControlResponseSuccess>[0],
+    extra: Record<string, unknown> = {},
   ) => {
     modelInfos = buildModelInfos()
     const accountInfo = getAccountInformation()
     sendControlResponseSuccess(message, {
+      ...extra,
       models: modelInfos,
       providers: await listProviderChoices(),
       model: getMainLoopModel(),
@@ -3114,6 +3116,30 @@ function runHeadlessStreaming(
               await addProviderProfile({ type: type as ProviderType, name, ...fields })
             }
             await sendProviderState(message)
+          } catch (error) {
+            sendControlResponseError(message, errorMessage(error))
+          }
+        } else if (message.request.subtype === 'provider_models') {
+          // Lists a profile's models from its endpoint. An edit form that leaves the key blank reuses the stored one,
+          // so the key never has to travel back to the GUI.
+          try {
+            const { id, type, baseUrl, apiKey } = message.request
+            const stored = id ? (await loadProviderProfiles()).find(p => p.id === id) : undefined
+            if (id && !stored) throw new Error(`provider profile ${id} no longer exists`)
+            const endpoint = (baseUrl || stored?.baseUrl || '').trim()
+            if (!endpoint) throw new Error('Enter a base URL first')
+            // Only a request against the saved endpoint may use the saved key or update the saved list.
+            const onSavedEndpoint = Boolean(stored) && endpoint === stored.baseUrl?.trim() && (!type || type === stored.type)
+            const { discoverProviderModelNames } = await import('../utils/model/openaiModelDiscovery.js')
+            const models = await discoverProviderModelNames({
+              type: (type || stored?.type) as ProviderType,
+              baseUrl: endpoint,
+              apiKey: apiKey || (onSavedEndpoint ? stored.apiKey : undefined),
+            })
+            const fetchedModels = models ?? []
+            // Keep the list on the saved profile so the next session offers it without another round trip.
+            if (onSavedEndpoint && fetchedModels.length > 0) await updateProviderProfile(stored.id, { models: fetchedModels })
+            await sendProviderState(message, { fetchedModels })
           } catch (error) {
             sendControlResponseError(message, errorMessage(error))
           }
@@ -4633,6 +4659,7 @@ async function listProviderChoices(): Promise<
     active: boolean
     baseUrl?: string
     model?: string
+    models?: string[]
     hasKey?: boolean
   }[]
 > {
@@ -4660,6 +4687,7 @@ async function listProviderChoices(): Promise<
       active: Boolean(p.active),
       baseUrl: p.baseUrl,
       model: p.model,
+      models: p.models,
       hasKey: Boolean(p.apiKey),
     })),
   ]

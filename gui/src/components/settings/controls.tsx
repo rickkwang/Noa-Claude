@@ -22,12 +22,15 @@ export function Section({ title, children }: { title?: string; children: ReactNo
   )
 }
 
-export function Row({ label, description, children }: { label: string; description?: string; children?: ReactNode }) {
+export function Row({ label, description, icon, children }: { label: string; description?: string; icon?: ReactNode; children?: ReactNode }) {
   return (
     <div data-settings-label={label} className="flex items-center justify-between gap-6 px-4 py-3">
-      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <span className="text-chat-sm leading-[18px] font-medium">{label}</span>
-        {description && <span className="text-caption leading-4 text-[var(--sidebar-text-muted)]">{description}</span>}
+      <div className="flex min-w-0 flex-1 items-center gap-3">
+        {icon}
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <span className="text-chat-sm leading-[18px] font-medium">{label}</span>
+          {description && <span className="text-caption leading-4 text-[var(--sidebar-text-muted)]">{description}</span>}
+        </div>
       </div>
       {children}
     </div>

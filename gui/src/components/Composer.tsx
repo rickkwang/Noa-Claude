@@ -21,6 +21,7 @@ import {
   ComposerPlusIcon,
   ComposerSendIcon,
 } from "./ComposerIcons"
+import { ProviderIcon } from "./ProviderIcon"
 import type { ReactNode } from "react"
 import type { ProjectInfo } from "../api"
 import type { AgentState } from "../agent/reducer"
@@ -315,6 +316,7 @@ export function Composer({
   }, [editDraft?.key])
 
   const currentModel = findModel(models, model)
+  const activeProvider = providers.find((p) => p.active)
   const modelLabelKey = `noa-agent.modelLabel:${cwd}`
   const savedModelLabel = useMemo(() => {
     try { return localStorage.getItem(modelLabelKey) } catch { return null }
@@ -610,6 +612,7 @@ export function Composer({
     ? providers.map((p, i) => ({
         key: `provider:${p.id}`,
         title: p.name,
+        leading: <ProviderIcon type={p.type} />,
         description: p.typeLabel ?? p.type,
         active: p.active,
         onSelect: () => onProvider(p.id),
@@ -944,6 +947,7 @@ export function Composer({
               modelPicker
               label={
                 <>
+                  {activeProvider && <ProviderIcon type={activeProvider.type} size={13} className="mr-1 text-[var(--text-primary)]" />}
                   <span className="noa-agent-model-name max-w-[112px] truncate text-[var(--text-primary)]">
                     {currentModel?.displayName ?? model ?? (disabled ? savedModelLabel : undefined) ?? "Model"}
                   </span>
@@ -1008,6 +1012,7 @@ interface PickerItem {
   onSelect: () => void
   heading?: string
   icon?: ReactNode
+  leading?: ReactNode
   danger?: boolean
   disabled?: boolean
 }
@@ -1387,7 +1392,7 @@ function Picker({
             {items.map((item) => (
       <div key={item.key}>
         {item.heading && (
-          <div className="px-2.5 pb-1 pt-2 text-caption text-[var(--sidebar-text-muted)]">{item.heading}</div>
+          <div className={`${modelPicker ? "px-2 pb-1 pt-2" : "px-2.5 pb-1 pt-2"} text-caption text-[var(--sidebar-text-muted)]`}>{item.heading}</div>
         )}
         <button
           type="button"
@@ -1406,11 +1411,11 @@ function Picker({
           {item.icon && <span className="noa-approval-icon">{item.icon}</span>}
           <span className={item.icon ? "noa-approval-text" : "contents"}>
             <span className={modelPicker ? "noa-model-picker-option-label" : item.icon ? undefined : "text-body font-medium"}>
-              {item.title}
+              {item.leading ? <span className="flex min-w-0 items-center gap-2">{item.leading}{item.title}</span> : item.title}
               {modelPicker && item.active && <Check size={16} aria-hidden="true" />}
             </span>
             {item.description && (
-              <span className={item.icon ? "noa-approval-desc" : "break-words text-caption text-[var(--sidebar-text-muted,#898781)]"}>
+              <span className={item.icon ? "noa-approval-desc" : `break-words text-caption text-[var(--sidebar-text-muted,#898781)]${modelPicker ? " mt-0.5" : ""}`}>
                 {item.description}
               </span>
             )}

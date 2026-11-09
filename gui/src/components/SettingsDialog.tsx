@@ -91,6 +91,7 @@ export function SettingsDialog({
   onModel,
   onProvider,
   onSaveProvider,
+  onFetchProviderModels,
   onDeleteProvider,
   onEffort,
   onMode,
@@ -119,6 +120,7 @@ export function SettingsDialog({
   onModel: (model: string) => void
   onProvider: (providerId: string) => void
   onSaveProvider: (draft: ProviderDraft) => void
+  onFetchProviderModels: (draft: ProviderDraft) => Promise<string[]>
   onDeleteProvider: (providerId: string) => void
   onEffort: (effort: string | null) => void
   onMode: (mode: PermissionMode) => void
@@ -350,6 +352,7 @@ export function SettingsDialog({
               onUse={onProvider}
               onSave={onSaveProvider}
               onDelete={onDeleteProvider}
+              onFetchModels={onFetchProviderModels}
             />
           )}
           <div style={{ display: page === "mcp" ? "contents" : "none" }}><McpPage agent={agent} onChangeMcp={onChangeMcp} /><ConfigurationEditor kind="mcp" disabled={disconnected || agent.busy || !!agent.queue.length || agent.tasks.some(task => task.status === "running")} request={request} onDirtyChange={setMcpDirty} onSaved={restart => restart ? onReconnect() : onRefreshMcp()} /></div>

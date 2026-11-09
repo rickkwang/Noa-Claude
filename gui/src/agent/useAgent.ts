@@ -441,6 +441,25 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
     [control],
   )
 
+  // Lists the endpoint's models. The agent also keeps them on the saved profile and replies with the refreshed provider state.
+  const fetchProviderModels = useCallback(
+    async (draft: { id?: string; type?: string; baseUrl: string; apiKey: string }) => {
+      const body = (await request({ subtype: "provider_models", id: draft.id, type: draft.type ?? "", baseUrl: draft.baseUrl, apiKey: draft.apiKey })) as Record<string, unknown>
+      dispatch({
+        type: "control",
+        payload: {
+          kind: "provider",
+          models: (body.models as ModelInfo[] | undefined) ?? [],
+          providers: (body.providers as ProviderInfo[] | undefined) ?? [],
+          account: body.account as AccountInfo | undefined,
+          model: body.model as string | undefined,
+        },
+      })
+      return (body.fetchedModels as string[] | undefined) ?? []
+    },
+    [request],
+  )
+
   const deleteProvider = useCallback(
     (providerId: string) => {
       dispatch({ type: "provider-pending", pending: true })
@@ -535,7 +554,7 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
   }, [control])
   const closeAuthentication = useCallback(() => dispatch({ type: "auth-close" }), [])
 
-  return { state: ownerRef.current === runtimeId ? state : initialState, request, sendMessage, reloadCommands, loadEarlier, answerElicitation, removeQueued, moveQueued, updateQueued, steerQueued, setQueuePaused, runQueued, stopTask, interrupt, answerPermission, setModel, setProvider, saveProvider, deleteProvider, setPermissionMode, setEffort, refreshSettings, changeMcp, refreshContext, refreshMcp, turnDiffAction, clearDiffAction, startAuthentication, waitForAuthentication, submitAuthenticationCode, closeAuthentication }
+  return { state: ownerRef.current === runtimeId ? state : initialState, request, sendMessage, reloadCommands, loadEarlier, answerElicitation, removeQueued, moveQueued, updateQueued, steerQueued, setQueuePaused, runQueued, stopTask, interrupt, answerPermission, setModel, setProvider, saveProvider, fetchProviderModels, deleteProvider, setPermissionMode, setEffort, refreshSettings, changeMcp, refreshContext, refreshMcp, turnDiffAction, clearDiffAction, startAuthentication, waitForAuthentication, submitAuthenticationCode, closeAuthentication }
 }
 
 export function parseAuthorizationCode(raw: string): { authorizationCode: string; state: string } | undefined {
