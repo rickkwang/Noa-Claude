@@ -31,6 +31,7 @@ import {
   ERROR_MESSAGE_USER_ABORT,
 } from '../../services/compact/compact.js'
 import type { AppState } from '../../state/AppState.js'
+import { canTransitionTaskStatus } from '../../Task.js'
 import type { Tool, ToolUseContext } from '../../Tool.js'
 import { appendTeammateMessage } from '../../tasks/InProcessTeammateTask/InProcessTeammateTask.js'
 import type {
@@ -528,6 +529,12 @@ function updateTaskState(
     }
     const updated = updater(task)
     if (updated === task) {
+      return prev
+    }
+    if (!canTransitionTaskStatus(task.status, updated.status)) {
+      logForDebugging(
+        `[inProcessRunner] Task ${taskId}: ignored status ${task.status} → ${updated.status}`,
+      )
       return prev
     }
     return {

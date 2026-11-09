@@ -579,6 +579,22 @@ try {
       assert.equal(readdirSync(artifacts).filter(name => name.startsWith(`large-${mode}.jsonl.`) && name.endsWith('.tmp')).length, 0)
     }
   })
+  await maintenance('task-terminal-status-is-final', async () => {
+    const { registerDreamTask, completeDreamTask, failDreamTask, DreamTask } = await import('../src/tasks/DreamTask/DreamTask.js')
+    const { updateTaskState } = await import('../src/utils/task/framework.js')
+    let appState: any = { tasks: {} }
+    const setTasks = (f: (prev: any) => any) => { appState = f(appState) }
+    const id = registerDreamTask(setTasks, { sessionsReviewing: 1, priorMtime: 0, abortController: new AbortController() })
+    await DreamTask.kill(id, setTasks)
+    completeDreamTask(id, setTasks)
+    failDreamTask(id, setTasks)
+    updateTaskState(id, setTasks, (t: any) => ({ ...t, status: 'running' }))
+    results.push({ case: 'task-terminal-status-is-final', status: appState.tasks[id].status })
+    assert.equal(appState.tasks[id].status, 'killed', 'a late completion overwrote a killed task')
+    const live = registerDreamTask(setTasks, { sessionsReviewing: 1, priorMtime: 0, abortController: new AbortController() })
+    completeDreamTask(live, setTasks)
+    assert.equal(appState.tasks[live].status, 'completed', 'running → completed was refused')
+  })
   writeFileSync(join(artifacts, 'results.json'), JSON.stringify(results, null, 2))
   assert.deepEqual(maintenanceFailures, [], 'maintenance boundary regressions')
 

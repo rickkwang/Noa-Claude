@@ -13,6 +13,7 @@ import {
   useSetAppState,
 } from '../state/AppState.js'
 import { findToolByName } from '../Tool.js'
+import { isTerminalTaskStatus } from '../Task.js'
 import { isInProcessTeammateTask } from '../tasks/InProcessTeammateTask/types.js'
 import { getAllBaseTools } from '../tools.js'
 import type { PermissionUpdate } from '../types/permissions.js'
@@ -752,9 +753,12 @@ export function useInboxPoller({
               // only in-process teammates have a runner that sets 'completed'.
               const updatedTasks = { ...prev.tasks }
               for (const [tid, task] of Object.entries(updatedTasks)) {
+                // A teammate that already finished or was killed keeps
+                // its own outcome.
                 if (
                   isInProcessTeammateTask(task) &&
-                  task.identity.agentId === teammateId
+                  task.identity.agentId === teammateId &&
+                  !isTerminalTaskStatus(task.status)
                 ) {
                   updatedTasks[tid] = {
                     ...task,

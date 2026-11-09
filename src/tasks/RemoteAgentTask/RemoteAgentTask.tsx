@@ -640,7 +640,17 @@ function startRemoteSessionPolling(taskId: string, context: TaskContext): () => 
       const hasAssistantEvents = accumulatedLog.some(m => m.type === 'assistant');
       const sessionDone = task.isRemoteReview && (cachedReviewContent !== null || !hasSessionStartHook && stableIdle && hasAssistantEvents);
       const reviewTimedOut = task.isRemoteReview && Date.now() - task.pollStartedAt > REMOTE_REVIEW_TIMEOUT_MS;
-      const newStatus = result ? result.subtype === 'success' ? 'completed' as const : 'failed' as const : sessionDone || reviewTimedOut ? 'completed' as const : accumulatedLog.length > 0 ? 'running' as const : 'starting' as const;
+      const sessionStatus = result ? result.subtype === 'success' ? 'completed' as const : 'failed' as const : sessionDone || reviewTimedOut ? 'completed' as const : accumulatedLog.length > 0 ? 'running' as const : 'starting' as const;
+      const isFinished = Boolean(result || sessionDone || reviewTimedOut);
+
+      // A finished remote review without review text is a failure. Decide it
+      // before the status write: a terminal status is final, so the task can't
+      // be marked completed first and corrected to failed afterwards.
+      // cachedReviewContent hit the tag in the delta scan. Full-log scan
+      // catches the stableIdle path where the tag arrived in an earlier
+      // tick but the delta scan wasn't wired yet (first poll after resume).
+      const reviewContent = task.isRemoteReview && isFinished ? cachedReviewContent ?? extractReviewFromLog(accumulatedLog) : null;
+      const newStatus = task.isRemoteReview && isFinished && !(reviewContent && sessionStatus === 'completed') ? 'failed' as const : sessionStatus;
 
       // Update task state. Guard against terminal states — if stopTask raced
       // while pollRemoteSessionEvents was in-flight (status set to 'killed',
@@ -670,13 +680,13 @@ function startRemoteSessionPolling(taskId: string, context: TaskContext): () => 
           // some + find + safeParse every second when idle.
           todoList: logGrew ? extractTodoListFromLog(accumulatedLog) : prevTask.todoList,
           reviewProgress: newProgress ?? prevTask.reviewProgress,
-          endTime: result || sessionDone || reviewTimedOut ? Date.now() : undefined
+          endTime: isFinished ? Date.now() : undefined
         };
       });
       if (raceTerminated) return;
 
       // Send notification if task completed or timed out
-      if (result || sessionDone || reviewTimedOut) {
+      if (isFinished) {
         const finalStatus = result && result.subtype !== 'success' ? 'failed' : 'completed';
 
         // For remote-review tasks: inject the review text directly into the
@@ -686,22 +696,15 @@ function startRemoteSessionPolling(taskId: string, context: TaskContext): () => 
         // the formatted findings as an assistant event, so the claude.ai URL
         // stays a durable record the user can revisit. TTL handles cleanup.
         if (task.isRemoteReview) {
-          // cachedReviewContent hit the tag in the delta scan. Full-log scan
-          // catches the stableIdle path where the tag arrived in an earlier
-          // tick but the delta scan wasn't wired yet (first poll after resume).
-          const reviewContent = cachedReviewContent ?? extractReviewFromLog(accumulatedLog);
-          if (reviewContent && finalStatus === 'completed') {
+          if (newStatus === 'completed') {
             enqueueRemoteReviewNotification(taskId, reviewContent, context.setAppState);
             void evictTaskOutput(taskId);
             void removeRemoteAgentMetadata(taskId);
             return; // Stop polling
           }
 
-          // No output or remote error — mark failed with a review-specific message.
-          updateTaskState(taskId, context.setAppState, t => ({
-            ...t,
-            status: 'failed'
-          }));
+          // No output or remote error — the status write above already
+          // marked it failed; notify with a review-specific message.
           const reason = result && result.subtype !== 'success' ? 'remote session returned an error' : reviewTimedOut && !sessionDone ? 'remote session exceeded 30 minutes' : 'no review output — orchestrator may have exited early';
           enqueueRemoteReviewFailureNotification(taskId, reason, context.setAppState);
           void evictTaskOutput(taskId);

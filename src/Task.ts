@@ -29,6 +29,30 @@ export function isTerminalTaskStatus(status: TaskStatus): boolean {
   return status === 'completed' || status === 'failed' || status === 'killed'
 }
 
+/**
+ * Legal status transitions. A terminal status is final: the first outcome
+ * (e.g. a user kill) stands, and a late completion or failure from a racing
+ * runner cannot overwrite it. Resuming a task re-registers it through
+ * registerTask, which is not a transition.
+ */
+export const TASK_STATUS_TRANSITIONS: Record<
+  TaskStatus,
+  readonly TaskStatus[]
+> = {
+  pending: ['running', 'completed', 'failed', 'killed'],
+  running: ['completed', 'failed', 'killed'],
+  completed: [],
+  failed: [],
+  killed: [],
+}
+
+export function canTransitionTaskStatus(
+  from: TaskStatus,
+  to: TaskStatus,
+): boolean {
+  return from === to || TASK_STATUS_TRANSITIONS[from].includes(to)
+}
+
 export type TaskHandle = {
   taskId: string
   cleanup?: () => void

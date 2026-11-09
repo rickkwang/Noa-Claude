@@ -1,12 +1,14 @@
 // @ts-nocheck
 import type { AppState } from '../../state/AppState.js'
 import {
+  canTransitionTaskStatus,
   isTerminalTaskStatus,
   type TaskStatus,
   type TaskType,
 } from '../../Task.js'
 import type { TaskState } from '../../tasks/types.js'
 import { releaseAgentPersonalityName } from '../../tools/AgentTool/constants.js'
+import { logForDebugging } from '../debug.js'
 import { enqueueSdkEvent } from '../sdkEventQueue.js'
 import { getTaskOutputDelta } from './diskOutput.js'
 
@@ -48,6 +50,12 @@ export function updateTaskState<T extends TaskState>(
     if (updated === task) {
       // Updater returned the same reference (early-return no-op). Skip the
       // spread so s.tasks subscribers don't re-render on unchanged state.
+      return prev
+    }
+    if (!canTransitionTaskStatus(task.status, updated.status)) {
+      logForDebugging(
+        `Task ${taskId}: ignored status ${task.status} → ${updated.status}`,
+      )
       return prev
     }
     return {

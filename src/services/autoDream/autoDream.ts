@@ -490,6 +490,13 @@ ${shown.map(id => `- ${id}`).join('\n')}${overflow > 0 ? `\n- ...and ${overflow}
         onMessage: makeDreamProgressWatcher(taskId, setAppState),
       })
 
+      // A kill can let the fork resolve instead of throw. DreamTask.kill
+      // already set status=killed and rolled back the lock, so don't report
+      // a completion the user cancelled.
+      if (abortController.signal.aborted) {
+        logForDebugging('[autoDream] aborted by user')
+        return
+      }
       completeDreamTask(taskId, setAppState)
       // Inline completion summary in the main transcript (same surface as
       // extractMemories's "Saved N memories" message).
