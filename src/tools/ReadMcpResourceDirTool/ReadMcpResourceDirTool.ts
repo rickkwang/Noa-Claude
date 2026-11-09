@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { z } from 'zod/v4'
 import {
   ensureConnectedClient,
@@ -16,7 +15,11 @@ const MAX_PAGES = 20
 // JSON-RPC error code for invalid params (the SDK's ErrorCode.InvalidParams).
 const INVALID_PARAMS = -32602
 
-export function serverDeclaresDirectoryRead(capabilities) {
+export function serverDeclaresDirectoryRead(
+  capabilities:
+    | { extensions?: Record<string, { directoryRead?: unknown } | undefined> }
+    | undefined,
+): boolean {
   return capabilities?.extensions?.[DIRECTORY_READ_EXTENSION]?.directoryRead === true
 }
 
@@ -123,7 +126,7 @@ export const ReadMcpResourceDirTool = buildTool({
         )
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
-        if (error?.code !== INVALID_PARAMS) {
+        if ((error as { code?: unknown } | null)?.code !== INVALID_PARAMS) {
           // Timeouts, cancellation, and server failures are errors, not an
           // incomplete listing.
           throw new Error(`Could not list "${uri}" on server "${serverName}": ${message}`)
