@@ -670,6 +670,11 @@ export function attachAgent(ws: ServerWebSocket<SocketData>, root: string) {
         void (async () => {
           await finalizeTurnDiff(current)
           current.busy = false
+          // A failed turn holds the queue visibly, so the client shows Resume instead of a silent stall.
+          if (current.turnSucceeded === false && current.queue.length && !current.queuePaused) {
+            current.queuePaused = true
+            emit(current, queueEnvelope(current))
+          }
           if (current.turnSucceeded && !current.queuePaused) void startNext(current)
           reclaimIfIdle(current)
         })()

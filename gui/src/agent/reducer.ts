@@ -274,6 +274,7 @@ export function reducer(state: AgentState, action: Action): AgentState {
         turns,
         tasks: action.status === "closed" ? state.tasks.map(task => task.status === "running" ? { ...task, status: "unknown", turns: settlePending(task.turns, "unknown") } : task) : state.tasks,
         busy: action.status === "closed" ? false : state.busy,
+        stopping: action.status === "closed" ? false : state.stopping,
         liveDiff: action.status === "closed" ? undefined : state.liveDiff,
         permissions: action.status === "closed" ? [] : state.permissions,
         elicitations: action.status === "closed" ? [] : state.elicitations,
