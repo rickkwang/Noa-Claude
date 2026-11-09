@@ -89,6 +89,8 @@ import {
   GOAL_CONTINUATION_REASON_PREFIX,
   GOAL_EVALUATOR_FAILED_NOTICE,
   GOAL_EVALUATOR_FAILED_REASON,
+  GOAL_PAUSE_NOTICE_PREFIX,
+  stopReasonForPauseReason,
 } from './goalNotices.js'
 
 const GOAL_PAUSED_AFTER_REGEX =
@@ -459,15 +461,10 @@ function applyGoalMetaMessage(
       now,
     })
   }
-  if (message.content.startsWith('Goal paused: ')) {
-    const reason = message.content.slice('Goal paused: '.length)
-    // Mirrors the notices in goalRuntime.ts; any other text is an evaluator's impossible verdict.
-    const stopReason = reason.startsWith('Unrecoverable ') ? 'unrecoverable_error'
-      : reason.startsWith('Automatic retries') ? 'retry_exhausted'
-      : reason.startsWith('API rate limit') ? 'rate_limit'
-      : reason.startsWith('The turn ended') ? 'turn_failed'
-      : reason.startsWith('No tool use') ? 'no_progress'
-      : 'impossible'
+  if (message.content.startsWith(GOAL_PAUSE_NOTICE_PREFIX)) {
+    const reason = message.content.slice(GOAL_PAUSE_NOTICE_PREFIX.length)
+    // Any text that is not one of our pause reasons is an evaluator's impossible verdict.
+    const stopReason = stopReasonForPauseReason(reason) ?? 'impossible'
     return { ...current, status: 'paused', stopReason, lastEvaluatorReason: reason, retryAt: null, nextCheckInAt: null, updatedAt: now }
   }
   const pausedMatch = message.content.match(GOAL_PAUSED_AFTER_REGEX)

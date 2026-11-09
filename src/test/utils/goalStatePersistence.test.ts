@@ -12,6 +12,14 @@ import {
 } from '../../utils/sessionStorage.js'
 import { getSessionId } from '../../bootstrap/state.js'
 import { createThreadGoal } from '../../utils/goalState.js'
+import {
+  GOAL_PAUSE_REASON,
+  formatGoalPausedReasonNotice,
+  unrecoverablePauseReason,
+} from '../../utils/goalNotices.js'
+import { restoreSessionStateFromLog } from '../../utils/sessionRestore.js'
+import { createSystemMessage } from '../../utils/messages.js'
+import type { AppState } from '../../state/AppStateStore.js'
 import type { ThreadGoal } from '../../types/goal.js'
 
 type GoalStateLine = {
@@ -139,5 +147,38 @@ describe('goal-state transcript persistence', () => {
     expect(goalStateLines(tmpFile).at(-1)!.goal).toMatchObject({
       objective: 'Resumed goal',
     })
+  })
+})
+
+// Transcripts without a goal-state snapshot restore pauses from the notice text
+// the runtime wrote. Each runtime pause reason must come back as its own stop reason.
+describe('pause notice replay on restore', () => {
+  const restoredGoal = (noticeText: string) => {
+    let goal: ThreadGoal | undefined
+    restoreSessionStateFromLog(
+      {
+        messages: [createSystemMessage(formatGoalPausedReasonNotice(noticeText), 'warning')],
+        goalState: createThreadGoal({ objective: 'Ship', tokenBudget: null, now: 1 }),
+      } as unknown as Parameters<typeof restoreSessionStateFromLog>[0],
+      update => {
+        goal = update({} as AppState).goal
+      },
+    )
+    return goal
+  }
+
+  test.each([
+    ['no progress', GOAL_PAUSE_REASON.noProgress, 'no_progress'],
+    ['rate limit', GOAL_PAUSE_REASON.rateLimit, 'rate_limit'],
+    ['retries exhausted', GOAL_PAUSE_REASON.retriesExhausted, 'retry_exhausted'],
+    ['turn failed', GOAL_PAUSE_REASON.turnFailed, 'turn_failed'],
+    ['unrecoverable', unrecoverablePauseReason('auth'), 'unrecoverable_error'],
+    ['legacy retries exhausted', 'Automatic retries are exhausted or disabled; use /goal resume.', 'retry_exhausted'],
+    ['legacy rate limit', 'API rate limit; wait for access to reset, then use /goal resume.', 'rate_limit'],
+    ['legacy turn failed', 'The turn ended without a usable result; use /goal resume after fixing the cause.', 'turn_failed'],
+    ['legacy no progress', 'No tool use for three evaluated turns; use /goal resume after providing new direction.', 'no_progress'],
+    ['evaluator verdict', 'The objective cannot be met from this repository.', 'impossible'],
+  ] as const)('%s notice restores as its stop reason', (_label, noticeText, stopReason) => {
+    expect(restoredGoal(noticeText)).toMatchObject({ status: 'paused', stopReason })
   })
 })

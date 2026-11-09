@@ -12,9 +12,12 @@ import { createSystemMessage, createUserMessage } from './messages.js'
 import {
   GOAL_CONTINUATION_MARKER,
   GOAL_CONTINUATION_REASON_PREFIX,
+  GOAL_PAUSE_REASON,
   formatGoalAutoContinueNotice,
   formatGoalCompleteNotice,
   formatGoalPausedNotice,
+  formatGoalPausedReasonNotice,
+  unrecoverablePauseReason,
 } from './goalNotices.js'
 
 export type GoalRuntimeEvaluation = {
@@ -144,11 +147,11 @@ export function applyGoalTurnFailure({
       }
     }
     const fatal = ['auth', 'credit', 'context', 'model'].includes(kind)
-    const reason = fatal ? `Unrecoverable ${kind} error; fix the cause and use /goal resume.`
-      : kind === 'transient' ? 'Automatic retries are exhausted or disabled; send a message to continue.'
-      : kind === 'rate_limit' ? 'API rate limit; send a message once access resets to continue.'
-      : 'The turn ended without a usable result; send a message to continue.'
-    notice = createSystemMessage(`Goal paused: ${reason}`, 'warning')
+    const reason = fatal ? unrecoverablePauseReason(kind)
+      : kind === 'transient' ? GOAL_PAUSE_REASON.retriesExhausted
+      : kind === 'rate_limit' ? GOAL_PAUSE_REASON.rateLimit
+      : GOAL_PAUSE_REASON.turnFailed
+    notice = createSystemMessage(formatGoalPausedReasonNotice(reason), 'warning')
     return { ...prev, goal: { ...current, ...reset, status: 'paused', stopReason: fatal ? 'unrecoverable_error' : kind === 'rate_limit' ? 'rate_limit' : kind === 'transient' ? 'retry_exhausted' : 'turn_failed', lastEvaluatorReason: reason, updatedAt: now } }
   })
   return notice
@@ -261,8 +264,8 @@ export function applyGoalRuntimeEvaluation({
 
     const noProgress = madeProgress ? 0 : (current.noProgressTurns ?? 0) + 1
     if (evaluation.impossible || (!evaluation.achieved && noProgress >= MAX_NO_PROGRESS_TURNS)) {
-      const reason = evaluation.impossible ? evaluation.reason : 'No successful tool use for three evaluated turns; send a message with new direction to continue.'
-      decision = { action: 'stop', userNotice: createSystemMessage(`Goal paused: ${reason}`, 'warning') }
+      const reason = evaluation.impossible ? evaluation.reason : GOAL_PAUSE_REASON.noProgress
+      decision = { action: 'stop', userNotice: createSystemMessage(formatGoalPausedReasonNotice(reason), 'warning') }
       return { ...prev, goal: { ...current, status: 'paused', stopReason: evaluation.impossible ? 'impossible' : 'no_progress', lastEvaluatorReason: reason, retryAt: null, nextCheckInAt: null, updatedAt: now } }
     }
 
