@@ -27,6 +27,20 @@ const MAX_RETRIES_FOR_TRANSIENT_ERRORS = 3
  * Actual delays: 500ms, 1000ms, 2000ms
  */
 const RETRY_BASE_DELAY_MS = 500
+
+/**
+ * Legal lifecycle transitions. Every state write goes through transitionTo(),
+ * so an out-of-order event (e.g. a late crash callback) is ignored instead of
+ * silently overwriting the state.
+ */
+const LSP_TRANSITIONS: Record<LspServerState, readonly LspServerState[]> = {
+  stopped: ['starting'],
+  starting: ['running', 'stopping', 'error'],
+  running: ['stopping', 'error'],
+  stopping: ['stopped', 'error'],
+  error: ['starting', 'stopping'],
+}
+
 /**
  * LSP server instance interface returned by createLSPServerInstance.
  * Manages the lifecycle of a single LSP server with state tracking and health monitoring.
@@ -71,12 +85,7 @@ export type LSPServerInstance = {
  * Uses factory function pattern with closures for state encapsulation (avoiding classes).
  * Provides state tracking, health monitoring, and request forwarding for an LSP server.
  * Supports manual restart with configurable retry limits.
- *
- * State machine transitions:
- * - stopped → starting → running
- * - running → stopping → stopped
- * - any → error (on failure)
- * - error → starting (on retry)
+ * Lifecycle transitions are defined in LSP_TRANSITIONS.
  *
  * @param name - Unique identifier for this server instance
  * @param config - Server configuration including command, args, and limits
@@ -116,11 +125,20 @@ export function createLSPServerInstance(
   let lastError: Error | undefined
   let restartCount = 0
   let crashRecoveryCount = 0
+  function transitionTo(next: LspServerState): boolean {
+    if (!LSP_TRANSITIONS[state].includes(next)) {
+      logForDebugging(`LSP server '${name}': ignored ${state} → ${next}`)
+      return false
+    }
+    state = next
+    return true
+  }
+
   // Propagate crash state so ensureServerStarted can restart on next use.
   // Without this, state stays 'running' after crash and the server is never
   // restarted (zombie state).
   const client = createLSPClient(name, error => {
-    state = 'error'
+    if (!transitionTo('error')) return
     lastError = error
     crashRecoveryCount++
   })
@@ -150,9 +168,16 @@ export function createLSPServerInstance(
       throw error
     }
 
+    // A stop() in flight owns the final state; starting now would race it.
+    if (state === 'stopping') {
+      throw new Error(
+        `LSP server '${name}' is stopping; wait for stop() before starting`,
+      )
+    }
+
     let initPromise: Promise<unknown> | undefined
     try {
-      state = 'starting'
+      transitionTo('starting')
       logForDebugging(`Starting LSP server instance: ${name}`)
 
       await client.start(config.command, config.args || [], {
@@ -246,7 +271,14 @@ export function createLSPServerInstance(
         await initPromise
       }
 
-      state = 'running'
+      // Fails if stop() ran during initialization: never report 'running' then.
+      if (!transitionTo('running')) {
+        throw new Error(
+          state === 'error'
+            ? `LSP server '${name}' crashed during startup`
+            : `LSP server '${name}' was stopped during startup`,
+        )
+      }
       startTime = new Date()
       crashRecoveryCount = 0
       logForDebugging(`LSP server instance started: ${name}`)
@@ -255,8 +287,11 @@ export function createLSPServerInstance(
       client.stop().catch(() => {})
       // Prevent unhandled rejection from abandoned initialize promise
       initPromise?.catch(() => {})
-      state = 'error'
-      lastError = error as Error
+      // Only a failed start moves to 'error'; if stop() or a crash already
+      // changed the state, that outcome stands. A crash keeps its own error.
+      const crashedDuringStart = state === 'error'
+      if (state === 'starting') transitionTo('error')
+      if (!crashedDuringStart) lastError = error as Error
       logError(error)
       throw error
     }
@@ -276,12 +311,12 @@ export function createLSPServerInstance(
     }
 
     try {
-      state = 'stopping'
+      transitionTo('stopping')
       await client.stop()
-      state = 'stopped'
+      transitionTo('stopped')
       logForDebugging(`LSP server instance stopped: ${name}`)
     } catch (error) {
-      state = 'error'
+      transitionTo('error')
       lastError = error as Error
       logError(error)
       throw error
