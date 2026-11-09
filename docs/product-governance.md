@@ -169,7 +169,7 @@ Before tagging a release:
 
 ## Desktop GUI development surface
 
-The new-task “Work in” menu shows “This computer” as selected. Cloud execution is unavailable in Noa Claude; the Cloud option is disabled with an explanation.
+The new-task environment row shows “This computer” as a static label. Cloud execution is unavailable in Noa Claude, so there is no “Work in” menu.
 
 Subagent creation is grouped into a collapsed summary with named activity rows. The Subagents panel separates Active and Done tasks, opens the selected agent, and keeps its stop action and transcript. Verify with `bun run --cwd gui scripts/e2e-subagents.ts`. The Overview's Tasks card lists subagents and background processes together and opens a subagent's transcript in the Subagents tab; Diagnostics is an Overview card hidden until `/status` or the disconnected banner asks for it. Subagent lifecycle rows follow SDK event order and survive history replay. Returned thinking text has a disclosure, multi-question input supports previous/next navigation, and file-write previews detect syntax from the extension.
 

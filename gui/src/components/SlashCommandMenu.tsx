@@ -4,7 +4,7 @@ import { Check, ChevronRight } from "../lib/icons"
 import type { CodexIconName } from "../lib/codexIcons"
 import { CodexIcon } from "./CodexIcon"
 
-function CommandIcon({ command, size = 18 }: { command: ComposerCommand; size?: number }) {
+function CommandIcon({ command, size = 16 }: { command: ComposerCommand; size?: number }) {
   const name = command.name.toLowerCase()
   const icon: CodexIconName =
     command.action === "new" ? "plus-circle"
@@ -82,7 +82,7 @@ export function SlashCommandMenu({
         id="noa-slash-commands"
         role="listbox"
         aria-label={title ?? "Commands and skills"}
-        className="noa-slash-list scrollbar-on-scroll max-h-[min(420px,55vh)] overflow-y-auto p-1"
+        className="noa-slash-list scrollbar-on-scroll max-h-[min(420px,55vh)] overflow-y-auto py-1 pl-2"
       >
         {!items.length && (
           <p className="m-0 px-3 py-5 text-center text-body text-[var(--sidebar-text-muted)]">
@@ -103,14 +103,14 @@ export function SlashCommandMenu({
                 onMouseDown={(event) => event.preventDefault()}
                 onClick={() => onSelect(command)}
                 title={command.description}
-                className={`noa-slash-option flex min-h-9 w-full items-center gap-3 rounded-lg px-2.5 py-1.5 text-left text-body ${i === index ? "is-selected" : ""} ${command.disabled ? "opacity-40" : ""}`}
+                className={`noa-slash-option flex w-full items-center gap-1.5 rounded-xl px-2.5 py-1 text-left text-[13px] leading-[18px] ${i === index ? "is-selected" : ""} ${command.disabled ? "opacity-40" : ""}`}
               >
                 <CommandIcon command={command} />
-                <span className={`${command.description ? "max-w-[60%] flex-none" : "min-w-0 flex-1"} truncate font-medium`}>
+                <span className={`${command.description ? "max-w-[60%] flex-none" : "min-w-0 flex-1"} truncate`}>
                   {command.name}
                 </span>
                 {command.description ? (
-                  <span className="min-w-0 flex-1 truncate text-body text-[var(--sidebar-text-muted)]">
+                  <span className="min-w-0 flex-1 truncate text-[var(--sidebar-text-muted)]">
                     {command.description}
                   </span>
                 ) : null}

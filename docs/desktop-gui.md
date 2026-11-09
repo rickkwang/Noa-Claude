@@ -12,7 +12,7 @@ Text/image file previews are limited to 512 KiB and code rendering to 3,000 line
 
 Conversation rendering includes local math and Mermaid diagrams, code previews and wrapping, rich table/response copying, workspace citations and review comments, selection quoting, and primitive MCP forms. The bridge preserves structured tool results, Hook and subagent activity, and interrupted history. Earlier messages load in turn pages; unresolved background calls stay with their results. Verify native rendering with `bun run --cwd gui scripts/e2e-conversation.ts` and `bun run --cwd gui test:rendering`. The latter uses HTTP and the production CSP, including native modal/download/navigation checks.
 
-The new-task “Work in” menu shows “This computer” as selected. Cloud execution is unavailable in Noa Claude; the Cloud option is disabled with an explanation.
+The new-task environment row shows “This computer” as a static label. Cloud execution is unavailable in Noa Claude, so there is no “Work in” menu.
 
 Subagent creation is grouped into a collapsed summary with named activity rows. The Subagents panel separates Active and Done tasks, opens the selected agent, and keeps its stop action and transcript. Verify with `bun run --cwd gui scripts/e2e-subagents.ts`. The Overview's Tasks card lists subagents and background processes together and opens a subagent's transcript in the Subagents tab; Diagnostics is an Overview card hidden until `/status` or the disconnected banner asks for it. Subagent lifecycle rows follow SDK event order and survive history replay. Returned thinking text has a disclosure, multi-question input supports previous/next navigation, and file-write previews detect syntax from the extension.
 

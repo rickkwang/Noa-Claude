@@ -146,16 +146,9 @@ window.runChecks=async()=>{
  results.runningSessionPinDuringLoad=!!releaseSlowProject&&!!pinnedRun()&&document.body.textContent.includes('RUN_ONLY');releaseSlowProject?.();await pause(200);results.runningSessionPinAfterLoad=!!pinnedRun()&&document.body.textContent.includes('RUN_ONLY');await show(null);window.fetch=originalFetch;window.WebSocket=originalSocket;
  let locationSent;const noop=()=>{};
  await show(h(Composer,{connection:'ready',busy:false,models:[],commands:[],onSend:content=>{locationSent=content;return true},onCommand:noop,onInterrupt:noop,onModel:noop,onMode:noop,draftKey:'location-fixture',onEffort:noop,cwd:'/fixture',projects:[],onProject:noop,onBranchChange:noop,onWorktree:async()=>{},onFiles:noop,newTask:true}));
- const locationTrigger=document.querySelector('[aria-label="Work in"]');locationTrigger?.click();await pause();
- const locationMenu=()=>[...document.querySelectorAll('.noa-approval-menu')].find(menu=>menu.querySelector('.noa-approval-title')?.textContent==='Work in');
- const locationOptions=locationMenu()?.querySelectorAll('button');
- results.workLocationMenu=!!locationTrigger&&locationOptions?.length===2&&locationOptions[0].textContent==='This computer'&&locationOptions[0].getAttribute('aria-pressed')==='true'&&!!locationOptions[0].querySelector('.noa-approval-check');
- results.workLocationCloudUnavailable=!!locationOptions?.[1].disabled&&locationOptions[1].textContent.includes('Cloud execution is not available in Noa Claude');
- locationOptions?.[1].click();await pause();results.workLocationCloudNoop=!!locationMenu()&&locationSent===undefined&&locationTrigger?.textContent==='This computer';
- document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));await pause(200);results.workLocationEscape=!!locationTrigger&&!locationMenu()&&locationTrigger.getAttribute('aria-expanded')==='false';
- locationTrigger?.click();await pause();document.body.dispatchEvent(new MouseEvent('mousedown',{bubbles:true}));await pause(200);results.workLocationOutside=!!locationTrigger&&!locationMenu();
+ const locationLabel=[...document.querySelectorAll('.noa-agent-environment span')].find(el=>el.textContent==='This computer');
+ results.workLocationStaticLabel=!!locationLabel&&!document.querySelector('[aria-label="Work in"]')&&!locationLabel.closest('button');
  const locationDraft=document.querySelector('[aria-label="Task instruction"]');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(locationDraft,'Run locally');locationDraft.dispatchEvent(new Event('input',{bubbles:true}));await pause();
- locationTrigger?.click();await pause();locationMenu()?.querySelector('button').click();await pause(200);results.workLocationLocal=!!locationTrigger&&!locationMenu()&&locationDraft.value==='Run locally'&&locationSent===undefined;
  locationDraft.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));await pause();results.workLocationSend=locationSent==='Run locally';
  const previewProps={connection:'ready',busy:false,models:[{value:'preview',displayName:'Cached model',description:''}],model:'preview',commands:[],onSend:()=>true,onCommand:noop,onInterrupt:noop,onModel:noop,onMode:noop,draftKey:'model-preview',onEffort:noop,cwd:'/preview',projects:[],onProject:noop,onBranchChange:noop,onWorktree:async()=>{},onFiles:noop,newTask:true};
  await show(h(Composer,previewProps));await show(null);await show(h(Composer,{...previewProps,connection:'connecting',models:[],model:undefined}));let modelPreview=document.querySelector('[aria-label="Model and reasoning effort"]');results.modelPreviewRestored=modelPreview?.textContent==='Cached model'&&modelPreview.disabled;

@@ -366,11 +366,6 @@ function Workspace({ cwd }: { cwd: string }) {
     setRightTab("files")
     setFocusFile({ path, line, endLine, at: Date.now() })
   }
-  const showWorkspacePane = (tab: "files" | "changes", path?: string) => {
-    setRightOpen(true)
-    setRightTab(tab)
-    if (path) setFocusChange({ path, at: Date.now() })
-  }
 
   async function addProjectPaths(paths: string[], name: string) {
     setProjects(await addProject(paths, name))
@@ -962,7 +957,6 @@ function Workspace({ cwd }: { cwd: string }) {
                   onBranchChange={() => setRefreshTick((n) => n + 1)}
                   worktreeOf={worktreeOf}
                   onWorktree={toggleWorktree}
-                  onFiles={() => showWorkspacePane("files")}
                   newTask={!hasTurns}
                   contextUsage={settings.composer.showContextUsage ? state.contextUsage : undefined}
                   sendShortcut={settings.composer.sendShortcut}

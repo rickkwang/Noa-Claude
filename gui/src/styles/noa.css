@@ -11,6 +11,14 @@
 /* Corner radius of the conversation surface, the settings page card and the veil. Matches the native window's corner,
    so a card corner reads as concentric with the window instead of a smaller arc beside it. The right panel is a straight edge. */
 :root { --noa-surface-radius: 20px; --text-danger: #911E1B; }
+/* Shared menu card tokens: dropdown cards (model, add, permissions, session card) and the suggestion popover (slash). */
+:root {
+  --menu-radius: 20px;
+  --menu-popover-radius: 16px;
+  --menu-item-radius: 12px;
+  --menu-item-padding: 4px 10px;
+  --menu-shadow: 0 0 0 .5px var(--border-default), 0 20px 25px -5px rgba(0, 0, 0, .1), 0 8px 10px -6px rgba(0, 0, 0, .1);
+}
 [data-theme="dark"] { --text-danger: #E02E2A; }
 /* The conversation surface's left edge: window-radius corners over the sidebar floor, edged by a half-pixel ring in the
    same token as other floating surfaces. The ring is a left border rather than a full ring so the window's right
@@ -582,11 +590,12 @@ html[data-translucent-sidebar="enabled"] [data-sidebar-container] .noa-sidebar-t
   min-width: min(360px, 80vw);
   max-width: min(420px, 80vw);
   margin: 1px 0 8px;
-  padding: 4px;
-  border-radius: 16px;
+  padding: 8px 4px;
+  border-radius: var(--menu-radius);
   background-color: #F9F9F9;
   color: var(--text-primary, #1A1C1F);
-  box-shadow: 0 0 0 .5px var(--border-default), 0 8px 16px -4px rgba(0, 0, 0, .12);
+  border: 0;
+  box-shadow: var(--menu-shadow);
   animation: noa-floating-in 120ms cubic-bezier(.19,1,.22,1);
 }
 [data-theme="dark"] .noa-approval-menu { background-color: color-mix(in srgb, var(--bg-primary) 91%, var(--text-primary)); }
@@ -604,8 +613,8 @@ html[data-translucent-sidebar="enabled"] [data-sidebar-container] .noa-sidebar-t
   width: 100%;
   align-items: center;
   gap: 6px;
-  padding: 4px 8px;
-  border-radius: 12px;
+  padding: var(--menu-item-padding);
+  border-radius: var(--menu-item-radius);
   text-align: left;
   font-size: 13px;
   line-height: calc(1.25 / .875);
@@ -985,6 +994,13 @@ html[data-translucent-sidebar="enabled"] [data-sidebar-container] .noa-sidebar-t
   width: 256px;
   padding: 4px;
 }
+/* Dropdown cards: 20px radius, half-pixel ring plus a soft xl shadow, vertical padding 8px. */
+.noa-model-picker.noa-floating-panel.rounded-panel {
+  border-radius: var(--menu-radius);
+  border: 0;
+  padding-block: 8px;
+  box-shadow: var(--menu-shadow);
+}
 .noa-model-picker-controls {
   position: relative;
   display: flex;
@@ -1222,8 +1238,8 @@ html[data-translucent-sidebar="enabled"] [data-sidebar-container] .noa-sidebar-t
   flex-direction: column;
   gap: 0;
   width: 100%;
-  padding: 6px 8px;
-  border-radius: 8px;
+  padding: var(--menu-item-padding);
+  border-radius: var(--menu-item-radius);
   text-align: left;
 }
 .noa-model-picker-option:hover {
@@ -1234,12 +1250,13 @@ html[data-translucent-sidebar="enabled"] [data-sidebar-container] .noa-sidebar-t
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  min-height: 20px;
+  min-height: 18px;
   width: 100%;
-  font-size: var(--text-body);
-  line-height: 20px;
+  font-size: 13px;
+  line-height: 18px;
   font-weight: 400;
 }
+.noa-model-picker-option-label > span:first-child { min-width: 0; }
 .noa-model-picker-option-label > svg {
   flex-shrink: 0;
   color: var(--sidebar-text);
@@ -1737,6 +1754,11 @@ kbd.noa-review-menu-hint { font-family: inherit; }
 .noa-file-row.is-deleted .noa-file-name { text-decoration: line-through; }
 .noa-git-mark { color: var(--git-tone); }
 
+.noa-slash-menu.noa-floating-panel.rounded-panel {
+  border-radius: var(--menu-popover-radius);
+  border: 1px solid var(--border-default);
+  box-shadow: none;
+}
 .noa-slash-option.is-selected {
   background: color-mix(in srgb, var(--text-primary) 7.5%, transparent);
 }
@@ -1747,6 +1769,9 @@ kbd.noa-review-menu-hint { font-family: inherit; }
 .noa-slash-list {
   overscroll-behavior: contain;
 }
+/* Thumb floats 2px off the card edge; the 8px track doubles as the right inset, mirrored by the left padding. */
+.noa-slash-list::-webkit-scrollbar-thumb,
+.noa-model-picker-list::-webkit-scrollbar-thumb { border-width: 2px; }
 
 /* In-app confirmation dialog (ConfirmDialog.tsx): a scrim over the workspace, with the
    same dialog shadow ladder as other floating surfaces. */
@@ -2537,7 +2562,7 @@ body.noa-session-dragging * { cursor: grabbing !important; }
 @keyframes noa-marquee-fade { 75% { -webkit-mask-size: 100% 100%; mask-size: 100% 100%; } to { -webkit-mask-size: calc(100% + var(--marquee-right-fade)) 100%; mask-size: calc(100% + var(--marquee-right-fade)) 100%; } }
 
 /* Task hover card: 20rem wide, 12px radius, 0.5px ring and a large shadow on the elevated surface. */
-.noa-session-card { position: fixed; z-index: 60; display: flex; width: min(20rem, calc(100vw - 16px)); max-width: 100%; flex-direction: column; gap: 4px; margin: 1px; padding: 6px 8px; border-radius: 12px; background: var(--bg-card); color: var(--text-primary); font-size: 13px; box-shadow: 0 0 0 0.5px var(--border-default), 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1); }
+.noa-session-card { position: fixed; z-index: 60; display: flex; width: min(20rem, calc(100vw - 16px)); max-width: 100%; flex-direction: column; gap: 4px; margin: 1px; padding: 6px 8px; border-radius: 12px; background: var(--bg-card); color: var(--text-primary); font-size: 13px; box-shadow: var(--menu-shadow); }
 .noa-session-card-title { min-width: 0; flex: 1; font-size: 13px; font-weight: 500; line-height: 20px; overflow-wrap: break-word; }
 
 /* The desktop command menu uses a 768px search surface, a bounded result list and bottom scope tabs. */

@@ -7,7 +7,7 @@ import { startEffortMaxFill } from "./effortMaxFill"
 import type { ContextUsage, ImageAttachment, RateLimitInfo, UserContent, ModelInfo, ProviderInfo, PermissionMode, SlashCommand } from "../agent/protocol"
 import { RateLimitNotice } from "./RateLimitNotice"
 import { FileAttachmentCard } from "./FileAttachmentCard"
-import { Check, Cloud, Edit2, FileText, List, Queue, RotateCcw, Steer, X } from "../lib/icons"
+import { Check, Edit2, FileText, List, Photo, Queue, RotateCcw, Steer, Terminal, X } from "../lib/icons"
 import { Lightbox } from "./Lightbox"
 import { useConfirm } from "./ConfirmDialog"
 import { EnvironmentMenu } from "./EnvironmentMenu"
@@ -88,7 +88,6 @@ interface ComposerProps {
   worktreeOf?: string
   // Starts or discards the worktree (new tasks only); rejects with a message the menu shows.
   onWorktree: (on: boolean) => Promise<void>
-  onFiles: () => void
   newTask: boolean
   sendShortcut?: AppSettings["composer"]["sendShortcut"]
   followUpMode?: AppSettings["composer"]["followUpMode"]
@@ -137,7 +136,6 @@ export function Composer({
   onBranchChange,
   worktreeOf,
   onWorktree,
-  onFiles,
   newTask,
   contextUsage,
   sendShortcut = "enter",
@@ -603,7 +601,6 @@ export function Composer({
   const modelItems: PickerItem[] = models.map((m, i) => ({
     key: m.value,
     title: m.value === "default" ? "Default" : m.displayName,
-    description: m.value === "default" ? "Use the recommended model" : "",
     active: m.value === currentModel?.value,
     onSelect: () => onModel(m.value),
     heading: i === 0 ? "Select model" : undefined,
@@ -613,7 +610,6 @@ export function Composer({
         key: `provider:${p.id}`,
         title: p.name,
         leading: <ProviderIcon type={p.type} />,
-        description: p.typeLabel ?? p.type,
         active: p.active,
         onSelect: () => onProvider(p.id),
         heading: i === 0 ? "Provider" : undefined,
@@ -644,17 +640,10 @@ export function Composer({
                 onSelect: () => onProject(p.path),
               }))}
           />
-          <Picker
-            align="left"
-            hideChevron
-            ariaLabel="Work in"
-            menuTitle="Work in"
-            label={<><ComposerComputerIcon />This computer</>}
-            items={[
-              { key: "local", title: "This computer", description: "", active: true, icon: <ComposerComputerIcon />, onSelect: () => {} },
-              { key: "cloud", title: "Cloud", description: "Cloud execution is not available in Noa Claude", active: false, icon: <Cloud size={16} />, disabled: true, onSelect: () => {} },
-            ]}
-          />
+          {/* Cloud execution is unsupported, so there is nothing to choose: a static label instead of a one-item menu. */}
+          <span className="flex h-7 items-center gap-1 px-2 text-[12px] leading-[18px] text-[var(--sidebar-text,#52514E)]">
+            <ComposerComputerIcon />This computer
+          </span>
           <EnvironmentMenu cwd={cwd} branch={branch} onBranchChange={onBranchChange} worktree={!!worktreeOf} canToggleWorktree={newTask} onWorktree={onWorktree} />
           </>}
         </div>
@@ -838,8 +827,8 @@ export function Composer({
           className="w-full min-h-[44px] max-h-[min(25dvh,var(--composer-editor-max-height,25dvh))] resize-none border-none bg-transparent px-3 py-0 text-[13px] leading-5 outline-none placeholder:text-[color-mix(in_srgb,var(--text-primary)_50%,transparent)]"
         />
         {argumentCommand?.argumentHint && !submenu && <p className="m-0 px-3 pb-1 text-caption text-[var(--sidebar-text-muted)]">/{argumentCommand.name} {argumentCommand.argumentHint}</p>}
-        <div className="noa-agent-footer mb-2 mt-1 flex min-h-7 items-center justify-between gap-[5px] px-2">
-          <div className="flex min-w-0 items-center gap-[5px]">
+        <div className="noa-agent-footer mb-2 mt-1 flex min-h-7 items-center justify-between gap-1 px-2">
+          <div className="flex min-w-0 items-center gap-1">
             <Picker
               align="left"
               hideChevron
@@ -847,18 +836,40 @@ export function Composer({
               label={<ComposerPlusIcon />}
               ariaLabel="Add task context"
               items={[
-                { key: "images", title: "Add images", description: "Choose images, paste a screenshot, or drop images here", active: false, onSelect: () => fileRef.current?.click() },
+                { key: "images", title: "Add photos", icon: <Photo size={16} />, active: false, onSelect: () => fileRef.current?.click() },
                 {
                   key: "files",
-                  title: "Reference project files",
-                  description: "Browse files and add a path to this task",
+                  title: "Files and folders",
+                  icon: <FileText size={16} />,
                   active: false,
-                  onSelect: onFiles,
+                  onSelect: () => {
+                    const el = textareaRef.current
+                    const at = el?.selectionStart ?? text.length
+                    const lead = at > 0 && !/\s/.test(text[at - 1]!) ? " " : ""
+                    setText(text.slice(0, at) + lead + "@" + text.slice(at))
+                    const next = at + lead.length + 1
+                    setCaret(next)
+                    setMentionDismissed(false)
+                    requestAnimationFrame(() => { el?.focus(); el?.setSelectionRange(next, next) })
+                  },
+                },
+                {
+                  key: "skills",
+                  title: "Skills",
+                  icon: <List size={16} />,
+                  active: false,
+                  onSelect: () => {
+                    setBrowserSearch("")
+                    setBrowserOpen(true)
+                    setBrowserFilter("Skills")
+                    setMenuDismissed(false)
+                    textareaRef.current?.focus()
+                  },
                 },
                 {
                   key: "commands",
                   title: "Commands",
-                  description: "Browse Noa commands and skills",
+                  icon: <Terminal size={16} />,
                   active: false,
                   onSelect: () => {
                     setBrowserSearch("")
@@ -869,6 +880,7 @@ export function Composer({
                   },
                 },
               ]}
+              menuTitle="Add"
             />
             <Picker
               align="left"
@@ -980,7 +992,7 @@ export function Composer({
             >
               {busy && !editDraft?.queued && !text.trim() && !images.length && !files.length
                 ? <span aria-hidden="true" className="block size-[11px] rounded-[1.25px] bg-current" />
-                : busy && !editDraft?.queued ? followUpMode === "steer" ? <Steer size={16} /> : <Queue size={16} /> : <ComposerSendIcon />}
+                : busy && !editDraft?.queued ? followUpMode === "steer" ? <Steer size={16} /> : <Queue size={16} /> : <ComposerSendIcon width={16} height={16} />}
             </button>
           </div>
         </div>
@@ -1007,7 +1019,7 @@ function compactTokens(tokens: number): string {
 interface PickerItem {
   key: string
   title: string
-  description: string
+  description?: string
   active: boolean
   onSelect: () => void
   heading?: string
@@ -1392,7 +1404,7 @@ function Picker({
             {items.map((item) => (
       <div key={item.key}>
         {item.heading && (
-          <div className={`${modelPicker ? "px-2 pb-1 pt-2" : "px-2.5 pb-1 pt-2"} text-caption text-[var(--sidebar-text-muted)]`}>{item.heading}</div>
+          <div className="px-2.5 pb-1 pt-2 text-caption text-[var(--sidebar-text-muted)]">{item.heading}</div>
         )}
         <button
           type="button"
@@ -1411,7 +1423,7 @@ function Picker({
           {item.icon && <span className="noa-approval-icon">{item.icon}</span>}
           <span className={item.icon ? "noa-approval-text" : "contents"}>
             <span className={modelPicker ? "noa-model-picker-option-label" : item.icon ? undefined : "text-body font-medium"}>
-              {item.leading ? <span className="flex min-w-0 items-center gap-2">{item.leading}{item.title}</span> : item.title}
+              {item.leading ? <span className="flex min-w-0 items-center gap-2">{item.leading}<span className="truncate">{item.title}</span></span> : item.title}
               {modelPicker && item.active && <Check size={16} aria-hidden="true" />}
             </span>
             {item.description && (
@@ -1443,7 +1455,7 @@ function Picker({
         }`}
       >
         {label}
-        {!hideChevron && <ComposerChevronIcon className="size-3 shrink-0 text-[var(--text-tertiary)]" />}
+        {!hideChevron && <ComposerChevronIcon className="size-4 shrink-0" />}
       </button>
       {presence.mounted && (
         <div
