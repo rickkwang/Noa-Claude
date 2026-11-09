@@ -144,11 +144,18 @@ export function getFastModeUnavailableReason(): string | null {
 
 // @[MODEL LAUNCH]: Update supported Fast Mode models.
 /**
- * Display name of the model fast mode runs on: whatever the `opus` alias
- * resolves to (getFastModeModel), as upstream renders it.
+ * Display name of the model fast mode runs on: the given model when it
+ * supports fast mode itself, otherwise whatever the `opus` alias resolves to
+ * (getFastModeModel).
  */
-export function getFastModeModelDisplay(): string {
-  return getMarketingNameForModel(getDefaultOpusModel()) ?? 'Opus'
+export function getFastModeModelDisplay(model?: ModelSetting): string {
+  const opus = getMarketingNameForModel(getDefaultOpusModel()) ?? 'Opus'
+  if (!isFastModeSupportedByModel(model)) return opus
+  return (
+    getMarketingNameForModel(
+      parseUserSpecifiedModel(model ?? getDefaultMainLoopModelSetting()),
+    ) ?? opus
+  )
 }
 
 export function getFastModeModel(): string {
@@ -188,7 +195,13 @@ export function isFastModeSupportedByModel(
   // here would send `speed: "fast"` and fail the request for anyone who picks
   // it with fast mode on.
   // 'claude-opus-5' also matches Opus 5.5, which keeps fast mode ($8/$40).
-  return lower.includes('opus-4-8') || lower.includes('claude-opus-5')
+  // Fable 5.2 / Mythos 5.2 also support it, at $16/$80 (the fast branch of getModelCosts).
+  return (
+    lower.includes('opus-4-8') ||
+    lower.includes('claude-opus-5') ||
+    lower.includes('fable-5-2') ||
+    lower.includes('mythos-5-2')
+  )
 }
 
 // --- Fast mode runtime state ---

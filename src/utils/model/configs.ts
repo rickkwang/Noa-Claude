@@ -191,6 +191,22 @@ export const CLAUDE_FABLE_5_1_CONFIG = {
   foundry: 'claude-fable-5-1',
 } as const satisfies ModelConfig
 
+// Fable 5.2 — successor to Fable 5.1 at a lower price ($8/$40, $0.20 cache
+// reads). Same request surface as Fable 5.1 (thinking always on, forced
+// tool_choice 400s, preserved thinking). Differences that matter here:
+//   1. the thinking-block prefix check applies to every account, whatever its age.
+//   2. Fable 5.1 cannot read Fable 5.2's thinking blocks (the API drops them).
+//   3. `computer_20251124` 400s; only `computer_toolset_20260801` is accepted.
+//   4. as an advisor executor it pairs only with Fable 5.2 / Mythos 5.2.
+// The bedrock id matches upstream's catalog `provider_ids`. 1M context; 128K
+// max output.
+export const CLAUDE_FABLE_5_2_CONFIG = {
+  firstParty: 'claude-fable-5-2',
+  bedrock: 'us.anthropic.claude-fable-5-2',
+  vertex: 'claude-fable-5-2',
+  foundry: 'claude-fable-5-2',
+} as const satisfies ModelConfig
+
 // Opus 5.5 — successor to Opus 5 at a lower price ($4/$20, $0.20 cache reads).
 // Request surface is Fable 5.1's, not Opus 5's:
 //   1. thinking can't be disabled — {type:'disabled'} and budget_tokens both
@@ -231,6 +247,7 @@ export const ALL_MODEL_CONFIGS = {
   opus55: CLAUDE_OPUS_5_5_CONFIG,
   fable5: CLAUDE_FABLE_5_CONFIG,
   fable51: CLAUDE_FABLE_5_1_CONFIG,
+  fable52: CLAUDE_FABLE_5_2_CONFIG,
 } as const satisfies Record<string, ModelConfig>
 
 export type ModelKey = keyof typeof ALL_MODEL_CONFIGS

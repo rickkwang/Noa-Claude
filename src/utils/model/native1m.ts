@@ -20,8 +20,10 @@ const NATIVE_1M_MODELS: ReadonlySet<string> = new Set([
   'claude-opus-5-5',
   'claude-fable-5',
   'claude-fable-5-1',
+  'claude-fable-5-2',
   'claude-mythos-5',
   'claude-mythos-5-1',
+  'claude-mythos-5-2',
 ])
 
 /**
@@ -64,8 +66,10 @@ const SUFFIX_INERT_1M_MODELS: ReadonlySet<string> = new Set([
   'claude-opus-5-5',
   'claude-fable-5',
   'claude-fable-5-1',
+  'claude-fable-5-2',
   'claude-mythos-5',
   'claude-mythos-5-1',
+  'claude-mythos-5-2',
 ])
 
 export function is1mSuffixInert(model: string): boolean {

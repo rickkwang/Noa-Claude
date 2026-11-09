@@ -226,9 +226,11 @@ export function getModelMaxOutputTokens(model: string): {
   if (
     m.includes('claude-opus-5-5') ||
     m.includes('claude-sonnet-5-5') ||
-    m.includes('claude-haiku-5-5')
+    m.includes('claude-haiku-5-5') ||
+    m.includes('claude-fable-5-2') ||
+    m.includes('claude-mythos-5-2')
   ) {
-    // Opus 5.5 / Sonnet 5.5 / Haiku 5.5 default to their 128K ceiling (
+    // Opus 5.5 / Sonnet 5.5 / Haiku 5.5 / Fable 5.2 / Mythos 5.2 default to their 128K ceiling (
     // `max_output_tokens:{default:128000,upper:128000}`) — thinking is always
     // on and counts toward max_tokens, so the 64k default would cut turns off.
     defaultTokens = 128_000

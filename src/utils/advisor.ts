@@ -119,6 +119,8 @@ const ADVISOR_RANKS: Record<string, number> = {
   'claude-mythos-5': 8,
   'claude-fable-5-1': 9,
   'claude-mythos-5-1': 9,
+  'claude-fable-5-2': 10,
+  'claude-mythos-5-2': 10,
 }
 
 /** Minimum rank a model needs to serve as somebody's advisor. */

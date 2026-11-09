@@ -123,7 +123,14 @@ export function onChangeAppState({
   // prior /model), auth/provider switches must still clear it so banner and
   // runtime resolve against current provider env.
   if (newState.mainLoopModel === null) {
-    updateSettingsForSource('userSettings', { model: undefined })
+    // Only a switch to Default clears the saved model. Another session that
+    // never left Default must not wipe a model this one just saved.
+    if (
+      oldState.mainLoopModel !== null ||
+      getMainLoopModelOverride() !== undefined
+    ) {
+      updateSettingsForSource('userSettings', { model: undefined })
+    }
     if (getMainLoopModelOverride() !== undefined) {
       // Null means "use default model" in AppState, but bootstrap override
       // should be cleared so env/provider-backed model settings can resolve.

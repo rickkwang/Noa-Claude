@@ -44,6 +44,7 @@ export type BuiltInPromptCapabilities = {
   opus5PromptBundle: boolean
   fable5Mitigations: boolean
   fable51PromptBundle: boolean
+  fable52PromptBundle: boolean
   haiku55EarlyStopping: boolean
 }
 
@@ -52,6 +53,7 @@ const LEGACY_PROMPT_CAPABILITIES: BuiltInPromptCapabilities = {
   opus5PromptBundle: false,
   fable5Mitigations: false,
   fable51PromptBundle: false,
+  fable52PromptBundle: false,
   haiku55EarlyStopping: false,
 }
 
@@ -60,6 +62,7 @@ const DEFAULT_PROMPT_CAPABILITIES: BuiltInPromptCapabilities = {
   opus5PromptBundle: false,
   fable5Mitigations: false,
   fable51PromptBundle: false,
+  fable52PromptBundle: false,
   haiku55EarlyStopping: false,
 }
 
@@ -72,6 +75,7 @@ const BUILT_IN_PROMPT_CAPABILITIES: Record<
     opus5PromptBundle: true,
     fable5Mitigations: false,
     fable51PromptBundle: false,
+    fable52PromptBundle: false,
     haiku55EarlyStopping: false,
   },
   // Opus 5.5 declares `lean_prompt` plus its own `opus_5_5_prompt_bundle`
@@ -85,6 +89,7 @@ const BUILT_IN_PROMPT_CAPABILITIES: Record<
     opus5PromptBundle: false,
     fable5Mitigations: false,
     fable51PromptBundle: false,
+    fable52PromptBundle: false,
     haiku55EarlyStopping: false,
   },
   // Sonnet 5.5 declares `lean_prompt` (Sonnet 5 does not), so it
@@ -97,6 +102,7 @@ const BUILT_IN_PROMPT_CAPABILITIES: Record<
     opus5PromptBundle: false,
     fable5Mitigations: false,
     fable51PromptBundle: false,
+    fable52PromptBundle: false,
     haiku55EarlyStopping: false,
   },
   // Haiku 5.5 declares `lean_prompt` and `haiku_5_5_early_stopping_guidance`
@@ -107,6 +113,7 @@ const BUILT_IN_PROMPT_CAPABILITIES: Record<
     opus5PromptBundle: false,
     fable5Mitigations: false,
     fable51PromptBundle: false,
+    fable52PromptBundle: false,
     haiku55EarlyStopping: true,
   },
   'claude-fable-5': {
@@ -114,6 +121,7 @@ const BUILT_IN_PROMPT_CAPABILITIES: Record<
     opus5PromptBundle: false,
     fable5Mitigations: true,
     fable51PromptBundle: false,
+    fable52PromptBundle: false,
     haiku55EarlyStopping: false,
   },
   // Fable 5.1 / Mythos 5.1 keep their predecessors' lean head and still declare
@@ -125,6 +133,7 @@ const BUILT_IN_PROMPT_CAPABILITIES: Record<
     opus5PromptBundle: false,
     fable5Mitigations: true,
     fable51PromptBundle: true,
+    fable52PromptBundle: false,
     haiku55EarlyStopping: false,
   },
   // Mythos 5's manifest row upstream is `capabilities:[]` — empty. Both
@@ -134,11 +143,31 @@ const BUILT_IN_PROMPT_CAPABILITIES: Record<
   // and returns false for both, and the fable-mitigations gate does the same
   // alongside `fable_5_mitigations`. Don't "fix" this to `false` by
   // re-checking the manifest row alone.
+  // Fable 5.2 / Mythos 5.2 are lean but declare neither `fable_5_mitigations`
+  // nor `fable_5_1_prompt_bundle` upstream; they carry their own
+  // `fable_5_2_prompt_bundle` (see hasFable52PromptBundle()).
+  'claude-fable-5-2': {
+    leanPrompt: true,
+    opus5PromptBundle: false,
+    fable5Mitigations: false,
+    fable51PromptBundle: false,
+    fable52PromptBundle: true,
+    haiku55EarlyStopping: false,
+  },
+  'claude-mythos-5-2': {
+    leanPrompt: true,
+    opus5PromptBundle: false,
+    fable5Mitigations: false,
+    fable51PromptBundle: false,
+    fable52PromptBundle: true,
+    haiku55EarlyStopping: false,
+  },
   'claude-mythos-5': {
     leanPrompt: true,
     opus5PromptBundle: false,
     fable5Mitigations: true,
     fable51PromptBundle: false,
+    fable52PromptBundle: false,
     haiku55EarlyStopping: false,
   },
   'claude-mythos-5-1': {
@@ -146,6 +175,7 @@ const BUILT_IN_PROMPT_CAPABILITIES: Record<
     opus5PromptBundle: false,
     fable5Mitigations: true,
     fable51PromptBundle: true,
+    fable52PromptBundle: false,
     haiku55EarlyStopping: false,
   },
   'claude-opus-4-8': DEFAULT_PROMPT_CAPABILITIES,
@@ -443,6 +473,32 @@ export function hasFable51PromptBundle(model: string | undefined): boolean {
   }
   if (untrustedIdentity) return false
   return getBuiltInPromptCapabilities(model).fable51PromptBundle
+}
+
+/**
+ * Whether the model carries upstream's `fable_5_2_prompt_bundle` capability.
+ * Upstream's gate is `!kill-switch && hasCapability(...)`; only the manifest
+ * bit is ported, as with the Fable 5.1 bundle. It turns on the
+ * `original_games`, `finishing_work` and `notes_and_feedback` sections.
+ * Upstream's other two bundle members, `silent_turn_reminder` and
+ * `timed_silent_turn_reminder`, are per-turn harness reminders that Noa does
+ * not send.
+ */
+export function hasFable52PromptBundle(model: string | undefined): boolean {
+  if (!model) return false
+  const untrustedIdentity = isUntrustedModelIdentity()
+  if (untrustedIdentity && trustsThirdPartyModelIdentity()) {
+    return getBuiltInPromptCapabilities(model).fable52PromptBundle
+  }
+  const declared = get3PModelCapabilityOverride(
+    model,
+    'fable_5_2_prompt_bundle',
+  )
+  if (declared !== undefined) {
+    return declared && shouldUseCompactSystemPrompt(model)
+  }
+  if (untrustedIdentity) return false
+  return getBuiltInPromptCapabilities(model).fable52PromptBundle
 }
 
 export function hasHaiku55EarlyStoppingGuidance(

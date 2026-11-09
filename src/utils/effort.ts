@@ -631,7 +631,8 @@ export function getDefaultEffortForModel(
   // `high`, matching upstream. xhigh remains an available level (see
   // getSupportedEffortLevelsForModel) for users who opt in.
   //
-  // Opus 5.5 / Sonnet 5.5 / Haiku 5.5 default to `medium`, sent explicitly.
+  // Opus 5.5 / Sonnet 5.5 / Haiku 5.5 / Fable 5.2 / Mythos 5.2 default to
+  // `medium`, sent explicitly (Fable 5.2's API-side default is `high`).
   // For Sonnet 5.5 that is below the API's own default (`high`), so leaving it
   // unset would run a level higher than intended.
   const modelKey = `${getCanonicalName(model)} ${model}`.toLowerCase()
@@ -642,6 +643,8 @@ export function getDefaultEffortForModel(
   if (
     (modelKey.includes('claude-opus-5-5') ||
       modelKey.includes('claude-sonnet-5-5') ||
+      modelKey.includes('claude-fable-5-2') ||
+      modelKey.includes('claude-mythos-5-2') ||
       modelKey.includes('claude-haiku-5-5')) &&
     supported.includes('medium')
   ) {

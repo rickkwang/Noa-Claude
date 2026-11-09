@@ -35,6 +35,11 @@ type BaseOption<T> = {
   label: ReactNode;
   value: T;
   disabled?: boolean;
+  /**
+   * Drawn in place of the row number, and the row is not counted when the
+   * rows after it are numbered. Used by group toggles such as "More models".
+   */
+  marker?: string;
 };
 export type OptionWithDescription<T = string> = (BaseOption<T> & {
   type?: 'text';
@@ -121,6 +126,8 @@ export type SelectProps<T> = {
    * Defaults to the visible options.
    */
   readonly columnSizingOptions?: OptionWithDescription<T>[];
+  /** Move focus to the row under the mouse pointer, like upstream's /model list. */
+  readonly focusOnHover?: boolean;
 
   /**
    * Default value.
@@ -229,7 +236,8 @@ export function Select(t0) {
     pastedContents,
     onRemoveImage,
     onViewportChange,
-    columnSizingOptions
+    columnSizingOptions,
+    focusOnHover
   } = t0;
   const isDisabled = t1 === undefined ? false : t1;
   const hideIndexes = t2 === undefined ? false : t2;
@@ -387,6 +395,12 @@ export function Select(t0) {
     state.focusOption(option.value);
     onChange?.(option.value);
   };
+  const [hoveredValue, setHoveredValue] = useState(undefined);
+  const handleRowHover = option => {
+    if (focusOnHover) setHoveredValue(option.value);
+    if (!focusOnHover || isDisabled || option.disabled === true || option.type === "input") return;
+    if (state.focusedValue !== option.value) state.focusOption(option.value);
+  };
   const {
     columns
   } = useTerminalSize();
@@ -444,7 +458,7 @@ export function Select(t0) {
             }
             const isOptionDisabled = option_1.disabled === true;
             const optionColor = isOptionDisabled ? undefined : isSelected ? "success" : isFocused ? "suggestion" : undefined;
-            return <Box key={String(option_1.value)} flexDirection="column" flexShrink={0} onClick={event => handleRowClick(option_1, event)}><SelectOption isFocused={isFocused} isSelected={isSelected} shouldShowDownArrow={areMoreOptionsBelow && isLastVisibleOption} shouldShowUpArrow={areMoreOptionsAbove && isFirstVisibleOption}><Text dimColor={isOptionDisabled} color={optionColor}>{label}</Text></SelectOption>{option_1.description && <Box paddingLeft={2}><Text dimColor={isOptionDisabled || option_1.dimDescription !== false} color={optionColor}><Ansi>{option_1.description}</Ansi></Text></Box>}<Text> </Text></Box>;
+            return <Box key={String(option_1.value)} flexDirection="column" flexShrink={0} onClick={event => handleRowClick(option_1, event)} onMouseEnter={() => handleRowHover(option_1)}><SelectOption isFocused={isFocused} isSelected={isSelected} shouldShowDownArrow={areMoreOptionsBelow && isLastVisibleOption} shouldShowUpArrow={areMoreOptionsAbove && isFirstVisibleOption}><Text dimColor={isOptionDisabled} color={optionColor}>{label}</Text></SelectOption>{option_1.description && <Box paddingLeft={2}><Text dimColor={isOptionDisabled || option_1.dimDescription !== false} color={optionColor}><Ansi>{option_1.description}</Ansi></Text></Box>}<Text> </Text></Box>;
           })}</SelectRows>;
         break bb0;
       }
@@ -491,7 +505,7 @@ export function Select(t0) {
               label_0 = <>{labelText_0.slice(0, index_2)}<Text {...styles.highlightedText()}>{highlightText}</Text>{labelText_0.slice(index_2 + highlightText.length)}</>;
             }
             const isOptionDisabled_0 = option_2.disabled === true;
-            return <Box key={String(option_2.value)} flexDirection="column" flexShrink={0} onClick={event => handleRowClick(option_2, event)}><SelectOption isFocused={isFocused_0} isSelected={isSelected_0} shouldShowDownArrow={areMoreOptionsBelow_0 && isLastVisibleOption_0} shouldShowUpArrow={areMoreOptionsAbove_0 && isFirstVisibleOption_0}><>{!hideIndexes && <Text dimColor={true}>{`${i_0}.`.padEnd(maxIndexWidth_0 + 1)}</Text>}<Text dimColor={isOptionDisabled_0} color={isOptionDisabled_0 ? undefined : isSelected_0 ? "success" : isFocused_0 ? "suggestion" : undefined}>{label_0}</Text></></SelectOption>{option_2.description && <Box paddingLeft={hideIndexes ? 4 : maxIndexWidth_0 + 4}><Text dimColor={isOptionDisabled_0 || option_2.dimDescription !== false} color={isOptionDisabled_0 ? undefined : isSelected_0 ? "success" : isFocused_0 ? "suggestion" : undefined}><Ansi>{option_2.description}</Ansi></Text></Box>}</Box>;
+            return <Box key={String(option_2.value)} flexDirection="column" flexShrink={0} onClick={event => handleRowClick(option_2, event)} onMouseEnter={() => handleRowHover(option_2)}><SelectOption isFocused={isFocused_0} isSelected={isSelected_0} shouldShowDownArrow={areMoreOptionsBelow_0 && isLastVisibleOption_0} shouldShowUpArrow={areMoreOptionsAbove_0 && isFirstVisibleOption_0}><>{!hideIndexes && <Text dimColor={true}>{`${i_0}.`.padEnd(maxIndexWidth_0 + 1)}</Text>}<Text dimColor={isOptionDisabled_0} color={isOptionDisabled_0 ? undefined : isSelected_0 ? "success" : isFocused_0 ? "suggestion" : undefined}>{label_0}</Text></></SelectOption>{option_2.description && <Box paddingLeft={hideIndexes ? 4 : maxIndexWidth_0 + 4}><Text dimColor={isOptionDisabled_0 || option_2.dimDescription !== false} color={isOptionDisabled_0 ? undefined : isSelected_0 ? "success" : isFocused_0 ? "suggestion" : undefined}><Ansi>{option_2.description}</Ansi></Text></Box>}</Box>;
           })}</SelectRows>;
         break bb0;
       }
@@ -512,7 +526,7 @@ export function Select(t0) {
         const isLastVisibleOption_1 = option_3.index === state.visibleToIndex - 1;
         const areMoreOptionsBelow_1 = state.visibleToIndex < options.length;
         const areMoreOptionsAbove_1 = state.visibleFromIndex > 0;
-        const i_1 = state.visibleFromIndex + index_3 + 1;
+        const i_1 = state.visibleFromIndex + index_3 + 1 - options.slice(0, option_3.index).filter(o => o.marker !== undefined).length;
         const isFocused_1 = !isDisabled && state.focusedValue === option_3.value;
         const isSelected_1 = state.value === option_3.value;
         const isOptionDisabled_1 = option_3.disabled === true;
@@ -541,7 +555,7 @@ export function Select(t0) {
               return 0;
             }
             const labelText_2 = getTextContent(data.option.label);
-            const indexWidth = hideIndexes ? 0 : maxIndexWidth_1 + 2;
+            const indexWidth = hideIndexes ? 0 : maxIndexWidth_1 + (columnSizingOptions ? 3 : 2);
             const checkmarkWidth = data.isSelected ? 2 : 0;
             return 2 + indexWidth + stringWidth(labelText_2) + checkmarkWidth;
           };
@@ -559,13 +573,13 @@ export function Select(t0) {
         })) : optionData;
         const maxLabelWidth = Math.min(Math.max(...sizingData.map(t19)), Math.floor(columns * TWO_COLUMN_LABEL_RATIO));
         let t20;
-        if ($[64] !== hideIndexes || $[65] !== maxIndexWidth_1 || $[66] !== maxLabelWidth) {
+        if (true || $[64] !== hideIndexes || $[65] !== maxIndexWidth_1 || $[66] !== maxLabelWidth) {
           t20 = data_0 => {
             if (data_0.option.type === "input") {
               return null;
             }
             let labelText_3 = getTextContent(data_0.option.label);
-            const indexWidth_0 = hideIndexes ? 0 : maxIndexWidth_1 + 2;
+            const indexWidth_0 = hideIndexes ? 0 : maxIndexWidth_1 + (columnSizingOptions ? 3 : 2);
             const checkmarkWidth_0 = data_0.isSelected ? 2 : 0;
             const labelBudget = maxLabelWidth - 2 - indexWidth_0 - checkmarkWidth_0;
             let rowLabel = data_0.label;
@@ -575,7 +589,7 @@ export function Select(t0) {
             }
             const currentLabelWidth = 2 + indexWidth_0 + stringWidth(labelText_3) + checkmarkWidth_0;
             const padding = maxLabelWidth - currentLabelWidth;
-            return <TwoColumnRow key={String(data_0.option.value)} isFocused={data_0.isFocused} onClick={event => handleRowClick(data_0.option, event)}><Box flexDirection="row" flexShrink={0}>{data_0.isFocused ? <Text color="suggestion">{figures.pointer}</Text> : data_0.shouldShowDownArrow ? <Text dimColor={true}>{figures.arrowDown}</Text> : data_0.shouldShowUpArrow ? <Text dimColor={true}>{figures.arrowUp}</Text> : <Text> </Text>}<Text> </Text><Text dimColor={data_0.isOptionDisabled} color={data_0.isOptionDisabled ? undefined : data_0.isSelected ? "success" : data_0.isFocused ? "suggestion" : undefined}>{!hideIndexes && <Text dimColor={true}>{`${data_0.index}.`.padEnd(maxIndexWidth_1 + 2)}</Text>}{rowLabel}</Text>{data_0.isSelected && <Text color="success"> {figures.tick}</Text>}{padding > 0 && <Text>{" ".repeat(padding)}</Text>}</Box><Box flexGrow={1} marginLeft={2}><Text wrap="wrap" dimColor={data_0.isOptionDisabled || data_0.option.dimDescription !== false} color={data_0.isOptionDisabled ? undefined : data_0.isSelected ? "success" : data_0.isFocused ? "suggestion" : undefined}><Ansi>{data_0.option.description || " "}</Ansi></Text></Box></TwoColumnRow>;
+            return <TwoColumnRow key={String(data_0.option.value)} highlighted={focusOnHover && hoveredValue === data_0.option.value} onMouseLeave={() => setHoveredValue(undefined)} onClick={event => handleRowClick(data_0.option, event)} onMouseEnter={() => handleRowHover(data_0.option)}><Box flexDirection="row" flexShrink={0}>{data_0.isFocused ? <Text color="suggestion">{figures.pointer}</Text> : data_0.shouldShowDownArrow ? <Text dimColor={true}>{figures.arrowDown}</Text> : data_0.shouldShowUpArrow ? <Text dimColor={true}>{figures.arrowUp}</Text> : <Text> </Text>}<Text> </Text><Text dimColor={data_0.isOptionDisabled} color={data_0.isOptionDisabled ? undefined : data_0.isSelected ? "success" : data_0.isFocused ? "suggestion" : undefined}>{!hideIndexes && <Text dimColor={true}>{(data_0.option.marker ?? `${data_0.index}.`).padEnd(maxIndexWidth_1 + (columnSizingOptions ? 3 : 2))}</Text>}{rowLabel}</Text>{data_0.isSelected && <Text color="success"> {figures.tick}</Text>}{padding > 0 && <Text>{" ".repeat(padding)}</Text>}</Box><Box flexGrow={1} marginLeft={2}><Text wrap="wrap" dimColor={data_0.isOptionDisabled || data_0.option.dimDescription !== false} color={data_0.isOptionDisabled ? undefined : data_0.isSelected ? "success" : data_0.isFocused ? "suggestion" : undefined}><Ansi>{data_0.option.description || " "}</Ansi></Text></Box></TwoColumnRow>;
           };
           $[64] = hideIndexes;
           $[65] = maxIndexWidth_1;
@@ -628,7 +642,7 @@ export function Select(t0) {
         const isFocused_3 = !isDisabled && state.focusedValue === option_4.value;
         const isSelected_3 = state.value === option_4.value;
         const isOptionDisabled_2 = option_4.disabled === true;
-        return <Box key={String(option_4.value)} flexDirection="column" flexShrink={0} onClick={event => handleRowClick(option_4, event)}><SelectOption isFocused={isFocused_3} isSelected={isSelected_3} shouldShowDownArrow={areMoreOptionsBelow_3 && isLastVisibleOption_3} shouldShowUpArrow={areMoreOptionsAbove_3 && isFirstVisibleOption_3}><Box flexDirection="row" flexShrink={0}>{!hideIndexes && <Text dimColor={true}>{`${i_3}.`.padEnd(maxIndexWidth_1 + 2)}</Text>}<Text dimColor={isOptionDisabled_2} color={isOptionDisabled_2 ? undefined : isSelected_3 ? "success" : isFocused_3 ? "suggestion" : undefined}>{label_2}{inlineDescriptions && option_4.description && <Text dimColor={isOptionDisabled_2 || option_4.dimDescription !== false}>{" "}{option_4.description}</Text>}</Text></Box>{!inlineDescriptions && option_4.description && <Box flexShrink={99} marginLeft={2}><Text wrap="wrap-trim" dimColor={isOptionDisabled_2 || option_4.dimDescription !== false} color={isOptionDisabled_2 ? undefined : isSelected_3 ? "success" : isFocused_3 ? "suggestion" : undefined}><Ansi>{option_4.description}</Ansi></Text></Box>}</SelectOption></Box>;
+        return <Box key={String(option_4.value)} flexDirection="column" flexShrink={0} onClick={event => handleRowClick(option_4, event)} onMouseEnter={() => handleRowHover(option_4)}><SelectOption isFocused={isFocused_3} isSelected={isSelected_3} shouldShowDownArrow={areMoreOptionsBelow_3 && isLastVisibleOption_3} shouldShowUpArrow={areMoreOptionsAbove_3 && isFirstVisibleOption_3}><Box flexDirection="row" flexShrink={0}>{!hideIndexes && <Text dimColor={true}>{`${i_3}.`.padEnd(maxIndexWidth_1 + 2)}</Text>}<Text dimColor={isOptionDisabled_2} color={isOptionDisabled_2 ? undefined : isSelected_3 ? "success" : isFocused_3 ? "suggestion" : undefined}>{label_2}{inlineDescriptions && option_4.description && <Text dimColor={isOptionDisabled_2 || option_4.dimDescription !== false}>{" "}{option_4.description}</Text>}</Text></Box>{!inlineDescriptions && option_4.description && <Box flexShrink={99} marginLeft={2}><Text wrap="wrap-trim" dimColor={isOptionDisabled_2 || option_4.dimDescription !== false} color={isOptionDisabled_2 ? undefined : isSelected_3 ? "success" : isFocused_3 ? "suggestion" : undefined}><Ansi>{option_4.description}</Ansi></Text></Box>}</SelectOption></Box>;
       });
     }
     $[28] = hideIndexes;
@@ -737,9 +751,12 @@ function _temp(c_0) {
 function TwoColumnRow(t0) {
   const {
     children,
-    onClick
+    highlighted,
+    onClick,
+    onMouseEnter,
+    onMouseLeave
   } = t0;
   // No declared terminal cursor: upstream's list rows leave the cursor hidden,
   // so the focus marker stays a plain ❯ instead of a visible block cursor.
-  return <Box flexDirection="row" onClick={onClick}>{children}</Box>;
+  return <Box flexDirection="row" backgroundColor={highlighted ? "userMessageBackground" : undefined} onClick={onClick} onMouseEnter={onMouseEnter} onMouseLeave={onMouseLeave}>{children}</Box>;
 }

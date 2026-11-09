@@ -25,6 +25,8 @@ import {
   getAntiVerbositySection,
   getCompactHeadSection,
   hasFable51PromptBundle,
+  hasFable52PromptBundle,
+  allowsWriteWithoutPriorRead,
   hasFableMitigations,
   hasHaiku55EarlyStoppingGuidance,
   HAIKU_55_EARLY_STOPPING_SECTION,
@@ -41,6 +43,9 @@ import {
   PRONOUNS_SECTION,
   SUBAGENT_AUTHORITY_NOTICE,
   WRITING_FOR_USER_SECTION,
+  ORIGINAL_GAMES_SECTION,
+  NOTES_AND_FEEDBACK_SECTION,
+  getFinishingWorkSection,
   getActionsSection,
   getDoingTasksSection,
   getSimpleIntroSection,
@@ -158,6 +163,7 @@ export function buildDynamicSystemPromptSections(params: {
   const bundle = hasOpus5PromptBundle(model)
   const fable = hasFableMitigations(model)
   const fable51 = hasFable51PromptBundle(model)
+  const fable52 = hasFable52PromptBundle(model)
   const haiku55EarlyStopping = hasHaiku55EarlyStoppingGuidance(model)
   const autoCompactEnabled = isAutoCompactEnabled()
   const bundleSuffix = bundle ? ':L' : ''
@@ -283,10 +289,28 @@ export function buildDynamicSystemPromptSections(params: {
     systemPromptSection(`opus5_reduced_delegation${bundleSuffix}`, () =>
       bundle ? OPUS5_REDUCED_DELEGATION_SECTION : null,
     ),
+    // Fable 5.2 / Mythos 5.2 bundle, in upstream's order: original_games, then
+    // (after the early-stopping slot below) finishing_work and
+    // notes_and_feedback.
+    systemPromptSection(`original_games${fable52 ? ':on' : ''}`, () =>
+      fable52 ? ORIGINAL_GAMES_SECTION : null,
+    ),
     // Haiku 5.5 early-stopping guidance, placed just ahead of `autonomy_append`.
     systemPromptSection(
       `haiku55_early_stopping${haiku55EarlyStopping ? ':on' : ''}`,
       () => (haiku55EarlyStopping ? HAIKU_55_EARLY_STOPPING_SECTION : null),
+    ),
+    // The Edit-without-Read paragraph depends on the same predicate that lets
+    // Edit skip the read, so the key carries it.
+    systemPromptSection(
+      `finishing_work${fable52 ? (allowsWriteWithoutPriorRead(model) ? ':on' : ':on:strict') : ''}`,
+      () =>
+        fable52
+          ? getFinishingWorkSection(allowsWriteWithoutPriorRead(model))
+          : null,
+    ),
+    systemPromptSection(`notes_and_feedback${fable52 ? ':on' : ''}`, () =>
+      fable52 ? NOTES_AND_FEEDBACK_SECTION : null,
     ),
     // Gated on the Fable branch AND a non-interactive session — see
     // AUTONOMY_SECTION for why the second condition is ours. Only the model bit

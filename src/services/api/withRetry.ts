@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { feature } from 'bun:bundle'
+import { negotiateApiClientVersion } from '../../constants/apiClientVersion.js'
 import type Anthropic from '@anthropic-ai/sdk'
 import {
   APIConnectionError,
@@ -270,6 +271,17 @@ export async function* withRetry<T>(
         `API error (attempt ${attempt}/${maxRetries + 1}): ${error instanceof APIError ? `${error.status} ${error.message}` : errorMessage(error)}`,
         { level: 'error' },
       )
+
+      // The API withholds a newer model from clients below a version and names
+      // it. Report that version from now on and rebuild the client once.
+      if (
+        error instanceof APIError &&
+        error.status === 400 &&
+        negotiateApiClientVersion(error.message)
+      ) {
+        client = null
+        continue
+      }
 
       // Fast mode fallback: on 429/529, either wait and retry (short delays)
       // or fall back to standard speed (long delays) to avoid cache thrashing.

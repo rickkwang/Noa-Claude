@@ -11,13 +11,14 @@ import {
   firstPartyNameToCanonical,
   getMarketingNameForModel,
 } from '../../utils/model/model.js'
+import { getModelMaxOutputTokens } from '../../utils/context.js'
 import { getModelCosts } from '../../utils/modelCost.js'
 import {
   modelSupportsAdaptiveThinking,
   modelOmitsThinkingByDefault,
   modelRequiresExplicitThinkingDisable,
 } from '../../utils/thinking.js'
-import { getSupportedEffortLevelsForModel } from '../../utils/effort.js'
+import { getDefaultEffortForModel, getSupportedEffortLevelsForModel } from '../../utils/effort.js'
 import { isFastModeSupportedByModel } from '../../utils/fastMode.js'
 
 const SAVED = { ...process.env }
@@ -103,6 +104,59 @@ describe('Fable 5.1 pricing', () => {
     expect(fable51.outputTokens).toBe(50)
     expect(fable51.promptCacheReadTokens).toBe(0.25)
     expect(fable5.promptCacheReadTokens).toBe(1)
+  })
+})
+
+describe('Fable 5.2', () => {
+  test('is its own model, separate from 5.1 and 5', () => {
+    expect(firstPartyNameToCanonical('claude-fable-5-2')).toBe('claude-fable-5-2')
+    expect(firstPartyNameToCanonical('claude-mythos-5-2')).toBe('claude-mythos-5-2')
+    expect(getMarketingNameForModel('claude-fable-5-2')).toBe('Fable 5.2')
+    expect(hasNative1mContext('claude-fable-5-2')).toBe(true)
+  })
+
+  test('shares the 5.1 request surface', () => {
+    expect(modelRejectsForcedToolChoice('claude-fable-5-2')).toBe(true)
+    expect(modelEnforcesThinkingPrefixBinding('claude-fable-5-2')).toBe(true)
+    expect(modelRequiresExplicitThinkingDisable('claude-fable-5-2')).toBe(false)
+    expect(getSupportedEffortLevelsForModel('claude-fable-5-2')).toContain('xhigh')
+  })
+
+  test('defaults to medium effort, unlike Fable 5.1', () => {
+    expect(getDefaultEffortForModel('claude-fable-5-2')).toBe('medium')
+    expect(getDefaultEffortForModel('claude-fable-5-1')).toBe('high')
+  })
+
+  test('Mythos 5.2 enforces the history-editing check too, unlike Mythos 5.1', () => {
+    expect(modelEnforcesThinkingPrefixBinding('claude-mythos-5-2')).toBe(true)
+    expect(modelEnforcesThinkingPrefixBinding('claude-mythos-5-1')).toBe(false)
+  })
+
+  test('defaults max output to the 128K ceiling, unlike Fable 5.1', () => {
+    expect(getModelMaxOutputTokens('claude-fable-5-2')).toEqual({ default: 128_000, upperLimit: 128_000 })
+    expect(getModelMaxOutputTokens('claude-mythos-5-2').default).toBe(128_000)
+    expect(getModelMaxOutputTokens('claude-fable-5-1').default).toBe(64_000)
+  })
+
+  test('costs $8/$40 with $0.20 cache reads', () => {
+    const usage = { input_tokens: 0, output_tokens: 0 } as Parameters<
+      typeof getModelCosts
+    >[1]
+    const costs = getModelCosts('claude-fable-5-2', usage)
+    expect(costs.inputTokens).toBe(8)
+    expect(costs.outputTokens).toBe(40)
+    expect(costs.promptCacheReadTokens).toBe(0.2)
+  })
+
+  test('supports fast mode, priced at $16/$80', () => {
+    expect(isFastModeSupportedByModel('claude-fable-5-2')).toBe(true)
+    expect(isFastModeSupportedByModel('claude-fable-5-1')).toBe(false)
+    const usage = { input_tokens: 0, output_tokens: 0, speed: 'fast' } as Parameters<
+      typeof getModelCosts
+    >[1]
+    const fast = getModelCosts('claude-fable-5-2', usage)
+    expect(fast.inputTokens).toBe(16)
+    expect(fast.outputTokens).toBe(80)
   })
 })
 

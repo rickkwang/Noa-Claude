@@ -106,6 +106,7 @@ describe('Opus 5.5 request surface', () => {
       opus5PromptBundle: false,
       fable5Mitigations: false,
       fable51PromptBundle: false,
+      fable52PromptBundle: false,
       haiku55EarlyStopping: false,
     })
   })

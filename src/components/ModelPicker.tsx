@@ -1,17 +1,20 @@
 // @ts-nocheck
 import { c as _c } from "react/compiler-runtime";
 import capitalize from 'lodash-es/capitalize.js';
+import figures from 'figures';
 import * as React from 'react';
 import { useCallback, useMemo, useState } from 'react';
+import { useTerminalSize } from '../hooks/useTerminalSize.js';
 import { useExitOnCtrlCDWithKeybindings } from 'src/hooks/useExitOnCtrlCDWithKeybindings.js';
 import { type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS, logEvent } from 'src/services/analytics/index.js';
 import { getFastModeModelDisplay, isFastModeAvailable, isFastModeCooldown, isFastModeEnabled } from 'src/utils/fastMode.js';
 import { Box, Text } from '../ink.js';
 import { useKeybindings } from '../keybindings/useKeybinding.js';
 import { useAppState, useSetAppState } from '../state/AppState.js';
-import { convertEffortValueToLevel, type EffortLevel, getApiDefaultEffortForModel, getDefaultEffortForModel, getEffortEnvOverride, getEffortSettingsUpdate, getMaxEffortCap, getSupportedEffortLevelsForModel, EFFORT_LEVELS, modelSupportsEffort, toPersistableEffort } from '../utils/effort.js';
+import { convertEffortValueToLevel, type EffortLevel, getApiDefaultEffortForModel, getDefaultEffortForModel, getEffortEnvOverride, getEffortSettingsUpdate, getInitialEffortSetting, getMaxEffortCap, getSupportedEffortLevelsForModel, EFFORT_LEVELS, modelSupportsEffort, toPersistableEffort } from '../utils/effort.js';
+import { getSettingsForSource } from '../utils/settings/settings.js';
 import { getDefaultMainLoopModel, type ModelSetting, modelDisplayString, parseUserSpecifiedModel, renderDefaultModelSetting, getDefaultMainLoopModelSetting } from '../utils/model/model.js';
-import { getModelOptions } from '../utils/model/modelOptions.js';
+import { getModelOptions, groupOverflowOptions, MORE_MODELS_VALUE } from '../utils/model/modelOptions.js';
 import { updateSettingsForSource } from '../utils/settings/settings.js';
 import { ConfigurableShortcutHint } from './ConfigurableShortcutHint.js';
 import { Select } from './CustomSelect/index.js';
@@ -46,11 +49,31 @@ export type Props = {
   skipSettingsWrite?: boolean;
 };
 const NO_PREFERENCE = '__NO_PREFERENCE__';
+
+// A session model that resolves to the base model is not an override.
+function getSessionOverride(session: ModelSetting | undefined, base: ModelSetting): ModelSetting {
+  if (session == null) return null;
+  if (base !== null && session.trim().toLowerCase() === base.trim().toLowerCase()) return null;
+  const baseResolved = base === null ? getDefaultMainLoopModel() : parseUserSpecifiedModel(base);
+  return parseUserSpecifiedModel(session).toLowerCase() === baseResolved.toLowerCase() ? null : session;
+}
+
+// Option value for a model setting: null is the Default row, and a spelling
+// that resolves to a listed model maps to that row.
+function matchOptionValue(options: { value: string | null }[], model: ModelSetting): string {
+  if (model === null) return NO_PREFERENCE;
+  // A model saved from /model is the Default row from the next session on.
+  if (getSettingsForSource('userSettings')?.model?.toLowerCase() === model.toLowerCase()) return NO_PREFERENCE;
+  if (options.some(opt => opt.value === model)) return model;
+  const resolved = parseUserSpecifiedModel(model).toLowerCase();
+  const match = options.find(opt => opt.value !== null && parseUserSpecifiedModel(opt.value).toLowerCase() === resolved);
+  return match?.value ?? model;
+}
 export function ModelPicker(t0) {
   const $ = _c(95);
   const {
     initial,
-    sessionModel,
+    sessionModel: sessionModelProp,
     onSelect,
     onSelectSessionOnly,
     onCancel,
@@ -64,8 +87,9 @@ export function ModelPicker(t0) {
   // Double Ctrl+C/D closes the picker when it has somewhere to go back to;
   // only a picker with no onCancel quits the app.
   const exitState = useExitOnCtrlCDWithKeybindings(onCancel);
-  const initialValue = safeInitial === null ? NO_PREFERENCE : safeInitial;
-  const [focusedValue, setFocusedValue] = useState(initialValue);
+  const sessionModel = getSessionOverride(sessionModelProp, safeInitial);
+  const [moreExpanded, setMoreExpanded] = useState(false);
+  const { rows: terminalRows } = useTerminalSize();
   const [visibleToIndex, setVisibleToIndex] = useState(10);
   const [currentTheme] = useTheme();
   const handleViewportChange = useCallback((_visibleFromIndex: number, nextVisibleToIndex: number) => setVisibleToIndex(nextVisibleToIndex), []);
@@ -81,11 +105,6 @@ export function ModelPicker(t0) {
     t1 = $[1];
   }
   const [effort, setEffort] = useState(t1);
-  // Badge for the pane's top-right corner ("◐ medium · /effort"): the
-  // session's currently-applied effort — same text the main input area shows.
-  // Undefined when the current model doesn't support effort.
-  const badgeModel = sessionModel ? parseUserSpecifiedModel(sessionModel) : resolveOptionModel(initialValue);
-  const effortBadge = badgeModel ? getEffortNotificationText(effortValue, badgeModel) : undefined;
   // Base model label for the session-override header line.
   const baseModelLabel = renderDefaultModelSetting(safeInitial ?? getDefaultMainLoopModelSetting());
   const t2 = isFastMode ?? false;
@@ -98,6 +117,16 @@ export function ModelPicker(t0) {
     t3 = $[3];
   }
   const modelOptions = t3;
+  // The row for the model in use (the session override when set) and the one
+  // for the base model; an equivalent spelling resolves to the listed row.
+  const initialValue = matchOptionValue(modelOptions, sessionModel ?? safeInitial);
+  const baseValue = matchOptionValue(modelOptions, safeInitial);
+  const [focusedValue, setFocusedValue] = useState(initialValue);
+  // Badge for the pane's top-right corner ("◐ medium · /effort"): the
+  // session's currently-applied effort — same text the main input area shows.
+  // Undefined when the current model doesn't support effort.
+  const badgeModel = sessionModel ? parseUserSpecifiedModel(sessionModel) : resolveOptionModel(initialValue);
+  const effortBadge = badgeModel ? getEffortNotificationText(effortValue, badgeModel) : undefined;
   // Like upstream: add the effective model ("Current model") and, when a
   // session override is set, the base model ("Base model") if not listed.
   // They go before the first disabled option, or at the end.
@@ -106,7 +135,7 @@ export function ModelPicker(t0) {
     [sessionModel ?? safeInitial, "Current model"],
     [sessionModel ? safeInitial : null, "Base model"],
   ] as const) {
-    if (value !== null && !modelOptions.some(opt => opt.value === value) && !extraOptions.some(opt => opt.value === value)) {
+    if (value !== null && matchOptionValue(modelOptions, value) === value && !modelOptions.some(opt => opt.value === value) && !extraOptions.some(opt => opt.value === value)) {
       extraOptions.push({ value, label: modelDisplayString(value), description });
     }
   }
@@ -114,10 +143,10 @@ export function ModelPicker(t0) {
   const optionsWithInitial = extraOptions.length === 0 ? modelOptions
     : firstDisabledIndex === -1 ? [...modelOptions, ...extraOptions]
     : [...modelOptions.slice(0, firstDisabledIndex), ...extraOptions, ...modelOptions.slice(firstDisabledIndex)];
-  // Upstream colors "Opus 5.5" in descriptions with the theme's claude color.
+  // Upstream colors "Fable 5.2" in descriptions with the theme's claude color.
   const claudeColor = getTheme(currentTheme).claude;
   const optionsColored = optionsWithInitial.map(opt => opt.description
-    ? { ...opt, description: opt.description.replaceAll("Opus 5.5", colorize("Opus 5.5", claudeColor, "foreground")) }
+    ? { ...opt, description: opt.description.replaceAll("Fable 5.2", colorize("Fable 5.2", claudeColor, "foreground")) }
     : opt);
   let t5;
   if ($[12] !== optionsColored) {
@@ -127,7 +156,18 @@ export function ModelPicker(t0) {
   } else {
     t5 = $[13];
   }
-  const selectOptions = t5;
+  const allSelectOptions = t5;
+  // Older models sit behind a "More models" row, except the one in use.
+  const currentOptionValue = initialValue;
+  const selectOptions = useMemo(() => groupOverflowOptions(allSelectOptions, {
+    currentValue: currentOptionValue,
+    baseValue
+  }, moreExpanded, expanded => ({
+    value: MORE_MODELS_VALUE,
+    marker: expanded ? figures.triangleDownSmall : figures.triangleRightSmall,
+    label: 'More models',
+    description: ''
+  })), [allSelectOptions, currentOptionValue, baseValue, moreExpanded]);
   let t6;
   if ($[14] !== initialValue || $[15] !== selectOptions) {
     t6 = selectOptions.some(_ => _.value === initialValue) ? initialValue : selectOptions[0]?.value ?? undefined;
@@ -138,7 +178,11 @@ export function ModelPicker(t0) {
     t6 = $[16];
   }
   const initialFocusValue = t6;
-  const visibleCount = Math.min(10, selectOptions.length);
+  // Upstream sizes the list from the terminal height: 14 rows of chrome,
+  // 3 more for the fast-mode notice and for the session-override header.
+  const chromeRows = 14 + (isFastModeEnabled() ? 3 : 0) + (sessionModel ? 3 : 0);
+  const visibleCap = Math.max(2, Math.min(moreExpanded ? Infinity : 10, Math.floor((terminalRows - chromeRows) / 2)));
+  const visibleCount = Math.min(visibleCap, selectOptions.length);
   let t7;
   if ($[17] !== focusedValue || $[18] !== selectOptions) {
     t7 = selectOptions.find(opt_1 => opt_1.value === focusedValue)?.label;
@@ -172,15 +216,16 @@ export function ModelPicker(t0) {
   const focusedDefaultEffort = t9;
   // Show the level the API receives: maxEffortLevel caps the requested one.
   const effortCap = getMaxEffortCap(focusedModelName);
-  const requestedEffort = effort ?? focusedDefaultEffort;
+  const requestedEffort = effort ?? getPersistedOrDefaultEffortLevel(focusedValue);
   const cappedEffort = effortCap && requestedEffort && EFFORT_LEVELS.indexOf(requestedEffort) > EFFORT_LEVELS.indexOf(effortCap) ? effortCap : requestedEffort;
   const displayEffort = clampEffortLevelForModel(cappedEffort, focusedSupportedEffortLevels);
   let t10;
   if ($[25] !== effortValue || $[26] !== hasToggledEffort) {
     t10 = value => {
       setFocusedValue(value);
+      if (value === MORE_MODELS_VALUE) return;
       if (!hasToggledEffort && effortValue == null) {
-        setEffort(getDefaultEffortLevelForOption(value));
+        setEffort(getPersistedOrDefaultEffortLevel(value));
       }
     };
     $[25] = effortValue;
@@ -197,13 +242,13 @@ export function ModelPicker(t0) {
     // The model's own ladder, not a fixed low/medium/high prefix: a third-party
     // endpoint may omit a rung (Kimi K3 has no `medium`), and offering one it
     // never defined means the picker shows a level the request can't carry.
-    setEffort(prev => cycleEffortLevel(prev ?? focusedDefaultEffort, direction, focusedSupportedEffortLevels));
+    setEffort(prev => cycleEffortLevel(prev ?? getPersistedOrDefaultEffortLevel(focusedValue), direction, focusedSupportedEffortLevels));
     setHasToggledEffort(true);
   };
   let t11;
-  if ($[83] !== onSelectSessionOnly || $[84] !== effort || $[85] !== hasToggledEffort || $[86] !== skipSettingsWrite || $[87] !== setAppState || $[88] !== focusedValue) {
+  if (true || $[83] !== onSelectSessionOnly || $[84] !== effort || $[85] !== hasToggledEffort || $[86] !== skipSettingsWrite || $[87] !== setAppState || $[88] !== focusedValue) {
     t11 = function handleSessionOnly() {
-      if (!onSelectSessionOnly) {
+      if (!onSelectSessionOnly || focusedValue === MORE_MODELS_VALUE) {
         return;
       }
       logEvent("tengu_model_command_menu_session_only", {
@@ -232,7 +277,7 @@ export function ModelPicker(t0) {
   }
   const handleSessionOnly = t11;
   let t12;
-  if ($[32] !== handleCycleEffort || $[90] !== handleSessionOnly) {
+  if (true || $[32] !== handleCycleEffort || $[90] !== handleSessionOnly) {
     t12 = {
       "modelPicker:decreaseEffort": () => handleCycleEffort("left"),
       "modelPicker:increaseEffort": () => handleCycleEffort("right"),
@@ -257,6 +302,11 @@ export function ModelPicker(t0) {
   let t14;
   if ($[35] !== effort || $[36] !== hasToggledEffort || $[37] !== onSelect || $[38] !== setAppState || $[39] !== skipSettingsWrite) {
     t14 = function handleSelect(value_0) {
+      if (value_0 === MORE_MODELS_VALUE) {
+        setMoreExpanded(prev => !prev);
+        setFocusedValue(MORE_MODELS_VALUE);
+        return;
+      }
       logEvent("tengu_model_command_menu_effort", {
         effort: effort as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS
       });
@@ -327,8 +377,8 @@ export function ModelPicker(t0) {
   }
   const t20 = onCancel ?? _temp4;
   let t21;
-  if ($[49] !== handleFocus || $[50] !== handleSelect || $[51] !== initialFocusValue || $[52] !== initialValue || $[53] !== selectOptions || $[54] !== t20 || $[55] !== visibleCount) {
-    t21 = <Box flexDirection="column"><Select defaultValue={initialValue} defaultFocusValue={initialFocusValue} options={selectOptions} onChange={handleSelect} onFocus={handleFocus} onCancel={t20} visibleOptionCount={visibleCount} onViewportChange={handleViewportChange} columnSizingOptions={selectOptions} /></Box>;
+  if (true || $[49] !== handleFocus || $[50] !== handleSelect || $[51] !== initialFocusValue || $[52] !== initialValue || $[53] !== selectOptions || $[54] !== t20 || $[55] !== visibleCount) {
+    t21 = <Box flexDirection="column"><Select key={String(moreExpanded)} defaultValue={initialValue} defaultFocusValue={focusedValue === MORE_MODELS_VALUE ? MORE_MODELS_VALUE : initialFocusValue} options={selectOptions} onChange={handleSelect} onFocus={handleFocus} onCancel={t20} visibleOptionCount={visibleCount} onViewportChange={handleViewportChange} columnSizingOptions={selectOptions} focusOnHover={true} /></Box>;
     $[49] = handleFocus;
     $[50] = handleSelect;
     $[51] = initialFocusValue;
@@ -343,8 +393,8 @@ export function ModelPicker(t0) {
   const hiddenBelow = Math.max(0, selectOptions.length - visibleToIndex);
   const t23 = <Box flexDirection="column" marginBottom={1}>{t21}{hiddenBelow > 0 && <Box paddingLeft={3}><Text dimColor={true}>...+{hiddenBelow} models</Text></Box>}</Box>;
   let t24;
-  if ($[62] !== displayEffort || $[63] !== focusedDefaultEffort || $[64] !== focusedModelName || $[65] !== focusedSupportsEffort) {
-    t24 = <Box marginBottom={1} flexDirection="column">{focusedSupportsEffort ? <Text dimColor={true}><EffortLevelIndicator effort={displayEffort} />{" "}{capitalize(displayEffort)} effort{displayEffort === focusedDefaultEffort ? " (default)" : ""}{" "}<Text color="subtle">← → to adjust</Text></Text> : <Text color="subtle"><EffortLevelIndicator effort={undefined} /> Effort not supported{focusedModelName ? ` for ${focusedModelName}` : ""}</Text>}{focusedSupportsEffort && getEffortEnvOverride() !== undefined ? <Text color="warning">CLAUDE_CODE_EFFORT_LEVEL={process.env.CLAUDE_CODE_EFFORT_LEVEL} overrides this session</Text> : null}</Box>;
+  if (true || $[62] !== displayEffort || $[63] !== focusedDefaultEffort || $[64] !== focusedModelName || $[65] !== focusedSupportsEffort) {
+    t24 = focusedValue === MORE_MODELS_VALUE ? <Box marginBottom={1} flexDirection="column"><Text> </Text></Box> : <Box marginBottom={1} flexDirection="column">{focusedSupportsEffort ? <Text dimColor={true}><EffortLevelIndicator effort={displayEffort} />{" "}{displayEffort === "xhigh" ? "xHigh" : capitalize(displayEffort)} effort{displayEffort === focusedDefaultEffort ? " (default)" : ""}{" "}<KeyboardShortcutHint shortcut="←/→" action="adjust" /></Text> : <Text color="subtle"><EffortLevelIndicator effort={undefined} /> Effort not supported{focusedModelName ? ` for ${focusedModelName}` : ""}</Text>}{focusedSupportsEffort && displayEffort === "max" ? <Text dimColor={true}>May use excessive tokens resulting in long response times or overthinking. Use sparingly for the hardest tasks.</Text> : null}{focusedSupportsEffort && getEffortEnvOverride() !== undefined ? <Text color="warning">CLAUDE_CODE_EFFORT_LEVEL={process.env.CLAUDE_CODE_EFFORT_LEVEL} overrides this session</Text> : null}</Box>;
     $[62] = displayEffort;
     $[63] = focusedDefaultEffort;
     $[64] = focusedModelName;
@@ -354,8 +404,8 @@ export function ModelPicker(t0) {
     t24 = $[66];
   }
   let t25;
-  if ($[67] !== showFastModeNotice) {
-    t25 = isFastModeEnabled() ? showFastModeNotice ? <Box marginBottom={1}><Text dimColor={true}>Fast mode is <Text bold={true}>ON</Text> and available with{" "}{getFastModeModelDisplay()} only (/fast). Switching to other models turn off fast mode.</Text></Box> : isFastModeAvailable() && !isFastModeCooldown() ? <Box marginBottom={1}><Text dimColor={true}>Use <Text bold={true}>/fast</Text> to turn on Fast mode ({getFastModeModelDisplay()} only).</Text></Box> : null : null;
+  if (true || $[67] !== showFastModeNotice) {
+    t25 = isFastModeEnabled() ? showFastModeNotice ? <Box marginBottom={1}><Text dimColor={true}>Fast mode is <Text bold={true}>ON</Text> (/fast). Switching models can turn it off.</Text></Box> : isFastModeAvailable() && !isFastModeCooldown() ? <Box marginBottom={1}><Text dimColor={true}>Use <Text bold={true}>/fast</Text> to turn on Fast mode ({getFastModeModelDisplay(sessionModel ?? safeInitial)} only).</Text></Box> : null : null;
     $[67] = showFastModeNotice;
     $[68] = t25;
   } else {
@@ -373,8 +423,8 @@ export function ModelPicker(t0) {
     t26 = $[73];
   }
   let t27;
-  if ($[74] !== exitState || $[75] !== isStandaloneCommand || $[82] !== onCancel || $[91] !== onSelectSessionOnly) {
-    t27 = isStandaloneCommand && <Text dimColor={true} italic={true}>{exitState.pending ? <>Press {exitState.keyName} again to {onCancel ? 'cancel' : 'exit'}</> : <Byline><KeyboardShortcutHint shortcut="Enter" action="set as default" />{onSelectSessionOnly ? <ConfigurableShortcutHint action="modelPicker:thisSessionOnly" context="ModelPicker" fallback="s" description="use this session only" /> : null}<ConfigurableShortcutHint action="select:cancel" context="Select" fallback="Esc" description="cancel" /></Byline>}</Text>;
+  if (true || $[74] !== exitState || $[75] !== isStandaloneCommand || $[82] !== onCancel || $[91] !== onSelectSessionOnly) {
+    t27 = isStandaloneCommand && <Text dimColor={true}>{exitState.pending ? <>Press {exitState.keyName} again to {onCancel ? 'cancel' : 'exit'}</> : <Byline>{focusedValue === MORE_MODELS_VALUE ? <KeyboardShortcutHint shortcut="Enter" action={moreExpanded ? 'collapse' : 'expand'} /> : <KeyboardShortcutHint shortcut="Enter" action="set as default" />}{onSelectSessionOnly && focusedValue !== MORE_MODELS_VALUE ? <ConfigurableShortcutHint action="modelPicker:thisSessionOnly" context="ModelPicker" fallback="s" description="use this session only" /> : null}<ConfigurableShortcutHint action="select:cancel" context="Select" fallback="Esc" description="cancel" /></Byline>}</Text>;
     $[74] = exitState;
     $[75] = isStandaloneCommand;
     $[82] = onCancel;
@@ -421,7 +471,7 @@ function _temp(s) {
   return isFastModeEnabled() ? s.fastMode : false;
 }
 function resolveOptionModel(value?: string): string | undefined {
-  if (!value) return undefined;
+  if (!value || value === MORE_MODELS_VALUE) return undefined;
   return value === NO_PREFERENCE ? getDefaultMainLoopModel() : parseUserSpecifiedModel(value);
 }
 function EffortLevelIndicator(t0) {
@@ -471,6 +521,13 @@ function clampEffortLevelForModel(effort: EffortLevel | undefined, supportedLeve
   if (supportedLevels.includes('medium')) return 'medium';
   return supportedLevels[0];
 }
+// The effort the picker shows for a model before the user adjusts it: the saved
+// per-model setting when there is one, otherwise the model default.
+function getPersistedOrDefaultEffortLevel(value?: string): EffortLevel {
+  const resolved = resolveOptionModel(value) ?? getDefaultMainLoopModel();
+  return getInitialEffortSetting(resolved) ?? getDefaultEffortLevelForOption(value);
+}
+
 function getDefaultEffortLevelForOption(value?: string): EffortLevel {
   const resolved = resolveOptionModel(value) ?? getDefaultMainLoopModel();
   // Model default only (matches upstream's picker): user settings are not applied here.

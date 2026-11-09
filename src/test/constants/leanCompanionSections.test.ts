@@ -10,6 +10,9 @@ import {
   CONTEXT_MANAGEMENT_SECTION,
   CORRECTIONS_SECTION,
   DELIVERING_WORK_SECTION,
+  FINISHING_WORK_SECTION,
+  NOTES_AND_FEEDBACK_SECTION,
+  ORIGINAL_GAMES_SECTION,
   PRONOUNS_SECTION,
 } from '../../constants/systemPromptCoreSections.js'
 import {
@@ -312,5 +315,44 @@ describe('the Fable 5.1 prompt bundle', () => {
     expect(resolve(FABLE_51_MODEL, 'action_caution:L')).toBe(
       resolve(LEAN_MODEL, 'action_caution:L'),
     )
+  })
+})
+
+describe('the Fable 5.2 prompt bundle', () => {
+  test('adds original-games, finishing-work and notes-and-feedback', () => {
+    for (const model of ['claude-fable-5-2', 'claude-mythos-5-2']) {
+      expect(resolve(model, 'original_games:on')).toBe(ORIGINAL_GAMES_SECTION)
+      expect(resolve(model, 'finishing_work:on')).toBe(FINISHING_WORK_SECTION)
+      expect(resolve(model, 'notes_and_feedback:on')).toBe(
+        NOTES_AND_FEEDBACK_SECTION,
+      )
+    }
+  })
+
+  test('Fable 5.1 and Fable 5 do not get them', () => {
+    for (const model of [FABLE_51_MODEL, UNBUNDLED_LEAN_MODEL]) {
+      expect(resolve(model, 'original_games')).toBeNull()
+      expect(resolve(model, 'finishing_work')).toBeNull()
+      expect(resolve(model, 'notes_and_feedback')).toBeNull()
+    }
+  })
+
+  test('takes neither the Fable 5 mitigations nor the 5.1 bundle', () => {
+    expect(sectionNames('claude-fable-5-2')).not.toContain('anti_verbosity:fable')
+    expect(sectionNames('claude-fable-5-2')).not.toContain(
+      'anti_verbosity:turn_updates',
+    )
+  })
+
+  test('drops the Edit-without-Read paragraph where the read guard stays', () => {
+    process.env.NOA_CLAUDE_WRITE_REQUIRE_READ = '1'
+    try {
+      const text = resolve('claude-fable-5-2', 'finishing_work:on:strict')
+      expect(text).not.toBeNull()
+      expect(text).not.toContain('without a prior')
+      expect(text).toStartWith('# Finishing work')
+    } finally {
+      delete process.env.NOA_CLAUDE_WRITE_REQUIRE_READ
+    }
   })
 })

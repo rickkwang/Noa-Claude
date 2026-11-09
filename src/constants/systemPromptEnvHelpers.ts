@@ -118,7 +118,9 @@ function getKnowledgeCutoff(modelId: string): string | null {
     canonical.includes('claude-sonnet-5-5') ||
     canonical.includes('claude-haiku-5-5') ||
     canonical.includes('claude-fable-5-1') ||
-    canonical.includes('claude-mythos-5-1')
+    canonical.includes('claude-fable-5-2') ||
+    canonical.includes('claude-mythos-5-1') ||
+    canonical.includes('claude-mythos-5-2')
   ) {
     return 'June 2026'
   } else if (

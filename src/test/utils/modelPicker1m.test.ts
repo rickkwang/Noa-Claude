@@ -147,8 +147,8 @@ describe('native-1M model-setting normalization', () => {
 
   test('normalizes fable[1m] away on direct first-party', () => {
     const resolved = parseUserSpecifiedModel('fable[1m]')
-    expect(resolved).toBe('claude-fable-5-1')
-    expect(renderModelName(resolved)).toBe('Fable 5.1')
+    expect(resolved).toBe('claude-fable-5-2')
+    expect(renderModelName(resolved)).toBe('Fable 5.2')
   })
 
   test('normalizes opus[1m] away now that Opus is natively 1M', () => {
@@ -183,5 +183,40 @@ describe('native-1M model-setting normalization', () => {
     delete process.env.CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR
     expect(() => isOpus1mMergeEnabled()).not.toThrow()
     expect(isOpus1mMergeEnabled()).toBe(false)
+  })
+})
+
+describe('"More models" grouping', () => {
+  const more = (expanded: boolean) =>
+    ({ value: '__MORE__', label: 'More', description: '', marker: expanded ? 'v' : '>' }) as unknown as ModelOption
+  const rows = (): ModelOption[] =>
+    [
+      row('opus', 'Opus 5.5', ''),
+      row('sonnet', 'Sonnet 5.5', ''),
+      { ...row('claude-opus-5', 'Opus 5', ''), overflow: true },
+      { ...row('claude-opus-4-8', 'Opus 4.8', ''), overflow: true },
+    ] as ModelOption[]
+  const values = (list: ModelOption[]) => list.map(o => o.value)
+
+  test('folds previous-generation rows behind one toggle row', async () => {
+    const { groupOverflowOptions } = await import('../../utils/model/modelOptions.js')
+    expect(values(groupOverflowOptions(rows(), {}, false, more))).toEqual(['opus', 'sonnet', '__MORE__'])
+    expect(values(groupOverflowOptions(rows(), {}, true, more))).toEqual([
+      'opus', 'sonnet', '__MORE__', 'claude-opus-5', 'claude-opus-4-8',
+    ])
+  })
+
+  test('keeps the model in use in the main list', async () => {
+    const { groupOverflowOptions } = await import('../../utils/model/modelOptions.js')
+    // Only one overflow row is left to fold, so the fold is skipped entirely.
+    expect(values(groupOverflowOptions(rows(), { currentValue: 'claude-opus-5' }, false, more))).toEqual(
+      values(rows()),
+    )
+  })
+
+  test('does not fold when a group would hold fewer than two rows', async () => {
+    const { groupOverflowOptions } = await import('../../utils/model/modelOptions.js')
+    const few = rows().slice(1)
+    expect(values(groupOverflowOptions(few, {}, false, more))).toEqual(values(few))
   })
 })

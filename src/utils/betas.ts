@@ -217,7 +217,9 @@ export function modelRejectsForcedToolChoice(model: string): boolean {
   const canonical = getCanonicalName(model)
   return (
     canonical.includes('claude-fable-5-1') ||
+    canonical.includes('claude-fable-5-2') ||
     canonical.includes('claude-mythos-5-1') ||
+    canonical.includes('claude-mythos-5-2') ||
     canonical.includes('claude-opus-5-5') ||
     canonical.includes('claude-sonnet-5-5')
   )
@@ -237,7 +239,8 @@ export function modelRejectsForcedToolChoice(model: string): boolean {
  * every request in, which is what makes the behaviour uniform.
  *
  * Mythos 5.1 is absent on purpose: it does not run the history-editing check,
- * so it gets no controls.
+ * so it gets no controls. Mythos 5.2 does run it (for every account, like
+ * Fable 5.2), so it is listed.
  *
  * @[MODEL LAUNCH]: add models that bind thinking blocks to the prefix here.
  */
@@ -245,6 +248,8 @@ export function modelEnforcesThinkingPrefixBinding(model: string): boolean {
   const canonical = getCanonicalName(model)
   return (
     canonical.includes('claude-fable-5-1') ||
+    canonical.includes('claude-fable-5-2') ||
+    canonical.includes('claude-mythos-5-2') ||
     canonical.includes('claude-opus-5-5') ||
     canonical.includes('claude-sonnet-5-5') ||
     canonical.includes('claude-haiku-5-5')
@@ -288,6 +293,7 @@ const EAGER_INPUT_STREAMING_VERTEX = new Set([
   'claude-opus-5-5',
   'claude-fable-5',
   'claude-fable-5-1',
+  'claude-fable-5-2',
 ])
 const EAGER_INPUT_STREAMING_BEDROCK = new Set([
   'claude-sonnet-4-6',
@@ -299,6 +305,7 @@ const EAGER_INPUT_STREAMING_BEDROCK = new Set([
   'claude-opus-5-5',
   'claude-fable-5',
   'claude-fable-5-1',
+  'claude-fable-5-2',
 ])
 
 // Mirrors upstream's Bedrock own-host check (sor()/ownHost in the 2.1.309 build):

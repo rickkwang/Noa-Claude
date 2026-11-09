@@ -441,7 +441,7 @@ export function Config({
   // Fast mode toggle (ant-only, eliminated from external builds)
   ...(isFastModeEnabled() && isFastModeAvailable() ? [{
     id: 'fastMode',
-    label: `Fast mode (${getFastModeModelDisplay()})`,
+    label: `Fast mode (${getFastModeModelDisplay(mainLoopModel)})`,
     value: !!isFastMode,
     type: 'boolean' as const,
     onChange(enabled_0: boolean) {
@@ -450,15 +450,22 @@ export function Config({
         fastMode: enabled_0 ? true : undefined
       });
       if (enabled_0) {
+        // A model that supports fast mode itself keeps running; only others
+        // move to the Opus alias.
+        const keepModel = isFastModeSupportedByModel(mainLoopModel);
         setAppState(prev_7 => ({
           ...prev_7,
-          mainLoopModel: getFastModeModel(),
-          mainLoopModelForSession: null,
+          ...(keepModel ? {} : {
+            mainLoopModel: getFastModeModel(),
+            mainLoopModelForSession: null
+          }),
           fastMode: true
         }));
         setChanges(prev_8 => ({
           ...prev_8,
-          model: getFastModeModel(),
+          ...(keepModel ? {} : {
+            model: getFastModeModel()
+          }),
           'Fast mode': 'ON'
         }));
       } else {

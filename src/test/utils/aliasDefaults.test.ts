@@ -45,7 +45,7 @@ describe('per-provider alias defaults match the upstream catalog', () => {
   test('first party gets the current generation of every family', () => {
     expect(getDefaultOpusModel()).toBe('claude-opus-5-5')
     expect(getDefaultSonnetModel()).toBe('claude-sonnet-5-5')
-    expect(getDefaultFableModel()).toBe('claude-fable-5-1')
+    expect(getDefaultFableModel()).toBe('claude-fable-5-2')
     expect(getDefaultHaikuModel()).toContain('claude-haiku-5-5')
   })
 
@@ -83,14 +83,14 @@ describe('per-provider alias defaults match the upstream catalog', () => {
     }
   })
 
-  test('Fable has no cloud-provider override — all providers get 5.1', () => {
+  test('Fable has no cloud-provider override — all providers get 5.2', () => {
     for (const env of [
       'CLAUDE_CODE_USE_BEDROCK',
       'CLAUDE_CODE_USE_VERTEX',
       'CLAUDE_CODE_USE_FOUNDRY',
     ]) {
       useProvider(env)
-      expect(getDefaultFableModel()).toContain('claude-fable-5-1')
+      expect(getDefaultFableModel()).toContain('claude-fable-5-2')
     }
   })
 

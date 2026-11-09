@@ -19,6 +19,7 @@ import {
   CLAUDE_OPUS_5_5_CONFIG,
   CLAUDE_OPUS_4_CONFIG,
   CLAUDE_FABLE_5_1_CONFIG,
+  CLAUDE_FABLE_5_2_CONFIG,
   CLAUDE_FABLE_5_CONFIG,
   CLAUDE_SONNET_4_5_CONFIG,
   CLAUDE_SONNET_4_6_CONFIG,
@@ -138,6 +139,28 @@ export const COST_TIER_8_40 = {
   outputTokens: 40,
   promptCacheWriteTokens: 10,
   promptCacheWrite1hTokens: 16,
+  promptCacheReadTokens: 0.4,
+  webSearchRequests: 0.01,
+} as const satisfies ModelCosts
+
+// Pricing tier for Fable 5.2 / Mythos 5.2: $8 input / $40 output per Mtok,
+// cache reads $0.20/Mtok (2.5% of input, unlike fast mode's 0.4 above).
+export const COST_TIER_8_40_CHEAP_CACHE = {
+  inputTokens: 8,
+  outputTokens: 40,
+  promptCacheWriteTokens: 10,
+  promptCacheWrite1hTokens: 16,
+  promptCacheReadTokens: 0.2,
+  webSearchRequests: 0.01,
+} as const satisfies ModelCosts
+
+// Fast mode pricing for Fable 5.2 / Mythos 5.2: 2x standard, $16 input / $80
+// output per Mtok. Cache multipliers stack on top (read = 2.5% of input).
+export const COST_TIER_16_80 = {
+  inputTokens: 16,
+  outputTokens: 80,
+  promptCacheWriteTokens: 20,
+  promptCacheWrite1hTokens: 32,
   promptCacheReadTokens: 0.4,
   webSearchRequests: 0.01,
 } as const satisfies ModelCosts
@@ -277,10 +300,13 @@ export const MODEL_COSTS: Record<ModelShortName, ModelCosts> = {
   [firstPartyNameToCanonical(CLAUDE_FABLE_5_CONFIG.firstParty)]: COST_TIER_10_50,
   [firstPartyNameToCanonical(CLAUDE_FABLE_5_1_CONFIG.firstParty)]:
     COST_TIER_10_50_CHEAP_CACHE,
+  [firstPartyNameToCanonical(CLAUDE_FABLE_5_2_CONFIG.firstParty)]:
+    COST_TIER_8_40_CHEAP_CACHE,
   // Mythos has no ModelConfig (it is not a selectable alias target), but it is
   // reachable by id and priced like its Fable counterpart.
   'claude-mythos-5': COST_TIER_10_50,
   'claude-mythos-5-1': COST_TIER_10_50_CHEAP_CACHE,
+  'claude-mythos-5-2': COST_TIER_8_40_CHEAP_CACHE,
 }
 
 /**
@@ -355,6 +381,15 @@ export function getModelCosts(model: string, usage: Usage): ModelCosts {
     shortName === firstPartyNameToCanonical(CLAUDE_OPUS_5_5_CONFIG.firstParty)
   ) {
     return getOpus55CostTier(usage.speed === 'fast')
+  }
+
+  if (
+    usage.speed === 'fast' &&
+    isFastModeEnabled() &&
+    (shortName === firstPartyNameToCanonical(CLAUDE_FABLE_5_2_CONFIG.firstParty) ||
+      shortName === 'claude-mythos-5-2')
+  ) {
+    return COST_TIER_16_80
   }
 
   const costs = MODEL_COSTS[shortName]

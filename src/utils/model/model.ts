@@ -145,7 +145,7 @@ export function getBestModel(): ModelName {
  *
  * Providers absent from a row take `default`, which is upstream's behaviour for
  * any provider key it does not list — `fable` has no cloud-provider entry at
- * all, so Bedrock/Vertex/Foundry all get Fable 5.1. `openaiCompatible` is not
+ * all, so Bedrock/Vertex/Foundry all get Fable 5.2. `openaiCompatible` is not
  * one of upstream's provider kinds and takes `default` here; those deployments
  * resolve their model from the provider profile, where a Claude id would be
  * wrong whichever generation it named.
@@ -178,7 +178,7 @@ const ALIAS_DEFAULTS = {
       foundry: 'haiku45',
     },
   },
-  fable: { default: 'fable51', perProvider: {} },
+  fable: { default: 'fable52', perProvider: {} },
 } as const satisfies Record<
   string,
   { default: ModelKey; perProvider: Partial<Record<APIProvider, ModelKey>> }
@@ -316,6 +316,18 @@ function getEnvDefaultModel(): string | undefined {
   return value
 }
 
+/** Whether the default model was picked or configured rather than derived from the plan. */
+export function hasConfiguredDefaultModel(): boolean {
+  return (getEnvDefaultModel() ?? getSavedModelPick()) !== undefined
+}
+
+function getSavedModelPick(): string | undefined {
+  const pick = getSettingsForSource('userSettings')?.model
+  return typeof pick === 'string' && pick && isModelAllowed(pick)
+    ? pick
+    : undefined
+}
+
 /**
  * Get the default main loop model setting.
  *
@@ -334,6 +346,11 @@ export function getDefaultMainLoopModelSetting(): ModelName | ModelAlias {
   if (envDefaultModel) {
     return envDefaultModel
   }
+
+  // A model saved from /model becomes the default for new sessions; picking
+  // Default clears it, which restores the built-in default.
+  const savedPick = getSavedModelPick()
+  if (savedPick) return savedPick
 
   // Ants default to defaultModel from flag config, or Opus 1M if not configured
   if (process.env.USER_TYPE === 'ant') {
@@ -410,12 +427,18 @@ export function firstPartyNameToCanonical(name: ModelName | undefined): ModelSho
   if (name.includes('claude-opus-4')) {
     return 'claude-opus-4-0'
   }
-  // Order matters: 'claude-fable-5' is a prefix of 'claude-fable-5-1'.
+  // Order matters: 'claude-fable-5' is a prefix of 'claude-fable-5-1' / '-5-2'.
+  if (name.includes('claude-fable-5-2')) {
+    return 'claude-fable-5-2'
+  }
   if (name.includes('claude-fable-5-1')) {
     return 'claude-fable-5-1'
   }
   if (name.includes('claude-fable-5')) {
     return 'claude-fable-5'
+  }
+  if (name.includes('claude-mythos-5-2')) {
+    return 'claude-mythos-5-2'
   }
   if (name.includes('claude-mythos-5-1')) {
     return 'claude-mythos-5-1'
@@ -492,6 +515,12 @@ export function getCanonicalName(fullModelName: ModelName | undefined): ModelSho
 export function getClaudeAiUserDefaultModelDescription(
   fastMode = false,
 ): string {
+  // A default that was picked or configured, not derived from the plan, is
+  // described by its name alone.
+  const configured = getEnvDefaultModel() ?? getSavedModelPick()
+  if (configured) {
+    return renderModelName(parseUserSpecifiedModel(configured))
+  }
   if (isOpusDefaultSubscriber()) {
     const opusModel = getDefaultOpusModel()
     const opusName = getMarketingNameForModel(opusModel) ?? 'Opus'
@@ -597,6 +626,8 @@ export function renderModelSetting(setting: ModelName | ModelAlias): string {
  */
 export function getPublicModelDisplayName(model: ModelName): string | null {
   switch (stripIneffective1mSuffix(model)) {
+    case getModelStrings().fable52:
+      return 'Fable 5.2'
     case getModelStrings().fable51:
       return 'Fable 5.1'
     case getModelStrings().fable5:
@@ -877,6 +908,9 @@ export function getMarketingNameForModel(modelId: string | undefined): string | 
   // path, gated on opt-in models only.
   const canonical = getCanonicalName(modelId.replace(/\[1m\]/gi, ''))
 
+  if (canonical.includes('claude-fable-5-2')) {
+    return 'Fable 5.2'
+  }
   if (canonical.includes('claude-fable-5-1')) {
     return 'Fable 5.1'
   }
