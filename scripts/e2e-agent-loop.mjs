@@ -598,7 +598,7 @@ try {
       writeFileSync(join(dir, 'fixture.png'), Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==', 'base64'));
       if (scenario === 'preserved-thinking') for (const i of [1, 2, 3]) writeFileSync(join(dir, `pt${i}.txt`), Array.from({ length: 1500 }, (_, l) => `pt${i} line ${l} ${'x'.repeat(30)}`).join('\n'));
       active = { case: scenario, dir, requests: [], invocations: [], summaries: 0, oversized: 0, rejected: [] };
-      let passed = false, failure, observation, runResult;
+      let passed = false, skipped = false, failure, observation, runResult;
       try {
         if (scenario === 'tombstone-resume') {
           active.phase = 'seed';
@@ -632,7 +632,10 @@ try {
           const count = active.requests.length;
           // Without --bare the CLI also makes side requests; the loop's own carry the tool list.
           const main = active.requests.filter(r => r.body.tools?.length);
-          if(scenario==='hook-output' || scenario==='hook-output-null') {
+          // Monitor ships behind MONITOR_TOOL (dev-full only), so a baseline build has no such tool.
+          if (scenario.startsWith('monitor') && main.length > 0 && !main[0].body.tools.some(t => t.name === 'Monitor')) {
+            skipped = true;
+          } else if(scenario==='hook-output' || scenario==='hook-output-null') {
             assert.equal(runResult.code,0);const followUp=JSON.stringify(main[1]?.body.messages);assert.ok(followUp.includes(scenario==='hook-output-null'?'null':'HOOK_REDACTED'));assert.ok(!followUp.includes('LOCAL_FIXTURE_42'));assert.ok(!followUp.includes('LEGACY_MUST_NOT_WIN'));
           } else if(scenario==='blocking-limit' || scenario==='image-error') {
             assert.equal(runResult.code,1);assert.equal(runResult.result.is_error,true);assert.equal(runResult.result.terminal_reason,scenario==='blocking-limit'?'blocking_limit':'image_error');assert.equal(count,scenario==='blocking-limit'?0:1);
@@ -993,9 +996,9 @@ try {
         passed = true;
       } catch (error) { failure = String(error); }
       observation = { result: runResult?.result, finalState:active.finalState, childRequests:active.childRequests, requests: active.requests.length, summaries: active.summaries, oversized: active.oversized, startedAtResult: active.startedAtResult, finishedAtResult: active.finishedAtResult, started: active.started, finished: active.finished };
-      results.push({ executable, required: executable === entry, scenario, passed, failure, observation, invocations: active.invocations });
+      results.push({ executable, required: executable === entry, scenario, passed, skipped, failure, observation, invocations: active.invocations });
       writeFileSync(join(artifacts, 'results.json'), JSON.stringify(results, null, 2));
-      console.log(`${passed ? 'PASS' : 'FAIL'} ${executable === entry ? 'candidate' : 'comparison'} ${scenario}${failure ? `: ${failure}` : ''}`);
+      console.log(`${skipped ? 'SKIP' : passed ? 'PASS' : 'FAIL'} ${executable === entry ? 'candidate' : 'comparison'} ${scenario}${failure ? `: ${failure}` : ''}`);
     }
   }
 } finally {
