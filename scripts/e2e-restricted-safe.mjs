@@ -61,6 +61,11 @@ const cases = {
     flags: ['--restricted'],
     expect: 'completed',
   },
+  // --bare builds its own short tool list; --restricted must still remove Bash from it.
+  'restricted-bare-drops-bash': {
+    flags: ['--restricted', '--bare'],
+    expect: 'completed',
+  },
   // --restricted combined with bypassPermissions must refuse to start.
   'restricted-refuses-bypass': {
     flags: ['--restricted', '--dangerously-skip-permissions'],
@@ -190,6 +195,11 @@ function check(name, { dir, exit, stdout, stderr, workspace }) {
     assert.ok(!names.includes('Bash'), `Bash still offered under --restricted: ${names.join(', ')}`);
     assert.ok(!names.includes('WebFetch'), `WebFetch still offered under --restricted: ${names.join(', ')}`);
     assert.ok(names.includes('Read'), 'Read (a non-code tool) was removed under --restricted');
+  }
+  if (name === 'restricted-bare-drops-bash') {
+    const names = body.tools.map(t => t.name);
+    assert.ok(!names.includes('Bash'), `Bash still offered under --restricted --bare: ${names.join(', ')}`);
+    assert.ok(names.includes('Read'), 'Read was removed under --restricted --bare');
   }
   if (name === 'safe-mode-skips-project') {
     const system = JSON.stringify(body);

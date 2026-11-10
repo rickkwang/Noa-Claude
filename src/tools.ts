@@ -219,19 +219,21 @@ export function getAllBaseTools(): Tools {
     // The actual decision to defer tools happens at request time in claude.ts
     ...(isToolSearchEnabledOptimistic() ? [ToolSearchTool] : []),
   ]
-  // --restricted drops the code-running tools and WebFetch unless --tools
-  // names them. Filtered here, not in the --tools deny path: --tools is
-  // computed against this list, so a tool removed here cannot be re-enabled.
-  const restricted = isRestrictedMode()
-  const namedByToolsFlag = restricted ? toolsFlagNames() : new Set<string>()
-  return candidates
-    .filter(isImplemented)
-    .filter(
-      tool =>
-        !restricted ||
-        !RESTRICTED_DENIED_TOOL_NAMES.has(tool.name) ||
-        namedByToolsFlag.has(tool.name),
-    )
+  return dropRestrictedTools(candidates.filter(isImplemented))
+}
+
+// --restricted drops the code-running tools and WebFetch unless --tools names
+// them. Applied where a tool list is built, not in the --tools deny path:
+// --tools is computed against that list, so a tool removed here cannot be
+// re-enabled. Every list getTools() returns must pass through this.
+function dropRestrictedTools(tools: Tool[]): Tool[] {
+  if (!isRestrictedMode()) return tools
+  const namedByToolsFlag = toolsFlagNames()
+  return tools.filter(
+    tool =>
+      !RESTRICTED_DENIED_TOOL_NAMES.has(tool.name) ||
+      namedByToolsFlag.has(tool.name),
+  )
 }
 
 // Code-running built-ins and WebFetch removed by --restricted.
@@ -290,7 +292,10 @@ export const getTools = (permissionContext: ToolPermissionContext): Tools => {
       ) {
         replSimple.push(TaskStopTool, getSendMessageTool())
       }
-      return filterToolsByDenyRules(replSimple, permissionContext)
+      return filterToolsByDenyRules(
+        dropRestrictedTools(replSimple),
+        permissionContext,
+      )
     }
     const simpleTools: Tool[] = [BashTool, FileReadTool, FileEditTool]
     // When coordinator mode is also active, include AgentTool and TaskStopTool
@@ -302,7 +307,10 @@ export const getTools = (permissionContext: ToolPermissionContext): Tools => {
     ) {
       simpleTools.push(AgentTool, TaskStopTool, getSendMessageTool())
     }
-    return filterToolsByDenyRules(simpleTools, permissionContext)
+    return filterToolsByDenyRules(
+      dropRestrictedTools(simpleTools),
+      permissionContext,
+    )
   }
 
   // Get all base tools and filter out special tools that get added conditionally
