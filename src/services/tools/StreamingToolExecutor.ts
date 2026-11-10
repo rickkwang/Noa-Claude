@@ -523,15 +523,20 @@ export class StreamingToolExecutor {
     while (this.hasUnfinishedTools()) {
       await this.processQueue()
 
+      let yieldedAny = false
       for (const result of this.getCompletedResults()) {
+        yieldedAny = true
         yield result
       }
 
-      // If we still have executing tools but nothing completed, wait for any to complete
-      // OR for progress to become available
+      // If we still have executing tools but nothing was yielded, wait for any
+      // to complete OR for progress to become available. Keyed on what was
+      // yielded, not on a 'completed' status: a completed tool queued behind an
+      // executing exclusive tool can't be yielded yet, and looping without
+      // awaiting real work would starve the event loop that tool runs on.
       if (
         this.hasExecutingTools() &&
-        !this.hasCompletedResults() &&
+        !yieldedAny &&
         !this.hasPendingProgress()
       ) {
         const executingPromises = this.tools
@@ -552,13 +557,6 @@ export class StreamingToolExecutor {
     for (const result of this.getCompletedResults()) {
       yield result
     }
-  }
-
-  /**
-   * Check if there are any completed results ready to yield
-   */
-  private hasCompletedResults(): boolean {
-    return this.tools.some(t => t.status === 'completed')
   }
 
   /**

@@ -167,6 +167,49 @@ describe('malformed tool names', () => {
     expect(results[0]?.tool_use_id).toBe('toolu_bad_streaming')
     expect(results[0]?.is_error).toBe(true)
   })
+
+  // Regression: the unknown tool is 'completed' on arrival but cannot be
+  // yielded past the running exclusive tool. The executor used to loop on
+  // that without awaiting, starving the timer the exclusive tool waits on —
+  // a failure here shows up as this file never finishing.
+  test('streaming executor finishes when an unknown tool follows a running exclusive tool', async () => {
+    const exclusiveToolUse = {
+      type: 'tool_use',
+      id: 'toolu_exclusive',
+      name: BASH_TOOL_NAME,
+      input: { command: 'make build', readOnly: false, delayMs: 50 },
+    } as ToolUseBlock
+    const unknownToolUse = {
+      type: 'tool_use',
+      id: 'toolu_unknown',
+      name: 'NoSuchTool',
+      input: {},
+    } as ToolUseBlock
+    const assistant = createAssistantWithToolUse(exclusiveToolUse)
+    const fakeBashTool = createFakeBashTool()
+    const context = createContext()
+    context.options.tools = [fakeBashTool]
+    const executor = new StreamingToolExecutor(
+      [fakeBashTool],
+      async (_tool, input) => ({ behavior: 'allow', updatedInput: input }),
+      context,
+    )
+    const updates: Message[] = []
+
+    executor.addTool(exclusiveToolUse, assistant)
+    executor.addTool(unknownToolUse, assistant)
+    for await (const update of executor.getRemainingResults()) {
+      if (update.message) updates.push(update.message)
+    }
+
+    const results = getToolResults(updates)
+    expect(results.map(result => result.tool_use_id)).toEqual([
+      'toolu_exclusive',
+      'toolu_unknown',
+    ])
+    expect(results[0]?.content).toBe('ok')
+    expect(results[1]?.is_error).toBe(true)
+  })
 })
 
 describe('streaming Bash failures', () => {
