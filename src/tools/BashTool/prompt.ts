@@ -3,7 +3,10 @@ import { prependBullets } from '../../constants/systemPromptCoreSections.js'
 import { getAttributionTexts } from '../../utils/attribution.js'
 import { shouldUseCompactSystemPrompt } from '../../constants/systemPromptCompact.js'
 import { hasEmbeddedSearchTools } from '../../utils/embeddedTools.js'
-import { isEnvTruthy } from '../../utils/envUtils.js'
+import {
+  isEnvTruthy,
+  shouldMaintainProjectWorkingDir,
+} from '../../utils/envUtils.js'
 import { shouldIncludeGitInstructions } from '../../utils/gitSettings.js'
 import { getClaudeTempDir } from '../../utils/permissions/filesystem.js'
 import { SandboxManager } from '../../utils/sandbox/sandbox-adapter.js'
@@ -46,6 +49,30 @@ function getBackgroundUsageNote(): string | null {
     ? ` With \`run_in_background\` the timeout is instead how long the command may run in the background (default ${DEFAULT_BACKGROUND_TIMEOUT_MS}ms / ${DEFAULT_BACKGROUND_TIMEOUT_MS / 60000} minutes, max ${getMaxBackgroundTimeoutMs()}ms / ${getMaxBackgroundTimeoutMs() / 3600000} hours); at that limit it is stopped and you are notified.`
     : ''
   return `You can use the \`run_in_background\` parameter to run the command in the background. Only use this if you don't need the result immediately and are OK being notified when the command completes later. You do not need to check the output right away - you'll be notified when it finishes. You do not need to use '&' at the end of the command when using this parameter.${deadline}`
+}
+
+/**
+ * Upstream gates its sleep guidance on two settings states: background tasks
+ * being available, and the sandbox being required with unsandboxed commands
+ * disallowed (sandbox.failIfUnavailable). In the usual configuration only the
+ * poll/sleep lines apply.
+ */
+function getSleepGates(): {
+  backgroundAvailable: boolean
+  sandboxLocked: boolean
+  blockingSleep: boolean
+} {
+  const backgroundAvailable = !isEnvTruthy(
+    process.env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS,
+  )
+  const sandboxLocked =
+    SandboxManager.isSandboxRequired() &&
+    !SandboxManager.areUnsandboxedCommandsAllowed()
+  return {
+    backgroundAvailable,
+    sandboxLocked,
+    blockingSleep: backgroundAvailable && sandboxLocked,
+  }
 }
 
 export function getRunInBackgroundDescription(): string {
@@ -276,6 +303,13 @@ function getSimpleSandboxSection(): string {
   const items: Array<string | string[]> = [
     ...sandboxOverrideItems,
     'For temporary files, always use the `$TMPDIR` environment variable. TMPDIR is automatically set to the correct sandbox-writable directory in sandbox mode. Do NOT use `/tmp` directly - use `$TMPDIR` instead.',
+    ...(process.platform === 'darwin'
+      ? [
+          'Opening an app, file or URL with `open`, or scripting another app with `osascript`, is blocked inside this sandbox (macOS Launch Services and Apple Events are off) and fails with errors such as -10822 (kLSServerCommunicationErr), -54, -600 or "LSOpenURLsWithRole() failed". That failure is the sandbox, not a problem with what you built; do not retry it with `dangerouslyDisableSandbox: true`. Tell the user the sandbox blocked it and give them the exact command to run themselves.',
+        ]
+      : []),
+    'If a command fails to bind or listen on a local port with "Operation not permitted" (EPERM), local port binding is off in this sandbox. Tell the user they can allow it with `sandbox.network.allowLocalBinding: true` in their settings (it applies without a restart).',
+    'The sandbox creates 0-byte placeholder files, such as `.mcp.json` and `.claude/settings.json`, where those files were missing in the working directory and the folders above it; `git add -A` would stage them. A 0-byte one belongs to the sandbox: do not stage, commit, move or delete it. If git says it is in the way, tell the user. Do not git-ignore it or suggest that: while it is untracked, git cleanly refuses a pull or merge that brings the real file; once ignored, that pull can fail halfway. One with content is the user\'s file.',
   ]
 
   return [
@@ -336,10 +370,14 @@ Write for a reader with zero context who was not part of this session:
 - Short beats complete: after one pass the reader should know what the change does and what to check`
 }
 
-// Verbatim from upstream 2.1.319. Its runtime also honours
-// CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR, which upstream's prompt does not mention.
-const WORKING_DIRECTORY_PARAGRAPH =
-  'Every call starts in the start folder: a `cd` does not carry over.\n`cd` carries to the next call only in the main session, if the command succeeds and ends inside the working directories. Outside them the shell returns to the start folder; otherwise it stays where it was.'
+// Upstream picks exactly one of these two sentences by
+// CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR, the same flag
+// resetCwdIfOutsideProject reads. Stating both would contradict the runtime.
+function getWorkingDirectoryParagraph(): string {
+  return shouldMaintainProjectWorkingDir()
+    ? 'Every call starts in the start folder: a `cd` does not carry over.'
+    : '`cd` carries to the next call only in the main session, if the command succeeds and ends inside the working directories. Outside them the shell returns to the start folder; otherwise it stays where it was.'
+}
 
 /**
  * Lean variant, ported from upstream's `bash_lean` builder — same bullets, same
@@ -378,13 +416,13 @@ function getLeanPrompt(model?: string): string {
     `- \`timeout\` is in milliseconds: default ${getDefaultTimeoutMs()}, max ${getMaxTimeoutMs()} for a foreground command.`,
     ...(getBackgroundUsageNote() !== null
       ? [
-          `- \`run_in_background\` runs the command detached: it keeps running across turns and re-invokes you when it exits.${isBackgroundDeadlineEnabled() ? ` With it, \`timeout\` is how long the command may run in the background (default ${DEFAULT_BACKGROUND_TIMEOUT_MS}, max ${getMaxBackgroundTimeoutMs()}); at that limit it is stopped and you are re-invoked.` : ''} No \`&\` needed.`,
+          `- \`run_in_background\` runs the command detached: it keeps running across turns and re-invokes you when it exits.${isBackgroundDeadlineEnabled() ? ` With it, \`timeout\` is how long the command may run in the background (default ${DEFAULT_BACKGROUND_TIMEOUT_MS}, max ${getMaxBackgroundTimeoutMs()}); at that limit it is stopped and you are re-invoked.` : ''} No \`&\` needed.${getSleepGates().blockingSleep ? ' Foreground `sleep` is blocked; use Monitor with an until-loop to wait on a condition.' : ''}`,
         ]
       : []),
     ...(sandboxSection ? [sandboxSection] : []),
     ...(gitSection ? ['', gitSection] : []),
     '',
-    WORKING_DIRECTORY_PARAGRAPH,
+    getWorkingDirectoryParagraph(),
   ].join('\n')
 }
 
@@ -419,13 +457,35 @@ export function getSimplePrompt(model?: string): string {
     'Never skip hooks (--no-verify) or bypass signing (--no-gpg-sign, -c commit.gpgsign=false) unless the user has explicitly asked for it. If a hook fails, investigate and fix the underlying issue.',
   ]
 
+  const { backgroundAvailable, sandboxLocked, blockingSleep } = getSleepGates()
   const sleepSubitems = [
     'Do not sleep between commands that can run immediately — just run them.',
-    'If your command is long running and you would like to be notified when it finishes — use `run_in_background`. No sleep needed.',
+    ...(sandboxLocked
+      ? [
+          backgroundAvailable
+            ? 'Use the Monitor tool to stream events from a background process (each stdout line is a notification). For one-shot "wait until done," use Bash with run_in_background instead.'
+            : 'Use the Monitor tool to stream events from a background process (each stdout line is a notification).',
+        ]
+      : []),
+    ...(blockingSleep
+      ? [
+          'If your command is long running and you would like to be notified when it finishes — use `run_in_background`. No sleep needed.',
+        ]
+      : []),
     'Do not retry failing commands in a sleep loop — diagnose the root cause.',
-    'If waiting for a background task you started with `run_in_background`, you will be notified when it completes — do not poll.',
-    'If you must poll an external process, use a check command (e.g. `gh run view`) rather than sleeping first.',
-    'If you must sleep, keep the duration short to avoid blocking the user.',
+    ...(blockingSleep
+      ? [
+          'If waiting for a background task you started with `run_in_background`, you will be notified when it completes — do not poll.',
+        ]
+      : []),
+    ...(blockingSleep
+      ? [
+          'Long leading `sleep` commands are blocked. To poll until a condition is met, use Monitor with an until-loop (e.g. `until <check>; do sleep 2; done`) — you get a notification when the loop exits. Do not chain shorter sleeps to work around the block.',
+        ]
+      : [
+          'If you must poll an external process, use a check command (e.g. `gh run view`) rather than sleeping first.',
+          'If you must sleep, keep the duration short to avoid blocking the user.',
+        ]),
   ]
   const backgroundNote = getBackgroundUsageNote()
 
@@ -460,6 +520,6 @@ export function getSimplePrompt(model?: string): string {
     getSimpleSandboxSection(),
     ...(getCommitAndPRInstructions() ? ['', getCommitAndPRInstructions()] : []),
     '',
-    WORKING_DIRECTORY_PARAGRAPH,
+    getWorkingDirectoryParagraph(),
   ].join('\n')
 }

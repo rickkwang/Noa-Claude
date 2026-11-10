@@ -71,9 +71,11 @@ describe('ported lean text inside interpolated descriptions', () => {
     expect(bash).toStartWith(
       'Executes a bash command and returns its output.',
     )
+    // Default: the same sentence upstream prints when the maintain flag is unset.
     expect(bash).toContain(
-      'Every call starts in the start folder: a `cd` does not carry over.\n`cd` carries to the next call only in the main session, if the command succeeds and ends inside the working directories. Outside them the shell returns to the start folder; otherwise it stays where it was.',
+      '`cd` carries to the next call only in the main session, if the command succeeds and ends inside the working directories. Outside them the shell returns to the start folder; otherwise it stays where it was.',
     )
+    expect(bash).not.toContain('Every call starts in the start folder')
     expect(bash).toContain(
       '# Writing commit messages and PR descriptions\n\nWrite for a reader with zero context who was not part of this session:',
     )
@@ -91,6 +93,21 @@ describe('ported lean text inside interpolated descriptions', () => {
     expect(bash).toContain(
       '- Commit or push only when the user asks. If on the default branch, branch first.',
     )
+  })
+
+  test('Bash working-dir paragraph follows CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR', () => {
+    const previous = process.env.CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR
+    process.env.CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR = '1'
+    try {
+      const bash = getBashPrompt(LEAN_MODEL)
+      expect(bash).toContain(
+        'Every call starts in the start folder: a `cd` does not carry over.',
+      )
+      expect(bash).not.toContain('`cd` carries to the next call')
+    } finally {
+      if (previous === undefined) delete process.env.CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR
+      else process.env.CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR = previous
+    }
   })
 
   // Upstream promoted this bullet from opus_5_prompt_bundle-gated to

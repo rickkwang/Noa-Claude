@@ -254,6 +254,11 @@ const BRACE_EXPANSION_RE = /\{[^{}\s]*(,|\.\.)[^{}\s]*\}/
 // eslint-disable-next-line no-control-regex
 const CONTROL_CHAR_RE = /[\x00-\x08\x0B-\x1F\x7F]/
 
+// A lone UTF-16 surrogate has no UTF-8 encoding: when the command is spawned it
+// becomes U+FFFD, so the shell sees bytes the parser never checked. Fail closed.
+const LONE_SURROGATE_RE =
+  /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/
+
 /**
  * Unicode whitespace beyond ASCII. These render invisibly (or as regular
  * spaces) in terminals so a user reviewing the command can't see them, but
@@ -408,6 +413,9 @@ export function parseForSecurityFromAst(
   // tree-sitter's tokenization.
   if (CONTROL_CHAR_RE.test(cmd)) {
     return { kind: 'too-complex', reason: 'Contains control characters' }
+  }
+  if (LONE_SURROGATE_RE.test(cmd)) {
+    return { kind: 'too-complex', reason: 'Contains lone surrogate' }
   }
   if (UNICODE_WHITESPACE_RE.test(cmd)) {
     return { kind: 'too-complex', reason: 'Contains Unicode whitespace' }
@@ -625,11 +633,11 @@ function collectCommands(
             (argv[0] === 'declare' ||
               argv[0] === 'typeset' ||
               argv[0] === 'local') &&
-            /^-[a-zA-Z]*[niaA]/.test(arg)
+            /^[-+][a-zA-Z]*[niaAmT]/.test(arg)
           ) {
             return {
               kind: 'too-complex',
-              reason: `declare flag ${arg} changes assignment semantics (nameref/integer/array)`,
+              reason: `declare flag ${arg} changes assignment semantics (nameref/integer/array, or zsh -m/-T)`,
               nodeType: 'declaration_command',
             }
           }
@@ -941,6 +949,15 @@ function collectCommands(
         case 'word': {
           const arg = walkArgument(child, commands, varScope)
           if (typeof arg !== 'string') return arg
+          // SECURITY: zsh `unset -m PATTERN` removes every matching variable,
+          // which varScope can't enumerate. Fail closed.
+          if (/^[-+][a-zA-Z]*m/.test(arg)) {
+            return {
+              kind: 'too-complex',
+              reason: `unset flag ${arg} removes variables by pattern (zsh -m)`,
+              nodeType: 'unset_command',
+            }
+          }
           argv.push(arg)
           break
         }

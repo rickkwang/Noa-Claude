@@ -2245,6 +2245,10 @@ function validateZshDangerousCommands(
 // eslint-disable-next-line no-control-regex
 const CONTROL_CHAR_RE = /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/
 
+// Lone UTF-16 surrogates: the spawned shell receives U+FFFD, not what was checked.
+const LONE_SURROGATE_RE =
+  /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/
+
 /**
  * @deprecated Legacy regex/shell-quote path. Only used when tree-sitter is
  * unavailable. The primary gate is parseForSecurity (ast.ts).
@@ -2252,6 +2256,32 @@ const CONTROL_CHAR_RE = /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/
 export function bashCommandIsSafe_DEPRECATED(
   command: string,
 ): PermissionResult {
+  if (LONE_SURROGATE_RE.test(command)) {
+    return {
+      behavior: 'ask',
+      message:
+        'Command contains a lone surrogate that could be used to bypass security checks',
+      isBashSecurityCheckForMisparsing: true,
+    }
+  }
+
+  // SECURITY: zsh flags that assign or tie variables by pattern (typeset -m,
+  // typeset -T, unset -m). The static scope model cannot tell which variables
+  // they touch, so they must not pass on a prefix allow rule. Anchored to a
+  // command start so quoted text such as `echo "typeset -m"` is not flagged.
+  if (
+    /(?:^|[;&|(]\s*)(?:declare|typeset|local|unset)\s+[-+][a-zA-Z]*[mT]\b/.test(
+      command,
+    )
+  ) {
+    return {
+      behavior: 'ask',
+      message:
+        'Command uses a zsh flag (-m or -T) that assigns or ties variables by pattern',
+      isBashSecurityCheckForMisparsing: true,
+    }
+  }
+
   // SECURITY: Block control characters before any other processing. Null bytes
   // and other non-printable chars are silently dropped by bash but confuse our
   // validators, allowing metacharacters adjacent to them to slip through.
