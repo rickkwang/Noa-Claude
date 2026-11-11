@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from "react"
 import { fetchStats, type StatsRange, type StatsSummary } from "../api"
 import { ChevronDown } from "../lib/icons"
 
@@ -48,7 +48,8 @@ function heatmap(days: StatsSummary["days"], weeks: number) {
   return cells
 }
 
-function Heatmap({ days }: { days: StatsSummary["days"] }) {
+// Memoized so collapsing the panel or switching to a cached range does not rebuild a year of cells.
+const Heatmap = memo(function Heatmap({ days }: { days: StatsSummary["days"] }) {
   const ref = useRef<HTMLDivElement>(null)
   const [weeks, setWeeks] = useState(0)
   useLayoutEffect(() => {
@@ -76,7 +77,11 @@ function Heatmap({ days }: { days: StatsSummary["days"] }) {
       </div>
     </div>
   )
-}
+})
+
+// Per-range results for this app session, so switching back to a range paints at once
+// while a background fetch refreshes it.
+const cache = new Map<StatsRange, StatsSummary>()
 
 function Metric({ label, value }: { label: string; value: string }) {
   return (
@@ -90,17 +95,28 @@ function Metric({ label, value }: { label: string; value: string }) {
 export function StatsPanel() {
   const [range, setRange] = useState<StatsRange>(() => stored("noa-agent.statsRange", ["7d", "30d", "all"], "all"))
   const [open, setOpen] = useState(() => stored("noa-agent.statsCollapsed", ["true", "false"], "false") !== "true")
-  const [stats, setStats] = useState<StatsSummary | null>(null)
+  const [stats, setStats] = useState<StatsSummary | null>(() => cache.get(range) ?? null)
   const [failed, setFailed] = useState(false)
 
   useEffect(() => {
     let live = true
-    fetchStats(range).then(next => { if (live) { setStats(next); setFailed(false) } }, () => { if (live) setFailed(true) })
+    const cached = cache.get(range)
+    if (cached) setStats(cached)
+    fetchStats(range).then(next => { cache.set(range, next); if (live) { setStats(next); setFailed(false) } }, () => { if (live) setFailed(true) })
     return () => { live = false }
   }, [range])
 
   const toggle = () => setOpen(value => { store("noa-agent.statsCollapsed", String(value)); return !value })
   const pick = (next: StatsRange) => { setRange(next); store("noa-agent.statsRange", next) }
+  // Radio-group keyboard model: arrows move and select, focus follows the checked option.
+  const onRangeKey = (event: KeyboardEvent<HTMLDivElement>) => {
+    const step = event.key === "ArrowRight" || event.key === "ArrowDown" ? 1 : event.key === "ArrowLeft" || event.key === "ArrowUp" ? -1 : 0
+    if (!step) return
+    event.preventDefault()
+    const index = (RANGES.findIndex(item => item.id === range) + step + RANGES.length) % RANGES.length
+    pick(RANGES[index]!.id)
+    ;(event.currentTarget.children[index] as HTMLElement | undefined)?.focus()
+  }
   const loading = !stats || stats.range !== range
   const days = (n: number) => `${n} ${n === 1 ? "day" : "days"}`
   if (failed && !stats) return null
@@ -122,9 +138,9 @@ export function StatsPanel() {
               <span className="text-[length:var(--text-caption)] text-[var(--text-secondary)]">
                 Activity <span className="text-[var(--text-tertiary)]">· {days(stats?.activeDays ?? 0)} active</span>
               </span>
-              <div className="flex items-center gap-0.5" role="radiogroup" aria-label="Stats range">
+              <div className="flex items-center gap-0.5" role="radiogroup" aria-label="Stats range" onKeyDown={onRangeKey}>
                 {RANGES.map(item => (
-                  <button key={item.id} type="button" role="radio" aria-checked={range === item.id} onClick={() => pick(item.id)} className="noa-stats-range-option rounded-md px-2 py-0.5 text-[length:var(--text-caption)]">{item.label}</button>
+                  <button key={item.id} type="button" role="radio" aria-checked={range === item.id} tabIndex={range === item.id ? 0 : -1} onClick={() => pick(item.id)} className="noa-stats-range-option rounded-md px-2 py-0.5 text-[length:var(--text-caption)]">{item.label}</button>
                 ))}
               </div>
             </div>

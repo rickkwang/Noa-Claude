@@ -9,16 +9,16 @@ interface AuthDialogProps {
   account?: AccountInfo
   onClose: () => void
   onRetry: () => void
-  onWait: () => void
   onSubmitCode: (code: string) => void
 }
 
-export function AuthDialog({ auth, account, onClose, onRetry, onWait, onSubmitCode }: AuthDialogProps) {
+export function AuthDialog({ auth, account, onClose, onRetry, onSubmitCode }: AuthDialogProps) {
   const titleId = useId()
   const cardRef = useRef<HTMLDivElement>(null)
   const firstActionRef = useRef<HTMLButtonElement>(null)
   const [code, setCode] = useState("")
   const [copied, setCopied] = useState(false)
+  const [manual, setManual] = useState(false)
   const waiting = auth.status === "waiting"
   const complete = auth.status === "complete"
 
@@ -27,6 +27,16 @@ export function AuthDialog({ auth, account, onClose, onRetry, onWait, onSubmitCo
     firstActionRef.current?.focus()
     return () => previous?.focus?.()
   }, [complete, waiting])
+
+  // A finished sign-in needs no acknowledgement: show the account briefly, then get out of the way.
+  // onClose is an inline prop, so read it through a ref; depending on it would restart the timer on every parent render.
+  const onCloseRef = useRef(onClose)
+  onCloseRef.current = onClose
+  useEffect(() => {
+    if (!complete) return
+    const timer = setTimeout(() => onCloseRef.current(), 1200)
+    return () => clearTimeout(timer)
+  }, [complete])
 
   function openAuthPage(url?: string) {
     if (!url || !/^https?:\/\//.test(url)) return
@@ -112,50 +122,52 @@ export function AuthDialog({ auth, account, onClose, onRetry, onWait, onSubmitCo
             </>
           ) : (
             <>
-              <p>
-                Noa opens Anthropic's sign-in page in your browser. Return here when the browser confirms your account.
-              </p>
+              {waiting ? (
+                <p className="noa-auth-dialog__status">
+                  <Loader2 size={14} className="noa-project-dialog__spinner" />
+                  Waiting for you to sign in in your browser…
+                </p>
+              ) : (
+                <p>Sign-in did not finish.</p>
+              )}
               {auth.error && <p role="alert" className="noa-project-dialog__error">{auth.error}</p>}
+              {waiting && manual && (
+                <div className="noa-auth-dialog__manual">
+                  <p className="noa-auth-dialog__hint">If the browser cannot return to Noa, paste the code Anthropic shows.</p>
+                  <form
+                    className="noa-auth-dialog__code-form"
+                    onSubmit={(event) => {
+                      event.preventDefault()
+                      onSubmitCode(code)
+                    }}
+                  >
+                    <input
+                      autoFocus
+                      value={code}
+                      onChange={(event) => setCode(event.target.value)}
+                      placeholder="code#state"
+                      aria-label="Authorization code and state"
+                      autoComplete="one-time-code"
+                      spellCheck={false}
+                      className="noa-auth-dialog__code"
+                    />
+                    <button type="submit" disabled={!code.trim()} className="noa-project-dialog__button is-primary">
+                      Continue
+                    </button>
+                  </form>
+                </div>
+              )}
               {waiting && (
-                <>
-                  <div className="noa-auth-dialog__actions">
-                    <button
-                      ref={firstActionRef}
-                      type="button"
-                      onClick={() => openAuthPage(auth.automaticUrl)}
-                      className="noa-project-dialog__button is-primary"
-                    >
-                      Open sign-in page
-                    </button>
-                    <button type="button" onClick={onWait} className="noa-project-dialog__button">
-                      I've signed in
-                    </button>
-                  </div>
-                  <details className="noa-auth-dialog__manual">
-                    <summary>Use a sign-in code instead</summary>
-                    <p className="noa-auth-dialog__hint">
-                      If the browser cannot redirect to Noa, copy the code shown by Anthropic.
-                    </p>
-                    <form
-                      className="noa-auth-dialog__code-form"
-                      onSubmit={(event) => {
-                        event.preventDefault()
-                        onSubmitCode(code)
-                      }}
-                    >
-                      <input
-                        value={code}
-                        onChange={(event) => setCode(event.target.value)}
-                        placeholder="code#state"
-                        aria-label="Authorization code and state"
-                        autoComplete="one-time-code"
-                        spellCheck={false}
-                        className="noa-auth-dialog__code"
-                      />
-                      <button type="submit" disabled={!code.trim()} className="noa-project-dialog__button">
-                        Complete sign-in
-                      </button>
-                    </form>
+                <div className="noa-auth-dialog__footer">
+                  <button
+                    ref={firstActionRef}
+                    type="button"
+                    onClick={() => openAuthPage(auth.automaticUrl)}
+                    className="noa-auth-dialog__link"
+                  >
+                    Reopen browser
+                  </button>
+                  {manual ? (
                     <button
                       type="button"
                       onClick={() => {
@@ -166,13 +178,14 @@ export function AuthDialog({ auth, account, onClose, onRetry, onWait, onSubmitCo
                       }}
                       className="noa-auth-dialog__link"
                     >
-                      {copied ? "Link copied" : "Copy manual sign-in link"}
+                      {copied ? "Link copied" : "Copy sign-in link"}
                     </button>
-                  </details>
-                  <button type="button" onClick={onRetry} className="noa-auth-dialog__link">
-                    Start over
-                  </button>
-                </>
+                  ) : (
+                    <button type="button" onClick={() => setManual(true)} className="noa-auth-dialog__link">
+                      Use a code instead
+                    </button>
+                  )}
+                </div>
               )}
               {!waiting && (
                 <div className="noa-auth-dialog__actions">

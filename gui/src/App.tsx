@@ -173,7 +173,7 @@ function Workspace({ cwd }: { cwd: string }) {
   useEffect(() => { setFocusTask(undefined) }, [session.key])
   useEffect(() => { setTurnDiff(undefined) }, [session.key])
 
-  const { state, request, sendMessage, reloadCommands, loadEarlier, interrupt, answerPermission, answerElicitation, removeQueued, moveQueued, updateQueued, steerQueued, setQueuePaused, runQueued, stopTask, setModel, setProvider, saveProvider, fetchProviderModels, deleteProvider, setPermissionMode, setEffort, setOutputStyle, refreshSettings, changeMcp, refreshContext, refreshMcp, turnDiffAction, clearDiffAction, startAuthentication, waitForAuthentication, submitAuthenticationCode, closeAuthentication } =
+  const { state, request, sendMessage, reloadCommands, loadEarlier, interrupt, answerPermission, answerElicitation, removeQueued, moveQueued, updateQueued, steerQueued, setQueuePaused, runQueued, stopTask, setModel, setProvider, saveProvider, fetchProviderModels, deleteProvider, setPermissionMode, setEffort, setOutputStyle, refreshSettings, changeMcp, refreshContext, refreshMcp, turnDiffAction, clearDiffAction, startAuthentication, submitAuthenticationCode, closeAuthentication } =
     useAgent({
       cwd: session.cwd,
       resume: session.resume,
@@ -1090,7 +1090,6 @@ function Workspace({ cwd }: { cwd: string }) {
           account={state.account}
           auth={state.auth}
           onStartAuthentication={startAuthentication}
-          onWaitForAuthentication={waitForAuthentication}
           onSubmitAuthenticationCode={submitAuthenticationCode}
           onCloseAuthentication={() => {
             const completed = state.auth?.status === "complete"

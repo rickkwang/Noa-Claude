@@ -2010,6 +2010,12 @@ body.noa-session-dragging * { cursor: grabbing !important; }
   font-weight: 400;
 }
 
+/* Chromium drops the native window material behind any backdrop-filter layer, so with a
+   translucent sidebar the whole sidebar turns opaque while a dialog is open. Use opaque
+   surfaces there instead of blurring. */
+html[data-translucent-sidebar="enabled"] .noa-project-dialog__panel { backdrop-filter: none !important; --project-surface: rgb(255 255 255); }
+html[data-translucent-sidebar="enabled"][data-theme="dark"] .noa-project-dialog__panel { --project-surface: rgb(24 24 24); }
+html[data-translucent-sidebar="enabled"] .noa-confirm-scrim { backdrop-filter: none; }
 [data-theme="dark"] .noa-project-dialog {
   --project-surface: rgb(24 24 24 / 90%);
   --project-field: rgb(45 45 45 / 96%);
@@ -2335,35 +2341,38 @@ body.noa-session-dragging * { cursor: grabbing !important; }
 .noa-auth-dialog__status {
   display: flex;
   align-items: center;
-  gap: 7px;
-  color: var(--project-text);
+  gap: 8px;
 }
+.noa-auth-dialog__status svg { flex: none; color: var(--project-tertiary); }
 .noa-auth-dialog__actions {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
-  gap: 12px;
+  gap: 8px;
+  margin-top: 4px;
 }
-.noa-auth-dialog__manual {
-  padding-top: 12px;
-  border-top: 1px solid var(--project-border);
-}
-.noa-auth-dialog__manual summary {
-  cursor: pointer;
+.noa-auth-dialog__actions .noa-project-dialog__button:not(.is-primary) {
+  border-color: var(--project-border);
   color: var(--project-text);
-  font-weight: 500;
 }
-.noa-auth-dialog__hint { margin-top: 8px !important; }
+/* Waiting needs no decision, so its escape hatches are quiet text links rather than buttons. */
+.noa-auth-dialog__footer {
+  display: flex;
+  gap: 16px;
+  margin-top: 4px;
+}
+.noa-auth-dialog__manual { display: grid; gap: 8px; }
+.noa-auth-dialog__hint { font-size: var(--text-caption); }
+.noa-auth-dialog__hint { font-size: var(--text-caption); }
 .noa-auth-dialog__code-form {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin-top: 8px;
 }
 .noa-auth-dialog__code {
   box-sizing: border-box;
   min-width: 0;
-  height: 40px;
+  height: 32px;
   flex: 1 1 240px;
   padding: 0 10px;
   border: 1px solid var(--project-border);
@@ -2382,11 +2391,12 @@ body.noa-session-dragging * { cursor: grabbing !important; }
   padding: 0;
   border: 0;
   background: transparent;
-  color: var(--project-focus);
+  color: var(--project-secondary);
   font: inherit;
-  font-size: var(--text-body);
+  font-size: var(--text-caption);
   line-height: 1.5;
 }
+.noa-auth-dialog__link:hover { color: var(--project-text); }
 .noa-auth-dialog__link:focus-visible {
   outline: 2px solid var(--project-focus);
   outline-offset: 2px;

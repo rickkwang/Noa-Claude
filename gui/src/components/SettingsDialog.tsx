@@ -103,7 +103,6 @@ export function SettingsDialog({
   account,
   auth,
   onStartAuthentication,
-  onWaitForAuthentication,
   onSubmitAuthenticationCode,
   onCloseAuthentication,
   signIn,
@@ -134,7 +133,6 @@ export function SettingsDialog({
   account?: AccountInfo
   auth?: AgentState["auth"]
   onStartAuthentication: () => void
-  onWaitForAuthentication: () => void
   onSubmitAuthenticationCode: (code: string) => void
   onCloseAuthentication: () => void
   // Opened from /login: start sign-in right away.
@@ -378,7 +376,6 @@ export function SettingsDialog({
             onCloseAuthentication()
           }}
           onRetry={onStartAuthentication}
-          onWait={onWaitForAuthentication}
           onSubmitCode={onSubmitAuthenticationCode}
         />
       )}

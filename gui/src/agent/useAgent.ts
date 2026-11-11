@@ -351,9 +351,14 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
       }
       if (kind === "auth_urls") {
         const body = (response ?? {}) as { automaticUrl?: unknown; manualUrl?: unknown }
-        if (typeof body.automaticUrl === "string" && typeof body.manualUrl === "string")
+        if (typeof body.automaticUrl === "string" && typeof body.manualUrl === "string") {
           dispatch({ type: "auth-urls", automaticUrl: body.automaticUrl, manualUrl: body.manualUrl })
-        else dispatch({ type: "auth-error", error: "Noa did not return a sign-in URL." })
+          // Go straight to the browser and start waiting for its redirect, so sign-in finishes
+          // on its own; the dialog only offers to reopen the page or paste a code.
+          if (/^https?:\/\//.test(body.automaticUrl)) window.open(body.automaticUrl, "_blank", "noopener,noreferrer")
+          if (!control({ subtype: "claude_oauth_wait_for_completion" }, "auth_complete"))
+            dispatch({ type: "auth-error", error: "Noa is not connected. Reconnect and try again." })
+        } else dispatch({ type: "auth-error", error: "Noa did not return a sign-in URL." })
         return
       }
       if (kind === "auth_complete") {
@@ -606,10 +611,6 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
     if (!control({ subtype: "claude_authenticate", loginWithClaudeAi: true }, "auth_urls"))
       dispatch({ type: "auth-error", error: "Noa is not connected. Reconnect and try again." })
   }, [control])
-  const waitForAuthentication = useCallback(() => {
-    if (!control({ subtype: "claude_oauth_wait_for_completion" }, "auth_complete"))
-      dispatch({ type: "auth-error", error: "Noa is not connected. Reconnect and try again." })
-  }, [control])
   const submitAuthenticationCode = useCallback((raw: string) => {
     const parsed = parseAuthorizationCode(raw)
     if (!parsed) {
@@ -625,7 +626,7 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
   }, [control])
   const closeAuthentication = useCallback(() => dispatch({ type: "auth-close" }), [])
 
-  return { state: ownerRef.current === runtimeId ? state : initialState, request, sendMessage, reloadCommands, loadEarlier, answerElicitation, removeQueued, moveQueued, updateQueued, steerQueued, setQueuePaused, runQueued, stopTask, interrupt, answerPermission, setModel, setProvider, saveProvider, fetchProviderModels, deleteProvider, setPermissionMode, setEffort, setOutputStyle, refreshSettings, changeMcp, refreshContext, refreshMcp, turnDiffAction, clearDiffAction, startAuthentication, waitForAuthentication, submitAuthenticationCode, closeAuthentication }
+  return { state: ownerRef.current === runtimeId ? state : initialState, request, sendMessage, reloadCommands, loadEarlier, answerElicitation, removeQueued, moveQueued, updateQueued, steerQueued, setQueuePaused, runQueued, stopTask, interrupt, answerPermission, setModel, setProvider, saveProvider, fetchProviderModels, deleteProvider, setPermissionMode, setEffort, setOutputStyle, refreshSettings, changeMcp, refreshContext, refreshMcp, turnDiffAction, clearDiffAction, startAuthentication, submitAuthenticationCode, closeAuthentication }
 }
 
 export function parseAuthorizationCode(raw: string): { authorizationCode: string; state: string } | undefined {
