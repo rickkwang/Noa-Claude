@@ -177,6 +177,17 @@ export function AppearancePage({
       </div>
 
       <Section title="Layout">
+        <Row label="Transcript text size" description="Size of message text, relative to the interface font size.">
+          <Segmented
+            value={appearance.transcriptTextSize}
+            options={[
+              ["small", "Small"],
+              ["medium", "Medium"],
+              ["large", "Large"],
+            ]}
+            onChange={(transcriptTextSize) => change({ transcriptTextSize: transcriptTextSize as AppSettings["appearance"]["transcriptTextSize"] })}
+          />
+        </Row>
         <Row label="Output width" description="Three reading widths for messages and input. Fits smaller windows automatically.">
           <Segmented
             value={String(appearance.maxWidth)}
@@ -188,8 +199,15 @@ export function AppearancePage({
             onChange={(maxWidth) => change({ maxWidth: Number(maxWidth) })}
           />
         </Row>
-        <Row label="Reduce motion" description="Turn off transitions and animations.">
-          <Toggle checked={appearance.reduceMotion} onChange={(reduceMotion) => change({ reduceMotion })} />
+        <Row label="Motion" description="System follows the computer's Reduce motion setting. Reduced turns off transitions and animations.">
+          <Segmented
+            value={appearance.motion}
+            options={[
+              ["system", "System"],
+              ["reduced", "Reduced"],
+            ]}
+            onChange={(motion) => change({ motion: motion as AppSettings["appearance"]["motion"] })}
+          />
         </Row>
         <Row label="Pointer cursors" description="Show a pointer over clickable controls.">
           <Toggle checked={appearance.usePointerCursors} onChange={(usePointerCursors) => change({ usePointerCursors })} />

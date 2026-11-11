@@ -38,6 +38,7 @@ import { SettingsDialog } from "./components/SettingsDialog"
 import { SessionActions, RewindDialog } from "./components/SessionActions"
 import { SessionTitle } from "./components/SessionTitle"
 import { SearchDialog } from "./components/SearchDialog"
+import { matchesShortcut } from "./lib/shortcuts"
 import { rateLimitKey } from "./components/RateLimitNotice"
 import { ListDetails, PanelRight } from "./lib/icons"
 
@@ -404,25 +405,22 @@ function Workspace({ cwd }: { cwd: string }) {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "n") {
+      const bindings = settings.shortcuts
+      // Bindings match the physical key (KeyboardEvent.code), so input sources that remap the backtick (e.g. Chinese "·") still open the terminal.
+      if (matchesShortcut(e, bindings.newTask)) {
         e.preventDefault()
         setSearchOpen(false)
         newSession()
-      }
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+      } else if (matchesShortcut(e, bindings.findTasks)) {
         e.preventDefault()
         setSearchOpen(open => !open)
-      }
-      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "j") {
+      } else if (matchesShortcut(e, bindings.bottomPanel)) {
         e.preventDefault()
         setTerminalOpen(open => !open)
-      }
-      // The physical key: input sources that remap the backtick (e.g. Chinese "·") still open the terminal.
-      if (e.ctrlKey && !e.metaKey && !e.altKey && e.code === "Backquote") {
+      } else if (matchesShortcut(e, bindings.terminal)) {
         e.preventDefault()
         openDefaultTerminal()
-      }
-      if ((e.metaKey || e.ctrlKey) && e.key === ",") {
+      } else if (matchesShortcut(e, bindings.settings)) {
         e.preventDefault()
         setSearchOpen(false)
         setSettingsOpen(true)
@@ -440,7 +438,7 @@ function Workspace({ cwd }: { cwd: string }) {
     }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
-  }, [state.busy, activeId, session, history, settings.terminal.defaultLocation])
+  }, [state.busy, activeId, session, history, settings.terminal.defaultLocation, settings.shortcuts])
 
   // The terminal shortcut opens the bottom panel or a right-panel terminal, as settings choose.
   function openDefaultTerminal() {
@@ -719,6 +717,7 @@ function Workspace({ cwd }: { cwd: string }) {
           style={{ width: rightOpen ? "100%" : rightTarget, opacity: rightOpen ? 1 : 0 }}
         >
           <RightPanel
+            shortcuts={settings.shortcuts}
             state={state}
             onStopTask={stopTask}
             cwd={session.cwd}
@@ -1030,7 +1029,7 @@ function Workspace({ cwd }: { cwd: string }) {
         setRefreshTick(n => n + 1)
         refreshContext()
       }} />}
-      {searchOpen && <SearchDialog cwd={session.cwd} projects={projects} sessions={sessionsByProject} onNewSession={() => newSession()} onOpenFolder={() => { setEditingProject(undefined); setAddingProject(true) }} onSelectSession={selectSession} onOpenFile={openFile} onClose={() => setSearchOpen(false)} />}
+      {searchOpen && <SearchDialog cwd={session.cwd} projects={projects} sessions={sessionsByProject} onNewSession={() => newSession()} onOpenFolder={() => { setEditingProject(undefined); setAddingProject(true) }} onSelectSession={selectSession} onOpenFile={openFile} onClose={() => setSearchOpen(false)} newTaskShortcut={settings.shortcuts.newTask} />}
       {confirmDialog}
       {editingProject && (
         <AddProjectDialog

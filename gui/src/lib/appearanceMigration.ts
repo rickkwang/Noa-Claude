@@ -51,6 +51,11 @@ export function migrateAppearance(raw: unknown): Partial<AppSettings['appearance
     saved.translucentSidebar = { light: saved.translucentSidebar, dark: saved.translucentSidebar };
   }
 
+  if (typeof saved.reduceMotion === 'boolean') {
+    saved.motion ??= saved.reduceMotion ? 'reduced' : 'system';
+  }
+  delete saved.reduceMotion;
+
   delete saved.fontFamily;
   delete saved.uiFontStyle;
   delete saved.contentFontFamily;

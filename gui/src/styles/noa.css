@@ -1918,8 +1918,11 @@ body.noa-session-dragging * { cursor: grabbing !important; }
 .noa-output-markdown blockquote p::after { content: none; }
 
 .noa-user-message-bubble {
-  --font-text-md-line-height: var(--user-message-line-height, 18px);
   background: rgb(11 11 11 / 5%);
+}
+.noa-user-message-bubble > .noa-output-markdown {
+  --font-text-md-size: var(--transcript-text-size, var(--text-body));
+  --font-text-md-line-height: var(--user-message-line-height, 18px);
 }
 [data-theme="dark"] .noa-user-message-bubble { background: rgb(255 255 255 / 5%); }
 .noa-user-message-bubble > .noa-output-markdown > :last-child { margin-bottom: 0; }
@@ -1927,6 +1930,8 @@ body.noa-session-dragging * { cursor: grabbing !important; }
 /* Conversation Markdown, scaled to Noa's chat font. */
 .noa-output-markdown {
   --tw-prose-links: var(--accent-color);
+  --font-text-md-size: var(--transcript-text-size, var(--text-body));
+  --font-text-md-line-height: calc(var(--font-text-md-size) * 1.625);
   --output-space: calc(var(--font-text-md-size) / 4);
   font-size: var(--font-text-md-size);
   line-height: var(--font-text-md-line-height);

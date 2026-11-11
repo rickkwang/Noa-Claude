@@ -21,6 +21,7 @@ function loadSettings(): AppSettings {
       composer: { ...defaultSettings.composer, ...JSON.parse(localStorage.getItem("noa-agent.composer") ?? "{}") },
       terminal: { ...defaultSettings.terminal, ...JSON.parse(localStorage.getItem("noa-agent.terminal") ?? "{}") },
       notifications: { ...defaultSettings.notifications, ...JSON.parse(localStorage.getItem("noa-agent.notifications") ?? "{}") },
+      shortcuts: { ...defaultSettings.shortcuts, ...JSON.parse(localStorage.getItem("noa-agent.shortcuts") ?? "{}") },
     }
   } catch {
     return defaultSettings
@@ -36,6 +37,7 @@ export function useAppSettings() {
     localStorage.setItem("noa-agent.composer", JSON.stringify(settings.composer))
     localStorage.setItem("noa-agent.terminal", JSON.stringify(settings.terminal))
     localStorage.setItem("noa-agent.notifications", JSON.stringify(settings.notifications))
+    localStorage.setItem("noa-agent.shortcuts", JSON.stringify(settings.shortcuts))
   }, [settings])
   // The desktop main process decides when to notify, so it needs the current choices.
   useEffect(() => {

@@ -185,8 +185,8 @@ export function SettingsDialog({
     const row = [...(dialogRef.current?.querySelectorAll<HTMLElement>("[data-settings-label]") ?? [])]
       .find((element) => element.dataset.settingsLabel === searchTarget.label)
     row?.scrollIntoView({ block: "center" })
-    if (!settings.appearance.reduceMotion) row?.animate([{ backgroundColor: "var(--settings-fill-active)" }, { backgroundColor: "transparent" }], { duration: 1200 })
-  }, [page, searchTarget, settings.appearance.reduceMotion])
+    if (settings.appearance.motion !== 'reduced') row?.animate([{ backgroundColor: "var(--settings-fill-active)" }, { backgroundColor: "transparent" }], { duration: 1200 })
+  }, [page, searchTarget, settings.appearance.motion])
   // A search jump may land on a row inside Advanced, so it opens the group.
   const showAdvanced = advancedOpen || searchTarget !== undefined
   const current = pages.find((p) => p.key === page)
@@ -367,7 +367,7 @@ export function SettingsDialog({
           <div style={{ display: page === "mcp" ? "contents" : "none" }}><McpPage agent={agent} onChangeMcp={onChangeMcp} /><ConfigurationEditor kind="mcp" disabled={disconnected || agent.busy || !!agent.queue.length || agent.tasks.some(task => task.status === "running")} request={request} onDirtyChange={setMcpDirty} onSaved={restart => restart ? onReconnect() : onRefreshMcp()} /></div>
           {page === "hooks" && <HooksPage agent={agent} />}
           {page === "skills" && <PluginsPage skills={allSkills} onReloadCommands={onReloadCommands} onOpenMcp={() => setPage("mcp")} onTrySkill={(name) => { onClose(); onTrySkill(name) }} />}
-          {page === "shortcuts" && <ShortcutsPage sendShortcut={settings.composer.sendShortcut} />}
+          {page === "shortcuts" && <ShortcutsPage settings={settings} onChange={onChange} />}
         </div>
       </main>
       {closeDialog}

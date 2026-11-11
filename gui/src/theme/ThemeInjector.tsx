@@ -113,13 +113,14 @@ export default function ThemeInjector({ settings }: ThemeInjectorProps) {
     const translucent = activeTranslucency(settings.appearance.translucentSidebar, isDark) && supportsSidebarTranslucency();
     root.dataset.pointerCursors = settings.appearance.usePointerCursors ? 'enabled' : 'disabled';
     root.dataset.translucentSidebar = translucent ? 'enabled' : 'disabled';
-    root.dataset.reduceMotion = settings.appearance.reduceMotion ? 'true' : 'false';
+    // 'system' leaves this false so the @media (prefers-reduced-motion) rules and JS matchMedia checks decide.
+    root.dataset.reduceMotion = settings.appearance.motion === 'reduced' ? 'true' : 'false';
 
     // The shell owns the native material; the renderer sends only the preference plus the opaque
     // fallback colour used when translucency is off or the platform has no backdrop support.
     void window.noaDesktop?.appearance?.setSidebarTranslucency?.(translucent, surfaces.primary, settings.appearance.theme)
       ?.catch(() => { /* desktop-only; ignore if the bridge is unavailable */ });
-  }, [isDark, settings.appearance.theme, settings.appearance.contrast, settings.appearance.translucentSidebar, settings.appearance.usePointerCursors, settings.appearance.reduceMotion]);
+  }, [isDark, settings.appearance.theme, settings.appearance.contrast, settings.appearance.translucentSidebar, settings.appearance.usePointerCursors, settings.appearance.motion]);
 
   const themeFonts = settings.appearance.fonts;
   const uiFamily = themeFonts?.ui ?? SYSTEM_DEFAULT_FONT;
@@ -144,7 +145,9 @@ export default function ThemeInjector({ settings }: ThemeInjectorProps) {
   const codeFontFamilyStyle = withFace(codeFace, resolveFontFamily(codeFamily, MONO_FONT_STACK));
   const uiFontSize = settings.appearance.uiFontSize;
   const textScale = uiFontSize / 14;
-  const userMessageLineHeight = ({ 11: 16, 12: 17, 13: 18, 14: 18, 15: 22, 16: 24 } as Record<number, number>)[uiFontSize] ?? 18;
+  const transcriptOffset = ({ small: -1, medium: 0, large: 2 } as Record<string, number>)[settings.appearance.transcriptTextSize] ?? 0;
+  const transcriptTextSize = Math.min(18, Math.max(11, uiFontSize + transcriptOffset));
+  const userMessageLineHeight = ({ 11: 16, 12: 17, 13: 18, 14: 18, 15: 22, 16: 24, 17: 26, 18: 28 } as Record<number, number>)[transcriptTextSize] ?? 18;
 
   // Second of two !important colour-remap layers (index.css holds the dark set). This sheet is later in
   // document order and wins any overlap; keep the two in sync.
@@ -211,6 +214,7 @@ export default function ThemeInjector({ settings }: ThemeInjectorProps) {
       :root {
         --font-ui-size: ${uiFontSize}px;
         --text-body: ${uiFontSize}px;
+        --transcript-text-size: ${transcriptTextSize}px;
         --user-message-line-height: ${userMessageLineHeight}px;
         --text-chat-sm: ${Math.round(13 * textScale)}px;
         --text-caption: ${Math.round(12 * textScale)}px;

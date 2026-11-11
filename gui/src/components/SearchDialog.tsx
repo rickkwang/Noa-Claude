@@ -1,3 +1,4 @@
+import { matchesShortcut, shortcutHint } from "../lib/shortcuts"
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react"
 import { createPortal, flushSync } from "react-dom"
 import { query, type ProjectInfo, type SessionSummary } from "../api"
@@ -11,7 +12,7 @@ type FileMatch = { path: string; directory?: boolean }
 type TextMatch = { path: string; line: number; preview: string }
 type Result = { id: string; kind: "action" | "task" | "file" | "text"; label: string; detail?: string; path?: string; shortcut?: string; select: () => void }
 
-export function SearchDialog({ cwd, projects, sessions, onNewSession, onOpenFolder, onSelectSession, onOpenFile, onClose }: {
+export function SearchDialog({ cwd, projects, sessions, onNewSession, onOpenFolder, onSelectSession, onOpenFile, onClose, newTaskShortcut }: {
   cwd: string
   projects: ProjectInfo[]
   sessions: Record<string, SessionSummary[]>
@@ -20,6 +21,7 @@ export function SearchDialog({ cwd, projects, sessions, onNewSession, onOpenFold
   onSelectSession: (cwd: string, id: string) => void
   onOpenFile: (path: string, line?: number) => void
   onClose: () => void
+  newTaskShortcut: string
 }) {
   const dialog = useRef<HTMLDialogElement>(null)
   const input = useRef<HTMLInputElement>(null)
@@ -35,7 +37,6 @@ export function SearchDialog({ cwd, projects, sessions, onNewSession, onOpenFold
   const searchText = !!needle && (tab === "All" || tab === "Text")
   const current = remote?.key === key ? remote : undefined
   const loading = (searchFiles || searchText) && !current
-  const mac = navigator.platform.includes("Mac")
   const placeholder = tab === "All" ? "Search Noa" : `Search ${tab.toLowerCase()}`
   const projectName = projects.find(project => project.path === cwd || project.sources.includes(cwd))?.name ?? cwd.split("/").pop() ?? cwd
 
@@ -81,7 +82,7 @@ export function SearchDialog({ cwd, projects, sessions, onNewSession, onOpenFold
   const contains = (value: string) => value.toLowerCase().includes(needle.toLowerCase())
   if (tab === "All" || tab === "Actions") {
     const actions: Result[] = [
-      { id: "new", kind: "action", label: "New task", shortcut: mac ? "⌘N" : "Ctrl N", select: onNewSession },
+      { id: "new", kind: "action", label: "New task", shortcut: shortcutHint(newTaskShortcut) || undefined, select: onNewSession },
       { id: "folder", kind: "action", label: "Open folder", select: onOpenFolder },
     ]
     groups.push({ label: needle ? "Actions" : "Quick actions", items: actions.filter(action => contains(action.label)) })
@@ -113,7 +114,7 @@ export function SearchDialog({ cwd, projects, sessions, onNewSession, onOpenFold
   function onKeyDown(event: KeyboardEvent<HTMLDialogElement>) {
     if (event.nativeEvent.isComposing || event.keyCode === 229) return
     const fromInput = event.target === input.current
-    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "n") {
+    if (matchesShortcut(event.nativeEvent, newTaskShortcut)) {
       event.preventDefault(); event.stopPropagation(); flushSync(onClose)
       onNewSession()
     } else if (event.key === "F6") {

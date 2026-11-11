@@ -1,3 +1,4 @@
+import type { ShortcutBindings } from './lib/shortcuts';
 /** One selectable face of a locally installed family, as stored in the theme. */
 export interface ThemeFontFace {
   family: string;
@@ -30,8 +31,11 @@ export interface AppSettings {
     usePointerCursors: boolean;
     /** Native window material behind the sidebar; per variant, like the other theme colours. */
     translucentSidebar: { light: boolean; dark: boolean };
-    reduceMotion: boolean;
+    /** Interface motion: follow the computer's Reduce motion setting, or always reduce. */
+    motion: 'system' | 'reduced';
     uiFontSize: number;
+    /** Conversation text, relative to the UI font size (small -1px, large +2px). */
+    transcriptTextSize: 'small' | 'medium' | 'large';
     codeFontSize: number;
     fontSmoothing: boolean;
   };
@@ -49,6 +53,8 @@ export interface AppSettings {
     /** An installed font for terminals (e.g. a Nerd Font for prompt icons); empty uses the code font. */
     fontFamily: string;
   };
+  /** Bindings for the customizable global shortcuts; an empty binding disables one. */
+  shortcuts: ShortcutBindings;
   agent: {
     // 'inherit' starts sessions in the mode from Noa's settings.json instead of overriding it.
     permissionDefault: 'inherit' | 'default' | 'acceptEdits' | 'plan' | 'auto';

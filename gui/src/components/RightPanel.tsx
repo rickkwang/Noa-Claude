@@ -1,3 +1,4 @@
+import { shortcutHint, type ShortcutBindings } from "../lib/shortcuts"
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties } from "react"
 import { isSubagentTask, type AgentState } from "../agent/reducer"
 import type { TurnDiff } from "../agent/protocol"
@@ -38,6 +39,7 @@ const TERMINAL_KEY = "terminal:"
 const BROWSER_KEY = "browser:"
 
 interface RightPanelProps {
+  shortcuts: ShortcutBindings
   state: AgentState
   onStopTask: (id: string) => void
   cwd: string
@@ -62,7 +64,7 @@ interface RightPanelProps {
 }
 
 // Right column: one pane under a tab strip.
-export function RightPanel({ state, onStopTask, cwd, open = true, tabs, onTabs, newTab, onNewTab, tab, onTab, terminalFocusKey, onBottomTerminal, onReference, onWorkspaceChange, workspaceRefreshKey, focusChange, focusFile, turnDiff, focusTask }: RightPanelProps) {
+export function RightPanel({ shortcuts, state, onStopTask, cwd, open = true, tabs, onTabs, newTab, onNewTab, tab, onTab, terminalFocusKey, onBottomTerminal, onReference, onWorkspaceChange, workspaceRefreshKey, focusChange, focusFile, turnDiff, focusTask }: RightPanelProps) {
   useSyncExternalStore(subscribeTerminals, terminalsVersion, terminalsVersion)
   useSyncExternalStore(subscribeBrowser, browserVersion, browserVersion)
   const browser = projectBrowser(cwd)
@@ -220,9 +222,10 @@ export function RightPanel({ state, onStopTask, cwd, open = true, tabs, onTabs, 
       )}
       {shown === "new" && (
         <NewTabPage
+          shortcuts={shortcuts}
           tools={[
             ...NEW_TAB_TOOLS.map((id) => ({ id, ...TOOLS[id] })),
-            { id: "terminal", title: "Terminal", icon: Terminal, shortcut: "⌃`" },
+            { id: "terminal", title: "Terminal", icon: Terminal, shortcut: shortcutHint(shortcuts.terminal) },
             ...(supportsBrowser ? [{ id: "browser", title: "Browser", icon: Globe }] : []),
           ]}
           suggested={supportsBrowser ? suggested : []}

@@ -1,3 +1,4 @@
+import { shortcutHint, type ShortcutBindings } from "../lib/shortcuts"
 import { useState, type ComponentType } from "react"
 import { Globe, MoreHorizontal, PanelBottom, X } from "../lib/icons"
 import { PopupMenu, anchorBelow, type PopupMenuAnchor } from "./PopupMenu"
@@ -11,7 +12,7 @@ interface NewTabTool {
 
 // A panel's New tab page: the tools that can open as a tab, one row each with its shortcut.
 // The terminal row also offers the bottom terminal, as its own menu.
-export function NewTabPage({ tools, onSelect, onOpenBottomTerminal, suggested = [], onOpenUrl, onDismissUrl }: { tools: NewTabTool[]; onSelect: (id: string) => void; onOpenBottomTerminal: () => void; suggested?: string[]; onOpenUrl?: (url: string) => void; onDismissUrl?: (url: string) => void }) {
+export function NewTabPage({ tools, onSelect, onOpenBottomTerminal, suggested = [], onOpenUrl, onDismissUrl, shortcuts }: { shortcuts: ShortcutBindings; tools: NewTabTool[]; onSelect: (id: string) => void; onOpenBottomTerminal: () => void; suggested?: string[]; onOpenUrl?: (url: string) => void; onDismissUrl?: (url: string) => void }) {
   const [menu, setMenu] = useState<{ anchor: PopupMenuAnchor; trigger: Element }>()
   return (
     <div className="noa-new-tab-page @container h-full min-h-0 overflow-y-auto px-2 py-8 select-none">
@@ -64,7 +65,7 @@ export function NewTabPage({ tools, onSelect, onOpenBottomTerminal, suggested = 
           trigger={menu.trigger}
           label="Terminal options"
           onClose={() => setMenu(undefined)}
-          entries={[{ key: "bottom", label: <span className="flex w-full items-center justify-between gap-6">Open bottom terminal<span className="text-[var(--text-tertiary,#A3A19B)]">⌘J</span></span>, icon: PanelBottom, onSelect: onOpenBottomTerminal }]}
+          entries={[{ key: "bottom", label: <span className="flex w-full items-center justify-between gap-6">Open bottom terminal<span className="text-[var(--text-tertiary,#A3A19B)]">{shortcutHint(shortcuts.bottomPanel)}</span></span>, icon: PanelBottom, onSelect: onOpenBottomTerminal }]}
         />
       )}
     </div>
