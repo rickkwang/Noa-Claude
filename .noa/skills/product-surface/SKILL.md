@@ -1,6 +1,6 @@
 ---
 name: product-surface
-description: Use when adding, removing, or re-bucketing Noa Claude commands, features, or docs surface. Runs check:docs and smoke:features and keeps README.md, FEATURES.md, and docs/product-governance.md in sync.
+description: Use when adding, removing, or re-bucketing Noa Claude commands, features, or docs surface. Runs check:docs and smoke:features and keeps README.md, FEATURES.md, and docs/product-governance.md in sync. Not for code changes that leave the command and feature list untouched.
 ---
 
 # Product surface

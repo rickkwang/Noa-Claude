@@ -12,10 +12,9 @@
 
 - Verify behavior with E2E tests, not new unit tests (unit tests here tend to restate implementation). End each E2E run with a reproducible artifact: exact command, revision, inputs, observed output, exit status.
 - Exception: a system testable only in isolation — first list every way it could fail, then write the test.
-- Before writing or deleting a test, read `.claude/rules/testing.md` (preload, keeping isolated tests).
 - Assemble credential-shaped fixtures at runtime (`['xoxb', '123…', 'abc…'].join('-')`): GitHub push protection rejects any history containing a real-token-shaped literal, even an obviously fake one.
 
-**`typecheck` proves little**: ~85% of non-test source carries `@ts-nocheck`. Checked: `query.ts`, `QueryEngine.ts`, `tools.ts`, `services/tools/`, `utils/permissions/permissions.ts`, `services/compact/compact.ts`, against the `Message` union in `types/message.ts`. Prefer E2E evidence. The `check:nocheck` baseline may only shrink; after removing a `@ts-nocheck`, run `node scripts/check-nocheck-ratchet.mjs --update`.
+**`typecheck` proves little**: ~85% of non-test source carries `@ts-nocheck`. Checked: `query.ts`, `QueryEngine.ts`, `tools.ts`, `services/tools/`, `utils/permissions/permissions.ts`, `services/compact/compact.ts`, against the `Message` union in `types/message.ts`. The `check:nocheck` baseline may only shrink; after removing a `@ts-nocheck`, run `node scripts/check-nocheck-ratchet.mjs --update`.
 
 **Production bundles are minified**: mangled stack traces / `constructor.name` in `dist/main.js` are expected (`utils/errors.ts` and `classifyToolError` handle them); use `dev`/`build:dev` for real names. Production defines `NODE_ENV=production`, so `NODE_ENV === 'test'` branches and test hooks exist only from source.
 
@@ -30,6 +29,7 @@ Path-scoped rules in `.claude/rules/` (symlinked as `.noa/rules/`) load automati
 - Prompt text or `toolToAPISchema` → `prompt-cache.md` (lean vs verbose: `src/constants/CLAUDE.md`)
 - Provider routing → `src/services/api/CLAUDE.md`; preserved thinking → `preserved-thinking.md`
 - Skill hooks, task status, transcripts, Ink `Text` → `skill-hooks.md`, `task-status.md`, `transcripts.md`, `ink-text.md`
+- Writing or deleting tests (preload, isolated tests, flaky CI case) → `testing.md`; editing CI workflows → `ci.md`
 - Verifying the model-capability tables against the upstream binary → `docs/upstream-binary.md`
 - Directory map: README.
 
@@ -57,5 +57,3 @@ Path-scoped rules in `.claude/rules/` (symlinked as `.noa/rules/`) load automati
 Since 2026-11-03 a GitHub ruleset ("master requires ci-ok", id 26493676) requires the `ci-ok` aggregate job of PR Quality Gate on master. Repository admins bypass it, so direct pushes to master still work and print "Bypassed rule violations ... ci-ok". That bypass skips the gate: say so before pushing to master, and after pushing, check the ci-ok result on that commit instead of reporting the push as CI-green.
 
 **Why:** heavy jobs skip on docs-only changes and skipped matrix jobs report under an unexpanded name, so only `ci-ok` can be the required check; per-job required checks would hang PRs.
-
-When adding or renaming jobs in pr-quality-gate.yml, add them to `ci-ok`'s `needs`. `scripts/e2e-startup-boundaries.mjs` 的 `effort-sent-state` case 曾在 CI 偶发失败一次（重跑通过，本地无法复现）；再次出现按真实线索处理。

@@ -6,7 +6,7 @@ After every GUI change, restart the Noa Agent desktop app (`gui/`) so the update
 
 **Why:** The user wants each iteration judged in the real desktop shell, not only by typecheck/build.
 
-**How to apply:** Stop the running Electron process (find its PID as in "Bring the window forward by PID" below). If the change touches the server, also stop `bun run server` in `gui/`. Then run `bun run desktop` in `gui/` (sets `NOA_GUI_DEV=1`, so the window serves the current source). Screenshot or drive the UI and compare. Report what was verified and anything that could not be.
+**How to apply:** Stop the running Electron process (find its PID as in "Bring the window forward by PID" below), and `bun run server` in `gui/` too if the change touches the server. Then run `bun run desktop` in `gui/` (sets `NOA_GUI_DEV=1`, so the window serves the current source). Report what was verified and anything that could not be.
 
 ## Bring the window forward by PID
 
