@@ -1914,6 +1914,13 @@ body.noa-session-dragging * { cursor: grabbing !important; }
 .noa-output-markdown blockquote p::before,
 .noa-output-markdown blockquote p::after { content: none; }
 
+.noa-user-message-bubble {
+  --font-text-md-line-height: var(--user-message-line-height, 18px);
+  background: rgb(11 11 11 / 5%);
+}
+[data-theme="dark"] .noa-user-message-bubble { background: rgb(255 255 255 / 5%); }
+.noa-user-message-bubble > .noa-output-markdown > :last-child { margin-bottom: 0; }
+
 /* Conversation Markdown, scaled to Noa's chat font. */
 .noa-output-markdown {
   --tw-prose-links: var(--accent-color);

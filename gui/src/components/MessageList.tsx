@@ -1,3 +1,4 @@
+import { useUserBubbleWidth } from "./useUserBubbleWidth"
 import { flushSync } from "react-dom"
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import type { AgentState, AgentTask, Block, ToolBlock, Turn } from "../agent/reducer"
@@ -1084,6 +1085,7 @@ function WorkedFor({ durationMs, count, interrupted, collapsed, live, onToggle }
 // Long user messages fold after 20 lines under a fade.
 function UserBubble({ text }: { text: string }) {
   const ref = useRef<HTMLDivElement>(null)
+  const fontRef = useRef<HTMLSpanElement>(null)
   const [long, setLong] = useState(false)
   const [expanded, setExpanded] = useState(false)
   useEffect(() => {
@@ -1099,17 +1101,19 @@ function UserBubble({ text }: { text: string }) {
     return () => observer.disconnect()
   }, [expanded])
   const folded = long && !expanded
+  useUserBubbleWidth(ref, fontRef, text, expanded)
   return (
     <>
       <div
         ref={ref}
         data-user-message-bubble=""
-        className={`noa-selectable max-w-[70%] whitespace-pre-wrap break-words rounded-[22px] bg-[color-mix(in_oklab,var(--text-primary)_5%,transparent)] px-4 py-2.5 text-[length:var(--font-text-md-size)] leading-[var(--font-text-md-line-height)] ${
+        className={`noa-user-message-bubble noa-selectable relative min-w-0 max-w-[85%] whitespace-pre-wrap break-words rounded-[10px] px-3 py-2 text-[length:var(--font-text-md-size)] leading-[var(--font-text-md-line-height)] ${
           expanded
             ? ""
             : `relative max-h-[20lh] overflow-hidden ${folded ? "[mask-image:linear-gradient(to_bottom,black_calc(100%_-_3rem),transparent)] after:pointer-events-none after:absolute after:bottom-1 after:right-3 after:content-['…'] after:text-[var(--sidebar-text-muted,#898781)]" : ""}`
         }`}
       >
+        <span ref={fontRef} aria-hidden="true" className="pointer-events-none invisible absolute w-max whitespace-nowrap">Mm汉</span>
         <Markdown text={text} preserveUserText />
       </div>
       {long && (

@@ -20,6 +20,8 @@ import {ToolCard} from ${source("src/components/ToolCard.tsx")};
 import {PermissionCard} from ${source("src/components/PermissionCard.tsx")};
 import {ElicitationCard} from ${source("src/components/ElicitationCard.tsx")};
 import {MessageList} from ${source("src/components/MessageList.tsx")};
+import ThemeInjector from ${source("src/theme/ThemeInjector.tsx")};
+import {defaultSettings} from ${source("src/theme/settings.ts")};
 import {reducer,initialState} from ${source("src/agent/reducer.ts")};
 const root=createRoot(document.getElementById('root'));
 const pause=(n=100)=>new Promise(r=>setTimeout(r,n));
@@ -173,6 +175,15 @@ window.runChecks=async()=>{
  await show(h(Composer,{...previewProps,connection:'connecting',mode:'auto'}));const permissionPicker=document.querySelector('button[aria-label="Auto"]');permissionPicker?.click();await pause();results.startupPermissionPickerInteractive=!!permissionPicker&&!permissionPicker.disabled&&document.body.textContent.includes('Permissions · this session');
  await show(h(Composer,{...previewProps,connection:'connecting',models:[],model:undefined,cwd:'/different-project'}));results.modelPreviewProjectScoped=document.querySelector('[aria-label="Model and reasoning effort"]')?.textContent==='Model';
  await show(h(Composer,{...previewProps,models:[{value:'new',displayName:'Actual model',description:''}],model:'new'}));results.modelPreviewReconciled=document.querySelector('[aria-label="Model and reasoning effort"]')?.textContent==='Actual model'&&localStorage.getItem('noa-agent.modelLabel:/preview')==='Actual model';
+
+ const bubbleText='alpha beta gamma delta epsilon zeta '.repeat(5)+'end';
+ const bubbleFixture=(size,width=620)=>h('div',{style:{width,display:'flex',height:320}},h(ThemeInjector,{settings:{...defaultSettings,appearance:{...defaultSettings.appearance,uiFontSize:size}}}),h(MessageList,{turns:[{role:'user',id:'bubble-fit',text:bubbleText}],busy:false,cwd:'/fixture',readingWidth:800}));
+ const bubbleLines=el=>{const walk=document.createTreeWalker(el.querySelector('.noa-output-markdown'),NodeFilter.SHOW_TEXT);const range=document.createRange();let node,rects=[];while(node=walk.nextNode()){range.selectNodeContents(node);rects.push(...[...range.getClientRects()].filter(r=>r.width>0))}return rects};
+ await show(bubbleFixture(14));await pause();let bubble=document.querySelector('[data-user-message-bubble]');let fitted=bubble.getBoundingClientRect().width;const fittedLines=bubbleLines(bubble).map(r=>r.width);const fitWidth=bubble.style.maxWidth;bubble.style.maxWidth='85%';const natural=bubble.getBoundingClientRect().width;const naturalLines=bubbleLines(bubble).map(r=>r.width);bubble.style.maxWidth=fitWidth;
+ results.userBubbleShrinksWithoutRewrap=fitted<natural-.5&&fittedLines.length===naturalLines.length&&fittedLines.every((w,i)=>Math.abs(w-naturalLines[i])<=.5);
+ results.userBubbleCompactTypography=getComputedStyle(bubble).padding==='8px 12px'&&getComputedStyle(bubble).borderRadius==='10px';
+ let fontSteps=true;for(const [size,line] of [[13,18],[14,18],[15,22]]){await show(bubbleFixture(size));await pause();bubble=document.querySelector('[data-user-message-bubble]');const content=bubble.querySelector('.noa-output-markdown');const cs=getComputedStyle(content);fontSteps&&=parseFloat(cs.fontSize)===size&&parseFloat(cs.lineHeight)===line&&bubble.scrollWidth<=bubble.clientWidth+1}results.userBubbleFontSteps=fontSteps;
+ await show(bubbleFixture(13,360));await pause();bubble=document.querySelector('[data-user-message-bubble]');results.userBubbleRefitsOnResize=bubble.getBoundingClientRect().width<=bubble.parentElement.clientWidth*.85+1&&bubble.scrollWidth<=bubble.clientWidth+1;
 
  await show(h(ToolCard,{block:{kind:'tool',id:'write-check',name:'Write',input:{file_path:'/fixture/example.ts',content:'const answer: number = 42'},partialJson:'',status:'done'},defaultOpen:true}));results.writePreviewHighlighted=!!document.querySelector('.hljs-keyword');
  await show(h('div',{style:{display:'flex',height:400}},h(MessageList,{turns:[{role:'assistant',id:'thought-check',streaming:false,blocks:[{kind:'thinking',text:'THOUGHT_DETAIL',done:true},{kind:'text',text:'Answer',done:true}]}],busy:false,cwd:'/fixture',readingWidth:800})));[...document.querySelectorAll('button')].find(b=>/Worked|previous message/.test(b.textContent))?.click();await pause();[...document.querySelectorAll('button')].find(b=>b.textContent.trim()==='Thought')?.click();await pause();results.completedThoughtVisible=document.body.textContent.includes('THOUGHT_DETAIL');

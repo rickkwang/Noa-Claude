@@ -144,6 +144,7 @@ export default function ThemeInjector({ settings }: ThemeInjectorProps) {
   const codeFontFamilyStyle = withFace(codeFace, resolveFontFamily(codeFamily, MONO_FONT_STACK));
   const uiFontSize = settings.appearance.uiFontSize;
   const textScale = uiFontSize / 14;
+  const userMessageLineHeight = ({ 11: 16, 12: 17, 13: 18, 14: 18, 15: 22, 16: 24 } as Record<number, number>)[uiFontSize] ?? 18;
 
   // Second of two !important colour-remap layers (index.css holds the dark set). This sheet is later in
   // document order and wins any overlap; keep the two in sync.
@@ -210,6 +211,7 @@ export default function ThemeInjector({ settings }: ThemeInjectorProps) {
       :root {
         --font-ui-size: ${uiFontSize}px;
         --text-body: ${uiFontSize}px;
+        --user-message-line-height: ${userMessageLineHeight}px;
         --text-chat-sm: ${Math.round(13 * textScale)}px;
         --text-caption: ${Math.round(12 * textScale)}px;
         --text-micro: ${Math.round(11 * textScale)}px;
