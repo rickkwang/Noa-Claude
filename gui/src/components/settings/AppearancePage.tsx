@@ -199,7 +199,7 @@ export function AppearancePage({
             onChange={(maxWidth) => change({ maxWidth: Number(maxWidth) })}
           />
         </Row>
-        <Row label="Motion" description="System follows the computer's Reduce motion setting. Reduced turns off transitions and animations.">
+        <Row label="Reduce motion" description="System follows your computer's setting. Reduced turns off transitions and animations.">
           <Segmented
             value={appearance.motion}
             options={[

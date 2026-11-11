@@ -1957,7 +1957,8 @@ body.noa-session-dragging * { cursor: grabbing !important; }
 .noa-output-markdown blockquote { position: relative; margin: 0 0 calc(var(--output-space) * 2); padding: calc(var(--output-space) * 2) 0 calc(var(--output-space) * 2) calc(var(--output-space) * 6); border: 0; color: inherit; font-style: normal; font-weight: normal; line-height: calc(var(--output-space) * 6); }
 .noa-output-markdown blockquote::after { content: ""; position: absolute; inset-inline-start: 0; top: calc(var(--output-space) * 2); bottom: calc(var(--output-space) * 2); width: var(--output-space); border-radius: calc(var(--output-space) / 2); background: var(--border-strong); }
 .noa-output-markdown blockquote > p { margin: 0; }
-.noa-output-markdown hr { margin: calc(var(--output-space) * 7) 0; border-color: var(--border-strong); }
+/* Same 1px hairline as the "Worked for" divider; the default <hr> inset border reads as a thick bar. */
+.noa-output-markdown hr { margin: calc(var(--output-space) * 7) 0; border: 0; height: 1px; background: var(--divider-subtle, rgb(0 0 0 / 8%)); opacity: .65; }
 /* line-height 1 keeps the pill from growing its line box, so rows with inline code keep the same pitch as plain rows. */
 .noa-output-markdown :not(pre) > code { font-size: .92em; line-height: 1; font-weight: normal; font-family: var(--font-mono); border-radius: 6px; padding: 1px 6px; background: color-mix(in srgb, var(--text-primary) 6%, transparent); box-shadow: none; box-decoration-break: clone; }
 .noa-output-markdown .noa-code-block { margin-block: calc(var(--output-space) * 5); }

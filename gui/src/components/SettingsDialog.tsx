@@ -45,6 +45,7 @@ const pages: { key: Page; label: string; group: string; icon: ReactNode; rows: s
       "UI font size",
       "Code font size",
       "Font smoothing",
+      "Transcript text size",
       "Output width",
       "Reduce motion",
       "Pointer cursors",
@@ -56,7 +57,7 @@ const pages: { key: Page; label: string; group: string; icon: ReactNode; rows: s
     label: "Keyboard shortcuts",
     group: "Personal",
     icon: <Keyboard size={16} />,
-    rows: ["New task", "Find tasks", "Settings", "Run instruction", "New line", "Reorder task", "Stop agent"],
+    rows: ["New task", "Find tasks", "Settings", "Toggle bottom panel", "Open terminal", "Run instruction", "New line", "Reorder task", "Stop agent"],
   },
   {
     key: "configuration",

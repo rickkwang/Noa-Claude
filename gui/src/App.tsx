@@ -754,7 +754,6 @@ function Workspace({ cwd }: { cwd: string }) {
         center={
           <SessionTitle
             key={activeId ?? session.key}
-            project={session.cwd.split("/").pop() ?? session.cwd}
             title={title}
             actions={activeId && <SessionActions disabled={state.connection !== "ready" || state.busy || !!state.queue.length || state.tasks.some(task => task.status === "running")} onFork={async () => {
               setForkPending(true)

@@ -1,14 +1,12 @@
 import { useState } from "react"
-import { Check, ChevronRight, X } from "../lib/icons"
+import { Check, X } from "../lib/icons"
 import type { ReactNode } from "react"
 
 export function SessionTitle({
-  project,
   title,
   onRename,
   actions,
 }: {
-  project: string
   title?: string
   onRename?: (title: string) => Promise<void>
   actions?: ReactNode
@@ -35,10 +33,6 @@ export function SessionTitle({
 
   return (
     <div className="relative flex min-w-0 items-center gap-1 font-normal">
-      <span className="max-w-28 truncate text-caption text-[var(--sidebar-text-muted)]" title={project}>
-        {project}
-      </span>
-      <ChevronRight size={10} className="shrink-0 text-[var(--sidebar-text-muted)]" />
       {editing ? (
         <form
           className="flex min-w-0 items-center gap-1"

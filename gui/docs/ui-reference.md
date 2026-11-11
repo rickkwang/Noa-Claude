@@ -88,10 +88,11 @@ The resizer uses a full-height 1px gradient through 25% ink. All linked position
 transitions are disabled during a drag; CU samples recorded matching sidebar and
 divider positions at 413, 400, 388, 375 and 363px with transition duration 0s.
 
-The titlebar shows a bounded project/task breadcrumb, reads existing `custom-title`
-records, and supports renaming through the same metadata format without modifying
-user instructions. The workspace E2E now includes 13 cases, including title metadata,
-rename persistence and rejection of empty names.
+The titlebar shows the bounded task title alone (no project breadcrumb), matching
+Claude Code's session header; it reads existing `custom-title` records, and supports
+renaming through the same metadata format without modifying user instructions. The
+workspace E2E now includes 13 cases, including title metadata, rename persistence and
+rejection of empty names.
 
 Project headers and task rows use 29px minimum height with a 1px gap after the
 project header. Top and side dividers share 0.5px geometry and the same Noa border
