@@ -5,7 +5,12 @@ import { readFileSync, existsSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 
-const input = JSON.parse(readFileSync(0, 'utf8'))
+let input
+try {
+  input = JSON.parse(readFileSync(0, 'utf8'))
+} catch {
+  process.exit(0)
+}
 const file = input.tool_input?.file_path
 if (!file || !existsSync(file) || !/\.(ts|tsx)$/.test(file)) process.exit(0)
 if (!/\bfeature\(\s*['"]/.test(readFileSync(file, 'utf8'))) process.exit(0)
