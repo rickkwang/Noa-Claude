@@ -173,13 +173,14 @@ function Workspace({ cwd }: { cwd: string }) {
   useEffect(() => { setFocusTask(undefined) }, [session.key])
   useEffect(() => { setTurnDiff(undefined) }, [session.key])
 
-  const { state, request, sendMessage, reloadCommands, loadEarlier, interrupt, answerPermission, answerElicitation, removeQueued, moveQueued, updateQueued, steerQueued, setQueuePaused, runQueued, stopTask, setModel, setProvider, saveProvider, fetchProviderModels, deleteProvider, setPermissionMode, setEffort, refreshSettings, changeMcp, refreshContext, refreshMcp, turnDiffAction, clearDiffAction, startAuthentication, waitForAuthentication, submitAuthenticationCode, closeAuthentication } =
+  const { state, request, sendMessage, reloadCommands, loadEarlier, interrupt, answerPermission, answerElicitation, removeQueued, moveQueued, updateQueued, steerQueued, setQueuePaused, runQueued, stopTask, setModel, setProvider, saveProvider, fetchProviderModels, deleteProvider, setPermissionMode, setEffort, setOutputStyle, refreshSettings, changeMcp, refreshContext, refreshMcp, turnDiffAction, clearDiffAction, startAuthentication, waitForAuthentication, submitAuthenticationCode, closeAuthentication } =
     useAgent({
       cwd: session.cwd,
       resume: session.resume,
       sessionKey: session.key,
       runtimeId: session.runtimeId,
       defaultPermissionMode: settings.agent.permissionDefault === "inherit" ? undefined : settings.agent.permissionDefault,
+      defaultOutputStyle: settings.agent.outputStyle,
     })
   const [dismissedRateLimit, setDismissedRateLimit] = useState<string>()
   const visibleRateLimit = state.rateLimit && rateLimitKey(state.rateLimit) !== dismissedRateLimit ? state.rateLimit : undefined
@@ -1080,6 +1081,7 @@ function Workspace({ cwd }: { cwd: string }) {
           onFetchProviderModels={fetchProviderModels}
           onDeleteProvider={deleteProvider}
           onEffort={setEffort}
+          onOutputStyle={setOutputStyle}
           onMode={setPermissionMode}
           onChange={setSettings}
           onClose={() => { setSettingsOpen(false); setSettingsSignIn(false) }}

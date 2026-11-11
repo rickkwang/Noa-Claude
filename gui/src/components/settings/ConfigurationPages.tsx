@@ -2,6 +2,7 @@ import type { AgentState } from "../../agent/reducer"
 import type { PermissionMode } from "../../agent/protocol"
 import { ChevronDown, RefreshCcw } from "../../lib/icons"
 import { findModel } from "../../lib/models"
+import { outputStyleDescription, outputStyleOptions } from "../../lib/outputStyles"
 import { Row, Section, Select, actionButton } from "./controls"
 import { permissionOptions } from "./GeneralPage"
 
@@ -43,11 +44,13 @@ export function ConfigurationPage({
   agent,
   onModel,
   onEffort,
+  onOutputStyle,
   onMode,
 }: {
   agent: AgentState
   onModel: (model: string) => void
   onEffort: (effort: string | null) => void
+  onOutputStyle: (style: string) => void
   onMode: (mode: PermissionMode) => void
 }) {
   const disconnected = agent.connection !== "ready"
@@ -74,6 +77,14 @@ export function ConfigurationPage({
             options={effortOptions}
             disabled={locked || effortOptions.length < 2}
             onChange={(value) => onEffort(value === "default" ? null : value)}
+          />
+        </Row>
+        <Row label="Output style" description={outputStyleDescription(agent.outputStyle) ?? "Applies to this chat."}>
+          <Select
+            value={agent.outputStyle ?? "default"}
+            options={outputStyleOptions(agent.outputStyle)}
+            disabled={locked}
+            onChange={onOutputStyle}
           />
         </Row>
         <Row

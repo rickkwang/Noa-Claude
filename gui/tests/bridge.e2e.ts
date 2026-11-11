@@ -270,10 +270,10 @@ const wait = async (predicate: () => boolean | Promise<boolean>, label: string, 
     await Bun.sleep(25)
   }
 }
-function connect(runtime: string, resume?: string, workdir = cwd) {
+function connect(runtime: string, resume?: string, workdir = cwd, outputStyle?: string) {
   const events: Envelope[] = []
   const socket = new WebSocket(
-    `ws://127.0.0.1:${port}/ws?${new URLSearchParams({ cwd: workdir, runtime, ...(resume ? { resume } : {}) })}`,
+    `ws://127.0.0.1:${port}/ws?${new URLSearchParams({ cwd: workdir, runtime, ...(resume ? { resume } : {}), ...(outputStyle ? { outputStyle } : {}) })}`,
   )
   sockets.push(socket)
   socket.onmessage = (event) => events.push(JSON.parse(String(event.data)))
@@ -348,6 +348,16 @@ try {
   assert.equal((await first.request({ subtype: "get_settings" })).hooks.restricted, true)
   await first.request({ subtype: "apply_flag_settings", settings: { disableAllHooks: null } } as any)
   assert.equal((await first.request({ subtype: "get_settings" })).hooks.restricted, false)
+  await first.request({ subtype: "apply_flag_settings", settings: { outputStyle: "Explanatory" } } as any)
+  assert.equal((await first.request({ subtype: "get_settings" })).effective.outputStyle, "Explanatory")
+  await first.request({ subtype: "apply_flag_settings", settings: { outputStyle: null } } as any)
+  assert.equal((await first.request({ subtype: "get_settings" })).effective.outputStyle, undefined)
+  console.log("PASS output style set through flag settings is reported by get_settings and cleared by null")
+  const styled = connect(crypto.randomUUID(), undefined, cwd, "Explanatory")
+  await styled.initialize()
+  assert.equal((await styled.request({ subtype: "get_settings" })).effective.outputStyle, "Explanatory")
+  styled.socket.close()
+  console.log("PASS a new chat starts with the outputStyle it was opened with")
   assert.ok(init.commands.some((command: any) => command.source === "bundled" && typeof command.rawDescription === "string" && command.description !== command.rawDescription))
   console.log("PASS CLI hook enumeration reports restrictions and command descriptions separate source metadata")
 

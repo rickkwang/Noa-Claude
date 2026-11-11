@@ -27,6 +27,7 @@ export const defaultSettings: AppSettings = {
   shortcuts: defaultShortcuts,
   agent: {
     permissionDefault: 'inherit',
+    outputStyle: 'inherit',
   },
   notifications: { turnMode: 'unfocused', sound: 'default', permissions: true, questions: true, dot: true },
 };

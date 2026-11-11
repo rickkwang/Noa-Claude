@@ -1,5 +1,6 @@
 import type { AppSettings } from "../../types"
 import type { AccountInfo, ModelInfo } from "../../agent/protocol"
+import { outputStyleOptions } from "../../lib/outputStyles"
 import { useConfirm } from "../ConfirmDialog"
 import { Row, Section, Select, TextField, Toggle } from "./controls"
 
@@ -92,6 +93,15 @@ export function GeneralPage({
               }))) return
               onChange({ ...settings, composer: { ...settings.composer, showFullAccess } })
             }}
+          />
+        </Row>
+      </Section>
+      <Section title="Responses">
+        <Row label="Default output style" description="Used for new chats. Follow Noa settings uses outputStyle from settings.json.">
+          <Select
+            value={settings.agent.outputStyle}
+            options={[["inherit", "Follow Noa settings"], ...outputStyleOptions(settings.agent.outputStyle === "inherit" ? undefined : settings.agent.outputStyle)]}
+            onChange={(outputStyle) => onChange({ ...settings, agent: { ...settings.agent, outputStyle } })}
           />
         </Row>
       </Section>

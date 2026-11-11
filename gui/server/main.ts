@@ -100,7 +100,9 @@ cwdRoutes["/ws"] = {
     if (!SESSION_ID.test(runtimeId)) return new Response("invalid runtime id", { status: 400 })
     const modeParam = url.searchParams.get("mode") ?? undefined
     if (modeParam && !SPAWN_PERMISSION_MODES.has(modeParam)) return new Response("invalid permission mode", { status: 400 })
-    if (server.upgrade(req, { data: { cwd, resume, runtimeId, mode: modeParam } })) return undefined
+    const outputStyleParam = url.searchParams.get("outputStyle") ?? undefined
+    if (outputStyleParam && !/^[A-Za-z][A-Za-z0-9 _-]{0,63}$/.test(outputStyleParam)) return new Response("invalid output style", { status: 400 })
+    if (server.upgrade(req, { data: { cwd, resume, runtimeId, mode: modeParam, outputStyle: outputStyleParam } })) return undefined
     return new Response("Expected WebSocket upgrade", { status: 426 })
   },
 }

@@ -103,6 +103,7 @@ export interface AgentState {
   sessionId?: string
   model?: string
   effort?: string
+  outputStyle?: string
   // Unknown until the agent reports it in system/init.
   permissionMode?: PermissionMode
   models: ModelInfo[]
@@ -170,6 +171,7 @@ type Action =
   | { type: "model-set"; model: string }
   | { type: "provider-pending"; pending: boolean }
   | { type: "effort-set"; effort?: string }
+  | { type: "output-style-set"; style?: string }
   | { type: "permission-mode-set"; mode: PermissionMode }
   | { type: "log"; text: string }
   | { type: "permission-answered"; requestId: string }
@@ -359,6 +361,8 @@ export function reducer(state: AgentState, action: Action): AgentState {
       return { ...state, model: action.model }
     case "effort-set":
       return { ...state, effort: action.effort }
+    case "output-style-set":
+      return { ...state, outputStyle: action.style }
     case "permission-mode-set":
       return { ...state, permissionMode: action.mode }
     case "mcp-pending":

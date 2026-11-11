@@ -31,6 +31,8 @@ export interface SocketData {
   resume?: string
   runtimeId: string
   mode?: string
+  // GUI default output style, applied at spawn through the CLI's --settings flag.
+  outputStyle?: string
   run?: AgentRun
   // History of a task another process holds, for paging while it is followed.
   following?: import("./sessions").HistoryItem[]
@@ -516,6 +518,7 @@ export function attachAgent(ws: ServerWebSocket<SocketData>, root: string) {
     const lastMode = run?.mode ?? runModes.get(ws.data.runtimeId)
     const startMode = lastMode && SPAWN_PERMISSION_MODES.has(lastMode) ? lastMode : ws.data.mode
     if (startMode) args.push("--permission-mode", startMode)
+    if (ws.data.outputStyle) args.push("--settings", JSON.stringify({ outputStyle: ws.data.outputStyle }))
     const retainedQueue = run?.queue ?? []
     // A resumed session continues from its transcript turn count, not from the
     // last stored diff, so skipped-diff turns do not shift later indexes.

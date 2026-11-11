@@ -25,6 +25,8 @@ interface AgentOptions {
   runtimeId: string
   // GUI default for new sessions; the CLI's own default applies when unset.
   defaultPermissionMode?: PermissionMode
+  // GUI default output style for new sessions; "inherit" keeps the CLI's own setting.
+  defaultOutputStyle?: string
 }
 
 // Requests whose responses carry data the UI needs; everything else is fire-and-forget.
@@ -38,6 +40,7 @@ type ResponseKind =
   | "settings"
   | "startup_settings"
   | "effort"
+  | "output_style"
   | "provider"
   | "commands"
   | "commands-quiet"
@@ -55,13 +58,16 @@ function readModelPreview(cwd?: string): ModelPreview {
 
 const INITIALIZE_TIMEOUT_MS = 20_000
 
-export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermissionMode }: AgentOptions) {
+export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermissionMode, defaultOutputStyle }: AgentOptions) {
   const [state, dispatch] = useReducer(reducer, undefined, () => ({ ...initialState, ...readModelPreview(cwd), ...(defaultPermissionMode ? { permissionMode: defaultPermissionMode } : {}) }))
   // Bumped when another process releases the task this view was following, to attach a CLI of its own.
   const [followEnded, setFollowEnded] = useState(0)
   const queuedSelection = useRef<{ model?: string; effort?: string | null; mode?: PermissionMode }>({})
   const readyRef = useRef(false)
   readyRef.current = state.connection === "ready"
+  // Read when a socket opens, so a new chat starts with the default in force at that moment.
+  const defaultOutputStyleRef = useRef(defaultOutputStyle)
+  defaultOutputStyleRef.current = defaultOutputStyle
   const modelPreviewCwdRef = useRef(cwd)
   useEffect(() => {
     if (modelPreviewCwdRef.current !== cwd || state.connection !== "ready" || !state.models.length || !state.model) return
@@ -155,6 +161,7 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
     params.set("runtime", runtimeId)
     // Start the CLI in the chosen mode so the first turn and a resumed session already run under it.
     if (defaultModeRef.current && defaultModeRef.current !== "bypassPermissions" && defaultModeRef.current !== "dontAsk") params.set("mode", defaultModeRef.current)
+    if (defaultOutputStyleRef.current && defaultOutputStyleRef.current !== "inherit") params.set("outputStyle", defaultOutputStyleRef.current)
     const url = new URL(`/ws?${params}`, window.location.href)
     url.protocol = url.protocol.replace("http", "ws")
 
@@ -371,7 +378,7 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
         control({ subtype: "get_context_usage", detail: "summary" }, "context_usage")
         return
       }
-      if (kind === "effort") {
+      if (kind === "effort" || kind === "output_style") {
         control({ subtype: "get_settings" }, "settings")
         return
       }
@@ -398,9 +405,10 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
       } else if (kind === "settings" || kind === "startup_settings") {
         dispatch({ type: "control", payload: { kind: "settings", settings: body as unknown as CliSettings } })
         const applied = body.applied as { model?: string; effort?: string | null } | undefined
-        const effective = body.effective as { permissions?: { defaultMode?: PermissionMode } } | undefined
+        const effective = body.effective as { permissions?: { defaultMode?: PermissionMode }; outputStyle?: string } | undefined
         if (applied?.model) dispatch({ type: "model-set", model: applied.model })
         dispatch({ type: "effort-set", effort: applied?.effort ?? undefined })
+        dispatch({ type: "output-style-set", style: effective?.outputStyle })
         if (kind === "startup_settings") {
           dispatch({ type: "permission-mode-set", mode: modeRef.current ?? effective?.permissions?.defaultMode ?? "default" })
           const selection = queuedSelection.current
@@ -555,6 +563,16 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
     [write],
   )
 
+  // Applies to this chat only; the default for new chats lives in the GUI settings.
+  const setOutputStyle = useCallback(
+    (style: string) => {
+      if (!readyRef.current) return
+      dispatch({ type: "output-style-set", style })
+      control({ subtype: "apply_flag_settings", settings: { outputStyle: style } }, "output_style")
+    },
+    [control],
+  )
+
   const setEffort = useCallback(
     (effort: string | null) => {
       if (!readyRef.current) {
@@ -607,7 +625,7 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
   }, [control])
   const closeAuthentication = useCallback(() => dispatch({ type: "auth-close" }), [])
 
-  return { state: ownerRef.current === runtimeId ? state : initialState, request, sendMessage, reloadCommands, loadEarlier, answerElicitation, removeQueued, moveQueued, updateQueued, steerQueued, setQueuePaused, runQueued, stopTask, interrupt, answerPermission, setModel, setProvider, saveProvider, fetchProviderModels, deleteProvider, setPermissionMode, setEffort, refreshSettings, changeMcp, refreshContext, refreshMcp, turnDiffAction, clearDiffAction, startAuthentication, waitForAuthentication, submitAuthenticationCode, closeAuthentication }
+  return { state: ownerRef.current === runtimeId ? state : initialState, request, sendMessage, reloadCommands, loadEarlier, answerElicitation, removeQueued, moveQueued, updateQueued, steerQueued, setQueuePaused, runQueued, stopTask, interrupt, answerPermission, setModel, setProvider, saveProvider, fetchProviderModels, deleteProvider, setPermissionMode, setEffort, setOutputStyle, refreshSettings, changeMcp, refreshContext, refreshMcp, turnDiffAction, clearDiffAction, startAuthentication, waitForAuthentication, submitAuthenticationCode, closeAuthentication }
 }
 
 export function parseAuthorizationCode(raw: string): { authorizationCode: string; state: string } | undefined {

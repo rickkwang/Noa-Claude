@@ -134,6 +134,7 @@ export interface McpServerStatus {
 export interface CliSettings {
   effective: {
     permissions?: { defaultMode?: PermissionMode; allow?: string[]; deny?: string[]; ask?: string[] }
+    outputStyle?: string
     enabledPlugins?: Record<string, boolean>
   }
   hooks?: {
@@ -297,7 +298,7 @@ export type ControlRequest =
   | { subtype: "mcp_toggle"; serverName: string; enabled: boolean }
   | { subtype: "get_settings" }
   | { subtype: "reload_plugins" }
-  | { subtype: "apply_flag_settings"; settings: { effortLevel: string | null } }
+  | { subtype: "apply_flag_settings"; settings: { effortLevel?: string | null; outputStyle?: string | null } }
   | { subtype: "claude_authenticate"; loginWithClaudeAi?: boolean }
   | { subtype: "claude_oauth_callback"; authorizationCode: string; state: string }
   | { subtype: "claude_oauth_wait_for_completion" }

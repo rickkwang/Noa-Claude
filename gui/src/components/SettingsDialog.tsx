@@ -27,7 +27,7 @@ const pages: { key: Page; label: string; group: string; icon: ReactNode; rows: s
     label: "General",
     group: "Personal",
     icon: <Settings size={16} />,
-    rows: ["Account", "Default permissions", "Send shortcut", "Show context window usage", "Turn notifications", "Notification sound", "Permission requests", "Questions", "Dock badge"],
+    rows: ["Account", "Default permissions", "Default output style", "Send shortcut", "Show context window usage", "Turn notifications", "Notification sound", "Permission requests", "Questions", "Dock badge"],
   },
   {
     key: "appearance",
@@ -64,7 +64,7 @@ const pages: { key: Page; label: string; group: string; icon: ReactNode; rows: s
     label: "Configuration",
     group: "Coding",
     icon: <SlidersHorizontal size={16} />,
-    rows: ["Model", "Reasoning effort", "Current permissions", "Configuration sources", "Permission rules", "Edit permission rules"],
+    rows: ["Model", "Reasoning effort", "Output style", "Current permissions", "Configuration sources", "Permission rules", "Edit permission rules"],
   },
   { key: "providers", label: "Providers", group: "Coding", icon: <Plug size={16} />, rows: ["Providers", "API key", "Base URL"] },
   { key: "hooks", label: "Hooks", group: "Coding", icon: <List size={16} />, rows: ["Configured hooks"] },
@@ -95,6 +95,7 @@ export function SettingsDialog({
   onFetchProviderModels,
   onDeleteProvider,
   onEffort,
+  onOutputStyle,
   onMode,
   onChange,
   onClose,
@@ -125,6 +126,7 @@ export function SettingsDialog({
   onFetchProviderModels: (draft: ProviderDraft) => Promise<string[]>
   onDeleteProvider: (providerId: string) => void
   onEffort: (effort: string | null) => void
+  onOutputStyle: (style: string) => void
   onMode: (mode: PermissionMode) => void
   onChange: (settings: AppSettings) => void
   onClose: () => void
@@ -353,7 +355,7 @@ export function SettingsDialog({
           {(page === "configuration" || page === "hooks" || page === "mcp") && (
             <RefreshBar agent={agent} onRefresh={page === "mcp" ? onRefreshMcp : onRefreshSettings} />
           )}
-          <div style={{ display: page === "configuration" ? "contents" : "none" }}><ConfigurationPage agent={agent} onModel={onModel} onEffort={onEffort} onMode={onMode} /><ConfigurationEditor kind="permissions" disabled={disconnected || agent.busy} request={request} onSaved={() => onRefreshSettings()} onDirtyChange={setConfigurationDirty} /></div>
+          <div style={{ display: page === "configuration" ? "contents" : "none" }}><ConfigurationPage agent={agent} onModel={onModel} onEffort={onEffort} onOutputStyle={onOutputStyle} onMode={onMode} /><ConfigurationEditor kind="permissions" disabled={disconnected || agent.busy} request={request} onSaved={() => onRefreshSettings()} onDirtyChange={setConfigurationDirty} /></div>
           {page === "providers" && (
             <ProvidersPage
               providers={agent.providers}

@@ -58,6 +58,8 @@ export interface AppSettings {
   agent: {
     // 'inherit' starts sessions in the mode from Noa's settings.json instead of overriding it.
     permissionDefault: 'inherit' | 'default' | 'acceptEdits' | 'plan' | 'auto';
+    /** Output style for new chats: 'inherit' keeps the CLI's own outputStyle setting. */
+    outputStyle: string;
   };
   notifications: {
     /** Finished turns: never, only while the window is not focused, or always. */
