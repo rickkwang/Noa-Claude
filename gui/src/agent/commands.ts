@@ -15,6 +15,7 @@ export type GuiCommandAction =
   | "help"
   | "stop"
   | "reload"
+  | "login"
 export interface ComposerCommand extends SlashCommand {
   group: string
   action?: GuiCommandAction
@@ -43,13 +44,6 @@ const guiCommands: ComposerCommand[] = [
     description: "Choose the model for this chat",
     argumentHint: "[model]",
     action: "model",
-    group: "Commands",
-  },
-  {
-    name: "provider",
-    description: "Switch the model provider",
-    argumentHint: "[provider]",
-    action: "provider",
     group: "Commands",
   },
   {
@@ -106,6 +100,7 @@ const guiCommands: ComposerCommand[] = [
     action: "reload",
     group: "Commands",
   },
+  { name: "login", description: "Sign in with your Claude account", argumentHint: "", action: "login", group: "Commands" },
 ]
 export function composerCommands(commands: SlashCommand[]): ComposerCommand[] {
   const guiNames = new Set(guiCommands.flatMap((command) => [command.name, ...(command.aliases ?? [])]))
@@ -115,6 +110,7 @@ export function composerCommands(commands: SlashCommand[]): ComposerCommand[] {
       .filter(
         (command) =>
           !guiNames.has(command.name) &&
+          command.name !== "provider" &&
           !command.hidden &&
           command.type !== "local-jsx" &&
           !command.description.startsWith("(removed)"),

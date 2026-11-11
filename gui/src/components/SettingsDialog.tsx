@@ -104,6 +104,7 @@ export function SettingsDialog({
   onWaitForAuthentication,
   onSubmitAuthenticationCode,
   onCloseAuthentication,
+  signIn,
 }: {
   // The main sidebar's width: the settings nav takes the sidebar's place.
   navWidth: number
@@ -133,10 +134,18 @@ export function SettingsDialog({
   onWaitForAuthentication: () => void
   onSubmitAuthenticationCode: (code: string) => void
   onCloseAuthentication: () => void
+  // Opened from /login: start sign-in right away.
+  signIn?: boolean
 }) {
   const [page, setPage] = useState<Page>("general")
   const [query, setQuery] = useState("")
   const [authOpen, setAuthOpen] = useState(false)
+  useEffect(() => {
+    if (!signIn) return
+    setAuthOpen(true)
+    onStartAuthentication()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [signIn])
   const [searchTarget, setSearchTarget] = useState<{ label: string }>()
   const dialogRef = useRef<HTMLDivElement>(null)
   const backRef = useRef<HTMLButtonElement>(null)

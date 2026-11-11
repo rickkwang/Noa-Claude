@@ -658,7 +658,7 @@ export function attachAgent(ws: ServerWebSocket<SocketData>, root: string) {
       if (message.type === "result" && !message.parent_tool_use_id) {
         if (message.is_error && current.sessionId && current.turn && !current.turn.interrupted) {
           try {
-            appendTurnResult(current.cwd, current.sessionId, { index: current.turn.index, userMessageId: findTurnUserMessage(current.cwd, current.sessionId, current.turn.transcriptOffset), durationMs: message.duration_ms, error: message.errors?.join("\n") || `Agent failed (${message.subtype})` })
+            appendTurnResult(current.cwd, current.sessionId, { index: current.turn.index, userMessageId: findTurnUserMessage(current.cwd, current.sessionId, current.turn.transcriptOffset), durationMs: message.duration_ms, error: message.errors?.join("\n") || message.result || `Agent failed (${message.subtype})` })
           } catch (error) { emit(current, { kind: "log", text: `Could not save turn result: ${String(error)}` }) }
         }
         current.turnSucceeded = !message.is_error

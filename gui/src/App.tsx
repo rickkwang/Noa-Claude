@@ -73,6 +73,7 @@ export function App() {
 function Workspace({ cwd }: { cwd: string }) {
   const [settings, setSettings] = useAppSettings()
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [settingsSignIn, setSettingsSignIn] = useState(false)
   // The settings page overlays the whole window, so CSS hides the app shell while it is open.
   // The attribute hides the shell, so it is cleared on unmount too: a stuck flag would leave a blank window.
   useEffect(() => {
@@ -966,8 +967,6 @@ function Workspace({ cwd }: { cwd: string }) {
                   readOnly={!!state.external}
                   busy={state.busy}
                   models={state.models}
-                  providers={state.providers}
-                  onProvider={setProvider}
                   model={state.model}
                   mode={state.permissionMode}
                   commands={state.commands}
@@ -977,6 +976,7 @@ function Workspace({ cwd }: { cwd: string }) {
                     else if (action === "resume") {
                       setSearchOpen(true)
                     } else if (action === "settings") setSettingsOpen(true)
+                    else if (action === "login") { setSettingsSignIn(true); setSettingsOpen(true) }
                     else if (action === "context") { openOverview(); refreshContext() }
                     else if (action === "activity") openDiagnostics()
                     else if (action === "plan") setPermissionMode("plan")
@@ -1084,7 +1084,8 @@ function Workspace({ cwd }: { cwd: string }) {
           onEffort={setEffort}
           onMode={setPermissionMode}
           onChange={setSettings}
-          onClose={() => setSettingsOpen(false)}
+          onClose={() => { setSettingsOpen(false); setSettingsSignIn(false) }}
+          signIn={settingsSignIn}
           onTrySkill={(name) => setPrefill({ text: `/${name} `, key: Date.now() })}
           account={state.account}
           auth={state.auth}

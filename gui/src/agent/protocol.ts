@@ -109,6 +109,9 @@ export interface ContextUsage {
   percentage: number
   model: string
   rawMaxTokens?: number
+  // Present only for Anthropic subscription auth; utilization is a 0-1 fraction, resets_at is epoch seconds.
+  rateLimitsError?: string
+  rateLimits?: { five_hour?: { utilization: number; resets_at: number }; seven_day?: { utilization: number; resets_at: number } }
   autocompactSource?: "env" | "settings" | "model-default" | "unknown-model" | "auto"
   categories?: { id?: string; name: string; tokens: number; isDeferred?: boolean; kind?: "used" | "free" | "buffer" | "deferred" }[]
   memoryFiles?: { path: string; type: string; tokens: number }[]

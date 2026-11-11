@@ -31,6 +31,26 @@ export type Utilization = {
   extra_usage?: ExtraUsage | null
 }
 
+let cachedUsage: { value: Utilization | null; expiresAt: number; token: string } | undefined
+let pendingUsage: { token: string; promise: Promise<Utilization | null> } | undefined
+
+export async function fetchCachedUtilization(): Promise<Utilization | null> {
+  const token = getClaudeAIOAuthTokens()?.accessToken
+  if (!isClaudeAISubscriber()) return null
+  if (!token || !hasProfileScope()) throw new Error('Plan usage requires account sign-in with profile access')
+  if (isOAuthTokenExpired(getClaudeAIOAuthTokens()?.expiresAt)) throw new Error('Account sign-in has expired')
+  if (cachedUsage?.token === token && cachedUsage.expiresAt > Date.now()) return cachedUsage.value
+  if (pendingUsage?.token === token) return pendingUsage.promise
+  const promise = fetchUtilization().then(value => {
+    cachedUsage = { value, expiresAt: Date.now() + 60_000, token }
+    return value
+  }).finally(() => {
+    if (pendingUsage?.promise === promise) pendingUsage = undefined
+  })
+  pendingUsage = { token, promise }
+  return promise
+}
+
 export async function fetchUtilization(): Promise<Utilization | null> {
   if (!isClaudeAISubscriber() || !hasProfileScope()) {
     return {}

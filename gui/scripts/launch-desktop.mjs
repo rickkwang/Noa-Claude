@@ -3,22 +3,19 @@ import { resolve } from "node:path"
 import electron from "electron"
 
 const cwd = resolve(import.meta.dir, "..")
-const environment = process.env
+const environment = { ...process.env }
 
-let child
-if (process.platform === "darwin") {
-  const appBundle = resolve(electron, "../../..")
-  const envArgs = ["NOA_GUI_DEV", "CLAUDE_CONFIG_DIR", "BUN_PATH"]
-    .filter((name) => environment[name] !== undefined)
-    .flatMap((name) => ["--env", `${name}=${environment[name]}`])
-  child = spawn("open", ["-n", "-W", ...envArgs, appBundle, "--args", cwd], {
-    cwd,
-    env: environment,
-    stdio: "inherit",
-  })
-} else {
-  child = spawn(electron, [cwd], { cwd, env: environment, stdio: "inherit" })
+// A desktop launched from a coding-agent shell must use its own saved routing.
+if (environment.CLAUDECODE) {
+  for (const name of Object.keys(environment)) {
+    if (name.startsWith("ANTHROPIC_") || name.startsWith("CLAUDE_CODE_") || name === "CLAUDECODE" || name === "CLAUDE_EFFORT") {
+      delete environment[name]
+    }
+  }
 }
+
+// Spawn directly so LaunchServices cannot restore the parent agent's environment.
+const child = spawn(electron, [cwd], { cwd, env: environment, stdio: "inherit" })
 
 child.on("error", (error) => {
   console.error(error.message)

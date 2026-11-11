@@ -129,7 +129,7 @@ window.runChecks=async()=>{
  await show(null);window.fetch=originalFetch;window.WebSocket=originalSocket;
  let startupSocket;const startupRequests=[];
  class StartupSocket{static OPEN=1;readyState=1;constructor(){startupSocket=this;queueMicrotask(()=>this.onopen?.())}send(raw){startupRequests.push(JSON.parse(raw))}reply(subtype,response={}){const request=startupRequests.findLast(item=>item.request?.subtype===subtype);this.onmessage?.({data:JSON.stringify({kind:'agent',message:{type:'control_response',response:{subtype:'success',request_id:request.request_id,response}}})})}close(){this.readyState=3}}
- function StartupProbe(){window.__startupAgent=useAgent({cwd:'/startup',runtimeId:'startup',sessionKey:0});return null}
+ function StartupProbe({cwd='/startup',runtimeId='startup'}={}){window.__startupAgent=useAgent({cwd,runtimeId,sessionKey:0});return null}
  window.WebSocket=StartupSocket;await show(h(StartupProbe));startupSocket.reply('initialize',{models:[],commands:[]});await pause();
  results.startupRequestOrder=startupRequests[1]?.request.subtype==='get_settings'&&startupRequests[2]?.request.subtype==='get_context_usage';
  results.startupContextSummary=startupRequests.find(item=>item.request?.subtype==='get_context_usage')?.request.detail==='summary';
@@ -139,6 +139,23 @@ window.runChecks=async()=>{
  startupSocket.reply('get_context_usage',{});await pause();results.contextUpgradeRetained=startupRequests.filter(item=>item.request?.subtype==='get_context_usage').length===2&&startupRequests.findLast(item=>item.request?.subtype==='get_context_usage')?.request.detail==='full';
  startupSocket.reply('get_context_usage',{});await pause();results.contextUpgradeSettled=startupRequests.filter(item=>item.request?.subtype==='get_context_usage').length===2;
  window.__startupAgent.refreshContext();await pause();results.explicitContextFull=startupRequests.findLast(item=>item.request?.subtype==='get_context_usage')?.request.detail==='full';await show(null);window.WebSocket=originalSocket;
+ localStorage.setItem('noa-agent.modelPreview:/startup',JSON.stringify({models:[{value:'opus',displayName:'Opus 5.5',description:'',supportsEffort:true,supportedEffortLevels:['low','medium','high']},{value:'haiku',displayName:'Haiku 5.5',description:''}],model:'opus',effort:'medium',permissionMode:'auto'}));
+ startupRequests.length=0;window.WebSocket=StartupSocket;await show(h(StartupProbe));
+ results.startupModelImmediatelyAvailable=window.__startupAgent.state.model==='opus'&&window.__startupAgent.state.models.length===2&&window.__startupAgent.state.effort==='medium'&&window.__startupAgent.state.connection==='connecting';
+ results.startupPermissionImmediatelyAvailable=window.__startupAgent.state.permissionMode==='auto';
+ window.__startupAgent.setPermissionMode('plan');
+ window.__startupAgent.setModel('haiku');window.__startupAgent.setModel('opus');window.__startupAgent.setEffort('high');await pause();
+ results.startupSelectionDeferred=!startupRequests.some(item=>['set_model','apply_flag_settings'].includes(item.request?.subtype))&&window.__startupAgent.state.effort==='high';
+ startupSocket.reply('initialize',{models:[{value:'opus',displayName:'Opus 5.5',description:''}],commands:[]});await pause();startupSocket.reply('get_settings',{applied:{model:'haiku',effort:'low'}});await pause();
+ results.startupSelectionApplied=startupRequests.filter(item=>item.request?.subtype==='set_model').length===1&&startupRequests.find(item=>item.request?.subtype==='set_model')?.request.model==='opus'&&startupRequests.find(item=>item.request?.subtype==='apply_flag_settings')?.request.settings.effortLevel==='high'&&window.__startupAgent.state.model==='opus'&&window.__startupAgent.state.effort==='high';
+ results.startupPermissionApplied=window.__startupAgent.state.permissionMode==='plan'&&startupRequests.filter(item=>item.request?.subtype==='set_permission_mode').length===1&&startupRequests.find(item=>item.request?.subtype==='set_permission_mode')?.request.mode==='plan';
+ const otherPreview={models:[{value:'haiku',displayName:'Haiku 5.5',description:''}],model:'haiku',effort:'low'};
+ localStorage.setItem('noa-agent.modelPreview:/other-startup',JSON.stringify(otherPreview));
+ await show(h(StartupProbe,{cwd:'/other-startup',runtimeId:'other-startup'}));
+ results.projectSwitchPreservesModelCache=localStorage.getItem('noa-agent.modelPreview:/other-startup')===JSON.stringify(otherPreview);
+ results.projectSwitchRestoresOwnModel=window.__startupAgent.state.model==='haiku'&&window.__startupAgent.state.effort==='low'&&window.__startupAgent.state.connection==='connecting';
+
+ await show(null);window.WebSocket=originalSocket;
  const pinId='10000000-0000-4000-8000-000000000003';let releaseSlowProject;
  localStorage.clear();localStorage.setItem('noa-agent.current',JSON.stringify({cwd:'/fixture',resume:pinId,runtimeId:'20000000-0000-4000-8000-000000000003'}));localStorage.setItem('noa-agent.sessionPrefs',JSON.stringify({pinned:{'/fixture':{[pinId]:true}},pinnedOrder:[pinId],order:{'/fixture':[pinId]},projects:[]}));
  window.fetch=async input=>{const url=new URL(String(input),location.href);let body={};if(url.pathname==='/api/info')body={cwd:'/fixture'};else if(url.pathname==='/api/projects')body=[{path:'/fixture',name:'Fixture',sources:['/fixture'],missing:false},{path:'/slow',name:'Slow',sources:['/slow'],missing:false}];else if(url.pathname==='/api/runs')body=[{cwd:'/fixture',sessionId:pinId,title:'RUN_ONLY',busy:true,waiting:false,queued:0}];else if(url.pathname==='/api/sessions'){if(url.searchParams.get('cwd')==='/slow')await new Promise(resolve=>{releaseSlowProject=resolve});body=[]}else if(url.pathname==='/api/changes')body={files:[],additions:0,deletions:0,branch:'main',isGit:true};else if(url.pathname==='/api/files')body={entries:[]};else if(url.pathname==='/api/worktree')body={origin:null};return Response.json(body)};
@@ -152,6 +169,8 @@ window.runChecks=async()=>{
  locationDraft.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));await pause();results.workLocationSend=locationSent==='Run locally';
  const previewProps={connection:'ready',busy:false,models:[{value:'preview',displayName:'Cached model',description:''}],model:'preview',commands:[],onSend:()=>true,onCommand:noop,onInterrupt:noop,onModel:noop,onMode:noop,draftKey:'model-preview',onEffort:noop,cwd:'/preview',projects:[],onProject:noop,onBranchChange:noop,onWorktree:async()=>{},onFiles:noop,newTask:true};
  await show(h(Composer,previewProps));await show(null);await show(h(Composer,{...previewProps,connection:'connecting',models:[],model:undefined}));let modelPreview=document.querySelector('[aria-label="Model and reasoning effort"]');results.modelPreviewRestored=modelPreview?.textContent==='Cached model'&&modelPreview.disabled;
+ await show(h(Composer,{...previewProps,connection:'connecting'}));const startupPicker=document.querySelector('[aria-label="Model and reasoning effort"]');startupPicker.click();await pause();results.startupModelPickerInteractive=!startupPicker.disabled&&document.body.textContent.includes('Select model');
+ await show(h(Composer,{...previewProps,connection:'connecting',mode:'auto'}));const permissionPicker=document.querySelector('button[aria-label="Auto"]');permissionPicker?.click();await pause();results.startupPermissionPickerInteractive=!!permissionPicker&&!permissionPicker.disabled&&document.body.textContent.includes('Permissions · this session');
  await show(h(Composer,{...previewProps,connection:'connecting',models:[],model:undefined,cwd:'/different-project'}));results.modelPreviewProjectScoped=document.querySelector('[aria-label="Model and reasoning effort"]')?.textContent==='Model';
  await show(h(Composer,{...previewProps,models:[{value:'new',displayName:'Actual model',description:''}],model:'new'}));results.modelPreviewReconciled=document.querySelector('[aria-label="Model and reasoning effort"]')?.textContent==='Actual model'&&localStorage.getItem('noa-agent.modelLabel:/preview')==='Actual model';
 

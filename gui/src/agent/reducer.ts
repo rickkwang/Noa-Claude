@@ -152,7 +152,7 @@ type Action =
   | { type: "context-error"; error: string }
   | { type: "history"; items: HistoryItem[]; before?: number; prepend?: boolean }
   | { type: "history-loading" }
-  | { type: "reset" }
+  | { type: "reset"; modelPreview?: Pick<AgentState, "models" | "model" | "effort" | "permissionMode"> }
   | { type: "queue"; messages: QueuedMessage[]; paused?: boolean }
   | { type: "connection"; status: AgentState["connection"] }
   | { type: "external"; pid: number; status?: string }
@@ -251,7 +251,7 @@ export function reducer(state: AgentState, action: Action): AgentState {
     case "queue":
       return { ...state, queue: action.messages, queuePaused: action.paused ?? state.queuePaused }
     case "reset":
-      return initialState
+      return { ...initialState, ...action.modelPreview }
     case "external":
       return { ...state, external: { pid: action.pid, status: action.status }, error: undefined }
     case "compaction":
@@ -495,7 +495,7 @@ function applyAgentMessage(state: AgentState, m: AgentMessage): AgentState {
       return { ...state, turns: applyToolResults(state.turns, m.message.content, m.tool_use_result) }
 
     case "result": {
-      const error = m.is_error && !state.stopping ? m.errors?.join("\n") || `Agent failed (${m.subtype})` : undefined
+      const error = m.is_error && !state.stopping ? m.errors?.join("\n") || m.result || `Agent failed (${m.subtype})` : undefined
       const turns = stampTurn(settlePending(completeResult(state.turns, m.result), "stopped"), m.duration_ms, state.stopping, error)
       return {
         ...state,

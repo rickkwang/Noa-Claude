@@ -280,6 +280,7 @@ import { LOCAL_COMMAND_STDOUT_TAG } from 'src/constants/xml.js'
 import {
   statusListeners,
   type ClaudeAILimits,
+  getRawUtilization,
 } from 'src/services/claudeAiLimits.js'
 import {
   getDefaultMainLoopModel,
@@ -305,6 +306,7 @@ import {
   refreshActiveProviderModels,
   removeProviderProfile,
   setActiveProviderProfile,
+  setActiveProviderProfileModel,
   updateProviderProfile,
   type ProviderType,
   switchToAnthropicAccount,
@@ -3052,6 +3054,16 @@ function runHeadlessStreaming(
               ? getDefaultMainLoopModel()
               : requestedModel
           activeUserSpecifiedModel = model
+          // Persist like the TUI /model picker: onChangeAppState writes (or,
+          // for Default, clears) the saved userSettings model.
+          setAppState(prev => ({
+            ...prev,
+            mainLoopModel: requestedModel === 'default' ? null : model,
+            mainLoopModelForSession: null,
+          }))
+          if (requestedModel !== 'default') {
+            void setActiveProviderProfileModel(model).catch(logError)
+          }
           setMainLoopModelOverride(model)
           notifySessionMetadataChanged({ model })
           injectModelSwitchBreadcrumbs(requestedModel, model)
@@ -3197,7 +3209,31 @@ function runHeadlessStreaming(
             const outputData = getIsRemoteMode()
               ? { ...data, memoryFiles: [] }
               : data
-            sendControlResponseSuccess(message, { ...outputData })
+            const rateLimits = { ...getRawUtilization() }
+            let rateLimitsError: string | undefined
+            try {
+              const { fetchCachedUtilization } = await import('src/services/api/usage.js')
+              const usage = await fetchCachedUtilization()
+              for (const key of ['five_hour', 'seven_day'] as const) {
+                const window = usage?.[key]
+                if (window && window.utilization !== null && window.resets_at) {
+                  const resetsAt = Date.parse(window.resets_at) / 1000
+                  if (Number.isFinite(window.utilization) && Number.isFinite(resetsAt)) {
+                    rateLimits[key] = { utilization: window.utilization / 100, resets_at: resetsAt }
+                  }
+                }
+              }
+            } catch (error) {
+              logError(error)
+              rateLimitsError = 'Could not load plan usage. Check account sign-in and try again.'
+            }
+            sendControlResponseSuccess(message, {
+              ...outputData,
+              ...(rateLimitsError ? { rateLimitsError } : {}),
+              ...(rateLimits.five_hour || rateLimits.seven_day
+                ? { rateLimits }
+                : {}),
+            })
           } catch (error) {
             sendControlResponseError(message, errorMessage(error))
           }

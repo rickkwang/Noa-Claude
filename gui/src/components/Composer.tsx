@@ -4,7 +4,7 @@ import { composerCommands, findComposerCommand, filterComposerCommands, slashAtC
 import { loadImageDraft, saveImageDraft } from "../agent/imageDrafts"
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from "react"
 import { startEffortMaxFill } from "./effortMaxFill"
-import type { ContextUsage, ImageAttachment, RateLimitInfo, UserContent, ModelInfo, ProviderInfo, PermissionMode, SlashCommand } from "../agent/protocol"
+import type { ContextUsage, ImageAttachment, RateLimitInfo, UserContent, ModelInfo, PermissionMode, SlashCommand } from "../agent/protocol"
 import { RateLimitNotice } from "./RateLimitNotice"
 import { FileAttachmentCard } from "./FileAttachmentCard"
 import { Check, Edit2, FileText, List, Photo, Queue, RotateCcw, Steer, Terminal, X } from "../lib/icons"
@@ -21,7 +21,6 @@ import {
   ComposerPlusIcon,
   ComposerSendIcon,
 } from "./ComposerIcons"
-import { ProviderIcon } from "./ProviderIcon"
 import type { ReactNode } from "react"
 import type { ProjectInfo } from "../api"
 import type { AgentState } from "../agent/reducer"
@@ -52,7 +51,6 @@ interface ComposerProps {
   readOnly?: boolean
   busy: boolean
   models: ModelInfo[]
-  providers?: ProviderInfo[]
   model?: string
   mode?: PermissionMode
   commands: SlashCommand[]
@@ -60,7 +58,6 @@ interface ComposerProps {
   onCommand: (action: GuiCommandAction) => void
   onInterrupt: () => void
   onModel: (model: string) => void
-  onProvider?: (providerId: string) => void
   onMode: (mode: PermissionMode) => void
   draftKey: string
   reference?: { path: string; key: number }
@@ -107,7 +104,6 @@ export function Composer({
   readOnly,
   busy,
   models,
-  providers = [],
   model,
   mode,
   commands,
@@ -115,7 +111,6 @@ export function Composer({
   onCommand,
   onInterrupt,
   onModel,
-  onProvider,
   onMode,
   draftKey,
   reference,
@@ -145,6 +140,7 @@ export function Composer({
   onDismissRateLimit,
 }: ComposerProps) {
   const disabled = connection !== "ready"
+  const modelDisabled = !!readOnly || busy || (connection !== "ready" && connection !== "connecting")
   const [text, setText] = useState(() => localStorage.getItem(draftKey) ?? "")
   const [references, setReferences] = useState<string[]>(() => {
     try {
@@ -177,6 +173,24 @@ export function Composer({
     if (!imagesLoaded) return
     saveImageDraft(draftKey, images).catch(() => setAttachmentError("Could not save image drafts. Keep this task open until you send or copy the images."))
   }, [imagesLoaded, images, draftKey])
+  const [contextOpen, setContextOpen] = useState(false)
+  const contextRef = useRef<HTMLSpanElement>(null)
+  useEffect(() => {
+    if (!contextOpen) return
+    const closeOutside = (event: globalThis.PointerEvent) => {
+      if (!contextRef.current?.contains(event.target as Node)) setContextOpen(false)
+    }
+    const closeOnEscape = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") setContextOpen(false)
+    }
+    document.addEventListener("pointerdown", closeOutside)
+    document.addEventListener("keydown", closeOnEscape)
+    return () => {
+      document.removeEventListener("pointerdown", closeOutside)
+      document.removeEventListener("keydown", closeOnEscape)
+    }
+  }, [contextOpen])
+  useEffect(() => setContextOpen(false), [draftKey])
   const [attachmentError, setAttachmentError] = useState<string>()
   const [loadingImages, setLoadingImages] = useState(false)
   const [pendingImages, setPendingImages] = useState(0)
@@ -314,7 +328,6 @@ export function Composer({
   }, [editDraft?.key])
 
   const currentModel = findModel(models, model)
-  const activeProvider = providers.find((p) => p.active)
   const modelLabelKey = `noa-agent.modelLabel:${cwd}`
   const savedModelLabel = useMemo(() => {
     try { return localStorage.getItem(modelLabelKey) } catch { return null }
@@ -323,7 +336,7 @@ export function Composer({
     if (disabled || !model) return
     try { localStorage.setItem(modelLabelKey, currentModel?.displayName ?? model) } catch {}
   }, [disabled, modelLabelKey, model, currentModel?.displayName])
-  const currentMode = MODE_OPTIONS.find((m) => m.value === mode)
+  const currentMode = MODE_OPTIONS.find((m) => m.value === (mode ?? "default"))
   // Auto stays listed (greyed out) when the model can't run it; it is hidden only while the model list is loading.
   const autoUnsupported = !!currentModel && !currentModel.supportsAutoMode
   const permissionModes = MODE_OPTIONS.filter(
@@ -342,7 +355,7 @@ export function Composer({
     }))) return
     onMode(value)
   }
-  const modeUnavailable = (value: PermissionMode) => value === "auto" && autoUnsupported && mode !== "auto"
+  const modeUnavailable = (value: PermissionMode) => (value === "bypassPermissions" && connection !== "ready") || (value === "auto" && autoUnsupported && mode !== "auto")
   // Switching to a model that can't run auto drops back to Manual. Startup and resume keep the chosen mode.
   const previousModel = useRef(currentModel?.value)
   useEffect(() => {
@@ -353,16 +366,14 @@ export function Composer({
   const effortLevels = currentModel?.supportsEffort ? (currentModel.supportedEffortLevels ?? []) : []
   const allCommands = useMemo(() => composerCommands(commands).map((command) => ({
     ...command,
-    disabled: command.action === "stop" ? !busy : ["model", "provider", "effort", "permissions", "plan", "reload"].includes(command.action ?? "") ? disabled || busy : command.action ? false : disabled,
+    disabled: command.action === "stop" ? !busy : ["model", "effort", "permissions", "plan", "reload"].includes(command.action ?? "") ? disabled || busy : command.action ? false : disabled,
   })), [commands, disabled, busy])
   const slash = slashAtCaret(text, caret)
   const argumentCommand = slash?.argument !== undefined ? findComposerCommand(allCommands, slash.query) : undefined
-  const submenu = browserAction ?? (argumentCommand?.action && ["model", "provider", "effort", "permissions"].includes(argumentCommand.action) ? argumentCommand.action : undefined)
+  const submenu = browserAction ?? (argumentCommand?.action && ["model", "effort", "permissions"].includes(argumentCommand.action) ? argumentCommand.action : undefined)
   const slashQuery = browserOpen ? browserSearch : submenu ? slash?.argument ?? "" : slash?.argument === undefined ? slash?.query : undefined
   const choices: ComposerCommand[] = submenu === "model"
     ? models.map((m) => ({ name: m.displayName, value: m.value, aliases: [m.value], description: m.description, argumentHint: "", action: "model", group: "Models", active: m.value === currentModel?.value, disabled: disabled || busy }))
-    : submenu === "provider"
-    ? providers.map((p) => ({ name: p.name, value: p.id, aliases: [p.id], description: p.typeLabel ?? p.type, argumentHint: "", action: "provider" as const, group: "Providers", active: p.active, disabled: disabled || busy }))
     : submenu === "effort"
       ? [{ name: "Default", value: "default", description: "Use the model default", argumentHint: "", action: "effort", group: "Reasoning effort", active: !effort, disabled: disabled || busy }, ...effortLevels.map((level) => ({ name: level, value: level, description: "", argumentHint: "", action: "effort" as const, group: "Reasoning effort", active: level === effort, disabled: disabled || busy }))]
       : submenu === "permissions"
@@ -370,7 +381,7 @@ export function Composer({
         : allCommands.filter((command) => !browserFilter || command.group === browserFilter)
   const menuItems = filterComposerCommands(choices, slashQuery ?? "")
   const menuOpen = !menuDismissed && (browserOpen || (!browserAction && inputFocused && slashQuery !== undefined))
-  const menuTitle = submenu === "model" ? "Model" : submenu === "provider" ? "Provider" : submenu === "effort" ? "Reasoning effort" : submenu === "permissions" ? "Permissions" : browserFilter
+  const menuTitle = submenu === "model" ? "Model" : submenu === "effort" ? "Reasoning effort" : submenu === "permissions" ? "Permissions" : browserFilter
   const mention = inputFocused ? mentionAtCaret(text, caret) : undefined
   const mentionOpen = !!mention && !mentionDismissed && !menuOpen && !disabled
   const mentionPresence = usePresence(mentionOpen)
@@ -467,17 +478,13 @@ export function Composer({
     if (command.disabled) { setAttachmentError(busy ? "Stop the current turn before changing this setting." : "Noa is still connecting."); return }
     setAttachmentError(undefined)
     const action = command.action!
-    if (["model", "provider", "effort", "permissions"].includes(action) && !value) {
+    if (["model", "effort", "permissions"].includes(action) && !value) {
       setBrowserSearch("")
       if (slash) { replaceSlash(`/${command.name} `); setBrowserOpen(false) }
       else { setBrowserAction(action); setBrowserOpen(true) }
       textareaRef.current?.focus(); return
     }
     if (action === "model") onModel(value)
-    else if (action === "provider") {
-      if (!providers.some((p) => p.id === value)) { setAttachmentError("Choose a configured provider."); return }
-      onProvider?.(value)
-    }
     else if (action === "effort") {
       if (value !== "default" && !effortLevels.includes(value)) { setAttachmentError("Choose one of this model’s supported effort levels."); return }
       onEffort(value === "default" ? null : value)
@@ -605,16 +612,6 @@ export function Composer({
     onSelect: () => onModel(m.value),
     heading: i === 0 ? "Select model" : undefined,
   }))
-  const providerItems: PickerItem[] = providers.length > 1 && onProvider
-    ? providers.map((p, i) => ({
-        key: `provider:${p.id}`,
-        title: p.name,
-        leading: <ProviderIcon type={p.type} />,
-        active: p.active,
-        onSelect: () => onProvider(p.id),
-        heading: i === 0 ? "Provider" : undefined,
-      }))
-    : []
 
   return (
     <div ref={composerRef} data-new-task={newTask || undefined} className="noa-agent-composer relative">
@@ -893,7 +890,7 @@ export function Composer({
               }
               ariaLabel={currentMode?.label ?? "Permissions"}
               compactPadding
-              disabled={disabled || busy}
+              disabled={modelDisabled}
               tone={mode === "bypassPermissions" ? "danger" : undefined}
               items={permissionModes.map((m) => ({
                 key: m.value,
@@ -912,11 +909,16 @@ export function Composer({
             {/* A new task has only the baseline prompt, whose sliver reads as a loading spinner. */}
             {contextUsage && !newTask && (
               <span
-                tabIndex={0}
-                role="img"
-                aria-label={`Context usage ${Math.round(contextUsage.percentage)}%`}
-                className="group/context relative inline-flex shrink-0 items-center text-[var(--sidebar-text-muted)]"
+                ref={contextRef}
+                className="relative inline-flex shrink-0 items-center text-[var(--sidebar-text-muted)]"
               >
+                <button
+                  type="button"
+                  aria-label={`Context usage ${Math.round(contextUsage.percentage)}%`}
+                  aria-expanded={contextOpen}
+                  onClick={() => setContextOpen(open => !open)}
+                  className="inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded-md transition-colors hover:bg-[var(--fill-hover)] aria-expanded:bg-[var(--fill-hover)] focus-visible:outline focus-visible:outline-1"
+                >
                 <svg
                   width={12}
                   height={12}
@@ -940,17 +942,42 @@ export function Composer({
                     transform="rotate(-90 6 6)"
                   />
                 </svg>
+                </button>
                 <span
                   role="tooltip"
-                  className="pointer-events-none absolute bottom-full left-1/2 z-40 mb-2.5 hidden -translate-x-1/2 flex-col items-center gap-1.5 whitespace-nowrap rounded-[14px] bg-[var(--bg-card)] px-4 py-3 text-center text-caption tabular-nums text-[var(--text-primary)] shadow-[var(--shadow-dialog)] group-hover/context:flex group-focus/context:flex"
+                  className={`absolute bottom-full left-1/2 z-40 mb-2.5 w-[280px] -translate-x-1/2 flex-col gap-2 whitespace-nowrap rounded-[14px] bg-[var(--bg-card)] px-4 py-3 text-caption tabular-nums text-[var(--text-primary)] shadow-[var(--shadow-dialog)] ${contextOpen ? "flex" : "hidden"}`}
                 >
-                  <span className="text-[var(--sidebar-text-muted)]">Context window:</span>
-                  <span className="font-medium">
-                    {Math.round(contextUsage.percentage)}% used ({Math.max(0, 100 - Math.round(contextUsage.percentage))}% left)
+                  <span className="flex items-baseline justify-between gap-3">
+                    <span>Context window</span>
+                    <span className="text-[var(--sidebar-text-muted)]">
+                      {compactTokens(contextUsage.totalTokens)} / {compactTokens(contextUsage.maxTokens)}
+                      <span className="ms-2">{Math.round(contextUsage.percentage)}%</span>
+                    </span>
                   </span>
-                  <span className="text-[var(--sidebar-text-muted)]">
-                    {compactTokens(contextUsage.totalTokens)} / {compactTokens(contextUsage.maxTokens)} tokens used
-                  </span>
+                  <UsageBar percentage={contextUsage.percentage} />
+                  {([
+                    ["five_hour", "5-hour limit"],
+                    ["seven_day", "Weekly limit"],
+                  ] as const).map(([key, label]) => {
+                    const window = contextUsage.rateLimits?.[key]
+                    if (!window) return null
+                    const pct = window.utilization * 100
+                    return (
+                      <span key={key} className="mt-1 flex flex-col gap-2">
+                        <span className="flex items-baseline justify-between gap-3">
+                          <span>{label}</span>
+                          <span className="text-[var(--sidebar-text-muted)]">
+                            Resets {formatReset(window.resets_at, key === "seven_day")}
+                            <span className="ms-2">{Math.round(pct)}%</span>
+                          </span>
+                        </span>
+                        <UsageBar percentage={pct} />
+                      </span>
+                    )
+                  })}
+                  {contextUsage.rateLimitsError && (
+                    <span className="max-w-full whitespace-normal text-[var(--sidebar-text-muted)]">{contextUsage.rateLimitsError}</span>
+                  )}
                 </span>
               </span>
             )}
@@ -959,7 +986,6 @@ export function Composer({
               modelPicker
               label={
                 <>
-                  {activeProvider && <ProviderIcon type={activeProvider.type} size={13} className="mr-1 text-[var(--text-primary)]" />}
                   <span className="noa-agent-model-name max-w-[112px] truncate text-[var(--text-primary)]">
                     {currentModel?.displayName ?? model ?? (disabled ? savedModelLabel : undefined) ?? "Model"}
                   </span>
@@ -968,8 +994,8 @@ export function Composer({
                   )}
                 </>
               }
-              disabled={disabled || busy || models.length === 0}
-              items={[...modelItems, ...providerItems]}
+              disabled={modelDisabled || models.length === 0}
+              items={modelItems}
               header={effortLevels.length > 0 ? (toggleModels, active) => (
                 <EffortSlider
                   levels={effortLevels}
@@ -1488,4 +1514,24 @@ function usePresence(open: boolean, duration = 90) {
     return () => clearTimeout(timer)
   }, [duration, mounted, open])
   return { mounted, closing: mounted && !open }
+}
+
+function UsageBar({ percentage }: { percentage: number }) {
+  return (
+    <span className="block h-1 overflow-hidden rounded-full bg-[var(--border-default)]">
+      <span
+        className="block h-full rounded-full"
+        style={{
+          width: `${Math.min(100, Math.max(0, percentage))}%`,
+          background: percentage >= 75 ? "#e8a93b" : "#3b7ddd",
+        }}
+      />
+    </span>
+  )
+}
+
+function formatReset(epochSeconds: number, withDay: boolean): string {
+  const date = new Date(epochSeconds * 1000)
+  const time = date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
+  return withDay ? `${date.toLocaleDateString([], { weekday: "short" })} ${time}` : `at ${time}`
 }

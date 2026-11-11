@@ -14,7 +14,7 @@ import type {
   PermissionMode,
   SlashCommand,
 } from "./protocol"
-import { initialState, reducer, type Permission } from "./reducer"
+import { initialState, reducer, type Permission, type AgentState } from "./reducer"
 
 interface AgentOptions {
   cwd?: string
@@ -44,12 +44,31 @@ type ResponseKind =
   | { model: string }
   | { mode: PermissionMode }
 
+type ModelPreview = Pick<AgentState, "models" | "model" | "effort" | "permissionMode">
+function readModelPreview(cwd?: string): ModelPreview {
+  try {
+    const value = JSON.parse(localStorage.getItem(`noa-agent.modelPreview:${cwd ?? ""}`) ?? "null")
+    if (value && Array.isArray(value.models) && value.models.every((m: ModelInfo) => m && typeof m.value === "string" && typeof m.displayName === "string") && typeof value.model === "string" && (value.effort === undefined || typeof value.effort === "string")) return { models: value.models, model: value.model, effort: value.effort, permissionMode: ["default", "auto", "acceptEdits", "plan"].includes(value.permissionMode) ? value.permissionMode : undefined }
+  } catch {}
+  return { models: [] }
+}
+
 const INITIALIZE_TIMEOUT_MS = 20_000
 
 export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermissionMode }: AgentOptions) {
-  const [state, dispatch] = useReducer(reducer, initialState)
+  const [state, dispatch] = useReducer(reducer, undefined, () => ({ ...initialState, ...readModelPreview(cwd), ...(defaultPermissionMode ? { permissionMode: defaultPermissionMode } : {}) }))
   // Bumped when another process releases the task this view was following, to attach a CLI of its own.
   const [followEnded, setFollowEnded] = useState(0)
+  const queuedSelection = useRef<{ model?: string; effort?: string | null; mode?: PermissionMode }>({})
+  const readyRef = useRef(false)
+  readyRef.current = state.connection === "ready"
+  const modelPreviewCwdRef = useRef(cwd)
+  useEffect(() => {
+    if (modelPreviewCwdRef.current !== cwd || state.connection !== "ready" || !state.models.length || !state.model) return
+    try {
+      localStorage.setItem(`noa-agent.modelPreview:${cwd ?? ""}`, JSON.stringify({ models: state.models, model: state.model, effort: state.effort, permissionMode: state.permissionMode }))
+    } catch {}
+  }, [cwd, state.connection, state.models, state.model, state.effort, state.permissionMode])
   const ownerRef = useRef(runtimeId)
   const defaultModeRef = useRef(defaultPermissionMode)
   defaultModeRef.current = defaultPermissionMode
@@ -118,7 +137,9 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
 
   useEffect(() => {
     ownerRef.current = runtimeId
-    dispatch({ type: "reset" })
+    modelPreviewCwdRef.current = cwd
+    dispatch({ type: "reset", modelPreview: { ...readModelPreview(cwd), ...(defaultModeRef.current ? { permissionMode: defaultModeRef.current } : {}) } })
+    queuedSelection.current = {}
     pendingRef.current.clear()
     for (const pending of requestsRef.current.values()) {
       clearTimeout(pending.timer)
@@ -382,6 +403,20 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
         dispatch({ type: "effort-set", effort: applied?.effort ?? undefined })
         if (kind === "startup_settings") {
           dispatch({ type: "permission-mode-set", mode: modeRef.current ?? effective?.permissions?.defaultMode ?? "default" })
+          const selection = queuedSelection.current
+          queuedSelection.current = {}
+          if (selection.mode !== undefined) {
+            dispatch({ type: "permission-mode-set", mode: selection.mode })
+            control({ subtype: "set_permission_mode", mode: selection.mode }, { mode: selection.mode })
+          }
+          if (selection.model !== undefined) {
+            dispatch({ type: "model-set", model: selection.model })
+            control({ subtype: "set_model", model: selection.model }, { model: selection.model })
+          }
+          if (selection.effort !== undefined) {
+            dispatch({ type: "effort-set", effort: selection.effort ?? undefined })
+            control({ subtype: "apply_flag_settings", settings: { effortLevel: selection.effort } }, "effort")
+          }
           dispatch({ type: "connection", status: "ready" })
         }
       } else {
@@ -420,6 +455,11 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
 
   const setModel = useCallback(
     (model: string) => {
+      if (!readyRef.current) {
+        queuedSelection.current.model = model
+        dispatch({ type: "model-set", model })
+        return
+      }
       control({ subtype: "set_model", model }, { model })
     },
     [control],
@@ -470,6 +510,12 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
 
   const setPermissionMode = useCallback(
     (mode: PermissionMode) => {
+      if (!readyRef.current) {
+        if (mode === "bypassPermissions" || mode === "dontAsk") return
+        queuedSelection.current.mode = mode
+        dispatch({ type: "permission-mode-set", mode })
+        return
+      }
       control({ subtype: "set_permission_mode", mode }, { mode })
     },
     [control],
@@ -510,7 +556,14 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
   )
 
   const setEffort = useCallback(
-    (effort: string | null) => control({ subtype: "apply_flag_settings", settings: { effortLevel: effort } }, "effort"),
+    (effort: string | null) => {
+      if (!readyRef.current) {
+        queuedSelection.current.effort = effort
+        dispatch({ type: "effort-set", effort: effort ?? undefined })
+        return
+      }
+      control({ subtype: "apply_flag_settings", settings: { effortLevel: effort } }, "effort")
+    },
     [control],
   )
 
