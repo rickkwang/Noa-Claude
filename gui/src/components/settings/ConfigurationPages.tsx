@@ -54,6 +54,8 @@ export function ConfigurationPage({
   onMode: (mode: PermissionMode) => void
 }) {
   const disconnected = agent.connection !== "ready"
+  // Mirrors the composer: permission mode and effort may change mid-turn; the model and output
+  // style may not, since a switch appends transcript messages or rewrites the system prompt.
   const locked = disconnected || agent.busy
   const activeModel = findModel(agent.models, agent.model)
   const modelOptions: [string, string][] = agent.models.map((m) => [m.value, m.displayName])
@@ -75,7 +77,7 @@ export function ConfigurationPage({
           <Select
             value={agent.effort ?? "default"}
             options={effortOptions}
-            disabled={locked || effortOptions.length < 2}
+            disabled={disconnected || effortOptions.length < 2}
             onChange={(value) => onEffort(value === "default" ? null : value)}
           />
         </Row>
@@ -103,7 +105,7 @@ export function ConfigurationPage({
                   (mode !== "auto" || activeModel?.supportsAutoMode !== false || agent.permissionMode === "auto")
               ),
             ]}
-            disabled={locked}
+            disabled={disconnected}
             onChange={(value) => onMode(value as PermissionMode)}
           />
         </Row>

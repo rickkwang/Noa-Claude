@@ -182,6 +182,10 @@ function buildMenu() {
           { label: 'Zoom In', accelerator: 'CmdOrCtrl+=', click: () => setZoom(zoom + ZOOM_STEP) },
           { label: 'Zoom Out', accelerator: 'CmdOrCtrl+-', click: () => setZoom(zoom - ZOOM_STEP) },
           { type: 'separator' },
+          // The agent runtimes live in the local server, so reloading the window keeps running tasks.
+          { role: 'reload' },
+          ...(DEV ? [{ role: 'toggleDevTools' }] : []),
+          { type: 'separator' },
           { role: 'togglefullscreen' },
         ],
       },

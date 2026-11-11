@@ -1,5 +1,6 @@
 import { ElicitationCard } from "./components/ElicitationCard"
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
+import { useEvent } from "./hooks/useEvent"
 import { useAgent } from "./agent/useAgent"
 import { isSubagentTask } from "./agent/reducer"
 import type { ImageAttachment, ImageBlock, TurnDiff, UserContent } from "./agent/protocol"
@@ -512,6 +513,38 @@ function Workspace({ cwd }: { cwd: string }) {
     return true
   }
   const hasTurns = state.turns.length > 0
+  // Stable props for the memoized Composer: streaming re-renders App every frame, and the
+  // composer should only re-render when something it shows changes.
+  const composerEditDraft = useMemo(
+    () => editDraft ? { ...editDraft, queued: !!queueEditId, label: queueEditId ? "Edit queued message" : "Edit and resend" } : undefined,
+    [editDraft, queueEditId],
+  )
+  const composerEvents = {
+    onDismissRateLimit: useEvent(() => { if (state.rateLimit) setDismissedRateLimit(rateLimitKey(state.rateLimit)) }),
+    onQuoteConsumed: useEvent(() => setQuote(undefined)),
+    onDroppedConsumed: useEvent(() => setDropped(undefined)),
+    onPrefillConsumed: useEvent(() => setPrefill(undefined)),
+    onCancelEdit: useEvent(() => {
+      setEditDraft(undefined)
+      setQueueEditId(undefined)
+    }),
+    onProject: useEvent((dir?: string) => newSession(dir)),
+    onBranchChange: useEvent(() => setRefreshTick((n) => n + 1)),
+    onWorktree: useEvent((on: boolean) => toggleWorktree(on)),
+    onSend: useEvent((content: UserContent) => sendComposer(content)),
+    onCommand: useEvent((action: string) => {
+      if (action === "new") newSession()
+      else if (action === "resume") {
+        setSearchOpen(true)
+      } else if (action === "settings") setSettingsOpen(true)
+      else if (action === "login") { setSettingsSignIn(true); setSettingsOpen(true) }
+      else if (action === "context") { openOverview(); refreshContext() }
+      else if (action === "activity") openDiagnostics()
+      else if (action === "plan") setPermissionMode("plan")
+      else if (action === "stop") interrupt()
+      else if (action === "reload") reloadCommands()
+    }),
+  }
   const sidebar = usePanelWidth("noa-agent.sidebarWidth", SIDEBAR_DEFAULT_WIDTH, 240, 520)
   const [rightRatio, setRightRatio] = useState<number | null>(() => {
     try {
@@ -934,54 +967,41 @@ function Workspace({ cwd }: { cwd: string }) {
                 <Composer
                   key={session.key}
                   rateLimit={visibleRateLimit}
-                  onDismissRateLimit={() => state.rateLimit && setDismissedRateLimit(rateLimitKey(state.rateLimit))}
+                  onDismissRateLimit={composerEvents.onDismissRateLimit}
                   draftKey={`noa-agent.draft:${session.cwd}:${activeId ?? session.runtimeId}`}
                   reference={reference}
                   quote={quote}
-                  onQuoteConsumed={() => setQuote(undefined)}
+                  onQuoteConsumed={composerEvents.onQuoteConsumed}
                   dropped={dropped}
-                  onDroppedConsumed={() => setDropped(undefined)}
+                  onDroppedConsumed={composerEvents.onDroppedConsumed}
                   prefill={prefill}
-                  onPrefillConsumed={() => setPrefill(undefined)}
-                  editDraft={editDraft ? { ...editDraft, queued: !!queueEditId, label: queueEditId ? "Edit queued message" : "Edit and resend" } : undefined}
-                  onCancelEdit={() => {
-                    setEditDraft(undefined)
-                    setQueueEditId(undefined)
-                  }}
+                  onPrefillConsumed={composerEvents.onPrefillConsumed}
+                  editDraft={composerEditDraft}
+                  onCancelEdit={composerEvents.onCancelEdit}
                   effort={state.effort}
                   onEffort={setEffort}
                   cwd={session.cwd}
                   projects={projects}
-                  onProject={newSession}
+                  onProject={composerEvents.onProject}
                   branch={changes?.branch}
-                  onBranchChange={() => setRefreshTick((n) => n + 1)}
+                  onBranchChange={composerEvents.onBranchChange}
                   worktreeOf={worktreeOf}
-                  onWorktree={toggleWorktree}
+                  onWorktree={composerEvents.onWorktree}
                   newTask={!hasTurns}
                   contextUsage={settings.composer.showContextUsage ? state.contextUsage : undefined}
                   sendShortcut={settings.composer.sendShortcut}
                   followUpMode={settings.composer.followUpMode}
                   showFullAccess={settings.composer.showFullAccess}
                   connection={forkPending ? "connecting" : state.connection}
+                  forking={forkPending}
                   readOnly={!!state.external}
                   busy={state.busy}
                   models={state.models}
                   model={state.model}
                   mode={state.permissionMode}
                   commands={state.commands}
-                  onSend={sendComposer}
-                  onCommand={(action) => {
-                    if (action === "new") newSession()
-                    else if (action === "resume") {
-                      setSearchOpen(true)
-                    } else if (action === "settings") setSettingsOpen(true)
-                    else if (action === "login") { setSettingsSignIn(true); setSettingsOpen(true) }
-                    else if (action === "context") { openOverview(); refreshContext() }
-                    else if (action === "activity") openDiagnostics()
-                    else if (action === "plan") setPermissionMode("plan")
-                    else if (action === "stop") interrupt()
-                    else if (action === "reload") reloadCommands()
-                  }}
+                  onSend={composerEvents.onSend}
+                  onCommand={composerEvents.onCommand}
                   onInterrupt={interrupt}
                   onModel={setModel}
                   onMode={setPermissionMode}

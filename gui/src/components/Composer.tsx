@@ -2,7 +2,7 @@ import { findModel } from "../lib/models"
 import { SlashCommandMenu } from "./SlashCommandMenu"
 import { composerCommands, findComposerCommand, filterComposerCommands, slashAtCaret, type ComposerCommand, type GuiCommandAction } from "../agent/commands"
 import { loadImageDraft, saveImageDraft } from "../agent/imageDrafts"
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from "react"
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from "react"
 import { startEffortMaxFill } from "./effortMaxFill"
 import type { ContextUsage, ImageAttachment, RateLimitInfo, UserContent, ModelInfo, PermissionMode, SlashCommand } from "../agent/protocol"
 import { RateLimitNotice } from "./RateLimitNotice"
@@ -49,6 +49,8 @@ function mentionAtCaret(value: string, caret: number): { query: string; start: n
 interface ComposerProps {
   connection: AgentState["connection"]
   readOnly?: boolean
+  /** A fork is replacing this session; sends are not held, since the composer remounts for the fork. */
+  forking?: boolean
   busy: boolean
   models: ModelInfo[]
   model?: string
@@ -99,9 +101,17 @@ interface ComposerProps {
 const IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"]
 
 // Noa-styled composer: a rounded card with a hairline ring, slash menu, model and mode pickers.
-export function Composer({
+function persistDraft({ key, text }: { key: string; text: string }) {
+  try {
+    if (text) localStorage.setItem(key, text)
+    else localStorage.removeItem(key)
+  } catch { /* storage unavailable */ }
+}
+
+export const Composer = memo(function Composer({
   connection,
   readOnly,
+  forking,
   busy,
   models,
   model,
@@ -140,7 +150,9 @@ export function Composer({
   onDismissRateLimit,
 }: ComposerProps) {
   const disabled = connection !== "ready"
-  const modelDisabled = !!readOnly || busy || (connection !== "ready" && connection !== "connecting")
+  // Permission mode and effort can change mid-turn. The model stays fixed while busy: the CLI records
+  // a switch by appending transcript messages, which must not land inside a running turn.
+  const modelDisabled = !!readOnly || (connection !== "ready" && connection !== "connecting")
   const [text, setText] = useState(() => localStorage.getItem(draftKey) ?? "")
   const [references, setReferences] = useState<string[]>(() => {
     try {
@@ -261,10 +273,27 @@ export function Composer({
   const [browserSearch, setBrowserSearch] = useState("")
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
+  // The draft is saved shortly after typing pauses rather than on every keystroke. A pending save
+  // is flushed when the draft key changes, on unmount, and when the window is closed.
+  const pendingDraft = useRef<{ key: string; text: string } | null>(null)
   useEffect(() => {
-    if (text) localStorage.setItem(draftKey, text)
-    else localStorage.removeItem(draftKey)
+    const previous = pendingDraft.current
+    if (previous && previous.key !== draftKey) persistDraft(previous)
+    pendingDraft.current = { key: draftKey, text }
+    const timer = setTimeout(() => {
+      if (pendingDraft.current) persistDraft(pendingDraft.current)
+      pendingDraft.current = null
+    }, 300)
+    return () => clearTimeout(timer)
   }, [text, draftKey])
+  useEffect(() => {
+    const flush = () => {
+      if (pendingDraft.current) persistDraft(pendingDraft.current)
+      pendingDraft.current = null
+    }
+    window.addEventListener("pagehide", flush)
+    return () => { window.removeEventListener("pagehide", flush); flush() }
+  }, [])
   useEffect(() => {
     if (references.length) localStorage.setItem(`${draftKey}:references`, JSON.stringify(references))
     else localStorage.removeItem(`${draftKey}:references`)
@@ -366,7 +395,7 @@ export function Composer({
   const effortLevels = currentModel?.supportsEffort ? (currentModel.supportedEffortLevels ?? []) : []
   const allCommands = useMemo(() => composerCommands(commands).map((command) => ({
     ...command,
-    disabled: command.action === "stop" ? !busy : ["model", "effort", "permissions", "plan", "reload"].includes(command.action ?? "") ? disabled || busy : command.action ? false : disabled,
+    disabled: command.action === "stop" ? !busy : ["model", "reload"].includes(command.action ?? "") ? disabled || busy : ["effort", "permissions", "plan"].includes(command.action ?? "") ? disabled : command.action ? false : disabled,
   })), [commands, disabled, busy])
   const slash = slashAtCaret(text, caret)
   const argumentCommand = slash?.argument !== undefined ? findComposerCommand(allCommands, slash.query) : undefined
@@ -375,9 +404,9 @@ export function Composer({
   const choices: ComposerCommand[] = submenu === "model"
     ? models.map((m) => ({ name: m.displayName, value: m.value, aliases: [m.value], description: m.description, argumentHint: "", action: "model", group: "Models", active: m.value === currentModel?.value, disabled: disabled || busy }))
     : submenu === "effort"
-      ? [{ name: "Default", value: "default", description: "Use the model default", argumentHint: "", action: "effort", group: "Reasoning effort", active: !effort, disabled: disabled || busy }, ...effortLevels.map((level) => ({ name: level, value: level, description: "", argumentHint: "", action: "effort" as const, group: "Reasoning effort", active: level === effort, disabled: disabled || busy }))]
+      ? [{ name: "Default", value: "default", description: "Use the model default", argumentHint: "", action: "effort", group: "Reasoning effort", active: !effort, disabled }, ...effortLevels.map((level) => ({ name: level, value: level, description: "", argumentHint: "", action: "effort" as const, group: "Reasoning effort", active: level === effort, disabled }))]
       : submenu === "permissions"
-        ? permissionModes.map((option) => ({ name: option.label, value: option.value, description: modeUnavailable(option.value) ? "Not available for the selected model" : option.description, argumentHint: "", action: "permissions", group: "Permissions", active: option.value === mode, disabled: disabled || busy || modeUnavailable(option.value) }))
+        ? permissionModes.map((option) => ({ name: option.label, value: option.value, description: modeUnavailable(option.value) ? "Not available for the selected model" : option.description, argumentHint: "", action: "permissions", group: "Permissions", active: option.value === mode, disabled: disabled || modeUnavailable(option.value) }))
         : allCommands.filter((command) => !browserFilter || command.group === browserFilter)
   const menuItems = filterComposerCommands(choices, slashQuery ?? "")
   const menuOpen = !menuDismissed && (browserOpen || (!browserAction && inputFocused && slashQuery !== undefined))
@@ -444,9 +473,21 @@ export function Composer({
     el.style.height = `${el.scrollHeight}px`
   }, [text])
 
+  // Typing never waits for the CLI to start; a send made while it is still connecting
+  // is held and goes out as soon as the connection is ready.
+  const [sendWhenReady, setSendWhenReady] = useState(false)
+  useEffect(() => {
+    if (!sendWhenReady) return
+    if (connection === "closed" || forking) setSendWhenReady(false)
+    // Wait for attachments still being read, or submit() would return early and drop the held send.
+    else if (!disabled && !loadingImages && imagesLoaded) { setSendWhenReady(false); submit() }
+  }, [sendWhenReady, connection, disabled, forking, loadingImages, imagesLoaded])
+
   function submit() {
     const trimmed = text.trim()
-    if ((!trimmed && !images.length && !files.length) || disabled || loadingImages || !imagesLoaded) return
+    if (!trimmed && !images.length && !files.length) return
+    if (disabled) { if (connection === "connecting" && !readOnly && !forking) setSendWhenReady(true); return }
+    if (loadingImages || !imagesLoaded) return
     const parsed = trimmed.match(/^\/([\w:.-]+)(?:\s+([\s\S]*))?$/)
     if (parsed) {
       const command = findComposerCommand(allCommands, parsed[1]!)
@@ -609,6 +650,7 @@ export function Composer({
     key: m.value,
     title: m.value === "default" ? "Default" : m.displayName,
     active: m.value === currentModel?.value,
+    disabled: busy && m.value !== currentModel?.value,
     onSelect: () => onModel(m.value),
     heading: i === 0 ? "Select model" : undefined,
   }))
@@ -771,6 +813,7 @@ export function Composer({
             ))}
           </div>
         )}
+        {sendWhenReady && <p className="m-0 px-3 pt-2 text-caption text-[var(--sidebar-text-muted)]">Sends when Noa is ready…</p>}
         {attachmentError && <p role="alert" className="m-0 px-3 pt-2 text-caption text-[#C24444]">{attachmentError}</p>}
         {references.length === 0 && <div aria-hidden="true" className="h-3.5 shrink-0" />}
         {references.length > 0 && (
@@ -819,7 +862,7 @@ export function Composer({
           onCompositionEnd={() => { setComposing(false); compositionEndAt.current = performance.now() }}
           placeholder={readOnly ? "Running in a terminal" : connection === "closed" ? "Noa disconnected" : disabled ? "Starting Noa…" : busy ? followUpMode === "steer" ? "Add a follow-up…" : "Add a follow-up to the queue…" : newTask ? "Do anything" : "Work with Noa"}
           aria-label="Task instruction"
-          disabled={disabled}
+          disabled={!!readOnly && disabled}
           rows={1}
           className="w-full min-h-[44px] max-h-[min(25dvh,var(--composer-editor-max-height,25dvh))] resize-none border-none bg-transparent px-3 py-0 text-[13px] leading-5 outline-none placeholder:text-[color-mix(in_srgb,var(--text-primary)_50%,transparent)]"
         />
@@ -1010,7 +1053,7 @@ export function Composer({
             <button
               type="button"
               onClick={busy && !editDraft?.queued && !text.trim() && !images.length && !files.length ? onInterrupt : submit}
-              disabled={(!busy || editDraft?.queued) && (disabled || loadingImages || !imagesLoaded || (!text.trim() && !images.length && !files.length))}
+              disabled={(!busy || editDraft?.queued) && (connection === "closed" || forking || !!readOnly && disabled || sendWhenReady || loadingImages || !imagesLoaded || (!text.trim() && !images.length && !files.length))}
               aria-label={editDraft?.queued ? "Save queued message" : busy && !text.trim() && !images.length && !files.length ? "Stop (Esc)" : busy ? followUpMode === "steer" ? "Steer" : "Queue message" : "Run task"}
               title={editDraft?.queued ? "Save queued message; queue stays paused" : busy && !text.trim() && !images.length && !files.length ? "Stop (Esc)" : busy ? followUpMode === "steer" ? "Submit without interrupting the model" : "Queue after the current turn" : "Run task"}
               data-action={busy && !text.trim() && !images.length && !files.length ? "stop" : busy ? followUpMode : "send"}
@@ -1034,7 +1077,7 @@ export function Composer({
       {dialog}
     </div>
   )
-}
+})
 
 function compactTokens(tokens: number): string {
   if (tokens >= 1_000_000) return `${+(tokens / 1_000_000).toFixed(1)}M`
