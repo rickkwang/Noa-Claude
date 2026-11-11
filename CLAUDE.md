@@ -12,46 +12,50 @@
 
 - Verify behavior with E2E tests, not new unit tests (unit tests here tend to restate implementation). End each E2E run with a reproducible artifact: exact command, revision, inputs, observed output, exit status.
 - Exception: a system testable only in isolation — first list every way it could fail, then write the test.
-- Keep an existing isolated test only if it catches a concrete bug E2E misses; delete ones that restate implementation or duplicate E2E.
-- The only test preload is `scripts/bun-test-preload.ts` (sets global `React`); keep other setup inside each test. Assemble credential-shaped fixtures at runtime (`['xoxb', '123…', 'abc…'].join('-')`): GitHub push protection rejects any history containing a real-token-shaped literal, even an obviously fake one.
+- Before writing or deleting a test, read `.claude/rules/testing.md` (preload, keeping isolated tests).
+- Assemble credential-shaped fixtures at runtime (`['xoxb', '123…', 'abc…'].join('-')`): GitHub push protection rejects any history containing a real-token-shaped literal, even an obviously fake one.
 
 **`typecheck` proves little**: ~85% of non-test source carries `@ts-nocheck`. Checked: `query.ts`, `QueryEngine.ts`, `tools.ts`, `services/tools/`, `utils/permissions/permissions.ts`, `services/compact/compact.ts`, against the `Message` union in `types/message.ts`. Prefer E2E evidence. The `check:nocheck` baseline may only shrink; after removing a `@ts-nocheck`, run `node scripts/check-nocheck-ratchet.mjs --update`.
 
 **Production bundles are minified**: mangled stack traces / `constructor.name` in `dist/main.js` are expected (`utils/errors.ts` and `classifyToolError` handle them); use `dev`/`build:dev` for real names. Production defines `NODE_ENV=production`, so `NODE_ENV === 'test'` branches and test hooks exist only from source.
 
-**Only the compiled binary is code-split** per `import()`, so fast paths load only the bootstrap chunk (`dist/cli --version` ~10ms vs ~75ms). Every static import in `main.tsx` loads on every launch.
+Dead-code checks on `src/` exports must also scan `scripts/` and `bin/`: `scripts/check-runtime-health.mjs` imports `_*ForTesting` exports that only it uses, and deleting one breaks only `bun run check:runtime` (not `bun test` or `typecheck`).
 
-## Feature flags — read before editing gated code
+## Where the rest lives
 
-`feature('FLAG')` from `bun:bundle` is not a runtime module: `build.ts` rewrites `src/**.ts(x)` in place before bundling, replacing each call with a `true`/`false` literal for DCE (restored in a `finally`).
+Path-scoped rules in `.claude/rules/` (symlinked as `.noa/rules/`) load automatically when you touch matching files; tools that don't load them should read the matching file first:
 
-- Keep `feature('X')` an inline literal call — never alias, wrap, or compute the name.
-- Baseline enables `build.ts`'s `defaultFeatures`; `--feature-set=dev-full` adds `fullExperimentalFeatures`; unknown flags → `false`.
-- Some flags gate modules absent from this fork. A green `build:dev:full` only proves the bundle resolves — placeholder modules must still export every name their call sites read, or the binary dies at startup/first turn (CI runs `e2e-agent-loop.mjs --entry dist/main-dev.js` for this). `COORDINATOR_MODE` is in neither list; its inert branches in resume/session paths are intentional. `FEATURES.md` is the authoritative audit.
-
-## Prompt cache keys
-
-Lean vs verbose prompt details: `src/constants/CLAUDE.md`. Anything whose text depends on that gate must vary its cache key — `toolToAPISchema()` (`src/utils/api.ts`) and `resolveSystemPromptSections()` (`src/constants/systemPromptSections.ts`) memoize per session, so suffix with `:L` as upstream does, or a mid-session `/model` switch serves the wrong tier.
-
-## Architecture
-
-- `run-noa.js` — validates `launcher-config.js`, lockfile-guarded auto-rebuild of `dist/main.js` when source is newer (`CLAUDE_CODE_LAUNCHER_AUTO_REBUILD`), then imports it. It, `bin/noa.js`, `launcher-config.js`, and `build.ts` are plain JS run by Bun and must work with `dist/` stale or missing.
-- `src/entrypoints/cli.tsx` — `bootstrapCli()` (exported as `main`): fast paths (`--version`, MCP subservers, bridge/daemon), then lazy-imports `main.tsx`. Keep its imports dynamic (`check:runtime` asserts `--version` never evaluates `main.tsx`). The appended bootstrap calls `bootstrapCli()` as a bare identifier, so the name must stay unique in bundle scope. `dev:source` uses the same bootstrap.
-- Provider routing: `src/services/api/CLAUDE.md`. Directory map: README.
+- Code gated by `feature('…')` → `docs/feature-flags.md`
+- Startup, `main.tsx`, `run-noa.js`/`build.ts`/launcher → `startup.md`
+- Prompt text or `toolToAPISchema` → `prompt-cache.md` (lean vs verbose: `src/constants/CLAUDE.md`)
+- Provider routing → `src/services/api/CLAUDE.md`; preserved thinking → `preserved-thinking.md`
+- Skill hooks, task status, transcripts, Ink `Text` → `skill-hooks.md`, `task-status.md`, `transcripts.md`, `ink-text.md`
+- Verifying the model-capability tables against the upstream binary → `docs/upstream-binary.md`
+- Directory map: README.
 
 ## Conventions
 
 - Config lives in `~/.noa/` and project `.noa/`. Resolve the user dir with `getClaudeConfigHomeDir()` (`src/utils/envUtils.ts`, honors `CLAUDE_CONFIG_DIR`), never a hardcoded `~/.noa`. Toggles prefer `NOA_CLAUDE_*`; legacy `CLAUDE_CODE_*` still accepted.
 - Privacy is hardcoded: telemetry, GrowthBook remote fetch, and remote policy/settings overlays are disabled; GB gates use in-code defaults. Don't reintroduce remote-fetch or telemetry sinks.
-- `Text` from `src/ink.ts` is `ThemedText`: `backgroundColor` only resolves theme keys, so a raw hex background is silently dropped. Use `BaseText` for raw background colors.
 - Command surface: don't claim parity beyond `docs/product-governance.md` (authoritative). For product-surface changes, follow `.noa/skills/product-surface/SKILL.md`.
-- Commit messages must not describe work as an upstream port.
 - Stability invariants: interactive startup stays alive, `--print` works, resume/continue survive compaction, MCP startup degrades gracefully, permission boundaries hold. Failure-mode checklist: `docs/operating-guide.md`.
+- Code comments are in English, no Chinese comments; string literals used as examples (e.g. multilingual test cases) may stay in their original language. Talking to the user can still be in Chinese.
+- Comments and identifiers don't name the app a design or asset was borrowed from (e.g. "as Codex does", "from the Codex bundle", bundled names like OXr/F3); write the intent and values only ("16px folder in the label's color", `glyphs.ts` not `codexIcons.ts`). Protocol syntax such as `codex-file-citation` is not a comment; keep it. Keep icons already taken from Codex rather than replacing them.
 
-## Subsystem invariants
+## Commit and push
 
-- **Skill hooks** (`src/utils/hooks/registerSkillHooks.ts`): cleanup and success callbacks use registration identity, not command equality. Budgets are cumulative per source and session (1,024 hooks / 16,384 matcher chars), counting hooks already consumed by `once`. When plugin-only hook policy excludes a skill's hooks, also exclude its `allowed-tools`, including inline shell expansion and fork execution.
-- **Agent skill hooks** register and clean up through `setAppStateForTasks ?? setAppState` (a background agent's `setAppState` may be a no-op). Agent exit always clears session hooks, including ones skills registered during the run.
-- **Task status** (`TASK_STATUS_TRANSITIONS` in `src/Task.ts`): `completed`/`failed`/`killed` are final; both `updateTaskState` helpers drop illegal transitions. Decide the final outcome before the terminal write, and guard any direct `setAppState` task write with `isTerminalTaskStatus`. Resume re-registers via `registerTask`.
-- **Preserved thinking**: on models where `modelEnforcesThinkingPrefixBinding()` is true, never rewrite system, tools, or messages already sent — a client-side edit (e.g. clearing old tool results) invalidates every later thinking block. Partial compaction's kept tail is the one accepted exception, absorbed by `drop_block`. `e2e-agent-loop.mjs --case preserved-thinking` asserts sent messages stay unchanged.
-- **Transcripts** (`src/utils/sessionStorage.ts`): tombstones may truncate the last entry directly; removing earlier entries must preserve the original file on write failure. Finish pending appends before replacing a transcript. Tail entries stay removable above the full-rewrite size limit using bounded buffers.
+- Commit messages must not describe work as an upstream port.
+- 只有用户在当前请求里明确说"提交"才 git commit；做完改动后停在未提交状态，汇报并等用户决定。之前的授权不延续。
+- 提交直接在当前 master 上 commit，不建 feature 分支（单人仓库，历史提交都在 master）。
+- 不 push，除非用户要求。
+- 工作区常有其他会话并发改动，甚至会抢先 commit。push 前必须核对 `git log origin/master..HEAD` 只包含用户本次授权推送的提交。
+- commit 与 push 用 `&&` 串起来：commit 失败（如 nothing to commit）就停下来问，不要继续 push。
+- 提交前看 `git status` 是否意外 ahead、目标文件是否已无 diff；有异常先报告。
+
+**Why:** 三次事故：用户说过一次"先提交"，我把它套用到了后续任务，用户说没让提交就别提交；用户说不需要 branch，我却多建了分支；另一会话已把待推送的测试文件连同未审查改动提交为 ecbda55a，我的 commit 失败后 push 仍执行，把整条提交推上了远端。
+
+Since 2026-11-03 a GitHub ruleset ("master requires ci-ok", id 26493676) requires the `ci-ok` aggregate job of PR Quality Gate on master. Repository admins bypass it, so direct pushes to master still work and print "Bypassed rule violations ... ci-ok". That bypass skips the gate: say so before pushing to master, and after pushing, check the ci-ok result on that commit instead of reporting the push as CI-green.
+
+**Why:** heavy jobs skip on docs-only changes and skipped matrix jobs report under an unexpanded name, so only `ci-ok` can be the required check; per-job required checks would hang PRs.
+
+When adding or renaming jobs in pr-quality-gate.yml, add them to `ci-ok`'s `needs`. `scripts/e2e-startup-boundaries.mjs` 的 `effort-sent-state` case 曾在 CI 偶发失败一次（重跑通过，本地无法复现）；再次出现按真实线索处理。
