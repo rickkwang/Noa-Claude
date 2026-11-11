@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react"
 import type { AppSettings, ThemeFontFace, ThemeFonts } from "../../types"
-import { ChevronDown } from "../../lib/icons"
 import { SYSTEM_DEFAULT_FONT, CONTENT_SAME_AS_UI } from "../../lib/fontFamily"
 import { faceStyle, isRegularFace, loadFontFamilies, type LocalFontFamily } from "../../lib/localFonts"
 import { clampContrast } from "../../lib/contrast"
@@ -13,13 +12,9 @@ type Theme = AppSettings["appearance"]["theme"]
 
 export function AppearancePage({
   settings,
-  showAdvanced,
-  onToggleAdvanced,
   onChange,
 }: {
   settings: AppSettings
-  showAdvanced: boolean
-  onToggleAdvanced: () => void
   onChange: (settings: AppSettings) => void
 }) {
   const appearance = settings.appearance
@@ -118,63 +113,46 @@ export function AppearancePage({
             onChange={(theme) => change({ theme: theme as Theme })}
           />
         </Row>
-        <Row label="Font" description="Family for the interface.">
-          <Select value={activeFonts.ui} options={uiFamilyOptions} onChange={(family) => chooseFamily("ui", family)} />
+        {supportsSidebarTranslucency() && (
+          <Row label="Translucent sidebar" description="Let the desktop material show behind the sidebar, per theme.">
+            <Toggle
+              checked={translucency[variant]}
+              onChange={(enabled) => change({ translucentSidebar: { ...translucency, [variant]: enabled } })}
+            />
+          </Row>
+        )}
+        <Row label="Contrast" description="Divider and border contrast for the active theme; light and dark keep separate values.">
+          <Slider
+            label="Contrast"
+            value={contrast}
+            onChange={(value) => change({ contrast: { ...appearance.contrast, [variant]: value } })}
+          />
         </Row>
       </Section>
 
-      <div className="flex flex-col">
-        <button
-          type="button"
-          aria-expanded={showAdvanced}
-          onClick={onToggleAdvanced}
-          className="flex min-h-10 w-fit cursor-pointer items-center gap-1 pb-1.5 text-body font-medium text-[var(--sidebar-text-muted)] hover:text-[var(--text-primary)]"
-        >
-          Advanced
-          <ChevronDown size={14} className={`transition-transform ${showAdvanced ? "rotate-180" : ""}`} />
-        </button>
-        {showAdvanced && (
-          <div className="flex flex-col gap-6">
-            <Section title={`${isDark ? "Dark" : "Light"} theme`}>
-              {supportsSidebarTranslucency() && (
-                <Row label="Translucent sidebar" description="Let the desktop material show behind the sidebar, per theme.">
-                  <Toggle
-                    checked={translucency[variant]}
-                    onChange={(enabled) => change({ translucentSidebar: { ...translucency, [variant]: enabled } })}
-                  />
-                </Row>
-              )}
-              <Row label="Contrast" description="Divider and border contrast for the active theme; light and dark keep separate values.">
-                <Slider
-                  label="Contrast"
-                  value={contrast}
-                  onChange={(value) => change({ contrast: { ...appearance.contrast, [variant]: value } })}
-                />
-              </Row>
-            </Section>
-            <Section title="Text">
-              <Row label="UI font style" description="Face of the selected family.">
-                {faceSelect({ role: "ui", family: activeFonts.ui, face: activeFonts.uiFace })}
-              </Row>
-              <Row label="Content font" description="Typeface for messages and page content.">
-                {fontPair({ role: "content", family: activeFonts.content, face: activeFonts.contentFace, options: contentFamilyOptions })}
-              </Row>
-              <Row label="Code font" description="Typeface for code blocks and diffs, separate from the interface font.">
-                {fontPair({ role: "code", family: activeFonts.code, face: activeFonts.codeFace, options: codeFamilyOptions })}
-              </Row>
-              <Row label="UI font size" description="Base size for interface text (11–16 px).">
-                <NumberField value={appearance.uiFontSize} min={11} max={16} onChange={(uiFontSize) => change({ uiFontSize })} />
-              </Row>
-              <Row label="Code font size" description="Size for code blocks (8–24 px).">
-                <NumberField value={appearance.codeFontSize} min={8} max={24} onChange={(codeFontSize) => change({ codeFontSize })} />
-              </Row>
-              <Row label="Font smoothing" description="Smooth edges of text on screen.">
-                <Toggle checked={appearance.fontSmoothing} onChange={(fontSmoothing) => change({ fontSmoothing })} />
-              </Row>
-            </Section>
-          </div>
-        )}
-      </div>
+      <Section title="Text">
+        <Row label="UI font" description="Family for the interface.">
+          <Select value={activeFonts.ui} options={uiFamilyOptions} onChange={(family) => chooseFamily("ui", family)} />
+        </Row>
+        <Row label="UI font style" description="Face of the selected family.">
+          {faceSelect({ role: "ui", family: activeFonts.ui, face: activeFonts.uiFace })}
+        </Row>
+        <Row label="Content font" description="Typeface for messages and page content.">
+          {fontPair({ role: "content", family: activeFonts.content, face: activeFonts.contentFace, options: contentFamilyOptions })}
+        </Row>
+        <Row label="Code font" description="Typeface for code blocks and diffs, separate from the interface font.">
+          {fontPair({ role: "code", family: activeFonts.code, face: activeFonts.codeFace, options: codeFamilyOptions })}
+        </Row>
+        <Row label="UI font size" description="Base size for interface text (11–16 px).">
+          <NumberField value={appearance.uiFontSize} min={11} max={16} onChange={(uiFontSize) => change({ uiFontSize })} />
+        </Row>
+        <Row label="Code font size" description="Size for code blocks (8–24 px).">
+          <NumberField value={appearance.codeFontSize} min={8} max={24} onChange={(codeFontSize) => change({ codeFontSize })} />
+        </Row>
+        <Row label="Font smoothing" description="Smooth edges of text on screen.">
+          <Toggle checked={appearance.fontSmoothing} onChange={(fontSmoothing) => change({ fontSmoothing })} />
+        </Row>
+      </Section>
 
       <Section title="Layout">
         <Row label="Transcript text size" description="Size of message text, relative to the interface font size.">

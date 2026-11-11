@@ -38,7 +38,7 @@ const pages: { key: Page; label: string; group: string; icon: ReactNode; rows: s
       "Mode",
       "Contrast",
       "Translucent sidebar",
-      "Font",
+      "UI font",
       "UI font style",
       "Content font",
       "Code font",
@@ -152,7 +152,6 @@ export function SettingsDialog({
   const [searchTarget, setSearchTarget] = useState<{ label: string }>()
   const dialogRef = useRef<HTMLDivElement>(null)
   const backRef = useRef<HTMLButtonElement>(null)
-  const [advancedOpen, setAdvancedOpen] = useState(false)
   const [configurationDirty, setConfigurationDirty] = useState(false)
   const [mcpDirty, setMcpDirty] = useState(false)
   const { confirm: confirmClose, dialog: closeDialog } = useConfirm()
@@ -190,8 +189,6 @@ export function SettingsDialog({
     row?.scrollIntoView({ block: "center" })
     if (settings.appearance.motion !== 'reduced') row?.animate([{ backgroundColor: "var(--settings-fill-active)" }, { backgroundColor: "transparent" }], { duration: 1200 })
   }, [page, searchTarget, settings.appearance.motion])
-  // A search jump may land on a row inside Advanced, so it opens the group.
-  const showAdvanced = advancedOpen || searchTarget !== undefined
   const current = pages.find((p) => p.key === page)
 
   useEffect(() => {
@@ -328,8 +325,8 @@ export function SettingsDialog({
       {navResizeHandle}
       {/* The content card has no titlebar of its own, so this strip keeps the top of the window draggable. */}
       <div aria-hidden className="absolute inset-x-0 top-0 z-10 h-11" style={{ ...dragRegion, left: navWidth }} />
-      <main className="noa-settings-main scrollbar-on-scroll min-w-0 flex-1 overflow-y-auto bg-[var(--bg-primary,#FCFCFB)] px-5 pt-[120px] pb-5">
-        <div className="mx-auto flex max-w-3xl flex-col gap-10">
+      <main className="noa-settings-main scrollbar-on-scroll min-w-0 flex-1 overflow-y-auto bg-[var(--bg-primary,#FCFCFB)] px-5 pt-16 pb-16">
+        <div className="mx-auto flex max-w-3xl flex-col gap-8">
           {page !== "skills" && <h1 className="text-[26px] leading-8 font-normal">{current?.label}</h1>}
 
           {page === "general" && (
@@ -347,8 +344,6 @@ export function SettingsDialog({
           {page === "appearance" && (
             <AppearancePage
               settings={settings}
-              showAdvanced={showAdvanced}
-              onToggleAdvanced={() => setAdvancedOpen((open) => !open)}
               onChange={onChange}
             />
           )}

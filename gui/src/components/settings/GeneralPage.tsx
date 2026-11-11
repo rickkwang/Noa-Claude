@@ -2,7 +2,7 @@ import type { AppSettings } from "../../types"
 import type { AccountInfo, ModelInfo } from "../../agent/protocol"
 import { outputStyleOptions } from "../../lib/outputStyles"
 import { useConfirm } from "../ConfirmDialog"
-import { Row, Section, Select, TextField, Toggle } from "./controls"
+import { actionButton, Row, Section, Select, TextField, Toggle } from "./controls"
 
 type DefaultMode = AppSettings["agent"]["permissionDefault"]
 
@@ -58,11 +58,7 @@ export function GeneralPage({
                 : "Sign in to use Anthropic through this desktop session."
           }
         >
-          <button
-            type="button"
-            onClick={onSignIn}
-            className="h-8 rounded-lg border border-[var(--border-default)] bg-[var(--bg-card)] px-3 text-body text-[var(--text-primary)] hover:bg-[var(--settings-fill-hover)]"
-          >
+          <button type="button" onClick={onSignIn} className={`${actionButton} bg-[var(--bg-card)] text-[var(--text-primary)]`}>
             {account?.email ? "Sign in again" : "Sign in"}
           </button>
         </Row>
@@ -70,7 +66,7 @@ export function GeneralPage({
       <Section title="Permissions">
         <Row
           label="Default permissions"
-          description="By default, Noa can read and edit files in its workspace. It can ask for additional access when needed. Follow Noa settings uses permissions.defaultMode from settings.json."
+          description="Noa reads and edits files in its workspace and asks before going further. Follow Noa settings uses permissions.defaultMode."
         >
           <Select
             value={permissionMode}
@@ -80,7 +76,7 @@ export function GeneralPage({
         </Row>
         <Row
           label="Full access"
-          description="When Noa runs with full access, it can edit any file on your computer and run commands with network, without your approval. This significantly increases the risk of data loss, leaks, or unexpected behavior."
+          description="Add Full access to the permissions menu. It lets Noa edit any file and use the network without approval."
         >
           <Toggle
             checked={settings.composer.showFullAccess}
@@ -96,23 +92,21 @@ export function GeneralPage({
           />
         </Row>
       </Section>
-      <Section title="Responses">
-        <Row label="Default output style" description="Used for new chats. Follow Noa settings uses outputStyle from settings.json.">
+      <Section title="Chat">
+        <Row label="Default output style" description="Used for new chats. Follow Noa settings uses outputStyle.">
           <Select
             value={settings.agent.outputStyle}
             options={[["inherit", "Follow Noa settings"], ...outputStyleOptions(settings.agent.outputStyle === "inherit" ? undefined : settings.agent.outputStyle)]}
             onChange={(outputStyle) => onChange({ ...settings, agent: { ...settings.agent, outputStyle } })}
           />
         </Row>
-      </Section>
-      <Section title="Composer">
-        <Row label="Send shortcut" description="Choose when Enter sends a prompt or inserts a new line.">
+        <Row label="Send shortcut" description="Which keys send a prompt.">
           <Select
             value={settings.composer.sendShortcut}
             options={[
               ["enter", "Enter"],
-              ["modifier-enter", `${modifierLabel} + Enter always`],
-              ["modifier-enter-multiline", `${modifierLabel} + Enter for multiline prompts`],
+              ["modifier-enter", `${modifierLabel} Enter`],
+              ["modifier-enter-multiline", `${modifierLabel} Enter when multiline`],
             ]}
             onChange={(value) =>
               onChange({
@@ -122,7 +116,7 @@ export function GeneralPage({
             }
           />
         </Row>
-        <Row label="Follow-up behavior" description="Queue follow-ups while Noa runs, or steer the current run with them.">
+        <Row label="Follow-up behavior" description="Messages sent while Noa runs are queued or steer the current run.">
           <Select
             value={settings.composer.followUpMode}
             options={[
@@ -137,7 +131,7 @@ export function GeneralPage({
             }
           />
         </Row>
-        <Row label="Show context window usage" description="Show context usage in the composer.">
+        <Row label="Show context window usage" description="Show the context meter in the composer.">
           <Toggle
             checked={settings.composer.showContextUsage}
             onChange={(showContextUsage) =>
@@ -159,7 +153,7 @@ export function GeneralPage({
             }
           />
         </Row>
-        <Row label="Font" description="A font installed on this computer, such as a Nerd Font for prompt icons. Leave empty to use the code font.">
+        <Row label="Font" description="An installed font, such as a Nerd Font. Empty uses the code font.">
           <TextField
             value={settings.terminal.fontFamily}
             placeholder="Code font"
@@ -169,7 +163,7 @@ export function GeneralPage({
         </Row>
       </Section>
       <Section title="Notifications">
-        <Row label="Turn notifications" description="When a finished task shows a desktop notification.">
+        <Row label="Turn notifications" description="When to notify that a turn finished.">
           <Select
             value={settings.notifications.turnMode}
             options={[

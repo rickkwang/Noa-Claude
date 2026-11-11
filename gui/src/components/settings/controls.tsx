@@ -29,7 +29,7 @@ export function Row({ label, description, icon, children }: { label: string; des
         {icon}
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           <span className="text-chat-sm leading-[18px] font-medium">{label}</span>
-          {description && <span className="text-caption leading-4 text-[var(--sidebar-text-muted)]">{description}</span>}
+          {description && <span className="max-w-[52ch] text-caption leading-4 text-pretty text-[var(--sidebar-text-muted)]">{description}</span>}
         </div>
       </div>
       {children}
@@ -139,7 +139,7 @@ export function Select({
         value={value}
         disabled={disabled}
         onChange={(e) => onChange(e.target.value)}
-        className="h-8 appearance-none rounded-lg border border-[var(--border-default)] bg-[var(--bg-card)] pr-8 pl-3 text-body text-[var(--text-primary)] outline-none disabled:opacity-40"
+        className="h-8 min-w-44 appearance-none rounded-lg border border-[var(--border-default)] bg-[var(--bg-card)] pr-8 pl-3 text-body text-[var(--text-primary)] outline-none disabled:opacity-40"
       >
         {options.map(([v, label]) => (
           <option key={v} value={v}>
