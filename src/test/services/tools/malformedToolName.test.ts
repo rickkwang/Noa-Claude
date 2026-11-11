@@ -6,7 +6,10 @@ import { StreamingToolExecutor } from '../../../services/tools/StreamingToolExec
 import { runTools } from '../../../services/tools/toolOrchestration.js'
 import { BASH_TOOL_NAME } from '../../../tools/BashTool/toolName.js'
 import type { AssistantMessage, Message } from '../../../types/message.js'
-import { createAssistantMessage } from '../../../utils/messages.js'
+import {
+  createAssistantMessage,
+  createUserMessage,
+} from '../../../utils/messages.js'
 
 function createContext(): ToolUseContext {
   return {
@@ -209,6 +212,51 @@ describe('malformed tool names', () => {
     ])
     expect(results[0]?.content).toBe('ok')
     expect(results[1]?.is_error).toBe(true)
+  })
+})
+
+describe('streaming tool results under abort', () => {
+  // The result and the follow-up messages arrive as separate updates; an
+  // abort landing between them must not add a rejection on top of the result.
+  test('a tool_use id never gets more than one tool_result, whenever the abort lands', async () => {
+    for (let depth = 0; depth <= 40; depth++) {
+      const context = createContext()
+      const tool = {
+        ...(createFakeBashTool() as Record<string, unknown>),
+        async call() {
+          return {
+            data: { output: 'ok' },
+            newMessages: [createUserMessage({ content: 'follow-up' })],
+          }
+        },
+        mapToolResultToToolResultBlockParam(_: unknown, toolUseID: string) {
+          let tick = Promise.resolve()
+          for (let i = 0; i < depth; i++) tick = tick.then(() => {})
+          void tick.then(() => context.abortController.abort('user'))
+          return { type: 'tool_result', tool_use_id: toolUseID, content: 'ok' }
+        },
+      } as never
+      context.options.tools = [tool]
+      const toolUse = {
+        type: 'tool_use',
+        id: 'toolu_abort_race',
+        name: BASH_TOOL_NAME,
+        input: { command: 'make build', readOnly: false },
+      } as ToolUseBlock
+      const executor = new StreamingToolExecutor(
+        [tool],
+        async (_tool, input) => ({ behavior: 'allow', updatedInput: input }),
+        context,
+      )
+      const updates: Message[] = []
+
+      executor.addTool(toolUse, createAssistantWithToolUse(toolUse))
+      for await (const update of executor.getRemainingResults()) {
+        if (update.message) updates.push(update.message)
+      }
+
+      expect(getToolResults(updates)).toHaveLength(1)
+    }
   })
 })
 

@@ -190,8 +190,3 @@ export const lspToolInputSchema = lazySchema(() => {
     outgoingCallsSchema,
   ])
 })
-
-/**
- * TypeScript type for LSPTool input
- */
-export type LSPToolInput = z.infer<ReturnType<typeof lspToolInputSchema>>

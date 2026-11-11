@@ -291,6 +291,39 @@ describe('query loop recovery', () => {
     expect(terminal).toEqual({ reason: 'completed' })
   }, 5000)
 
+  // Partial output from the abandoned attempt is not resent to the fallback
+  // model, so it must not survive in the transcript either.
+  test('model fallback: partial output from the first model is retracted', async () => {
+    const callMessages: Message[][] = []
+    const deps = makeDeps(async function* ({ messages }) {
+      callMessages.push(messages)
+      if (callMessages.length === 1) {
+        yield createAssistantMessage({ content: 'partial from main' })
+        throw new FallbackTriggeredError('main-model', 'fallback-model')
+      }
+      yield createAssistantMessage({ content: 'done on fallback' })
+    })
+    const start = createUserMessage({ content: 'start' })
+
+    const { events } = await drain({
+      deps,
+      messages: [start],
+      fallbackModel: 'fallback-model',
+    })
+
+    const retracted = new Set(
+      events.flatMap(e =>
+        (e as { type: string }).type === 'tombstone'
+          ? [(e as unknown as { message: Message }).message]
+          : [],
+      ),
+    )
+    const transcript = [start, ...events].filter(
+      e => (e.type === 'user' || e.type === 'assistant') && !retracted.has(e),
+    )
+    expect(transcript.slice(0, -1)).toEqual(callMessages[1]!)
+  }, 5000)
+
   test('empty assistant turn: yields a retryable empty_response error instead of silence', async () => {
     const deps = makeDeps(async function* () {
       // Model produced nothing.
@@ -322,6 +355,36 @@ describe('query loop recovery', () => {
     )
     expect(events.some(e => e.type === 'assistant' && e.isApiErrorMessage)).toBe(false)
     expect(terminal).toEqual({ reason: 'completed' })
+  }, 5000)
+
+  // The next turn's history is rebuilt from what the loop yields, so it must
+  // match what the retry sent: nudge recorded, empty response retracted.
+  test('empty assistant turn: the transcript replays exactly what the retry sent', async () => {
+    const callMessages: Message[][] = []
+    const deps = makeDeps(async function* ({ messages }) {
+      callMessages.push(messages)
+      yield createAssistantMessage({
+        content:
+          callMessages.length === 1
+            ? [{ type: 'thinking', thinking: 'hm', signature: 'sig' }]
+            : 'answer',
+      })
+    })
+    const start = createUserMessage({ content: 'start' })
+
+    const { events } = await drain({ deps, messages: [start] })
+
+    const retracted = new Set(
+      events.flatMap(e =>
+        (e as { type: string }).type === 'tombstone'
+          ? [(e as unknown as { message: Message }).message]
+          : [],
+      ),
+    )
+    const transcript = [start, ...events].filter(
+      e => (e.type === 'user' || e.type === 'assistant') && !retracted.has(e),
+    )
+    expect(transcript.slice(0, -1)).toEqual(callMessages[1]!)
   }, 5000)
 
   test('empty assistant turn after StructuredOutput: ends cleanly, no nudge or error', async () => {

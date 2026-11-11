@@ -31,12 +31,6 @@ export function hasSummarySinceLastUserTurn(
   return false
 }
 
-export function isAwaySummaryEnabled(
-  settings: { awaySummaryEnabled?: boolean },
-): boolean {
-  return settings.awaySummaryEnabled !== false
-}
-
 /**
  * Appends a "while you were away" summary message once the user has been idle
  * (no turn in progress) for 3 minutes *and* the terminal is blurred. The 3-min

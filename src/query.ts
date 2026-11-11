@@ -464,8 +464,7 @@ async function* queryLoop(
 
   // task_budget.remaining tracking across compaction boundaries. Undefined
   // until first compact fires — while context is uncompacted the server can
-  // see the full history and handles the countdown from {total} itself (see
-  // api/api/sampling/prompt/renderer.py:292). After a compact, the server sees
+  // see the full history and handles the countdown from {total} itself. After a compact, the server sees
   // only the summary and would under-count spend; remaining tells it the
   // pre-compact final window that got summarized away. Cumulative across
   // multiple compacts: each subtracts the final context at that compact's
@@ -1186,11 +1185,11 @@ async function* queryLoop(
             remainingFallbackModel = fallbackChain[0]
             attemptWithFallback = true
 
-            // Clear assistant messages since we'll retry the entire request
-            yield* yieldMissingToolResultBlocks(
-              assistantMessages,
-              'Model fallback triggered',
-            )
+            // The retry resends the request without this attempt's partial
+            // output, so retract it — same as the streaming-fallback path above.
+            for (const msg of assistantMessages) {
+              yield { type: 'tombstone' as const, message: msg }
+            }
             assistantMessages.length = 0
             toolResults.length = 0
             toolUseBlocks.length = 0
@@ -1234,7 +1233,7 @@ async function* queryLoop(
               original_model:
                 innerError.originalModel as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
               fallback_model:
-                fallbackModel as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
+                currentModel as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
               entrypoint:
                 'cli' as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
               queryChainId: queryChainIdForAnalytics,
@@ -1414,11 +1413,16 @@ async function* queryLoop(
           `${renderModelName(currentModel)}'s safeguards stopped the response above \u00b7 continuing once with that noted`,
           'warning',
         )
+        const refusalNudge = createUserMessage({
+          content: REFUSAL_RETRY_NUDGE,
+          isMeta: true,
+        })
+        yield refusalNudge
         state = nextState(state, {
           messages: [
             ...messagesForQuery,
             ...assistantMessages.filter(msg => msg !== refusal),
-            createUserMessage({ content: REFUSAL_RETRY_NUDGE, isMeta: true }),
+            refusalNudge,
           ],
           toolUseContext,
           autoCompactTracking: tracking,
@@ -1585,6 +1589,7 @@ async function* queryLoop(
               `Pick up mid-thought if that is where the cut happened. Break remaining work into smaller pieces.`,
             isMeta: true,
           })
+          yield recoveryMessage
 
           state = nextState(state, {
             messages: [
@@ -1617,10 +1622,6 @@ async function* queryLoop(
         yield lastMessage
       }
 
-      // Skip stop hooks when the last message is an API error (rate limit,
-      // prompt-too-long, auth failure, etc.). The model never produced a
-      // real response — hooks evaluating it create a death spiral:
-      // error → hook blocking → retry → error → …
       if (
         lastMessage?.truncatedAfterOutput &&
         (toolUseContext.agentId || toolUseContext.options.isNonInteractiveSession) &&
@@ -1673,6 +1674,10 @@ async function* queryLoop(
         continue
       }
 
+      // Skip stop hooks when the last message is an API error (rate limit,
+      // prompt-too-long, auth failure, etc.). The model never produced a
+      // real response — hooks evaluating it create a death spiral:
+      // error → hook blocking → retry → error → …
       if (lastMessage?.isApiErrorMessage) {
         void executeStopFailureHooks(lastMessage, toolUseContext)
         return { reason: 'api_error', failure: goalFailureCategory(lastMessage) }
@@ -1685,15 +1690,14 @@ async function* queryLoop(
           for (const msg of assistantMessages) {
             yield { type: 'tombstone' as const, message: msg }
           }
+          const retryNudge = createUserMessage({
+            content:
+              'The previous response failed to produce a valid tool call. Please retry the tool call now.',
+            isMeta: true,
+          })
+          yield retryNudge
           state = nextState(state, {
-            messages: [
-              ...messagesForQuery,
-              createUserMessage({
-                content:
-                  'The previous response failed to produce a valid tool call. Please retry the tool call now.',
-                isMeta: true,
-              }),
-            ],
+            messages: [...messagesForQuery, retryNudge],
             toolUseContext,
             autoCompactTracking: tracking,
             malformedToolUseRetryCount: state.malformedToolUseRetryCount + 1,
@@ -1717,15 +1721,18 @@ async function* queryLoop(
           querySource !== 'compact' &&
           !isBackgroundForkQuerySource(querySource)
         ) {
+          // The retry is sent without the empty response, so retract it too.
+          for (const msg of assistantMessages) {
+            yield { type: 'tombstone' as const, message: msg }
+          }
+          const emptyNudge = createUserMessage({
+            content:
+              '[Your previous response had no visible output. Please continue and produce a user-visible response.]',
+            isMeta: true,
+          })
+          yield emptyNudge
           state = nextState(state, {
-            messages: [
-              ...messagesForQuery,
-              createUserMessage({
-                content:
-                  '[Your previous response had no visible output. Please continue and produce a user-visible response.]',
-                isMeta: true,
-              }),
-            ],
+            messages: [...messagesForQuery, emptyNudge],
             toolUseContext,
             autoCompactTracking: tracking,
             hasRetriedEmptyResponse: true,
@@ -1889,15 +1896,13 @@ async function* queryLoop(
           logForDebugging(
             `Token budget continuation #${decision.continuationCount}: ${decision.pct}% (${decision.turnTokens.toLocaleString()} / ${decision.budget.toLocaleString()})`,
           )
+          const budgetNudge = createUserMessage({
+            content: decision.nudgeMessage,
+            isMeta: true,
+          })
+          yield budgetNudge
           state = nextState(state, {
-            messages: [
-              ...messagesForQuery,
-              ...assistantMessages,
-              createUserMessage({
-                content: decision.nudgeMessage,
-                isMeta: true,
-              }),
-            ],
+            messages: [...messagesForQuery, ...assistantMessages, budgetNudge],
             toolUseContext,
             autoCompactTracking: tracking,
             maxOutputTokensRecoveryCount: 0,
@@ -1990,6 +1995,7 @@ async function* queryLoop(
               yield createAttachmentMessage({ type: 'max_turns_reached', maxTurns, turnCount: nextTurnCount })
               return { reason: 'max_turns', turnCount: nextTurnCount }
             }
+            yield background.modelNotice
             state = nextState(state, { messages: [...messagesForQuery, ...assistantMessages, background.modelNotice], toolUseContext, autoCompactTracking: tracking, turnCount: nextTurnCount, transition: { reason: 'goal_auto_continue' } })
             continue
           }
@@ -2070,6 +2076,7 @@ async function* queryLoop(
               return { reason: 'aborted_streaming' }
             }
             usedToolsForGoal = false
+            yield goalRuntimeDecision.modelNotice
             state = nextState(state, {
               messages: [
                 ...messagesForQuery,
@@ -2219,6 +2226,7 @@ async function* queryLoop(
       yield goalAccounting.userNotice
     }
     if (goalAccounting.modelNotice) {
+      yield goalAccounting.modelNotice
       toolResults.push(goalAccounting.modelNotice)
     }
 

@@ -103,7 +103,6 @@ export async function* handleStopHooks(
   // memory extraction, auto-dream). Scripted -p calls don't want auto-memory
   // or forked agents contending for resources during shutdown.
   if (!isBareMode()) {
-    // Inline env check for dead code elimination in external builds
     if (!isEnvDefinedFalsy(process.env.CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION)) {
       void executePromptSuggestion(stopHookContext).catch(logError)
     }
@@ -137,7 +136,7 @@ export async function* handleStopHooks(
       stopHookActive ?? false,
       toolUseContext.agentId,
       toolUseContext,
-      [...messagesForQuery, ...assistantMessages],
+      stopHookContext.messages,
       toolUseContext.agentType,
     )
 
@@ -297,7 +296,7 @@ export async function* handleStopHooks(
       let teammatePreventedContinuation = false
       let teammateStopReason: string | undefined
       // Each hook executor generates its own toolUseID — capture from progress
-      // messages (same pattern as stopHookToolUseID at L142), not the Stop ID.
+      // messages (same pattern as stopHookToolUseID above), not the Stop ID.
       let teammateHookToolUseID = ''
 
       // Run TaskCompleted hooks for any in-progress tasks owned by this teammate

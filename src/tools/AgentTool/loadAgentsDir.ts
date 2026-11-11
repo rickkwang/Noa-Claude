@@ -184,12 +184,6 @@ export function isCustomAgent(
   return agent.source !== 'built-in' && agent.source !== 'plugin'
 }
 
-export function isPluginAgent(
-  agent: AgentDefinition,
-): agent is PluginAgentDefinition {
-  return agent.source === 'plugin'
-}
-
 export type AgentDefinitionsResult = {
   activeAgents: AgentDefinition[]
   allAgents: AgentDefinition[]

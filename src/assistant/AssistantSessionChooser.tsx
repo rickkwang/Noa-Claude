@@ -12,12 +12,12 @@ type Props = {
 };
 
 function getSessionLabel(session: AssistantSession): string {
-  return session.title ?? session.name ?? session.environmentName ?? `Session ${session.id.slice(0, 8)}`;
+  return session.title ?? `Session ${session.id.slice(0, 8)}`;
 }
 
 function getSessionDescription(session: AssistantSession): string | undefined {
   const parts = [
-    session.environmentName ?? session.environmentId,
+    session.environmentId,
     session.cwd,
     session.updatedAt ? `updated ${session.updatedAt}` : undefined,
   ].filter(Boolean);

@@ -30,8 +30,8 @@ export type Continue =
   | { reason: 'token_budget_continuation' }
   // Goal evaluator judged the goal unmet and asked for another turn.
   | { reason: 'goal_auto_continue' }
-  // stop_reason was tool_use but no tool call parsed; retry once without
-  // the broken response.
+  // stop_reason was tool_use but no tool call parsed; retry without the
+  // broken response (bounded by MAX_MALFORMED_TOOL_USE_RETRIES).
   | { reason: 'malformed_tool_use_retry' }
   // The response was stopped by a refusal before any tool call was
   // dispatched; retry once on the same model with that noted.
@@ -66,7 +66,7 @@ export type Terminal =
   // queryModelWithStreaming threw (it normally yields synthetic error
   // messages instead — this path is a runtime bug surfacing).
   | { reason: 'model_error'; error: unknown }
-  // stop_reason was tool_use with no parseable call, and the retry failed
+  // stop_reason was tool_use with no parseable call, and the retries failed
   // the same way.
   | { reason: 'malformed_tool_use_exhausted' }
   | { reason: 'aborted_streaming' }

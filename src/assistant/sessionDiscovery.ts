@@ -10,9 +10,7 @@ import { getOauthConfig } from '../constants/oauth.js';
 export type AssistantSession = {
   id: string;
   title?: string;
-  name?: string;
   environmentId?: string;
-  environmentName?: string;
   cwd?: string;
   updatedAt?: string;
 };
@@ -25,7 +23,6 @@ function toAssistantSession(session: SessionResource): AssistantSession {
   return {
     id: session.id,
     title: session.title ?? undefined,
-    name: session.title ?? undefined,
     environmentId: session.environment_id,
     cwd: session.session_context.cwd,
     updatedAt: session.updated_at,

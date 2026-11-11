@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { c as _c } from "react/compiler-runtime";
-import React, { createContext, useCallback, useContext, useEffect, useMemo } from 'react';
+import React, { createContext, useCallback, useEffect, useMemo } from 'react';
 import { saveCurrentProjectConfig } from '../utils/config.js';
 export type StatsStore = {
   increment(name: string, value?: number): void;
@@ -154,11 +154,4 @@ export function StatsProvider(t0) {
     t4 = $[6];
   }
   return t4;
-}
-export function useStats() {
-  const store = useContext(StatsContext);
-  if (!store) {
-    throw new Error("useStats must be used within a StatsProvider");
-  }
-  return store;
 }

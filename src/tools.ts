@@ -244,20 +244,29 @@ const RESTRICTED_DENIED_TOOL_NAMES = new Set<string>([
   'WebFetch',
 ])
 
-// Tool names given to --tools (space- or comma-separated, variadic). Read from
-// argv because this list is built before main.tsx's action handler runs.
+// Tool names given to --tools: variadic or --tools=value, space- or
+// comma-separated, rule content in parentheses ignored. Read from argv
+// because this list is built before main.tsx's action handler runs.
 function toolsFlagNames(): Set<string> {
-  const names = new Set<string>()
+  const values: string[] = []
   const argv = process.argv
-  const at = argv.indexOf('--tools')
-  if (at === -1) return names
-  for (let i = at + 1; i < argv.length && !argv[i]!.startsWith('-'); i++) {
-    for (const name of argv[i]!.split(',')) {
-      const trimmed = name.trim()
-      if (trimmed) names.add(trimmed.replace(/\(.*\)$/, ''))
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i]!
+    if (arg.startsWith('--tools=')) {
+      values.push(arg.slice('--tools='.length))
+    } else if (arg === '--tools') {
+      while (i + 1 < argv.length && !argv[i + 1]!.startsWith('-')) {
+        values.push(argv[++i]!)
+      }
     }
   }
-  return names
+  return new Set(
+    values
+      .join(' ')
+      .replace(/\([^)]*\)/g, '')
+      .split(/[,\s]+/)
+      .filter(Boolean),
+  )
 }
 
 /**

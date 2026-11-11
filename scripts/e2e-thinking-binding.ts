@@ -28,7 +28,8 @@ let recoveryCalls = 0
 let microcompactStage = false
 let microcompactCalls = 0
 const preservedWriteContent = 'abc  \n'.repeat(10_000)
-const legacyWriteContent = 'abc\n'.repeat(10_000)
+// Sized so clearing it alone saves more than microcompact's 20k-token minimum.
+const legacyWriteContent = 'abc\n'.repeat(25_000)
 const microcompactObserved: any[] = []
 const oldSignature = Buffer.from('old-local-signature').toString('base64')
 const freshSignature = Buffer.from('fresh-local-signature').toString('base64')
@@ -236,7 +237,7 @@ try {
     command: ['NODE_ENV=development', 'bun', import.meta.path, '--artifacts', artifacts],
     revision,
     script_sha256: createHash('sha256').update(readFileSync(import.meta.path)).digest('hex'),
-    inputs: { binding: inputs, recovery: 'thinking+tool_use → 400 invalid signature → fresh empty-text thinking+tool_use → final; external old-signature history + recovery marker + fresh outputs → JSON roundtrip → query again', microcompact: { preserved_write: 'abc  \\n repeated 10000 times', legacy_write: 'abc\\n repeated 10000 times', keep_recent: 1, trigger_percent: 1, sequence: 'real Write x2 → real Read → final; actual size microcompact, SDK serialization and in-memory HTTP capture' } },
+    inputs: { binding: inputs, recovery: 'thinking+tool_use → 400 invalid signature → fresh empty-text thinking+tool_use → final; external old-signature history + recovery marker + fresh outputs → JSON roundtrip → query again', microcompact: { preserved_write: 'abc  \\n repeated 10000 times', legacy_write: 'abc\\n repeated 25000 times', keep_recent: 1, trigger_percent: 1, sequence: 'real Write x2 → real Read → final; actual size microcompact, SDK serialization and in-memory HTTP capture' } },
     transport: 'Actual queryModelWithStreaming/query and SDK request serialization; api.anthropic.com URL for first-party gate, all fetches answered in memory; isolated dummy key/config; no live API or resume stripping',
     observed,
     request_count: requests.length,

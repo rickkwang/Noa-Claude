@@ -406,14 +406,14 @@ export class StreamingToolExecutor {
         },
       )
 
-      // A tool that already produced its error result gets no extra synthetic
-      // cancellation result on top of it.
-      let thisToolErrored = false
+      // A tool that already produced its result gets no extra synthetic
+      // cancellation result on top of it: one tool_use id, one tool_result.
+      let hasToolResult = false
 
       for await (const update of generator) {
         // Check if we were discarded or interrupted by the user.
         const abortReason = this.getAbortReason(tool)
-        if (abortReason && !thisToolErrored) {
+        if (abortReason && !hasToolResult) {
           messages.push(
             this.createSyntheticErrorMessage(
               tool.id,
@@ -424,15 +424,12 @@ export class StreamingToolExecutor {
           break
         }
 
-        const isErrorResult =
+        if (
           update.message.type === 'user' &&
           Array.isArray(update.message.message.content) &&
-          update.message.message.content.some(
-            _ => _.type === 'tool_result' && _.is_error === true,
-          )
-
-        if (isErrorResult) {
-          thisToolErrored = true
+          update.message.message.content.some(_ => _.type === 'tool_result')
+        ) {
+          hasToolResult = true
         }
 
         if (update.message) {

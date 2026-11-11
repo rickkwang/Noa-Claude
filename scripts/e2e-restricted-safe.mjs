@@ -66,6 +66,11 @@ const cases = {
     flags: ['--restricted', '--bare'],
     expect: 'completed',
   },
+  // --tools re-enables a dropped tool in either spelling; --tools=value used to be ignored.
+  'restricted-tools-equals-keeps-bash': {
+    flags: ['--restricted', '--tools=Bash,Read'],
+    expect: 'completed',
+  },
   // --restricted combined with bypassPermissions must refuse to start.
   'restricted-refuses-bypass': {
     flags: ['--restricted', '--dangerously-skip-permissions'],
@@ -195,6 +200,10 @@ function check(name, { dir, exit, stdout, stderr, workspace }) {
     assert.ok(!names.includes('Bash'), `Bash still offered under --restricted: ${names.join(', ')}`);
     assert.ok(!names.includes('WebFetch'), `WebFetch still offered under --restricted: ${names.join(', ')}`);
     assert.ok(names.includes('Read'), 'Read (a non-code tool) was removed under --restricted');
+  }
+  if (name === 'restricted-tools-equals-keeps-bash') {
+    const names = body.tools.map(t => t.name);
+    assert.ok(names.includes('Bash'), `--tools=Bash,Read did not keep Bash under --restricted: ${names.join(', ')}`);
   }
   if (name === 'restricted-bare-drops-bash') {
     const names = body.tools.map(t => t.name);
