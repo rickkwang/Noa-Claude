@@ -40,10 +40,13 @@ export type ToolBlock = {
 }
 
 type CompactionBlock = { kind: "compaction"; status: "running" | "done" | "stopped" | "unknown"; startedAt?: number; trigger?: "manual" | "auto" }
+// Marks where the conversation was rewound; it stays in the transcript so later readers see the cut.
+type RewindBlock = { kind: "rewind"; filesRestored?: boolean }
 type RetryBlock = { kind: "retry"; attempt: number; maxRetries: number; delayMs: number; errorStatus?: number | null; done?: boolean }
 export type SubagentBlock = { kind: "subagent"; id: string; taskId: string; description: string; status: AgentTask["status"] }
 export type Block =
   | CompactionBlock
+  | RewindBlock
   | RetryBlock
   | SubagentBlock
   // startedAt marks text produced in this session; history and replays carry none.
@@ -213,6 +216,8 @@ export function reducer(state: AgentState, action: Action): AgentState {
         if (item.kind === "user") restored = reducer(restored, { type: "history-user", id: item.id ?? crypto.randomUUID(), text: item.text, images: item.images, sentAt: item.sentAt })
         else if (item.kind === "turn-duration") restored = reducer(restored, { ...item, type: "turn-duration" })
         else if (item.kind === "compaction") restored = reducer(restored, { type: "compaction", trigger: item.trigger })
+        // A rewind marker stands on its own after the reply it follows, outside that reply's activity group.
+        else if (item.kind === "rewind") restored = { ...restored, turns: [...restored.turns, { role: "assistant", id: crypto.randomUUID(), streaming: false, blocks: [{ kind: "rewind", filesRestored: item.filesRestored }] }] }
         else if (item.kind === "turn-diff") restored = reducer(restored, { type: "turn-diff", diff: item.diff })
         else restored = reducer(restored, { type: "agent", message: item.message })
       }
@@ -313,7 +318,7 @@ export function reducer(state: AgentState, action: Action): AgentState {
             (turn) => turn.role === "assistant" && turn.diff?.turnIndex === action.diff.turnIndex,
           )
       if (action.updateOnly && matching === -1) return state
-      const fallback = state.turns.map((turn) => turn.role === "assistant" && turn.blocks.some((block) => block.kind !== "compaction" && block.kind !== "retry")).lastIndexOf(true)
+      const fallback = state.turns.map((turn) => turn.role === "assistant" && turn.blocks.some((block) => block.kind !== "compaction" && block.kind !== "retry" && block.kind !== "rewind")).lastIndexOf(true)
       const index = matching === -1 ? fallback : matching
       if (index === -1) return state
       const turns = state.turns.slice()

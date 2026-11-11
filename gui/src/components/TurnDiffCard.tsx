@@ -164,7 +164,7 @@ export function TurnDiffCard({ diff, onOpen, onAction, pending }: {
         </div>
       )}
       {diff.truncated && <p className="noa-turn-diff-note">Diff too large to preview</p>}
-      {diff.undoable === false && <p className="noa-turn-diff-note">Undo is unavailable when a turn changes multiple source folders.</p>}
+      {diff.undoable === false && <p className="noa-turn-diff-note">{diff.restoredByRewind ? "A rewind restored these files to how they were before this turn." : "Undo is unavailable when a turn changes multiple source folders."}</p>}
       {previewFile && previewPatch && <div ref={preview} popover="manual" role="dialog" aria-label={`Changes to ${previewFile.path}`} data-turn-diff-preview
         className="noa-turn-diff-preview noa-floating-panel m-0 flex flex-col overflow-hidden rounded-lg p-0 text-[var(--text-primary)]" style={{ position: "fixed", inset: "auto" }}
         onMouseLeave={event => { if (!(event.relatedTarget instanceof Node && trigger.current?.contains(event.relatedTarget)) && !preview.current?.contains(document.activeElement)) hidePreview() }}>

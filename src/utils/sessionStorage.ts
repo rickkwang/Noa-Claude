@@ -2319,9 +2319,15 @@ function applySnipRemovals(messages: Map<UUID, TranscriptMessage>): void {
   // Structural check — snipMetadata only exists on the boundary subtype.
   // Avoids the subtype literal, which must not leak into external builds
   // (HISTORY_SNIP is ant-only).
-  type WithSnipMeta = { snipMetadata?: { removedUuids?: UUID[] }; rewindMetadata?: { removedUuids?: UUID[] } }
+  type WithSnipMeta = { snipMetadata?: { removedUuids?: UUID[] }; rewindMetadata?: { removedUuids?: UUID[] }; rewindUndoMetadata?: { rewindUuids?: UUID[] } }
+  // An undone rewind no longer removes anything.
+  const undoneRewinds = new Set<UUID>()
+  for (const entry of messages.values()) {
+    for (const uuid of (entry as WithSnipMeta).rewindUndoMetadata?.rewindUuids ?? []) undoneRewinds.add(uuid)
+  }
   const toDelete = new Set<UUID>()
   for (const entry of messages.values()) {
+    if (undoneRewinds.has(entry.uuid)) continue
     const removedUuids = (entry as WithSnipMeta).snipMetadata?.removedUuids ?? (entry as WithSnipMeta).rewindMetadata?.removedUuids
     if (!removedUuids) continue
     for (const uuid of removedUuids) toDelete.add(uuid)

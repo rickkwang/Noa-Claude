@@ -45,7 +45,7 @@ app.whenReady().then(async () => {
   const check = (value, label) => { console.log((value ? 'PASS ' : 'FAIL ') + label); if (!value) failures.push(label) }
   try {
     await win.loadURL(url)
-    await wait(() => !!document.querySelector('textarea') && !document.querySelector('textarea').disabled)
+    await wait(() => !!document.querySelector('textarea') && !/Starting|disconnected/.test(document.querySelector('textarea').placeholder))
     await clickText('Settings')
     await clickText('MCP servers')
     await clickText('Edit')

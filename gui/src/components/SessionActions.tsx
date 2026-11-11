@@ -20,66 +20,81 @@ export function SessionActions({ disabled, onFork }: { disabled: boolean; onFork
   </>
 }
 
-export function RewindButton({ disabled, onClick }: { disabled: boolean; onClick: () => void }) {
-  return <button type="button" disabled={disabled} aria-label="Rewind to this message" title="Rewind to this message" onClick={onClick} className="flex size-7 items-center justify-center rounded-md text-[var(--text-secondary)] hover:bg-[var(--fill-hover)] disabled:opacity-40"><RotateCcw size={14} /></button>
+export function RewindButton({ blocked, onClick }: { blocked?: string; onClick: () => void }) {
+  const label = blocked ?? "Rewind: take back this message and everything after it"
+  return <button type="button" data-rewind disabled={!!blocked} aria-label={label} title={label} onClick={onClick} className="flex size-7 items-center justify-center rounded-md text-[var(--text-secondary)] hover:bg-[var(--fill-hover)] disabled:opacity-40"><RotateCcw size={14} /></button>
 }
 
-export function RewindDialog({ message, request, onClose, onDone }: {
+export type RewindPreview = { canRewind?: boolean; filesChanged?: string[]; insertions?: number; deletions?: number; turnsRemoved?: number }
+type RewindMode = "both" | "conversation" | "files"
+
+// Opened only when files changed after the message, so the choice is about whether to restore them.
+export function RewindDialog({ message, cwd, preview, initialError, request, onClose, onDone }: {
   message: { id: string; text: string }
+  cwd: string
+  preview?: RewindPreview
+  initialError?: string
   request: (request: ControlRequest) => Promise<any>
   onClose: () => void
-  onDone: (restorePrompt: boolean) => void
+  onDone: (mode: RewindMode) => void
 }) {
-  const [mode, setMode] = useState<"conversation" | "files" | "both">("conversation")
-  const [preview, setPreview] = useState<{ turnsRemoved?: number; filesChanged?: string[] }>()
-  const [error, setError] = useState<string>()
+  const files = preview?.canRewind ? preview.filesChanged ?? [] : []
+  const [mode, setMode] = useState<RewindMode>(files.length ? "both" : "conversation")
+  const [error, setError] = useState(initialError)
   const [pending, setPending] = useState(false)
-  const [loading, setLoading] = useState(true)
-  const [previewKey, setPreviewKey] = useState(0)
+  const [showFiles, setShowFiles] = useState(false)
   const panel = useRef<HTMLDivElement>(null)
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null
     panel.current?.querySelector<HTMLElement>("[data-rewind-cancel]")?.focus()
     return () => previous?.focus()
   }, [])
-  useEffect(() => {
-    let cancelled = false
-    setPreview(undefined)
-    setError(undefined)
-    setLoading(true)
-    void request({ subtype: "session_action", action: "rewind", user_message_id: message.id, mode, dry_run: true }).then(result => { if (!cancelled) setPreview(result) }).catch(error => { if (!cancelled) setError(error.message) }).finally(() => { if (!cancelled) setLoading(false) })
-    return () => { cancelled = true }
-  }, [message.id, mode, request, previewKey])
-  async function restore() {
-    if (pending || loading || !preview) return
+  async function confirm() {
+    if (pending) return
     setPending(true)
+    setError(undefined)
     try {
       await request({ subtype: "session_action", action: "rewind", user_message_id: message.id, mode })
-      onDone(mode !== "files")
+      onDone(mode)
     } catch (error) { setError((error as Error).message) }
     finally { setPending(false) }
   }
+  const fileCount = `${files.length} file${files.length === 1 ? "" : "s"}`
+  const theWayBefore = files.length === 1 ? "back the way it was" : "back the way they were"
+  const options: [RewindMode, string][] = files.length ? [["both", "Chat and files"], ["conversation", "Chat only"], ["files", "Files only"]] : [["conversation", "Chat only"]]
+  const consequence = mode === "both" ? `Removes this message and the replies after it, and puts ${fileCount} ${theWayBefore} before it.`
+    : mode === "files" ? `Puts ${fileCount} ${theWayBefore} before this message. The chat stays as it is.`
+      : files.length ? `Removes this message and the replies after it. ${fileCount} keep their current changes.` : "Removes this message and the replies after it."
   return <div className="noa-confirm-scrim fixed inset-0 z-50 flex items-center justify-center p-4" onClick={event => { if (event.target === event.currentTarget && !pending) onClose() }} onKeyDown={event => {
     if (event.key === "Escape" && !pending) { event.stopPropagation(); onClose() }
     if (event.key === "Tab") {
-      const items = [...panel.current!.querySelectorAll<HTMLElement>("button:not(:disabled), input:not(:disabled)")]
+      const items = [...panel.current!.querySelectorAll<HTMLElement>("button:not(:disabled)")]
       const first = items[0], last = items.at(-1)
       if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus() }
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus() }
     }
   }}>
-    <div ref={panel} role="dialog" aria-modal="true" aria-label="Rewind conversation" aria-busy={loading || pending} className="noa-confirm-dialog flex max-h-[calc(100vh-32px)] w-full max-w-[480px] flex-col overflow-y-auto rounded-2xl bg-[var(--bg-card)] p-5 font-ui">
-      <h2 className="m-0 text-body font-medium">Rewind to this message</h2>
-      <p className="my-3 max-h-24 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-[var(--fill-hover)] px-3 py-2 text-caption text-[var(--text-secondary)]">{message.text}</p>
-      <fieldset aria-label="Rewind scope" disabled={pending || loading} className="flex flex-col gap-2 text-body">
-        {([['conversation', 'Conversation only'], ['files', 'Files only'], ['both', 'Conversation and files']] as const).map(([value, label]) => <label key={value} className={`flex items-center gap-2 rounded-lg border px-3 py-2.5 ${mode === value ? "border-[var(--accent-color)] bg-[var(--fill-hover)]" : "border-[var(--border-default)]"}`}><input style={{ accentColor: "var(--accent-color)" }} type="radio" name="rewind-mode" checked={mode === value} onChange={() => setMode(value)} />{label}</label>)}
-      </fieldset>
-      <p className="mt-3 text-caption text-[var(--text-secondary)]">{mode === "conversation" ? "This message and later replies will leave the active conversation. Files stay as they are." : mode === "files" ? "Checkpointed files will be restored. This can overwrite later edits. The conversation stays as it is." : "This message and later replies will leave the active conversation. Restoring checkpointed files can overwrite later edits."}</p>
-      {loading && <p role="status" className="mt-3 text-caption text-[var(--text-tertiary)]">Checking the selected restore point…</p>}
-      {preview && <p role="status" className="mt-3 text-caption text-[var(--text-secondary)]">{mode !== "files" && `${preview.turnsRemoved ?? 0} user message${preview.turnsRemoved === 1 ? "" : "s"} will be removed. `}{mode !== "conversation" && `${preview.filesChanged?.length ?? 0} checkpointed file${preview.filesChanged?.length === 1 ? "" : "s"} will be restored. Shell commands and external changes are not rolled back.`}</p>}
-      {preview?.filesChanged?.length ? <ul className="my-2 max-h-24 overflow-auto text-caption">{preview.filesChanged.map(path => <li key={path}>{path}</li>)}</ul> : null}
-      {error && <div role="alert" className="mt-3 text-caption text-[var(--text-danger)]"><p>{error}</p><button type="button" className="mt-2 h-7 rounded-md border border-[var(--border-default)] px-2 text-[var(--text-primary)] hover:bg-[var(--fill-hover)]" onClick={() => setPreviewKey(value => value + 1)}>Check again</button></div>}
-      <div className="mt-4 flex justify-end gap-2"><button data-rewind-cancel type="button" disabled={pending} className="noa-confirm-btn h-8 rounded-lg border border-[var(--border-default)] px-3 text-body" onClick={onClose}>Cancel</button><button type="button" disabled={pending || loading || !preview || !!error} className="h-8 rounded-lg bg-[var(--accent-color)] px-3 text-body text-white disabled:opacity-40" onClick={() => void restore()}>{pending ? "Rewinding…" : "Rewind"}</button></div>
+    <div ref={panel} role="dialog" aria-modal="true" aria-labelledby="rewind-title" aria-busy={pending} className="noa-confirm-dialog flex max-h-[calc(100vh-32px)] w-full max-w-[440px] flex-col gap-3 overflow-y-auto rounded-2xl bg-[var(--bg-card)] p-5 font-ui">
+      <h2 id="rewind-title" className="m-0 text-body font-medium">Rewind to before this message?</h2>
+      <div className="rounded-lg bg-[var(--fill-hover)] px-3 py-2"><p className="m-0 line-clamp-2 whitespace-pre-wrap break-words text-body text-[var(--text-primary)]">{message.text}</p></div>
+      {files.length > 0 && <div role="radiogroup" aria-label="What to rewind" className="flex gap-1 rounded-lg bg-[var(--fill-hover)] p-0.5">
+        {options.map(([value, label]) => <button key={value} type="button" role="radio" aria-checked={mode === value} disabled={pending} onClick={() => setMode(value)} className={`h-7 flex-1 rounded-md text-body ${mode === value ? "bg-[var(--bg-card)] text-[var(--text-primary)] shadow-sm" : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"}`}>{label}</button>)}
+      </div>}
+      <div className="flex flex-col gap-1 text-caption text-[var(--text-secondary)]">
+        <p className="m-0">{consequence}{mode !== "files" && " Your message goes back into the composer so you can edit and resend it."}</p>
+        {files.length > 0 && mode !== "conversation" && <>
+          <button type="button" aria-expanded={showFiles} onClick={() => setShowFiles(value => !value)} className="w-fit text-[var(--text-secondary)] hover:text-[var(--text-primary)]">
+            <span className="noa-change-count">{fileCount}{preview?.insertions ? <> · <span className="is-added">+{preview.insertions}</span></> : null}{preview?.deletions ? <> {preview.insertions ? "" : "· "}<span className="is-removed">−{preview.deletions}</span></> : null}</span> · {showFiles ? "Hide" : "Show"} files
+          </button>
+          {showFiles && <ul className="m-0 max-h-28 overflow-auto pl-4">{files.map(path => <li key={path} className="break-all">{path.startsWith(`${cwd}/`) ? path.slice(cwd.length + 1) : path}</li>)}</ul>}
+          <p className="m-0 text-[var(--text-tertiary)]">Changes made by shell commands, and commits, are not undone.</p>
+        </>}
+      </div>
+      {error && <p role="alert" className="m-0 text-caption text-[var(--text-danger)]">{error}</p>}
+      <div className="mt-1 flex justify-end gap-2">
+        <button data-rewind-cancel type="button" disabled={pending} className="noa-confirm-btn h-8 rounded-lg border border-[var(--border-default)] px-3 text-body" onClick={onClose}>Cancel</button>
+        <button type="button" disabled={pending} className="h-8 rounded-lg bg-[var(--text-primary)] px-3 text-body text-[var(--bg-card)] disabled:opacity-40" onClick={() => void confirm()}>{pending ? "Rewinding…" : mode === "files" ? "Restore files" : "Rewind"}</button>
+      </div>
     </div>
   </div>
 }

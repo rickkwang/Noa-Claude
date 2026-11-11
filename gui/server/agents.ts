@@ -596,7 +596,7 @@ export function attachAgent(ws: ServerWebSocket<SocketData>, root: string) {
             if (current.sessionAction.filesFrom) {
               const records = readTurnDiffs(current.cwd, current.sessionId)
               const target = records.find(record => record.userMessageId === current.sessionAction?.filesFrom)
-              if (target) for (const record of records) if (record.index >= target.index) appendTurnDiff(current.cwd, current.sessionId, { ...record, diff: { ...record.diff, undoable: false } })
+              if (target) for (const record of records) if (record.index >= target.index) appendTurnDiff(current.cwd, current.sessionId, { ...record, diff: { ...record.diff, undoable: false, restoredByRewind: true } })
             }
             const items = await loadHistory(current.cwd, current.sessionId) ?? []
             current.history = items
@@ -739,17 +739,32 @@ export async function agentMessage(ws: ServerWebSocket<SocketData>, raw: string 
     return
   }
   if (message.type === "control_request" && message.request.subtype === "session_action") {
-    if (run.sessionAction || run.busy || run.turn || run.queue.length || run.waiting.size || run.activeTasks.size || [...runs.values()].some(active => active.cwd === run.cwd && !active.exited && (active.busy || active.sessionAction || active.activeTasks.size)) || workspaceOperations.has(run.cwd)) {
-      ws.send(JSON.stringify({ kind: "agent", message: { type: "control_response", response: { subtype: "error", request_id: message.request_id, error: "Stop running tasks and clear queued messages before changing this conversation." } } }))
+    // A dry run only reads checkpoints. Rewinding just the conversation touches only this session;
+    // anything that writes files must also wait for other sessions working in the same folder.
+    const request = message.request
+    const writesFiles = request.action === "fork" || (request.mode !== undefined && request.mode !== "conversation")
+    const blocked = request.dry_run
+      ? !!run.sessionAction
+      : !!run.sessionAction || run.busy || !!run.turn || run.queue.length > 0 || run.waiting.size > 0 || run.activeTasks.size > 0 ||
+        (writesFiles && ([...runs.values()].some(active => active !== run && active.cwd === run.cwd && !active.exited && (active.busy || active.sessionAction || active.activeTasks.size)) || workspaceOperations.has(run.cwd)))
+    if (blocked) {
+      const error = run.sessionAction ? "Another change to this conversation is still in progress."
+        : run.busy || run.turn || run.queue.length || run.waiting.size || run.activeTasks.size ? "Stop running tasks and clear queued messages before changing this conversation."
+          : "Another task in this folder is still working. Wait for it to finish before restoring files."
+      ws.send(JSON.stringify({ kind: "agent", message: { type: "control_response", response: { subtype: "error", request_id: message.request_id, error } } }))
       return
     }
     let release!: () => void
     const operation = new Promise<void>(resolve => { release = () => { clearTimeout(timer); resolve() } })
     // A CLI that never answers would hold the workspace lock until exit; restart it instead.
     const timer = setTimeout(() => { if (run.sessionAction?.release === release) run.proc.kill() }, 60000)
-    workspaceOperations.set(run.cwd, operation)
-    operation.then(() => { if (workspaceOperations.get(run.cwd) === operation) workspaceOperations.delete(run.cwd) })
-    run.sessionAction = { release, requestId: message.request_id, rewind: message.request.action === "rewind" && !message.request.dry_run, filesFrom: !message.request.dry_run && message.request.mode && message.request.mode !== "conversation" ? message.request.user_message_id : undefined }
+    // Only a file-writing action takes the folder lock; a preview or a conversation-only rewind must not
+    // replace the lock another session's operation holds.
+    if (writesFiles && !request.dry_run) {
+      workspaceOperations.set(run.cwd, operation)
+      operation.then(() => { if (workspaceOperations.get(run.cwd) === operation) workspaceOperations.delete(run.cwd) })
+    }
+    run.sessionAction = { release, requestId: message.request_id, rewind: (message.request.action === "rewind" || message.request.action === "undo_rewind") && !message.request.dry_run, filesFrom: !message.request.dry_run && message.request.mode && message.request.mode !== "conversation" ? message.request.user_message_id : undefined }
     if (!write(run, message)) {
       run.sessionAction.release()
       run.sessionAction = undefined

@@ -20,7 +20,7 @@ const MAX_DIFF_CELLS = 250_000
 export type ThinkingBlock = Extract<Block, { kind: "thinking" }>
 
 type ActivityUnit =
-  | { kind: "status"; block: Extract<Block, { kind: "compaction" | "retry" }> }
+  | { kind: "status"; block: Extract<Block, { kind: "compaction" | "retry" | "rewind" }> }
   | { kind: "tools"; blocks: ToolBlock[] }
   | { kind: "thinking"; block: ThinkingBlock }
   | { kind: "subagent"; block: SubagentBlock }
@@ -29,7 +29,7 @@ type ActivityUnit =
 // One collapsible activity group per run of reasoning and tool
 // calls. Text breaks the run and is always visible outside the group.
 export type ActivityRun =
-  | { kind: "status"; block: Extract<Block, { kind: "compaction" | "retry" }> }
+  | { kind: "status"; block: Extract<Block, { kind: "compaction" | "retry" | "rewind" }> }
   | { kind: "standalone"; block: ToolBlock }
   | { kind: "agents"; blocks: ToolBlock[] }
   | { kind: "subagents"; blocks: SubagentBlock[] }
@@ -592,7 +592,7 @@ export function groupActivityBlocks(blocks: Block[]): ActivityUnit[] {
 
   for (const block of blocks) {
     if (block.kind === "subagent") { flush(); units.push({ kind: "subagent", block }); continue }
-    if (block.kind === "compaction" || block.kind === "retry") { flush(); units.push({ kind: "status", block }); continue }
+    if (block.kind === "compaction" || block.kind === "retry" || block.kind === "rewind") { flush(); units.push({ kind: "status", block }); continue }
     if (block.kind === "tool" && !isStandaloneActivity(block)) {
       tools.push(block)
       continue

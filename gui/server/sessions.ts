@@ -131,6 +131,8 @@ interface Entry {
   isSidechain?: boolean
   durationMs?: number
   compactMetadata?: { trigger?: "manual" | "auto" }
+  rewindMetadata?: { filesRestored?: boolean }
+  rewindUndoMetadata?: { rewindUuids?: string[] }
   message?: { id?: string; content?: unknown }
   toolUseResult?: unknown
   mcpMeta?: Record<string, unknown>
@@ -324,7 +326,8 @@ async function conversationChain(file: string, includeSidechain = false): Promis
   if (!hasUuid) return readEntries(file)
   let leaf: Entry | undefined
   for (const entry of messages.values()) {
-    if ((!includeSidechain && entry.isSidechain) || (entry.type !== "user" && entry.type !== "assistant")) continue
+    // A rewind to the first message leaves only its marker, which the loader then treats as the leaf.
+    if ((!includeSidechain && entry.isSidechain) || (entry.type !== "user" && entry.type !== "assistant" && !entry.rewindMetadata)) continue
     if (leafUuids.size && !leafUuids.has(entry.uuid!)) continue
     if (!leaf || (entry.timestamp ?? "") >= (leaf.timestamp ?? "")) leaf = entry
   }
@@ -337,6 +340,7 @@ export type HistoryItem =
   | { kind: "user"; id?: string; text: string; images?: ImageBlock[]; sentAt?: number }
   | { kind: "turn-duration"; durationMs: number; interrupted?: boolean; error?: string }
   | { kind: "compaction"; trigger: "manual" | "auto" }
+  | { kind: "rewind"; filesRestored?: boolean }
   | { kind: "turn-diff"; diff: TurnDiff }
   | {
       kind: "agent"
@@ -412,6 +416,9 @@ export async function loadHistory(cwd: string, id: string): Promise<HistoryItem[
   if (!existsSync(file)) return null
 
   const entries = await conversationChain(file)
+  // A rewind that was later undone left no cut; its undo marker may sit on a branch the chain no longer follows.
+  const undoneRewinds = new Set<string>()
+  for (const entry of scanEntries(file)) for (const uuid of entry.rewindUndoMetadata?.rewindUuids ?? []) undoneRewinds.add(uuid)
   const owner = entries.find((entry) => typeof entry.cwd === "string")?.cwd
   if (owner && canonicalCwd(owner) !== canonicalCwd(cwd)) return null
 
@@ -486,6 +493,10 @@ export async function loadHistory(cwd: string, id: string): Promise<HistoryItem[
     try {
     if (entry.type === "system" && entry.subtype === "compact_boundary") {
       items.push({ kind: "compaction", trigger: entry.compactMetadata?.trigger ?? "auto" })
+      continue
+    }
+    if (entry.type === "system" && entry.rewindMetadata && !undoneRewinds.has(entry.uuid ?? "")) {
+      items.push({ kind: "rewind", filesRestored: entry.rewindMetadata.filesRestored === true })
       continue
     }
     if (entry.type === "system" && entry.subtype === "turn_duration" && typeof entry.durationMs === "number") {

@@ -51,7 +51,7 @@ app.whenReady().then(async () => {
   }
   try {
     await win.loadURL(url)
-    await wait("document.querySelector('textarea') && !document.querySelector('textarea').disabled", 'CLI initialization')
+    await wait("document.querySelector('textarea') && !/Starting|disconnected/.test(document.querySelector('textarea').placeholder)", 'CLI initialization')
     await run("[...document.querySelectorAll('button')].find(e => e.textContent.trim().startsWith('Settings')).click()")
     await wait("!!document.querySelector('[data-settings-surface]')", 'settings open')
     await run("(() => {const input=document.querySelector('[aria-label=\"Search settings\"]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'Code font size');input.dispatchEvent(new Event('input',{bubbles:true}));})()")
@@ -103,7 +103,6 @@ app.whenReady().then(async () => {
     check(true, 'MCP disable, enable, and reconnect work from settings')
     await capture('mcp')
     await nav('Appearance')
-    await run("[...document.querySelectorAll('[data-settings-surface] main button')].find(e=>e.textContent.trim()==='Advanced').click()")
     await run("(() => {const e=[...document.querySelectorAll('[data-settings-label]')].find(e=>e.dataset.settingsLabel==='UI font size').querySelector('input');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,'16');e.dispatchEvent(new Event('input',{bubbles:true}));})()")
     await wait("JSON.parse(localStorage.getItem('noa-agent.appearance')).uiFontSize === 16", 'font preference changed')
     await run("[...document.querySelectorAll('[data-settings-surface] main button')].find(e=>e.textContent.trim()==='Reset to default').click()")
@@ -165,7 +164,7 @@ app.whenReady().then(async () => {
     check(true, 'MCP add, edit and confirmed removal work in Electron')
 
     await new Promise(resolve => { win.webContents.once('did-finish-load', resolve); win.reload() })
-    await wait("document.querySelector('textarea') && !document.querySelector('textarea').disabled", 'reload initialized')
+    await wait("document.querySelector('textarea') && !/Starting|disconnected/.test(document.querySelector('textarea').placeholder)", 'reload initialized')
     check(await run("JSON.parse(localStorage.getItem('noa-agent.composer')).sendShortcut === 'modifier-enter' && !document.querySelector('[aria-label^=\"Context usage\"]')"), 'preferences survive reload and hide context indicator')
     await run("(() => {const e=document.querySelector('textarea');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(e,'Explain /no-such-settings-command');e.dispatchEvent(new Event('input',{bubbles:true}));e.focus()})()")
     await wait("!!document.querySelector('#noa-slash-commands')", 'unmatched slash menu opened')

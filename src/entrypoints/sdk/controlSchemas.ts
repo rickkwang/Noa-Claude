@@ -580,7 +580,7 @@ export const SDKControlElicitationResponseSchema = lazySchema(() =>
 export const SDKControlSessionActionRequestSchema = lazySchema(() =>
   z.object({
     subtype: z.literal('session_action'),
-    action: z.enum(['fork', 'rewind']),
+    action: z.enum(['fork', 'rewind', 'undo_rewind']),
     user_message_id: z.string().optional(),
     mode: z.enum(['conversation', 'files', 'both']).optional(),
     dry_run: z.boolean().optional(),

@@ -219,6 +219,8 @@ export interface TurnDiff {
   truncated?: boolean
   // Cross-source patches are reviewable but cannot be applied against one Git root.
   undoable?: boolean
+  // Set when a rewind restored the files this turn changed, which also ends its own Undo.
+  restoredByRewind?: boolean
   // Bridge-assigned turn number; used to update or revert one turn in place.
   turnIndex?: number
   // Set after Undo so the same card offers Reapply.
@@ -282,7 +284,7 @@ export type Outgoing =
 
 export type ControlRequest =
   | { subtype: "configuration"; kind: "permissions" | "mcp"; scope: "user" | "project" | "local"; action: "get" | "save" | "remove"; revision?: string; name?: string; value?: Record<string, unknown> }
-  | { subtype: "session_action"; action: "fork" | "rewind"; user_message_id?: string; mode?: "conversation" | "files" | "both"; dry_run?: boolean }
+  | { subtype: "session_action"; action: "fork" | "rewind" | "undo_rewind"; user_message_id?: string; mode?: "conversation" | "files" | "both"; dry_run?: boolean }
   | { subtype: "initialize" }
   | { subtype: "interrupt" }
   | { subtype: "stop_task"; task_id: string }
@@ -308,6 +310,7 @@ export type HistoryItem =
   | { kind: "user"; id?: string; text: string; images?: ImageBlock[]; sentAt?: number }
   | { kind: "turn-duration"; durationMs: number; interrupted?: boolean; error?: string }
   | { kind: "compaction"; trigger: "manual" | "auto" }
+  | { kind: "rewind"; filesRestored?: boolean }
   | { kind: "turn-diff"; diff: TurnDiff; updateOnly?: boolean }
   | {
       kind: "agent"

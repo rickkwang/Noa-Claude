@@ -223,6 +223,7 @@ import {
   recordTranscript,
   flushSessionStorage,
   adoptResumedSessionFile,
+  getTranscriptPath,
 } from 'src/utils/sessionStorage.js'
 import { createConversationFork } from 'src/commands/branch/branch.js'
 import { guiConfiguration } from 'src/cli/guiConfiguration.js'
@@ -272,6 +273,7 @@ import {
 } from 'src/utils/messages/mappers.js'
 import {
   createSystemMessage,
+  createUserMessage,
   createModelSwitchBreadcrumbs,
   stripSignatureBlocks,
 } from 'src/utils/messages.js'
@@ -3263,19 +3265,61 @@ function runHeadlessStreaming(
         } else if (message.request.subtype === 'session_action') {
           try {
             const request = SDKControlSessionActionRequestSchema().parse(message.request)
-            if (running || hasCommandsInQueue() || Object.values(getAppState().tasks).some(task => task.status === 'running')) {
+            // A dry run only reads checkpoints, so it may preview while other work is in progress.
+            if (!request.dry_run && (running || hasCommandsInQueue() || Object.values(getAppState().tasks).some(task => task.status === 'running'))) {
               throw new Error('Stop running tasks and clear queued messages before changing this conversation.')
             }
             await flushSessionStorage()
             if (request.action === 'fork') {
               const fork = await createConversationFork()
               sendControlResponseSuccess(message, { sessionId: fork.sessionId })
+            } else if (request.action === 'undo_rewind') {
+              // Undo works from the transcript on disk, so it survives a restart of this process. It takes back
+              // every rewind since the last message was sent, as long as nothing was sent after them.
+              adoptResumedSessionFile()
+              const entries = await readTranscriptEntries()
+              const undone = new Set(entries.flatMap(entry => entry.rewindUndoMetadata?.rewindUuids ?? []))
+              const markers = []
+              for (let i = entries.length - 1; i >= 0; i--) {
+                const entry = entries[i]
+                if (entry.isSidechain) continue
+                if ((entry.type === 'user' || entry.type === 'assistant') && !entry.isMeta) break
+                if (entry.rewindMetadata && !undone.has(entry.uuid)) markers.push(entry)
+              }
+              if (!markers.length) {
+                throw new Error(entries.some(entry => entry.rewindMetadata && !undone.has(entry.uuid)) ? 'This rewind can no longer be undone because the conversation has moved on.' : 'There is no rewind to undo.')
+              }
+              // The removals can include dead branches and messages earlier rewinds took out; bring back only the
+              // conversation as it stood before these rewinds: the newest such message and its removed ancestors.
+              const markerUuids = new Set(markers.map(entry => entry.uuid))
+              const removedUuids = new Set<string>(markers.flatMap(entry => entry.rewindMetadata.removedUuids ?? []))
+              const removedEarlier = new Set<string>(entries.filter(entry => entry.rewindMetadata && !undone.has(entry.uuid) && !markerUuids.has(entry.uuid)).flatMap(entry => entry.rewindMetadata.removedUuids ?? []))
+              const byUuid = new Map(entries.map(entry => [entry.uuid, entry]))
+              const lastRemoved = entries.findLast(entry => removedUuids.has(entry.uuid) && !removedEarlier.has(entry.uuid) && !entry.isSidechain && (entry.type === 'user' || entry.type === 'assistant'))
+              if (!lastRemoved) throw new Error('The messages this rewind removed are no longer in the transcript.')
+              const removed = []
+              for (let entry = lastRemoved; entry && removedUuids.has(entry.uuid); entry = byUuid.get(entry.parentUuid)) removed.unshift(entry)
+              const target = removed.find(entry => entry.type === 'user' && !entry.isMeta) ?? removed[0]
+              // The undo marker cancels the rewind's recorded removals, so reloading the transcript keeps the messages.
+              const undoMarker = { ...createSystemMessage('Rewind undone.', 'info'), rewindUndoMetadata: { rewindUuids: [...markerUuids] } }
+              const notes = markers.some(entry => entry.rewindMetadata.filesRestored) ? [createUserMessage({ content: '<system-reminder>The user undid a rewind, so the messages above are back. The files had also been restored to an earlier point, and the undo did not bring them back: edits described in the messages above may no longer be on disk. Check git status or the diff before relying on them, and do not redo those edits unless the user asks.</system-reminder>', isMeta: true })] : []
+              await recordTranscript([undoMarker, ...notes], undefined, lastRemoved.uuid)
+              await flushSessionStorage()
+              const kept = mutableMessages.filter(m => !markerUuids.has(m.uuid))
+              mutableMessages.splice(0, mutableMessages.length, ...kept, ...removed, undoMarker, ...notes)
+              bridgeLastForwardedIndex = mutableMessages.length
+              readFileState.clear()
+              pendingSeeds.clear()
+              const content = target?.message?.content
+              const text = typeof content === 'string' ? content : Array.isArray(content) ? content.filter(block => block.type === 'text').map(block => block.text).join('\n') : undefined
+              sendControlResponseSuccess(message, { ok: true, text })
             } else {
               const index = mutableMessages.findIndex(m => m.uuid === request.user_message_id && m.type === 'user' && !m.isMeta)
               if (index < 0) throw new Error('This message is no longer in the active context. Choose a more recent message.')
               const mode = request.mode ?? 'conversation'
               const files = mode === 'conversation' ? undefined : await handleRewindFiles(request.user_message_id as UUID, getAppState(), setAppState, true)
-              if (files && !files.canRewind) throw new Error(files.error ?? 'No file checkpoint found.')
+              // A preview reports a missing checkpoint instead of failing, so the client can fall back to the conversation.
+              if (files && !files.canRewind && !request.dry_run) throw new Error(files.error ?? 'No file checkpoint found.')
               if (request.dry_run) {
                 sendControlResponseSuccess(message, { ...files, turnsRemoved: mutableMessages.slice(index).filter(m => m.type === 'user' && !m.isMeta && (typeof m.message.content === 'string' || m.message.content.some(block => block.type === 'text' || block.type === 'image'))).length })
                 continue
@@ -3285,9 +3329,18 @@ function runHeadlessStreaming(
                 if (!restored.canRewind) throw new Error(restored.error ?? 'Could not restore files.')
               }
               if (mode !== 'files') {
-                const marker = { ...createSystemMessage('Conversation rewound.', 'info'), rewindMetadata: { removedUuids: mutableMessages.slice(index).map(m => m.uuid) } }
-                const kept = mutableMessages.slice(0, index)
                 adoptResumedSessionFile()
+                // Remove everything that descends from the message in the transcript, not only what this process
+                // holds in memory: after a resume some entries (older markers, merged blocks) are not loaded, and
+                // would otherwise survive the cut and reappear on reload.
+                const entries = await readTranscriptEntries()
+                const children = new Map<string, string[]>()
+                for (const entry of entries) if (entry.uuid && entry.parentUuid && !entry.isSidechain) children.set(entry.parentUuid, [...(children.get(entry.parentUuid) ?? []), entry.uuid])
+                const removedUuids = new Set<string>(mutableMessages.slice(index).map(m => m.uuid))
+                const pending = [...removedUuids]
+                while (pending.length) for (const child of children.get(pending.pop()!) ?? []) if (!removedUuids.has(child)) { removedUuids.add(child); pending.push(child) }
+                const marker = { ...createSystemMessage('Conversation rewound.', 'info'), rewindMetadata: { removedUuids: [...removedUuids], ...(files && { filesRestored: true }) } }
+                const kept = mutableMessages.slice(0, index)
                 await recordTranscript([...kept, marker])
                 await flushSessionStorage()
                 mutableMessages.splice(0, mutableMessages.length, ...kept, marker)
@@ -4920,6 +4973,14 @@ async function handleInitializeRequest(
       })
     }
   }
+}
+
+async function readTranscriptEntries(): Promise<any[]> {
+  const text = await readFile(getTranscriptPath(), 'utf8').catch(() => '')
+  return text.split('\n').flatMap(line => {
+    if (!line) return []
+    try { return [JSON.parse(line)] } catch { return [] }
+  })
 }
 
 async function handleRewindFiles(

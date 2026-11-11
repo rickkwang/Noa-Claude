@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import { useEvent } from "./hooks/useEvent"
 import { useAgent } from "./agent/useAgent"
 import { isSubagentTask } from "./agent/reducer"
-import type { ImageAttachment, ImageBlock, TurnDiff, UserContent } from "./agent/protocol"
+import type { ControlRequest, ImageAttachment, ImageBlock, TurnDiff, UserContent } from "./agent/protocol"
 import {
   addProject,
   fetchProjects,
@@ -36,7 +36,7 @@ import { Sidebar } from "./components/Sidebar"
 import TopBar from "./components/TopBar"
 import ThemeInjector from "./theme/ThemeInjector"
 import { SettingsDialog } from "./components/SettingsDialog"
-import { SessionActions, RewindDialog } from "./components/SessionActions"
+import { SessionActions, RewindDialog, type RewindPreview } from "./components/SessionActions"
 import { SessionTitle } from "./components/SessionTitle"
 import { SearchDialog } from "./components/SearchDialog"
 import { matchesShortcut } from "./lib/shortcuts"
@@ -138,7 +138,7 @@ function Workspace({ cwd }: { cwd: string }) {
   const [draggingFiles, setDraggingFiles] = useState(false)
   const [reference, setReference] = useState<{ path: string; key: number }>()
   const [prefill, setPrefill] = useState<{ text: string; key: number }>()
-  const [editDraft, setEditDraft] = useState<{ text: string; images: ImageAttachment[]; key: number }>()
+  const [editDraft, setEditDraft] = useState<{ text: string; images: ImageAttachment[]; key: number; silent?: boolean }>()
   const [queueEditId, setQueueEditId] = useState<string>()
   const [changes, setChanges] = useState<{ count: number; additions: number; deletions: number; branch: string; files: { path: string; additions: number; deletions: number; binary: boolean }[] }>()
   const [turnDiff, setTurnDiff] = useState<{ diff: TurnDiff; path?: string; key: number }>()
@@ -186,7 +186,11 @@ function Workspace({ cwd }: { cwd: string }) {
   const [dismissedRateLimit, setDismissedRateLimit] = useState<string>()
   const visibleRateLimit = state.rateLimit && rateLimitKey(state.rateLimit) !== dismissedRateLimit ? state.rateLimit : undefined
   const [forkPending, setForkPending] = useState(false)
-  const [rewindMessage, setRewindMessage] = useState<{ id: string; text: string; images?: ImageBlock[] }>()
+  const [rewindMessage, setRewindMessage] = useState<{ id: string; text: string; images?: ImageBlock[]; preview?: RewindPreview; error?: string }>()
+  const [rewinding, setRewinding] = useState(false)
+  // The message text the last rewind put back into the composer, so an undo can take it back out.
+  const rewoundDraft = useRef<string | undefined>(undefined)
+  const [withdrawDraft, setWithdrawDraft] = useState<{ text: string; key: number }>()
   useEffect(() => setRewindMessage(undefined), [session.key])
   const activeId = state.sessionId ?? session.resume
   useEffect(() => {
@@ -475,7 +479,8 @@ function Workspace({ cwd }: { cwd: string }) {
   }
 
   // Edit loads the message back into the composer; sending it again adds a new turn rather than rewriting history.
-  function editMessage(text: string, images?: ImageBlock[], queuedId?: string) {
+  // `silent` puts the message back without the edit banner: after a rewind it is simply the next draft.
+  function editMessage(text: string, images?: ImageBlock[], queuedId?: string, silent?: boolean) {
     setQueueEditId(queuedId)
     setEditDraft({
       text,
@@ -485,8 +490,53 @@ function Workspace({ cwd }: { cwd: string }) {
         dataUrl: `data:${image.source.media_type};base64,${image.source.data}`,
       })),
       key: Date.now(),
+      silent,
     })
   }
+  const rewindBlocked = state.connection !== "ready" ? "Rewind is available once Noa is connected"
+    : state.busy ? "Stop the current task to rewind"
+      : state.queue.length ? "Send or clear queued messages to rewind"
+        : state.tasks.some(task => task.status === "running") ? "Stop background tasks to rewind"
+          : rewinding ? "Rewinding…" : undefined
+  function finishRewind(mode: "both" | "conversation" | "files", text: string, images?: ImageBlock[]) {
+    if (mode !== "files") { editMessage(text, images, undefined, true); rewoundDraft.current = text }
+    setRefreshTick(n => n + 1)
+    refreshContext()
+  }
+  // Rewinding asks first only when files changed after the message; otherwise there is nothing to choose,
+  // so the chat rewinds at once and the message returns to the composer, with a marker left in its place.
+  // A rewind rewrites this session's transcript; marking it as expected keeps the sync from reloading the
+  // session (and restarting Noa), which would also drop the rewind's undo.
+  const sessionAction = (body: ControlRequest) => {
+    if (activeId && body.subtype === "session_action" && !body.dry_run) expectSessionUpdate(session.cwd, activeId)
+    return request(body)
+  }
+  async function startRewind(id: string, text: string, images?: ImageBlock[]) {
+    if (rewinding) return
+    setRewinding(true)
+    try {
+      const preview: RewindPreview = await request({ subtype: "session_action", action: "rewind", user_message_id: id, mode: "both", dry_run: true })
+      if (preview.canRewind && preview.filesChanged?.length) {
+        setRewindMessage({ id, text, images, preview })
+        return
+      }
+      await sessionAction({ subtype: "session_action", action: "rewind", user_message_id: id, mode: "conversation" })
+      finishRewind("conversation", text, images)
+    } catch (error) {
+      setRewindMessage({ id, text, images, error: (error as Error).message })
+    } finally {
+      setRewinding(false)
+    }
+  }
+  const undoRewind = useEvent(async () => {
+    const result: { text?: string } | undefined = await sessionAction({ subtype: "session_action", action: "undo_rewind" })
+    // The message is back in the conversation, so the copy in the composer goes too, unless it was edited.
+    const withdrawn = rewoundDraft.current ?? result?.text
+    if (withdrawn !== undefined) setWithdrawDraft({ text: withdrawn, key: Date.now() })
+    rewoundDraft.current = undefined
+    setRefreshTick(n => n + 1)
+    refreshContext()
+  })
   function editQueued(message: typeof state.queue[number]) {
     setQueuePaused(true)
     const content = typeof message.content === "string"
@@ -889,7 +939,9 @@ function Workspace({ cwd }: { cwd: string }) {
                 diffActionPending={pendingDiffAction}
                 onRetry={retryLast}
                 onEdit={editMessage}
-                onRewind={state.external ? undefined : (id, text, images) => setRewindMessage({ id, text, images })}
+                onRewind={state.external ? undefined : startRewind}
+                rewindBlocked={rewindBlocked}
+                onUndoRewind={state.external ? undefined : undoRewind}
                 onQuote={text => setQuote({ text, key: Date.now() })}
                 tasks={state.tasks}
                 onStopTask={stopTask}
@@ -977,6 +1029,7 @@ function Workspace({ cwd }: { cwd: string }) {
                   prefill={prefill}
                   onPrefillConsumed={composerEvents.onPrefillConsumed}
                   editDraft={composerEditDraft}
+                  withdrawDraft={withdrawDraft}
                   onCancelEdit={composerEvents.onCancelEdit}
                   effort={state.effort}
                   onEffort={setEffort}
@@ -1043,11 +1096,9 @@ function Workspace({ cwd }: { cwd: string }) {
       </div>
 
       {addingProject && <AddProjectDialog onAdd={addProjectPaths} onClose={() => setAddingProject(false)} />}
-      {rewindMessage && <RewindDialog message={rewindMessage} request={request} onClose={() => setRewindMessage(undefined)} onDone={restorePrompt => {
-        if (restorePrompt) editMessage(rewindMessage.text, rewindMessage.images)
+      {rewindMessage && <RewindDialog message={rewindMessage} cwd={session.cwd} preview={rewindMessage.preview} initialError={rewindMessage.error} request={sessionAction} onClose={() => setRewindMessage(undefined)} onDone={mode => {
+        finishRewind(mode, rewindMessage.text, rewindMessage.images)
         setRewindMessage(undefined)
-        setRefreshTick(n => n + 1)
-        refreshContext()
       }} />}
       {searchOpen && <SearchDialog cwd={session.cwd} projects={projects} sessions={sessionsByProject} onNewSession={() => newSession()} onOpenFolder={() => { setEditingProject(undefined); setAddingProject(true) }} onSelectSession={selectSession} onOpenFile={openFile} onClose={() => setSearchOpen(false)} newTaskShortcut={settings.shortcuts.newTask} />}
       {confirmDialog}

@@ -1,6 +1,6 @@
 import { useUserBubbleWidth } from "./useUserBubbleWidth"
 import { flushSync } from "react-dom"
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react"
+import { createContext, memo, use, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import type { AgentState, AgentTask, Block, ToolBlock, Turn } from "../agent/reducer"
 import type { ImageBlock, TurnDiff } from "../agent/protocol"
 import { Lightbox, type LightboxItem } from "./Lightbox"
@@ -17,7 +17,7 @@ import {
   type ActivityRun,
   type ThinkingBlock as ThinkingBlockData,
 } from "../agent/toolActivity"
-import { ArrowDown, AlertTriangle, BookOpen, Check, ChevronDown, ChevronRight, Copy, Edit2, FileText, Photo, Search, Terminal, Tool } from "../lib/icons"
+import { ArrowDown, AlertTriangle, BookOpen, Check, ChevronDown, ChevronRight, Copy, Edit2, FileText, Photo, RotateCcw, Search, Terminal, Tool } from "../lib/icons"
 import { Collapsible } from "./Collapsible"
 import { ErrorBoundary } from "./ErrorBoundary"
 import { copyContent } from "./RichContent"
@@ -45,6 +45,9 @@ interface MessageListProps {
   diffActionPending?: number
   onRetry?: () => void
   onRewind?: (id: string, text: string, images?: ImageBlock[]) => void
+  /** Why rewinding is unavailable right now; the button is disabled and shows it as a tooltip. */
+  rewindBlocked?: string
+  onUndoRewind?: () => Promise<void>
   onEdit?: (text: string, images?: ImageBlock[]) => void
   onQuote?: (text: string) => void
   tasks?: AgentTask[]
@@ -67,7 +70,7 @@ const ESTIMATED_TURN_HEIGHT = 160
 const TODO_TOOLS = ["TodoWrite", "TaskCreate", "TaskUpdate", "TaskList", "TaskGet"]
 const scrollPositions = new Map<string, { top: number; pinned: boolean; heights: Map<string, number> }>()
 
-export function MessageList({ turns, cwd, onOpenFile, busy, result, readingWidth, liveDiff, onTurnDiff, onTurnDiffAction, diffActionPending, onRetry, onEdit, onRewind, onQuote, tasks, onStopTask, onOpenTask, sessionId, historyBefore, historyLoading, onLoadEarlier }: MessageListProps) {
+export function MessageList({ turns, cwd, onOpenFile, busy, result, readingWidth, liveDiff, onTurnDiff, onTurnDiffAction, diffActionPending, onRetry, onEdit, onRewind, rewindBlocked, onUndoRewind, onQuote, tasks, onStopTask, onOpenTask, sessionId, historyBefore, historyLoading, onLoadEarlier }: MessageListProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
   const layoutRef = useRef<HTMLDivElement>(null)
@@ -460,7 +463,7 @@ export function MessageList({ turns, cwd, onOpenFile, busy, result, readingWidth
             kind="user"
             sentAt={segment.sentAt}
             onRewind={onRewind ? () => onRewind(segment.id, segment.text, segment.images) : undefined}
-            rewindDisabled={busy}
+            rewindBlocked={rewindBlocked}
             onEdit={onEdit && index === lastUserIndex ? () => onEdit(segment.text, segment.images) : undefined}
           />
         </div>
@@ -483,8 +486,13 @@ export function MessageList({ turns, cwd, onOpenFile, busy, result, readingWidth
     )
   }
 
+  // Only the marker that ends the conversation can be undone; once a message follows it, it is history.
+  const lastTurn = turns.at(-1)
+  const lastBlock = lastTurn?.role === "assistant" ? lastTurn.blocks.at(-1) : undefined
+  const rewindMarkers = useMemo(() => ({ live: lastBlock?.kind === "rewind" ? lastBlock : undefined, blocked: rewindBlocked, onUndo: onUndoRewind }), [lastBlock, rewindBlocked, onUndoRewind])
+
   return (
-    <OutputContext value={outputContext}><div className="relative flex min-h-0 flex-1 flex-col">
+    <RewindMarkerContext value={rewindMarkers}><OutputContext value={outputContext}><div className="relative flex min-h-0 flex-1 flex-col">
     <div
       ref={scrollRef}
       onScroll={onScroll}
@@ -548,7 +556,7 @@ export function MessageList({ turns, cwd, onOpenFile, busy, result, readingWidth
       </button>
       {selection && <button type="button" className="fixed z-50 rounded-lg border border-[var(--border-default)] bg-[var(--bg-card)] px-3 py-2 text-caption shadow-lg" style={{ left: selection.left, top: selection.top }} onMouseDown={event => event.preventDefault()} onClick={() => { onQuote?.(selection.text); window.getSelection()?.removeAllRanges(); setSelection(undefined) }}>Quote selection</button>}
       {preview && <Lightbox items={preview.items} index={preview.index} onIndex={(index) => setPreview({ ...preview, index })} onClose={() => setPreview(undefined)} />}
-    </div></OutputContext>
+    </div></OutputContext></RewindMarkerContext>
   )
 }
 
@@ -688,10 +696,12 @@ type SegmentCache = Map<string, { sources: Turn[]; segment: AssistantSegmentData
 
 function groupTurns(turns: Turn[], cache: SegmentCache): Segment[] {
   const groups: (Turn | Extract<Turn, { role: "assistant" }>[])[] = []
+  // A rewind marker is its own segment, so it shows after the reply it follows instead of inside its activity.
+  const isMarker = (turn: Turn) => turn.role === "assistant" && turn.blocks.length > 0 && turn.blocks.every(block => block.kind === "rewind")
   for (const turn of turns) {
     if (turn.role === "user") { groups.push(turn); continue }
     const last = groups[groups.length - 1]
-    if (Array.isArray(last)) last.push(turn)
+    if (Array.isArray(last) && !isMarker(turn) && !isMarker(last[0]!)) last.push(turn)
     else groups.push([turn])
   }
   const next: SegmentCache = new Map()
@@ -1164,11 +1174,11 @@ function formatSentAt(sentAt: number, now = new Date()): string {
   return date.toLocaleString(undefined, { ...time, month: "short", day: "numeric" })
 }
 
-function MessageActions({ text, kind = "assistant", onEdit, onRewind, rewindDisabled, complete = true, sentAt }: {
+function MessageActions({ text, kind = "assistant", onEdit, onRewind, rewindBlocked, complete = true, sentAt }: {
   text: string
   kind?: "user" | "assistant"
   onRewind?: () => void
-  rewindDisabled?: boolean
+  rewindBlocked?: string
   onEdit?: () => void
   complete?: boolean
   sentAt?: number
@@ -1199,7 +1209,7 @@ function MessageActions({ text, kind = "assistant", onEdit, onRewind, rewindDisa
         {copied ? <Check size={kind === "assistant" ? 16 : 14} /> : <Copy size={kind === "assistant" ? 16 : 14} />}
       </button>
       {copyError && <span role="status" className="self-center text-caption text-[#C24444]">Could not copy. Try again.</span>}
-      {onRewind && <RewindButton disabled={!!rewindDisabled} onClick={onRewind} />}
+      {onRewind && <RewindButton blocked={rewindBlocked} onClick={onRewind} />}
       {onEdit && (
         <button
           type="button"
@@ -1285,6 +1295,7 @@ function BlockView({ block, streaming, streamKey }: { block: Block; streaming?: 
   switch (block.kind) {
     case "compaction":
     case "retry":
+    case "rewind":
       return <StatusBlock block={block} />
     case "text":
       return contextCardFor(block.text) ?? <PacedMarkdown text={stripAnsi(block.text)} streaming={streaming} fresh={block.startedAt !== undefined && Date.now() - block.startedAt < FRESH_TEXT_MS} streamKey={streamKey} />
@@ -1295,7 +1306,12 @@ function BlockView({ block, streaming, streamKey }: { block: Block; streaming?: 
   }
 }
 
-function StatusBlock({ block }: { block: Extract<Block, { kind: "compaction" | "retry" }> }) {
+function StatusBlock({ block }: { block: Extract<Block, { kind: "compaction" | "retry" | "rewind" }> }) {
+  if (block.kind === "rewind") return <RewindMarker block={block} />
+  return <ProgressStatus block={block} />
+}
+
+function ProgressStatus({ block }: { block: Extract<Block, { kind: "compaction" | "retry" }> }) {
   const [delayed, setDelayed] = useState(false)
   useEffect(() => {
     if (block.kind !== "compaction" || block.status !== "running" || !block.startedAt) return
@@ -1308,6 +1324,34 @@ function StatusBlock({ block }: { block: Extract<Block, { kind: "compaction" | "
     : block.status === "running" ? `Compacting context${delayed ? " · This can take a few minutes" : ""}`
       : block.status === "unknown" ? "Compaction connection lost" : block.status === "stopped" ? "Compaction interrupted" : block.trigger === "auto" ? "Context automatically compacted" : "Context compacted"
   return <div role="status" className="flex items-center gap-1.5 text-[length:var(--font-text-md-size)] leading-5 text-[color-mix(in_srgb,var(--text-primary)_60%,transparent)]"><span aria-hidden="true">{block.kind === "compaction" ? <ListCollapseIcon /> : <AlertTriangle size={16} />}</span><span className={live ? "noa-shimmer" : undefined}>{label}</span></div>
+}
+
+const RewindMarkerContext = createContext<{ live?: Block; blocked?: string; onUndo?: () => Promise<void> }>({})
+
+// A rewind leaves a quiet marker where the conversation was cut. While nothing has been sent after it,
+// it offers to undo the rewind; an undo leaves no trace, as if the rewind never happened.
+function RewindMarker({ block }: { block: Extract<Block, { kind: "rewind" }> }) {
+  const { live, blocked, onUndo } = use(RewindMarkerContext)
+  const [pending, setPending] = useState(false)
+  const [error, setError] = useState<string>()
+  const isLive = live === block
+  const action = isLive ? onUndo : undefined
+  const hint = block.filesRestored ? "Bring back the removed messages. Files stay as they are now." : "Bring back the removed messages"
+  const run = () => {
+    if (!action || pending) return
+    setPending(true)
+    setError(undefined)
+    void action().catch(error => setError((error as Error).message)).finally(() => setPending(false))
+  }
+  return <div role="status" className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[length:var(--font-text-md-size)] leading-5 text-[color-mix(in_srgb,var(--text-primary)_60%,transparent)]">
+    <RotateCcw size={14} aria-hidden="true" />
+    <span>{isLive ? "Rewound to here" : "Rewound here · later messages were removed"}</span>
+    {action && <>
+      <span aria-hidden="true">·</span>
+      <button type="button" disabled={pending || !!blocked} title={blocked ?? hint} onClick={run} className="underline decoration-[color-mix(in_srgb,currentColor_40%,transparent)] underline-offset-2 hover:text-[var(--text-primary)] disabled:no-underline disabled:opacity-60">{pending ? "Undoing…" : "Undo rewind"}</button>
+    </>}
+    {error && <span role="alert" className="basis-full text-caption text-[var(--text-danger)]">{error}</span>}
+  </div>
 }
 
 function ListCollapseIcon() {

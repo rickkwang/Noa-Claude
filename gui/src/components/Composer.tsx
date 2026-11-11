@@ -72,7 +72,9 @@ interface ComposerProps {
   // Text dropped into the draft from outside, e.g. a skill invocation chosen in settings.
   prefill?: { text: string; key: number }
   onPrefillConsumed?: () => void
-  editDraft?: { text: string; images: ImageAttachment[]; key: number; label?: string; queued?: boolean }
+  editDraft?: { text: string; images: ImageAttachment[]; key: number; label?: string; queued?: boolean; silent?: boolean }
+  /** Takes back a draft the app put here (after an undone rewind), unless the user has edited it since. */
+  withdrawDraft?: { text: string; key: number }
   onCancelEdit?: () => void
   effort?: string
   onEffort: (effort: string | null) => void
@@ -131,6 +133,7 @@ export const Composer = memo(function Composer({
   prefill,
   onPrefillConsumed,
   editDraft,
+  withdrawDraft,
   onCancelEdit,
   effort,
   onEffort,
@@ -355,6 +358,17 @@ export const Composer = memo(function Composer({
       el.setSelectionRange(editDraft.text.length, editDraft.text.length)
     })
   }, [editDraft?.key])
+
+  // A request made before this composer mounted (another task's) is not for this draft.
+  const withdrawnKey = useRef(withdrawDraft?.key)
+  useEffect(() => {
+    if (!withdrawDraft || withdrawnKey.current === withdrawDraft.key) return
+    withdrawnKey.current = withdrawDraft.key
+    if (text !== withdrawDraft.text) return
+    setText("")
+    setImages([])
+    onCancelEdit?.()
+  }, [withdrawDraft?.key])
 
   const currentModel = findModel(models, model)
   const modelLabelKey = `noa-agent.modelLabel:${cwd}`
@@ -754,7 +768,7 @@ export const Composer = memo(function Composer({
       )}
 
       <div className="noa-agent-input relative flex flex-col">
-        {editDraft && (
+        {editDraft && !editDraft.silent && (
           <div className="flex items-center gap-2 border-b border-[var(--divider-subtle)] px-3 py-1.5 text-caption text-[var(--sidebar-text-muted)]">
             <Edit2 size={12} />
             <span className="min-w-0 flex-1 truncate">{editDraft.label ?? "Edit and resend"}</span>
