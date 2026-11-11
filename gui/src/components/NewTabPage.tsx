@@ -1,4 +1,4 @@
-import { shortcutHint, type ShortcutBindings } from "../lib/shortcuts"
+import { defaultShortcuts, shortcutHint, type ShortcutBindings } from "../lib/shortcuts"
 import { useState, type ComponentType } from "react"
 import { Globe, MoreHorizontal, PanelBottom, X } from "../lib/icons"
 import { PopupMenu, anchorBelow, type PopupMenuAnchor } from "./PopupMenu"
@@ -12,7 +12,7 @@ interface NewTabTool {
 
 // A panel's New tab page: the tools that can open as a tab, one row each with its shortcut.
 // The terminal row also offers the bottom terminal, as its own menu.
-export function NewTabPage({ tools, onSelect, onOpenBottomTerminal, suggested = [], onOpenUrl, onDismissUrl, shortcuts }: { shortcuts: ShortcutBindings; tools: NewTabTool[]; onSelect: (id: string) => void; onOpenBottomTerminal: () => void; suggested?: string[]; onOpenUrl?: (url: string) => void; onDismissUrl?: (url: string) => void }) {
+export function NewTabPage({ tools, onSelect, onOpenBottomTerminal, suggested = [], onOpenUrl, onDismissUrl, shortcuts = defaultShortcuts }: { shortcuts?: ShortcutBindings; tools: NewTabTool[]; onSelect: (id: string) => void; onOpenBottomTerminal: () => void; suggested?: string[]; onOpenUrl?: (url: string) => void; onDismissUrl?: (url: string) => void }) {
   const [menu, setMenu] = useState<{ anchor: PopupMenuAnchor; trigger: Element }>()
   return (
     <div className="noa-new-tab-page @container h-full min-h-0 overflow-y-auto px-2 py-8 select-none">

@@ -1917,6 +1917,16 @@ body.noa-session-dragging * { cursor: grabbing !important; }
 .noa-output-markdown blockquote p::before,
 .noa-output-markdown blockquote p::after { content: none; }
 
+/* Everything inside the transcript follows Transcript text size; the composer and dialogs keep the interface size.
+   The ratios match the root defaults, so Medium looks the same as before. */
+.noa-agent-scroll {
+  --text-body: var(--transcript-text-size, 14px);
+  --text-chat-sm: calc(var(--text-body) - 1px);
+  --text-caption: calc(var(--text-body) - 2px);
+  --text-micro: calc(var(--text-body) - 3px);
+  --font-text-md-size: var(--text-body);
+  --font-text-md-line-height: calc(var(--font-text-md-size) * 1.625);
+}
 .noa-user-message-bubble {
   background: rgb(11 11 11 / 5%);
 }
@@ -1963,7 +1973,10 @@ body.noa-session-dragging * { cursor: grabbing !important; }
 .noa-output-markdown :not(pre) > code { font-size: .92em; line-height: 1; font-weight: normal; font-family: var(--font-mono); border-radius: 6px; padding: 1px 6px; background: color-mix(in srgb, var(--text-primary) 6%, transparent); box-shadow: none; box-decoration-break: clone; }
 .noa-output-markdown .noa-code-block { margin-block: calc(var(--output-space) * 5); }
 .noa-output-markdown > div:has(> table) { margin-top: calc(var(--output-space) * 4); }
-.noa-output-markdown table { margin: 0; font-size: max(var(--code-font-size), calc(var(--font-text-md-size) * .875)); line-height: var(--font-text-md-line-height); border-collapse: separate; border-spacing: 0; }
+.noa-output-markdown table { margin: 0; font-size: var(--font-text-md-size); line-height: var(--font-text-md-line-height); border-collapse: separate; border-spacing: 0; }
+/* Like Codex: tables take their content width and scroll sideways; only breakable text wraps inside cells. */
+.noa-output-markdown table { width: fit-content; min-width: 100%; }
+.noa-output-markdown td, .noa-output-markdown th { overflow-wrap: break-word; }
 .noa-output-markdown :is(th,td) { padding-inline: 0 calc(var(--output-space) * 6); }
 .noa-output-markdown th { padding-block: calc(var(--output-space) * 2); line-height: calc(var(--output-space) * 4); }
 .noa-output-markdown td { padding-block: calc(var(--output-space) * 2.5); }

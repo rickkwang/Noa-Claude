@@ -29,6 +29,11 @@ export function normalizeBinding(binding: string): string {
   return binding.split('+').map((part) => (part === 'mod' ? 'ctrl' : part)).join('+')
 }
 
+// "" (unbound) or modifiers joined to a key code, e.g. "mod+KeyN" or "ctrl+Backquote".
+export function isBinding(value: unknown): value is string {
+  return typeof value === 'string' && (value === '' || /^((mod|ctrl|alt|shift)\+)*[A-Za-z][A-Za-z0-9]*$/.test(value))
+}
+
 export function matchesShortcut(event: KeyboardEvent, binding: string): boolean {
   if (!binding) return false
   const parts = binding.split('+')

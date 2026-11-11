@@ -1,7 +1,7 @@
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react"
 import katex from "katex"
 import "katex/dist/katex.min.css"
-import { Check, Copy, X } from "../lib/icons"
+import { ArrowUpRight, Check, Copy, X } from "../lib/icons"
 
 export async function copyContent(element: HTMLElement | null, fallback: string) {
   if (!element) return navigator.clipboard.writeText(fallback)
@@ -85,6 +85,18 @@ export function MarkdownTable({ children }: { children: ReactNode }) {
   const [expanded, setExpanded] = useState(false)
   const [copied, setCopied] = useState(false)
   const [error, setError] = useState(false)
+  const [overflowing, setOverflowing] = useState(false)
+  // Expand only when the table scrolls sideways; a table that fits needs no preview.
+  useEffect(() => {
+    const scroller = ref.current
+    if (!scroller) return
+    const measure = () => setOverflowing(scroller.scrollWidth > scroller.clientWidth + 1)
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(scroller)
+    if (scroller.firstElementChild) observer.observe(scroller.firstElementChild)
+    return () => observer.disconnect()
+  }, [children])
   return <div className="group/table relative my-4">
     <div data-copy-exclude className="mb-1 flex justify-end gap-3 text-caption text-[var(--text-secondary)]">
       <button type="button" aria-label="Copy table" onClick={async () => {
@@ -96,7 +108,7 @@ export function MarkdownTable({ children }: { children: ReactNode }) {
           setError(false); setCopied(true); setTimeout(() => setCopied(false), 2000)
         } catch { setError(true) }
       }}>{copied ? <Check size={15} /> : <Copy size={15} />}</button>
-      <button type="button" onClick={() => setExpanded(true)}>Expand table</button>
+      {overflowing && <button type="button" aria-label="Expand table" title="Expand table" onClick={() => setExpanded(true)} className="flex size-6 items-center justify-center rounded-md hover:text-[var(--text-primary)]"><ArrowUpRight size={15} /></button>}
     </div>
     {error && <span role="status" className="text-caption">Could not copy table.</span>}
     <div ref={ref} className="overflow-x-auto" role="region" aria-label="Table" tabIndex={0} onKeyDown={event => {

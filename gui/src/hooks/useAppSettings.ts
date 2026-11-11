@@ -2,6 +2,22 @@ import { useEffect, useState } from "react"
 import type { AppSettings } from "../types"
 import { migrateAppearance } from "../lib/appearanceMigration"
 import { defaultSettings } from "../theme/settings"
+import { SHORTCUT_IDS, isBinding, type ShortcutBindings } from "../lib/shortcuts"
+
+// Keep only known shortcut ids with well-formed bindings; anything else would break the keydown matcher.
+function validBindings(raw: unknown): Partial<ShortcutBindings> {
+  if (!raw || typeof raw !== "object") return {}
+  const valid = Object.entries(raw).filter(([id, value]) => (SHORTCUT_IDS as readonly string[]).includes(id) && isBinding(value))
+  return Object.fromEntries(valid) as Partial<ShortcutBindings>
+}
+
+function readShortcuts(): Partial<ShortcutBindings> {
+  try {
+    return validBindings(JSON.parse(localStorage.getItem("noa-agent.shortcuts") ?? "{}"))
+  } catch {
+    return {}
+  }
+}
 
 function loadSettings(): AppSettings {
   try {
@@ -21,7 +37,7 @@ function loadSettings(): AppSettings {
       composer: { ...defaultSettings.composer, ...JSON.parse(localStorage.getItem("noa-agent.composer") ?? "{}") },
       terminal: { ...defaultSettings.terminal, ...JSON.parse(localStorage.getItem("noa-agent.terminal") ?? "{}") },
       notifications: { ...defaultSettings.notifications, ...JSON.parse(localStorage.getItem("noa-agent.notifications") ?? "{}") },
-      shortcuts: { ...defaultSettings.shortcuts, ...JSON.parse(localStorage.getItem("noa-agent.shortcuts") ?? "{}") },
+      shortcuts: { ...defaultSettings.shortcuts, ...readShortcuts() },
     }
   } catch {
     return defaultSettings

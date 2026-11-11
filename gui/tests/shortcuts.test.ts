@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { bindingFromEvent, defaultShortcuts, findShortcutConflict, matchesShortcut } from "../src/lib/shortcuts"
+import { bindingFromEvent, defaultShortcuts, findShortcutConflict, isBinding, matchesShortcut } from "../src/lib/shortcuts"
 
 const key = (code: string, mods: Partial<Pick<KeyboardEvent, "ctrlKey" | "altKey" | "shiftKey" | "metaKey">> = {}) =>
   ({ code, ctrlKey: false, altKey: false, shiftKey: false, metaKey: false, ...mods }) as KeyboardEvent
@@ -25,4 +25,13 @@ test("conflicts are found against other shortcuts but not against the same one",
   expect(findShortcutConflict(defaultShortcuts, "findTasks", defaultShortcuts.newTask)).toBe("newTask")
   expect(findShortcutConflict(defaultShortcuts, "newTask", defaultShortcuts.newTask)).toBeNull()
   expect(findShortcutConflict(defaultShortcuts, "newTask", "")).toBeNull()
+})
+
+// Stored values come from localStorage, so malformed bindings must be rejected before they reach the keydown matcher.
+test("stored bindings must be unbound or a modifier list plus a key code", () => {
+  expect(isBinding("")).toBe(true)
+  expect(isBinding("mod+KeyN")).toBe(true)
+  expect(isBinding("Command+KeyN")).toBe(false)
+  expect(isBinding("mod+")).toBe(false)
+  expect(isBinding(5)).toBe(false)
 })

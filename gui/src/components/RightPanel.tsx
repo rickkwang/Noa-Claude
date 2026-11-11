@@ -1,4 +1,4 @@
-import { shortcutHint, type ShortcutBindings } from "../lib/shortcuts"
+import { defaultShortcuts, shortcutHint, type ShortcutBindings } from "../lib/shortcuts"
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties } from "react"
 import { isSubagentTask, type AgentState } from "../agent/reducer"
 import type { TurnDiff } from "../agent/protocol"
@@ -39,7 +39,7 @@ const TERMINAL_KEY = "terminal:"
 const BROWSER_KEY = "browser:"
 
 interface RightPanelProps {
-  shortcuts: ShortcutBindings
+  shortcuts?: ShortcutBindings
   state: AgentState
   onStopTask: (id: string) => void
   cwd: string
@@ -64,7 +64,7 @@ interface RightPanelProps {
 }
 
 // Right column: one pane under a tab strip.
-export function RightPanel({ shortcuts, state, onStopTask, cwd, open = true, tabs, onTabs, newTab, onNewTab, tab, onTab, terminalFocusKey, onBottomTerminal, onReference, onWorkspaceChange, workspaceRefreshKey, focusChange, focusFile, turnDiff, focusTask }: RightPanelProps) {
+export function RightPanel({ shortcuts = defaultShortcuts, state, onStopTask, cwd, open = true, tabs, onTabs, newTab, onNewTab, tab, onTab, terminalFocusKey, onBottomTerminal, onReference, onWorkspaceChange, workspaceRefreshKey, focusChange, focusFile, turnDiff, focusTask }: RightPanelProps) {
   useSyncExternalStore(subscribeTerminals, terminalsVersion, terminalsVersion)
   useSyncExternalStore(subscribeBrowser, browserVersion, browserVersion)
   const browser = projectBrowser(cwd)
