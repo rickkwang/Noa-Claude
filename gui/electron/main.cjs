@@ -1,7 +1,7 @@
 // Desktop shell: starts the Bun bridge (server/main.ts), serves the
 // built UI from it, and shows it in a native window. The bridge is the only
 // process that talks to the agent; the window is a plain client of it.
-const { app, BrowserWindow, Menu, dialog, ipcMain, nativeImage, nativeTheme, session, shell } = require('electron')
+const { app, BrowserWindow, Menu, dialog, ipcMain, nativeImage, nativeTheme, screen, session, shell } = require('electron')
 const { spawn } = require('child_process')
 const { randomBytes } = require('crypto')
 const fs = require('fs')
@@ -10,6 +10,7 @@ const net = require('net')
 const os = require('os')
 const path = require('path')
 const { createNotifier } = require('./notifications.cjs')
+const { createWindowState } = require('./windowState.cjs')
 const { registerPreview } = require('./preview.cjs')
 const { checkForUpdate } = require('./updateCheck.cjs')
 const { prepareMacUpdate, pruneStagedUpdates } = require('./macUpdateInstaller.cjs')
@@ -24,6 +25,7 @@ if (app.isPackaged) process.env.PATH = [path.join(process.resourcesPath, 'rg'), 
 
 let bridge = null
 let win = null
+let windowState = null
 let quitting = false
 // A verified update, staged while the app runs; its install script starts at quit only once the user chose Update.
 let pendingInstall = null
@@ -274,11 +276,14 @@ async function startBridge() {
 
 function createWindow(port) {
   const origin = DEV ? `http://127.0.0.1:${VITE_PORT}` : `http://127.0.0.1:${port}`
+  const area = screen.getPrimaryDisplay().workArea
+  windowState = createWindowState({ app, screen }, {
+    width: Math.min(1440, Math.round(area.width * 0.9)),
+    height: Math.min(900, Math.round(area.height * 0.9)),
+    minWidth: 960, minHeight: 600,
+  })
   win = new BrowserWindow({
-    width: 1280,
-    height: 820,
-    minWidth: 960,
-    minHeight: 600,
+    ...windowState.options,
     title: 'Noa Agent',
     backgroundColor: '#FCFCFB',
     // Creation-only: pins the material active so a focus change does not swap it for the pale inactive one.
@@ -294,6 +299,7 @@ function createWindow(port) {
     },
   })
 
+  windowState.manage(win)
   win.loadURL(`${origin}/`)
   win.webContents.on('did-navigate', closePreviews)
   // Reload drops the injected CSS variable, so set it again after every page load.
@@ -468,6 +474,7 @@ app.on('before-quit', (event) => {
 })
 
 app.on('will-quit', () => {
+  windowState?.flush()
   bridge?.kill('SIGTERM')
   vite?.kill('SIGTERM')
   if (installRequested) pendingInstall?.launch()
