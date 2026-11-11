@@ -140,7 +140,6 @@ export interface AgentState {
   tasks: AgentTask[]
   queue: QueuedMessage[]
   queuePaused: boolean
-  status?: string
   // Latest rate-limit state; cleared once the limit reports "allowed" again.
   rateLimit?: RateLimitInfo
   permissions: Permission[]
@@ -456,10 +455,10 @@ function applyAgentMessage(state: AgentState, m: AgentMessage): AgentState {
         }
         return { ...state, turns, tasks: [...state.tasks.filter((t) => t !== existing), task] }
       }
-      if (m.subtype === "compact_boundary") return { ...state, status: undefined, turns: updateCompaction(state.turns, "done", m.compact_metadata.trigger) }
+      if (m.subtype === "compact_boundary") return { ...state, turns: updateCompaction(state.turns, "done", m.compact_metadata.trigger) }
       if (m.subtype === "api_retry") return { ...state, turns: appendNotice(settleRetry(state.turns), { kind: "retry", attempt: m.attempt, maxRetries: m.max_retries, delayMs: m.retry_delay_ms, errorStatus: m.error_status }) }
-      if (m.subtype === "status") return { ...state, status: m.status ?? undefined, permissionMode: m.permissionMode ?? state.permissionMode, turns: m.status === "compacting" ? updateCompaction(state.turns, "running") : state.turns }
-      if (m.subtype === "session_state_changed") return { ...state, status: m.state, busy: m.state === "idle" ? false : state.busy, turns: m.state === "idle" ? settlePending(state.turns, "stopped") : state.turns }
+      if (m.subtype === "status") return { ...state, permissionMode: m.permissionMode ?? state.permissionMode, turns: m.status === "compacting" ? updateCompaction(state.turns, "running") : state.turns }
+      if (m.subtype === "session_state_changed") return { ...state, busy: m.state === "idle" ? false : state.busy, turns: m.state === "idle" ? settlePending(state.turns, "stopped") : state.turns }
       if (m.subtype !== "init") return state
       return {
         ...state,

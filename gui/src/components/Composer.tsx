@@ -497,6 +497,7 @@ export const Composer = memo(function Composer({
     else if (!disabled && !loadingImages && imagesLoaded) { setSendWhenReady(false); submit() }
   }, [sendWhenReady, connection, disabled, forking, loadingImages, imagesLoaded])
 
+  const empty = !text.trim() && !images.length && !files.length
   function submit() {
     const trimmed = text.trim()
     if (!trimmed && !images.length && !files.length) return
@@ -1066,14 +1067,14 @@ export const Composer = memo(function Composer({
             />
             <button
               type="button"
-              onClick={busy && !editDraft?.queued && !text.trim() && !images.length && !files.length ? onInterrupt : submit}
-              disabled={(!busy || editDraft?.queued) && (connection === "closed" || forking || !!readOnly && disabled || sendWhenReady || loadingImages || !imagesLoaded || (!text.trim() && !images.length && !files.length))}
-              aria-label={editDraft?.queued ? "Save queued message" : busy && !text.trim() && !images.length && !files.length ? "Stop (Esc)" : busy ? followUpMode === "steer" ? "Steer" : "Queue message" : "Run task"}
-              title={editDraft?.queued ? "Save queued message; queue stays paused" : busy && !text.trim() && !images.length && !files.length ? "Stop (Esc)" : busy ? followUpMode === "steer" ? "Submit without interrupting the model" : "Queue after the current turn" : "Run task"}
-              data-action={busy && !text.trim() && !images.length && !files.length ? "stop" : busy ? followUpMode : "send"}
+              onClick={busy && !editDraft?.queued && empty ? onInterrupt : submit}
+              disabled={(!busy || editDraft?.queued) && (connection === "closed" || forking || !!readOnly && disabled || sendWhenReady || loadingImages || !imagesLoaded || empty)}
+              aria-label={editDraft?.queued ? "Save queued message" : busy && empty ? "Stop (Esc)" : busy ? followUpMode === "steer" ? "Steer" : "Queue message" : "Run task"}
+              title={editDraft?.queued ? "Save queued message; queue stays paused" : busy && empty ? "Stop (Esc)" : busy ? followUpMode === "steer" ? "Submit without interrupting the model" : "Queue after the current turn" : "Run task"}
+              data-action={busy && empty ? "stop" : busy ? followUpMode : "send"}
               className="noa-primary-action ml-1 flex size-7 shrink-0 items-center justify-center rounded-full bg-[var(--text-primary,#2D2D2B)] text-[var(--surface-page,#FFFFFF)] transition-[opacity,transform] hover:opacity-90 disabled:opacity-50 noa-press"
             >
-              {busy && !editDraft?.queued && !text.trim() && !images.length && !files.length
+              {busy && !editDraft?.queued && empty
                 ? <span aria-hidden="true" className="block size-[11px] rounded-[1.25px] bg-current" />
                 : busy && !editDraft?.queued ? followUpMode === "steer" ? <Steer size={16} /> : <Queue size={16} /> : <ComposerSendIcon width={16} height={16} />}
             </button>
