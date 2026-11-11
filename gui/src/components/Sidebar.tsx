@@ -13,6 +13,7 @@ import { PopupMenu, anchorBelow, type PopupMenuAnchor } from "./PopupMenu"
 import { MarqueeText } from "./MarqueeText"
 import { UpdateButton } from "./UpdateButton"
 import { useSessionHoverCard } from "./SessionHoverCard"
+import { Collapsible } from "./Collapsible"
 import type { ProjectInfo, SessionSummary } from "../api"
 import {
   ArrowUpDown,
@@ -444,18 +445,20 @@ export function Sidebar({
         <div className="pb-2">
           {pinnedSessions.length > 0 && (
             <section aria-label="Pinned" className="mb-2">
-              <div className="h-8 flex items-center pl-[10px] pr-2">
+              <div className="h-[30px] flex items-center pl-[10px] pr-2">
                 <button
                   type="button"
                   aria-expanded={pinsOpen}
                   onClick={() => setPinsOpen(open => !open)}
-                  className="flex min-w-0 flex-1 items-center gap-1 pl-[5px] text-chat-sm text-[var(--text-tertiary,#898781)] font-ui"
+                  className="group flex min-w-0 flex-1 items-center gap-1 pl-[5px] text-chat-sm text-[var(--text-tertiary,#898781)] font-ui"
                 >
                   Pinned
-                  <ChevronRight size={12} className={`shrink-0 transition-transform duration-150 ${pinsOpen ? "rotate-90" : ""}`} />
+                  <ChevronRight size={12} className={`shrink-0 transition-[transform,opacity] duration-300 ease-[cubic-bezier(.19,1,.22,1)] ${pinsOpen ? "rotate-90 opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100" : ""}`} />
                 </button>
               </div>
-              {(pinsOpen) && pinnedSessions.map(({ project, session }) => (
+              <Collapsible open={pinsOpen} duration={300} fade>
+              <div className="flex flex-col gap-px pt-1">
+              {pinnedSessions.map(({ project, session }) => (
                 <SessionRow
                   key={`${project.path}\0${session.id}`}
                   id={session.id}
@@ -479,19 +482,21 @@ export function Sidebar({
                   onPointerCancel={cancelDrag}
                 />
               ))}
+              </div>
+              </Collapsible>
             </section>
           )}
-          <div className="group/projects noa-sidebar-toolbar-mask h-8 flex items-center pl-[10px] pr-2 gap-0.5 shrink-0 z-10 mb-1 overflow-visible">
+          <div className="group/projects noa-sidebar-toolbar-mask h-[30px] flex items-center pl-[10px] pr-2 gap-0.5 shrink-0 z-10 mb-1 overflow-visible">
             <button
               type="button"
               aria-expanded={projectsOpen}
               onClick={() => setProjectsOpen((open) => !open)}
-              className="flex min-w-0 flex-1 items-center gap-1 pl-[5px] text-chat-sm text-[var(--text-tertiary,#898781)] font-ui"
+              className="group flex min-w-0 flex-1 items-center gap-1 pl-[5px] text-chat-sm text-[var(--text-tertiary,#898781)] font-ui"
             >
               Projects
               <ChevronRight
                 size={12}
-                className={`shrink-0 transition-transform duration-150 ${projectsOpen ? "rotate-90" : ""}`}
+                className={`shrink-0 transition-[transform,opacity] duration-300 ease-[cubic-bezier(.19,1,.22,1)] ${projectsOpen ? "rotate-90 opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100" : ""}`}
               />
             </button>
             {/* Hidden until the header is hovered or focused. */}
@@ -510,14 +515,15 @@ export function Sidebar({
               Add a project folder to start
             </button>
           )}
-          {projectsOpen &&
-            groups.map(({ project, visible }) => {
+          <Collapsible open={projectsOpen} duration={300} fade>
+            <div className="flex flex-col gap-px">
+            {groups.map(({ project, visible }) => {
               const isOpen = expanded.has(project.path)
               return (
                 <div
                   key={project.path}
                   data-project-group={project.path}
-                  className={`relative font-ui ${isOpen ? "mb-2" : ""}`}
+                  className="relative font-ui"
                 >
                   {dropTarget?.kind === "project" && dropTarget.id === project.path && (
                     <DropIndicator edge={dropTarget.edge} className="left-2 right-2" />
@@ -537,8 +543,8 @@ export function Sidebar({
                     onRemove={() => onRemoveProject(project.path)}
                     onReveal={() => onRevealProject(project.path)}
                   />
-                  {isOpen && (
-                    <>
+                  <Collapsible open={isOpen} duration={300} fade>
+                    <div className="flex flex-col gap-px pb-2">
                       {(unfolded.has(project.path) ? visible : visible.slice(0, TASK_PREVIEW)).map((session) => (
                         <SessionRow
                           key={session.id}
@@ -578,24 +584,27 @@ export function Sidebar({
                           {unfolded.has(project.path) ? "Show less" : "Show more"}
                         </button>
                       )}
-                    </>
-                  )}
+                    </div>
+                  </Collapsible>
                 </div>
               )
             })}
+            </div>
+          </Collapsible>
           {projects.length > 0 && (
             <section aria-label="Recents" className="mt-2">
-              <div className="group/recents h-8 flex items-center pl-[10px] pr-2 gap-0.5">
+              <div className="group/recents h-[30px] flex items-center pl-[10px] pr-2 gap-0.5">
                 <button
                   type="button"
                   aria-expanded={!recentsPrefs.collapsed}
                   onClick={() => setRecentsPrefs((current) => ({ ...current, collapsed: !current.collapsed }))}
-                  className="flex min-w-0 flex-1 items-center gap-1 pl-[5px] text-chat-sm text-[var(--text-tertiary,#898781)] font-ui"
+                  className="group flex min-w-0 flex-1 items-center gap-1 pl-[5px] text-chat-sm text-[var(--text-tertiary,#898781)] font-ui"
                 >
                   Recents
+                  {/* Expanded, the chevron shows only on hover, as in Codex. */}
                   <ChevronRight
                     size={12}
-                    className={`shrink-0 transition-transform duration-150 ${recentsPrefs.collapsed ? "" : "rotate-90"}`}
+                    className={`shrink-0 transition-[transform,opacity] duration-300 ease-[cubic-bezier(.19,1,.22,1)] ${recentsPrefs.collapsed ? "" : "rotate-90 opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100"}`}
                   />
                   {/* A collapsed list still shows that one of its tasks is working. */}
                   {recentsPrefs.collapsed && recents.some(({ session }) => session.status) && (
@@ -674,8 +683,8 @@ export function Sidebar({
                   </IconButton>
                 </span>
               </div>
-              {!recentsPrefs.collapsed && (
-                <div className="font-ui">
+              <Collapsible open={!recentsPrefs.collapsed} duration={300} fade>
+                <div className="flex flex-col gap-px pt-1 font-ui">
                   {(recentsUnfolded ? recents : recents.slice(0, RECENTS_PREVIEW)).map(({ project, session }) => (
                     <SessionRow
                       key={`${project.path}\0${session.id}`}
@@ -709,7 +718,7 @@ export function Sidebar({
                     </div>
                   )}
                 </div>
-              )}
+              </Collapsible>
             </section>
           )}
         </div>
