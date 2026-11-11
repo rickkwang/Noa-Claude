@@ -500,9 +500,8 @@ export function MessageList({ turns, cwd, onOpenFile, busy, result, readingWidth
       }}
       className="noa-agent-scroll scrollbar-on-scroll noa-scroll-fade relative flex-1 min-h-0 overflow-y-auto overscroll-contain"
     >
-      {/* 48px around the transcript column is reserved so the rail lives in the
-          gutter and its expanded tick never crosses the text on narrow windows. */}
-      <div ref={contentRef} className="mx-auto flex flex-col gap-4 px-5 pt-8" style={{ width: "calc(100% - 48px)", maxWidth: readingWidth, paddingBottom: "calc(var(--composer-overlay, 0px) + 32px)" }}>
+      {/* The rail is shown only when the centered column leaves enough room. */}
+      <div ref={contentRef} className="noa-conversation-column flex flex-col gap-4 px-5 pt-8" style={{ maxWidth: readingWidth, paddingBottom: "calc(var(--composer-overlay, 0px) + 32px)" }}>
         {!!historyBefore && <button type="button" disabled={historyLoading} onClick={onLoadEarlier} className="self-center rounded-lg px-3 py-2 text-caption text-[var(--text-secondary)]">{historyLoading ? "Loading earlier messages…" : "Load earlier messages"}</button>}
         <div ref={layoutRef} className="relative w-full" style={{ height: layoutHeight }}>
           {visibleRows.map((row) => (
@@ -1062,7 +1061,7 @@ function WorkedFor({ durationMs, count, interrupted, collapsed, live, onToggle }
     return (
       <div className="flex w-full min-h-0 flex-col items-start gap-2 text-[length:var(--font-text-md-size)] tabular-nums text-[var(--sidebar-text-muted)]">
         <span className="whitespace-nowrap">{label}</span>
-        <span className="w-full border-t border-[var(--divider-subtle)]" aria-hidden="true" />
+        <span className="h-px w-full bg-[var(--divider-subtle)] opacity-65" aria-hidden="true" />
       </div>
     )
   }
@@ -1077,7 +1076,7 @@ function WorkedFor({ durationMs, count, interrupted, collapsed, live, onToggle }
         {label}
         <ChevronRight size={12} className={`opacity-0 transition-[transform,opacity] duration-150 group-hover/worked:opacity-100 group-focus-visible/worked:opacity-100 ${collapsed ? "" : "rotate-90"}`} />
       </span>
-      <span className="w-full border-t border-[var(--divider-subtle)]" aria-hidden="true" />
+      <span className="h-px w-full bg-[var(--divider-subtle)] opacity-65" aria-hidden="true" />
     </button>
   )
 }

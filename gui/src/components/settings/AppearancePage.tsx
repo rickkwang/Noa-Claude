@@ -177,7 +177,7 @@ export function AppearancePage({
       </div>
 
       <Section title="Layout">
-        <Row label="Output width" description="Maximum width of the conversation column.">
+        <Row label="Output width" description="Three reading widths for messages and input. Fits smaller windows automatically.">
           <Segmented
             value={String(appearance.maxWidth)}
             options={[

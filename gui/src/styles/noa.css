@@ -763,7 +763,7 @@ html[data-translucent-sidebar="enabled"] [data-sidebar-container] .noa-sidebar-t
 /* ── Preview heading spacing: Obsidian's model: 1rem above and below, 2.5rem section break after body content. rem keeps it constant across sizes. */
 .prose h1, .prose h2, .prose h3, .prose h4, .prose h5, .prose h6 { margin-block: 1rem; }
 /* Code blocks and tables render inside a wrapper div, so the wrapper is matched too (Obsidian's .el-pre / .el-table). */
-.prose :is(p, pre, table, ul, ol, blockquote, div:has(> :is(pre, table))) + :is(h1, h2, h3, h4, h5, h6) { margin-top: 2.5rem; }
+.prose:where(:not(.noa-output-markdown)) :is(p, pre, table, ul, ol, blockquote, div:has(> :is(pre, table))) + :is(h1, h2, h3, h4, h5, h6) { margin-top: 2.5rem; }
 /* Paragraphs and lists sit one blank line apart (1lh), the same gap a blank line leaves in Live Preview, so the text
    doesn't shift when switching views. Obsidian's reading view uses 1rem here and does shift. Top level only: nested
    lists keep prose's own spacing. */
@@ -1600,8 +1600,11 @@ kbd.noa-review-menu-hint { font-family: inherit; }
 /* Floating composer: the page colour ramps in over 32px above the card so text dissolves instead of being cut.
    Its bottom-left corner is clipped to the surface's radius so the sidebar corner notch stays visible, and it
    starts half a pixel in so it does not paint over the surface's left hairline. */
-.noa-conversation-footer { position: absolute; inset-inline: 0 calc(var(--noa-scrollbar-strip) + var(--noa-overview-dock, 0px)); bottom: 0; z-index: 20; display: flex; max-height: 100%; flex-direction: column; margin-left: 0.5px; padding: 32px 21px 12px 29px; border-bottom-left-radius: var(--noa-surface-radius); background: linear-gradient(to bottom, color-mix(in srgb, var(--surface-page, #F9F9F7) 0%, transparent), var(--surface-page, #F9F9F7) 32px); pointer-events: none; }
-.noa-conversation-footer > * { min-height: 0; width: 100%; pointer-events: auto; }
+/* Transcript padding is 20px; the composer adds 12px inside its 8px inset. */
+.noa-conversation-column { width: calc(100% - 32px); margin-inline: auto; }
+.noa-composer-column { padding-inline: 8px; }
+.noa-conversation-footer { position: absolute; inset-inline: 0 calc(var(--noa-scrollbar-strip) + var(--noa-overview-dock, 0px)); bottom: 0; z-index: 20; display: flex; max-height: 100%; flex-direction: column; margin-left: 0.5px; padding: 32px 0 12px; border-bottom-left-radius: var(--noa-surface-radius); background: linear-gradient(to bottom, color-mix(in srgb, var(--surface-page, #F9F9F7) 0%, transparent), var(--surface-page, #F9F9F7) 32px); pointer-events: none; }
+.noa-conversation-footer > * { min-height: 0; pointer-events: auto; }
 /* Loading shimmer: a stable base with a narrow highlight band that sweeps on a cadence. */
 .noa-shimmer {
   --noa-shimmer-foreground: color-mix(in srgb, var(--text-primary, #2D2D2B) 60%, transparent);
