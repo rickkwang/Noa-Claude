@@ -97,7 +97,7 @@ export function MarkdownTable({ children }: { children: ReactNode }) {
     if (scroller.firstElementChild) observer.observe(scroller.firstElementChild)
     return () => observer.disconnect()
   }, [children])
-  return <div className="group/table relative my-4">
+  return <div className="noa-markdown-table relative">
     <div data-copy-exclude className="mb-1 flex justify-end gap-3 text-caption text-[var(--text-secondary)]">
       <button type="button" aria-label="Copy table" onClick={async () => {
         try {

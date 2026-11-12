@@ -1936,10 +1936,22 @@ body.noa-session-dragging * { cursor: grabbing !important; }
 }
 [data-theme="dark"] .noa-user-message-bubble { background: rgb(255 255 255 / 5%); }
 .noa-user-message-bubble > .noa-output-markdown > :last-child { margin-bottom: 0; }
+.noa-user-message-bubble:has(> .noa-output-markdown > :is(ul, ol)) { padding: 12px 16px; }
+.noa-user-message-bubble > .noa-output-markdown:has(> :is(ul, ol)) {
+  --font-text-md-line-height: max(var(--user-message-line-height, 18px), calc(var(--font-text-md-size) * 1.625));
+}
+.noa-user-message-bubble .noa-output-markdown ol { padding-inline-start: 2.25em; }
+.noa-user-message-bubble .noa-output-markdown ul { padding-inline-start: 1.5em; }
+.noa-user-message-bubble .noa-output-markdown li { padding-inline-start: .25em; }
+.noa-user-message-bubble .noa-output-markdown > :is(ul, ol) > li + li { margin-top: .5em; }
+.noa-user-message-bubble .noa-output-markdown li > :is(ul, ol) { margin-block: .25em; }
+.noa-user-message-bubble .noa-output-markdown li::marker { font-weight: normal; }
 
 /* Conversation Markdown, scaled to Noa's chat font. */
 .noa-output-markdown {
   --tw-prose-links: var(--accent-color);
+  --tw-prose-th-borders: color-mix(in srgb, var(--divider-subtle, rgb(0 0 0 / 8%)) 65%, transparent);
+  --tw-prose-td-borders: var(--tw-prose-th-borders);
   --font-text-md-size: var(--transcript-text-size, var(--text-body));
   --font-text-md-line-height: calc(var(--font-text-md-size) * 1.625);
   --output-space: calc(var(--font-text-md-size) / 4);
@@ -1972,15 +1984,12 @@ body.noa-session-dragging * { cursor: grabbing !important; }
 /* line-height 1 keeps the pill from growing its line box, so rows with inline code keep the same pitch as plain rows. */
 .noa-output-markdown :not(pre) > code { font-size: .92em; line-height: 1; font-weight: normal; font-family: var(--font-mono); border-radius: 6px; padding: 1px 6px; background: color-mix(in srgb, var(--text-primary) 6%, transparent); box-shadow: none; box-decoration-break: clone; }
 .noa-output-markdown .noa-code-block { margin-block: calc(var(--output-space) * 5); }
-.noa-output-markdown > div:has(> table) { margin-top: calc(var(--output-space) * 4); }
-.noa-output-markdown table { margin: 0; font-size: var(--font-text-md-size); line-height: var(--font-text-md-line-height); border-collapse: separate; border-spacing: 0; }
-/* Like Codex: tables take their content width and scroll sideways; only breakable text wraps inside cells. */
-.noa-output-markdown table { width: fit-content; min-width: 100%; }
-.noa-output-markdown td, .noa-output-markdown th { overflow-wrap: break-word; }
-.noa-output-markdown :is(th,td) { padding-inline: 0 calc(var(--output-space) * 6); }
-.noa-output-markdown th { padding-block: calc(var(--output-space) * 2); line-height: calc(var(--output-space) * 4); }
-.noa-output-markdown td { padding-block: calc(var(--output-space) * 2.5); }
-.noa-output-markdown tbody tr:last-child td { border-bottom: 0; padding-bottom: calc(var(--output-space) * 6); }
+.noa-output-markdown .noa-markdown-table { margin-block: .75em 0; }
+.noa-output-markdown .noa-markdown-table + * { margin-top: 1.5em; }
+/* Tables keep their content width and scroll sideways; only breakable text wraps inside cells. */
+.noa-output-markdown table { margin: 0; width: fit-content; min-width: 100%; font-size: var(--font-text-md-size); line-height: 1.5; border-collapse: collapse; border-spacing: 0; }
+.noa-output-markdown :is(th,td) { padding-block: calc(.4375em + 1px); padding-inline: 0; vertical-align: top; overflow-wrap: break-word; }
+.noa-output-markdown :is(th,td):not(:first-child) { padding-inline-start: 1.5em; }
 .noa-output-markdown > :first-child { margin-top: 0; }
 .noa-output-markdown > :last-child { margin-bottom: 0; }
 
