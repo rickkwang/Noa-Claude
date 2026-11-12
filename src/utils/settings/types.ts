@@ -735,6 +735,35 @@ export const SettingsSchema = lazySchema(() =>
         .describe(
           'Per-skill mode overrides. Keys are skill command names; values control whether users and/or models may invoke the skill and whether model-facing listings show the description.',
         ),
+      timeFormat: z
+        .string()
+        .optional()
+        .describe(
+          'Clock format for times shown in the UI: "auto" (default), "12-hour", "24-hour", "24-hour-utc" ("18:05Z"), or a strftime pattern such as "%H:%M" (any value containing "%"; other values read as "auto"). A pattern replaces the time everywhere; message timestamps show only the pattern, so include %Y-%m-%d for the date.',
+        ),
+      promptCacheTtl: z
+        .enum(['5m', '1h'])
+        .optional()
+        .catch(undefined)
+        .describe(
+          'Prompt cache TTL for the main conversation (interactive, -p and SDK turns). Unset = automatic. NOA_CLAUDE_PROMPT_CACHE_1H takes precedence.',
+        ),
+      subagentPromptCacheTtl: z
+        .enum(['5m', '1h'])
+        .optional()
+        .catch(undefined)
+        .describe(
+          'Prompt cache TTL for subagents, workflows and helper requests. Unset = automatic. NOA_CLAUDE_PROMPT_CACHE_1H takes precedence.',
+        ),
+      skillOverrides: z
+        .record(
+          z.string(),
+          z.enum(['on', 'name-only', 'user-invocable-only', 'off']),
+        )
+        .optional()
+        .describe(
+          'Per-skill listing overrides keyed by skill name, same values as the upstream setting ("user-invocable-only" = skillModes "user-only"). skillModes wins when both name a skill.',
+        ),
       language: z
         .string()
         .optional()

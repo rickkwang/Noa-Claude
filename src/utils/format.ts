@@ -311,13 +311,16 @@ export function formatResetTime(
 export function formatTurnDoneAt(
   timestamp: string,
   now: Date = new Date(),
+  formatClock?: (date: Date) => string | undefined,
 ): string {
   const date = new Date(timestamp)
   if (Number.isNaN(date.getTime())) return ''
-  const time = date.toLocaleTimeString('en-US', {
-    hour: 'numeric',
-    minute: '2-digit',
-  })
+  const time =
+    formatClock?.(date) ??
+    date.toLocaleTimeString('en-US', {
+      hour: 'numeric',
+      minute: '2-digit',
+    })
   const startOfDay = (d: Date) =>
     new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
   const days = Math.round((startOfDay(now) - startOfDay(date)) / 86_400_000)

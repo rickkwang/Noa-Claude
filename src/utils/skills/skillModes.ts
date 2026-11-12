@@ -61,6 +61,19 @@ export function applySkillMode<T extends SkillModeCarrier>(
   return skill
 }
 
+// Merges the upstream-named `skillOverrides` setting into `skillModes`;
+// `skillModes` wins when both name a skill.
+export function getSkillModeOverrides(settings: {
+  skillModes?: Record<string, SkillMode>
+  skillOverrides?: Record<string, string>
+}): Record<string, SkillMode> {
+  const merged: Record<string, SkillMode> = {}
+  for (const [name, mode] of Object.entries(settings.skillOverrides ?? {})) {
+    merged[name] = mode === 'user-invocable-only' ? 'user-only' : (mode as SkillMode)
+  }
+  return { ...merged, ...settings.skillModes }
+}
+
 export function getBaseSkillMode(skill: SkillModeCarrier): SkillMode {
   return skill.baseSkillMode ?? getSkillMode(skill)
 }

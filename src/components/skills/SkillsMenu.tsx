@@ -34,6 +34,7 @@ import {
   getBaseSkillMode,
   getNextSkillMode,
   getSkillMode,
+  getSkillModeOverrides,
   isSettingsToggleableSkill,
   type SkillMode,
 } from '../../utils/skills/skillModes.js'
@@ -174,7 +175,7 @@ function readPersistedSkillMode(
   skillName: string,
   fallbackMode: SkillMode,
 ): SkillMode {
-  return getSettings_DEPRECATED().skillModes?.[skillName] ?? fallbackMode
+  return getSkillModeOverrides(getSettings_DEPRECATED())[skillName] ?? fallbackMode
 }
 
 async function waitForPendingSkillWrites(): Promise<boolean> {

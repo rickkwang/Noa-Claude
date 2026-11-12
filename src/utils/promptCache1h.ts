@@ -9,6 +9,7 @@ import { isClaudeAISubscriber } from './auth.js'
 import { isEnvTruthy } from './envUtils.js'
 import {
   getPromptCache1hEnvAllowlist,
+  getPromptCacheTtlSetting,
   matchAllowlist,
 } from './promptCache1hEnv.js'
 import {
@@ -31,6 +32,8 @@ export {
 export type PromptCache1hReason =
   | 'enabled'
   | 'enabled_env'
+  | 'enabled_setting'
+  | 'disabled_setting'
   | 'enabled_bedrock_env'
   | 'prompt_caching_disabled'
   | 'disabled_env'
@@ -106,6 +109,24 @@ export function getPromptCache1hDiagnostic(
       querySource,
       userEligible: true,
       allowlist: envAllowlist,
+    }
+  }
+
+  const ttlSetting = getPromptCacheTtlSetting(querySource)
+  if (ttlSetting !== undefined) {
+    const thirdParty =
+      getAPIProvider() === 'firstParty' && !isFirstPartyAnthropicBaseUrl()
+    const enabled = ttlSetting === '1h' && !thirdParty
+    return {
+      enabled,
+      reason: thirdParty
+        ? 'third_party_endpoint'
+        : enabled
+          ? 'enabled_setting'
+          : 'disabled_setting',
+      querySource,
+      userEligible: true,
+      allowlist: [],
     }
   }
 

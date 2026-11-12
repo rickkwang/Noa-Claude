@@ -4,6 +4,7 @@ import React from 'react';
 import { stringWidth } from '../ink/stringWidth.js';
 import { Box, Text } from '../ink.js';
 import type { NormalizedMessage } from '../types/message.js';
+import { formatConfiguredClock } from '../utils/timeFormat.js';
 type Props = {
   message: NormalizedMessage;
   isTranscriptMode: boolean;
@@ -22,7 +23,8 @@ export function MessageTimestamp(t0) {
   let formattedTimestamp;
   let t1;
   if ($[0] !== message.timestamp) {
-    formattedTimestamp = new Date(message.timestamp).toLocaleTimeString("en-US", {
+    const timestampDate = new Date(message.timestamp);
+    formattedTimestamp = formatConfiguredClock(timestampDate) ?? timestampDate.toLocaleTimeString("en-US", {
       hour: "2-digit",
       minute: "2-digit",
       hour12: true

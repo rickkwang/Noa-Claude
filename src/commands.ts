@@ -136,7 +136,10 @@ const usageReport: Command = {
 }
 import { getSettingSourceName } from './utils/settings/constants.js'
 import { getSettings_DEPRECATED } from './utils/settings/settings.js'
-import { applySkillModeOverrideToCommand } from './utils/skills/skillModes.js'
+import {
+  applySkillModeOverrideToCommand,
+  getSkillModeOverrides,
+} from './utils/skills/skillModes.js'
 import {
   type Command,
   getCommandName,
@@ -368,7 +371,7 @@ const loadAllCommands = memoize(async (cwd: string): Promise<Command[]> => {
  */
 export async function getCommands(cwd: string): Promise<Command[]> {
   const allCommands = await loadAllCommands(cwd)
-  const skillModeOverrides = getSettings_DEPRECATED().skillModes
+  const skillModeOverrides = getSkillModeOverrides(getSettings_DEPRECATED())
 
   // Get dynamic skills discovered during file operations
   const dynamicSkills = getDynamicSkills()

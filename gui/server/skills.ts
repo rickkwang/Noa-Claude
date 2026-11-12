@@ -68,8 +68,10 @@ async function readSettings(): Promise<{ file: string; data: Record<string, unkn
 
 async function readModes(): Promise<Record<string, string>> {
   try {
-    const modes = (await readSettings()).data.skillModes
-    return modes && typeof modes === "object" ? (modes as Record<string, string>) : {}
+    const { data } = await readSettings()
+    const obj = (v: unknown) => (v && typeof v === "object" ? (v as Record<string, string>) : {})
+    // skillOverrides is the upstream-named twin; skillModes wins on conflict.
+    return { ...obj(data.skillOverrides), ...obj(data.skillModes) }
   } catch {
     return {}
   }
@@ -88,8 +90,11 @@ function writeMode(name: string, mode: "on" | "off"): Promise<void> {
 async function writeModeNow(name: string, mode: "on" | "off"): Promise<void> {
   const { file, data } = await readSettings()
   const modes = { ...((data.skillModes as Record<string, string> | undefined) ?? {}) }
-  // "on" is the default for a skill, so enabling just drops the override.
+  const overrides = (data.skillOverrides as Record<string, string> | undefined) ?? {}
+  // "on" is the default for a skill, so enabling just drops the override, unless
+  // skillOverrides also names it: then an explicit "on" has to outrank that entry.
   if (mode === "off") modes[name] = "off"
+  else if (name in overrides) modes[name] = "on"
   else delete modes[name]
   if (Object.keys(modes).length) data.skillModes = modes
   else delete data.skillModes

@@ -78,6 +78,7 @@ import { errorMessage } from '../../utils/errors.js'
 import { computeFingerprintFromMessages } from '../../utils/fingerprint.js'
 import {
   getPromptCache1hEnvAllowlist,
+  getPromptCacheTtlSetting,
   matchAllowlist,
 } from '../../utils/promptCache1hEnv.js'
 import { captureAPIRequest, logError } from '../../utils/log.js'
@@ -467,6 +468,14 @@ export function should1hCacheTTL(querySource?: QuerySource): boolean {
     }
     return (
       querySource !== undefined && matchAllowlist(querySource, envAllowlist)
+    )
+  }
+
+  const ttlSetting = getPromptCacheTtlSetting(querySource)
+  if (ttlSetting !== undefined) {
+    return (
+      ttlSetting === '1h' &&
+      !(getAPIProvider() === 'firstParty' && !isFirstPartyAnthropicBaseUrl())
     )
   }
 

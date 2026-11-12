@@ -3,6 +3,7 @@
 // can read the 1h-TTL opt-in without pulling in the
 // claude.ts <-> claudeAiLimits.ts import cycle.
 import { isEnvDefinedFalsy, isEnvTruthy } from './envUtils.js'
+import { getInitialSettings } from './settings/settings.js'
 
 /**
  * Query sources covered when the env opt-in is set to a bare boolean.
@@ -69,4 +70,19 @@ export function matchAllowlist(querySource: string, allowlist: string[]): boolea
       ? querySource.startsWith(pattern.slice(0, -1))
       : querySource === pattern,
   )
+}
+
+/**
+ * `promptCacheTtl` / `subagentPromptCacheTtl` settings, consulted only when
+ * the env opt-in is unset. Main-thread and SDK sources use the former, every
+ * other source the latter. undefined = unset (fall through to automatic).
+ */
+export function getPromptCacheTtlSetting(
+  querySource: string | undefined,
+): '5m' | '1h' | undefined {
+  if (querySource === undefined) return undefined
+  const settings = getInitialSettings()
+  return matchAllowlist(querySource, PROMPT_CACHE_1H_DEFAULT_SOURCES)
+    ? settings.promptCacheTtl
+    : settings.subagentPromptCacheTtl
 }
