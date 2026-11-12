@@ -1,11 +1,11 @@
 import assert from "node:assert/strict"
-import { existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, writeFileSync, rmSync, symlinkSync } from "node:fs"
+import { existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, writeFileSync, rmSync, symlinkSync, realpathSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { initialState, reducer } from "../src/agent/reducer"
 import type { ControlRequest, Envelope, Outgoing } from "../src/agent/protocol"
 
-const directory = mkdtempSync(join(tmpdir(), "noa-gui-runtime-"))
+const directory = realpathSync(mkdtempSync(join(tmpdir(), "noa-gui-runtime-")))
 const cwd = join(directory, "workspace")
 const aliasCwd = join(directory, "workspace-alias")
 const plainCwd = join(directory, "plain")

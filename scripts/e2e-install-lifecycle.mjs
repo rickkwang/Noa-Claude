@@ -15,6 +15,7 @@ import {
   chmodSync,
   copyFileSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -146,7 +147,11 @@ try {
     .filter((rel) => rel && existsSync(join(repo, rel)))
   for (const rel of files) {
     mkdirSync(dirname(join(snapshot, rel)), { recursive: true })
-    copyFileSync(join(repo, rel), join(snapshot, rel))
+    if (lstatSync(join(repo, rel)).isSymbolicLink()) {
+      symlinkSync(readlinkSync(join(repo, rel)), join(snapshot, rel))
+    } else {
+      copyFileSync(join(repo, rel), join(snapshot, rel))
+    }
   }
   spawnSync('tar', ['-czf', tarball, '-C', join(work, 'pkg'), 'Noa-Claude-1.19.0'])
   tarballBytes = readFileSync(tarball)

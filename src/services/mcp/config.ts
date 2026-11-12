@@ -190,7 +190,7 @@ type McpConfigWriteGuard = (servers: Record<string, McpServerConfig>) => void
 async function withMcpConfigLock(scope: ConfigScope, update: () => Promise<void>): Promise<void> {
   const filePath = scope === 'project' ? getPrimaryProjectMcpPath(getCwd()) : getGlobalClaudeFile()
   await mkdir(dirname(filePath), { recursive: true })
-  const release = await lock(filePath, {
+  const release = await lock(`${filePath}.mcp`, {
     realpath: false,
     lockfilePath: `${filePath}.mcp.lock`,
     retries: { retries: 40, minTimeout: 10, maxTimeout: 50 },
