@@ -22,7 +22,7 @@ import type { AgentMessage, Envelope, Outgoing, QueuedMessage, TurnDiffActionRes
 // Modes the composer can start a session in; bypassPermissions is excluded because it is only entered from the menu.
 export const SPAWN_PERMISSION_MODES = new Set(["default", "acceptEdits", "plan", "auto"])
 
-// Last known mode per runtime, so a CLI that exited and is respawned for the same task resumes in it.
+// Last known mode per task (per runtime until the task has a session id), so a CLI respawned for it resumes in that mode.
 const runModes = new Map<string, string>()
 
 export interface SocketData {
@@ -124,7 +124,7 @@ export function emit(run: AgentRun, envelope: Envelope) {
   let finishedTask = false
   if (envelope.kind === "agent" && envelope.message.type === "system") {
     const message = envelope.message
-    if ((message.subtype === "init" || message.subtype === "status") && message.permissionMode) { run.mode = message.permissionMode; runModes.set(run.id, message.permissionMode) }
+    if ((message.subtype === "init" || message.subtype === "status") && message.permissionMode) { run.mode = message.permissionMode; runModes.set(run.sessionId ?? run.id, message.permissionMode) }
     if (message.subtype === "task_started" || message.subtype === "task_progress") (run.activeTasks ??= new Set()).add(message.task_id)
     else if (message.subtype === "task_notification" && ["completed", "failed", "stopped"].includes(message.status ?? "")) {
       run.activeTasks?.delete(message.task_id)
@@ -481,7 +481,7 @@ export function attachAgent(ws: ServerWebSocket<SocketData>, root: string) {
         !r.exited &&
         // A replacement can start while the previous CLI finalizes; the
         // workspace operation queue orders its snapshot after the old one.
-        (r.restarting || r.clients.size > 0 || (r.busy && !r.turn?.finalizing) || r.queue.length > 0 || r.waiting.size > 0),
+        (r.restarting || r.clients.size > 0 || (r.busy && !r.turn?.finalizing) || r.queue.length > 0 || r.waiting.size > 0 || r.activeTasks.size > 0),
     )
   if (run?.restarting) {
     ws.close(1012, "Noa is restarting. Reconnect to continue.")
@@ -514,7 +514,7 @@ export function attachAgent(ws: ServerWebSocket<SocketData>, root: string) {
     if (additionalDirectories.length) args.push("--add-dir", ...additionalDirectories)
     if (ws.data.resume) args.push("--resume", ws.data.resume)
     // A respawn keeps the mode the session was in; only start-safe modes are restored, never bypass.
-    const lastMode = run?.mode ?? runModes.get(ws.data.runtimeId)
+    const lastMode = run?.mode ?? runModes.get(ws.data.resume ?? ws.data.runtimeId)
     const startMode = lastMode && SPAWN_PERMISSION_MODES.has(lastMode) ? lastMode : ws.data.mode
     if (startMode) args.push("--permission-mode", startMode)
     if (ws.data.outputStyle) args.push("--settings", JSON.stringify({ outputStyle: ws.data.outputStyle }))
@@ -548,8 +548,10 @@ export function attachAgent(ws: ServerWebSocket<SocketData>, root: string) {
       sessionId: ws.data.resume,
       proc,
       clients: new Set(),
-      journal: retainedQueue.length ? [{ kind: "queue", messages: retainedQueue, paused: false }] : [],
+      // A queue kept across a CLI exit waits for Resume instead of sitting unpaused with nothing to start it.
+      journal: retainedQueue.length ? [{ kind: "queue", messages: retainedQueue, paused: true }] : [],
       queue: retainedQueue,
+      queuePaused: retainedQueue.length > 0,
       busy: false,
       turnCounter: priorTurn,
       waiting: new Map(),
