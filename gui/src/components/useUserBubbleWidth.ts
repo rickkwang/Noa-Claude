@@ -39,7 +39,7 @@ export function useUserBubbleWidth(
       if (disposed) return
       element.style.maxWidth = original
       // Embedded blocks own their width; keep their existing layout and scrolling.
-      if (text.length > 20_000 || content.querySelector("pre, table, img, video, audio, iframe") || element.scrollHeight > element.clientHeight + 1) return
+      if (text.length > 20_000 || content.querySelector("pre, table, img, video, audio, iframe") || content.scrollHeight > content.clientHeight + 1) return
       const natural = measure()
       if (!natural.widths.length) return
       const style = getComputedStyle(element)

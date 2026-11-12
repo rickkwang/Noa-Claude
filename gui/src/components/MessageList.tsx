@@ -1091,52 +1091,45 @@ function WorkedFor({ durationMs, count, interrupted, collapsed, live, onToggle }
   )
 }
 
-// Long user messages fold after 20 lines under a fade.
+// Fold long message content while keeping the toggle inside the bubble.
 function UserBubble({ text }: { text: string }) {
   const ref = useRef<HTMLDivElement>(null)
   const fontRef = useRef<HTMLSpanElement>(null)
   const [long, setLong] = useState(false)
   const [expanded, setExpanded] = useState(false)
   useEffect(() => {
-    const el = ref.current
+    const el = ref.current?.querySelector<HTMLElement>(".noa-output-markdown")
     if (!el) return
     const measure = () => {
-      // Measure while folded: an expanded bubble has no max-height to compare against.
+      // Measure while folded: expanded content has no max-height to compare against.
       if (!expanded) setLong(el.scrollHeight > el.clientHeight + 1)
     }
     measure()
     const observer = new ResizeObserver(measure)
     observer.observe(el)
     return () => observer.disconnect()
-  }, [expanded])
+  }, [expanded, text])
   const folded = long && !expanded
   useUserBubbleWidth(ref, fontRef, text, expanded)
   return (
-    <>
-      <div
-        ref={ref}
-        data-user-message-bubble=""
-        className={`noa-user-message-bubble noa-selectable relative min-w-0 max-w-[85%] whitespace-pre-wrap break-words rounded-[10px] px-3 py-2 text-[length:var(--font-text-md-size)] leading-[var(--font-text-md-line-height)] ${
-          expanded
-            ? ""
-            : `relative max-h-[20lh] overflow-hidden ${folded ? "[mask-image:linear-gradient(to_bottom,black_calc(100%_-_3rem),transparent)] after:pointer-events-none after:absolute after:bottom-1 after:right-3 after:content-['…'] after:text-[var(--sidebar-text-muted,#898781)]" : ""}`
-        }`}
-      >
-        <span ref={fontRef} aria-hidden="true" className="pointer-events-none invisible absolute w-max whitespace-nowrap">Mm汉</span>
-        <Markdown text={text} preserveUserText />
-      </div>
+    <div
+      ref={ref}
+      data-user-message-bubble=""
+      className="noa-user-message-bubble noa-selectable relative min-w-0 max-w-[85%] whitespace-pre-wrap break-words rounded-[10px] px-3 py-2 text-[length:var(--font-text-md-size)] leading-[var(--font-text-md-line-height)]"
+    >
+      <span ref={fontRef} aria-hidden="true" className="pointer-events-none invisible absolute w-max whitespace-nowrap">Mm&#27721;</span>
+      <Markdown text={text} preserveUserText className={expanded ? undefined : `max-h-[16rem] overflow-hidden ${folded ? "[mask-image:linear-gradient(to_bottom,black_calc(100%_-_3rem),transparent)]" : ""}`} />
       {long && (
         <button
           type="button"
           aria-expanded={expanded}
           onClick={() => setExpanded((value) => !value)}
-          className="flex items-center gap-1 self-start text-caption text-[var(--sidebar-text-muted,#898781)] hover:text-[var(--text-primary,#2D2D2B)]"
+          className="-mx-2 mt-[5px] block rounded-md px-2 py-0.5 text-start hover:bg-[color-mix(in_srgb,var(--text-primary)_8%,transparent)]"
         >
           {expanded ? "Show less" : "Show more"}
-          <ChevronDown size={12} className={expanded ? "rotate-180" : undefined} />
         </button>
       )}
-    </>
+    </div>
   )
 }
 
