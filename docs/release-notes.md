@@ -2,6 +2,32 @@
 
 ## Unreleased
 
+## 1.24.0
+
+- New: Fable 5.2 and Mythos 5.2 support, including 1M context, up to 128K output, medium effort by default, fast mode and cost tracking. The `fable` alias now selects Fable 5.2; use `claude-fable-5-1` to stay on 5.1.
+- New: `/model` groups older models under More models, keeps the current model visible and supports mouse selection. A saved selection becomes the default for new sessions, and other running sessions no longer clear it. Fast mode keeps the selected model when it already supports fast mode.
+- New: `/config` can show timestamps on user and assistant text messages, with full dates, seconds, time zones, 12/24-hour clocks, UTC and custom strftime formats. Format changes update existing timestamps immediately.
+- New: `skillOverrides` controls skill visibility and invocation modes; `skillListingMaxDescChars` controls the description length sent to the model. The default stays at 250 characters and the total context budget still applies. Existing `skillModes` entries take precedence.
+- New: `promptCacheTtl` and `subagentPromptCacheTtl` select 5-minute or 1-hour caching for the main session group and subagent/auxiliary requests separately. Existing environment overrides take precedence; third-party Anthropic-compatible endpoints still do not use 1-hour caching.
+- New: `autoDreamMinHours` and `autoDreamMinSessions` configure automatic memory consolidation; defaults remain 24 hours and 5 sessions. The first turn after startup no longer always skips consolidation.
+- New: MCP directory resources can be read with pagination when the server declares `directoryRead`; incomplete listings are marked explicitly.
+- Fixed: model fallback and empty-response retries remove invalid partial output and preserve retry notices in history. Interrupted tools no longer produce duplicate results, and an unknown tool queued after an exclusive tool no longer stalls execution.
+- Fixed: `--restricted --bare` no longer exposes Bash unless explicitly allowed; explicit tool lists also accept `--tools=value`. Bash asks for approval when Unicode or zsh pattern-based variable operations cannot be parsed safely, and its wait and working-directory guidance follows the actual runtime settings.
+- Fixed: late events no longer overwrite completed, failed or stopped task states, cancelled memory consolidation no longer reports success, and paused goals keep their reason after resume. LSP startup/shutdown races and nested locks when saving MCP configuration are fixed.
+- Faster: subscription accounts that confirmed their privacy choice within the last hour skip a repeated startup check, including in `--print`; privacy settings remain accessible. API compatibility retries also handle an explicitly required minimum client version.
+- Experimental: builds with `MONITOR_TOOL` enabled can run a shell command in the background and deliver batched output to the session, with timeout or continuous monitoring. The default build does not include Monitor.
+
+### Desktop app (gui-v1.24.0)
+
+- New: fork a conversation from the task menu, or rewind to a user message. Rewind can restore the conversation, checkpointed files or both; the selected prompt returns to the composer. A conversation-only rewind with no changed files happens directly and can be undone before sending again, including after restart. File restore covers CLI checkpoints, not shell commands or external effects.
+- New: follow a conversation being written by another Noa process in a read-only view. The desktop can take over when that process exits or switches sessions.
+- New: edit permission rules and custom MCP servers for the user, shared project or private project scope. Editors keep unsaved drafts and reject stale saves; reconnect applies MCP changes when the session is idle. Set a default output style for new chats or override it for the current chat.
+- New: customizable app shortcuts, conversation text size and motion preferences, including following the system setting. Window size, position and maximized state survive restart; shortcut hints, tables and subagent rows follow the relevant settings.
+- New: provider settings can fetch and save endpoint model lists and show saved-key status and provider icons. Model, effort and permission previews remain visible while connecting; subscription usage and login/error feedback are clearer.
+- Changed: login opens the browser in one step and closes the dialog when complete. Messages can be drafted and queued while connecting, permission mode and effort can change during a run, and failed-turn queues have an explicit resume action. Disconnecting no longer leaves the chat stuck stopping.
+- Improved: conversation/input alignment, user bubbles, folding, Markdown paragraphs/lists/tables, shell output and sidebar transitions. Wide tables scroll horizontally and can expand; input menus include skills, settings are simpler to navigate, and usage views switch faster with keyboard navigation.
+- Faster: the packaged app includes fewer runtime files, reducing download size and first-launch scanning after an update. Local release builds use a fixed self-signed certificate for a stable app identity; they are still not Apple Developer ID signed or notarized.
+
 ## 1.23.0
 
 - New: the `autoMemoryExtractEnabled` setting turns turn-end memory extraction on or off.

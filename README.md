@@ -38,7 +38,7 @@ Prerequisites: [Bun](https://bun.sh) (CI tests 1.3.9) and [ripgrep](https://gith
 Install with `curl`:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/rickkwang/Noa-Claude/v1.23.0/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/rickkwang/Noa-Claude/v1.24.0/install.sh | bash
 ```
 
 Install from a repository checkout:
