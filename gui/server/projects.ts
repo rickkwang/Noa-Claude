@@ -1,8 +1,8 @@
 // Project folders shown in the sidebar, kept in <config>/gui-projects.json.
 // The first run seeds the list from the working directories recorded in existing transcripts.
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs"
-import { homedir } from "node:os"
 import { basename, isAbsolute, join, resolve, sep } from "node:path"
+import { configHome } from "./sessions"
 
 export interface ProjectInfo {
   path: string
@@ -15,10 +15,6 @@ interface ProjectRecord {
   path: string
   name?: string
   sources?: string[]
-}
-
-function configHome(): string {
-  return process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".noa")
 }
 
 function storePath(): string {

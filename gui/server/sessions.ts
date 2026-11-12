@@ -34,9 +34,16 @@ export function canonicalCwd(cwd: string): string {
   return (existsSync(cwd) ? realpathSync(cwd) : cwd).normalize("NFC")
 }
 
+// The CLI launcher lets CLAUDE_CODE_PRODUCT_DIR win and exports it as CLAUDE_CONFIG_DIR. Doing the same here
+// keeps the bridge, and the CLI utilities it loads, on the directory its CLI writes.
+if (process.env.CLAUDE_CODE_PRODUCT_DIR) process.env.CLAUDE_CONFIG_DIR = process.env.CLAUDE_CODE_PRODUCT_DIR
+
+export function configHome(): string {
+  return process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".noa")
+}
+
 export function projectDir(cwd: string): string {
-  const configHome = process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".noa")
-  return join(configHome, "projects", sanitizePath(canonicalCwd(cwd)))
+  return join(configHome(), "projects", sanitizePath(canonicalCwd(cwd)))
 }
 
 export function transcriptPath(cwd: string, id: string): string {

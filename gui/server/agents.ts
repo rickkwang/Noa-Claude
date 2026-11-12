@@ -1,8 +1,7 @@
 import type { ServerWebSocket, Subprocess } from "bun"
 import { readdirSync, readFileSync, statSync } from "node:fs"
-import { homedir } from "node:os"
 import { join } from "node:path"
-import { SESSION_ID, appendTimelineEvent, appendTurnResult, appendTurnDiff, canonicalCwd, countUserTurns, findTurnDiff, findTurnUserMessage, historyPage, loadHistory, readTurnDiffs, setTurnDiffReverted, transcriptPath } from "./sessions"
+import { SESSION_ID, configHome, appendTimelineEvent, appendTurnResult, appendTurnDiff, canonicalCwd, countUserTurns, findTurnDiff, findTurnUserMessage, historyPage, loadHistory, readTurnDiffs, setTurnDiffReverted, transcriptPath } from "./sessions"
 import { projectAdditionalDirectories } from "./projects"
 import {
   applyTurnDiff,
@@ -399,8 +398,8 @@ function processAlive(pid: number): boolean {
 }
 // A CLI outside this server (a terminal REPL, another GUI) registered as writing this task.
 // Mirrors the CLI's own resume refusal, so the GUI follows instead of starting a second writer.
-function externalHolder(sessionId: string): { pid: number; status?: string } | undefined {
-  const dir = join(process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".noa"), "sessions")
+export function externalHolder(sessionId: string): { pid: number; status?: string } | undefined {
+  const dir = join(configHome(), "sessions")
   let files: string[]
   try { files = readdirSync(dir) } catch { return undefined }
   const own = new Set([...runs.values()].map(run => run.proc.pid))
@@ -423,7 +422,7 @@ function externalHolder(sessionId: string): { pid: number; status?: string } | u
 }
 function holderStatus(pid: number, sessionId: string): { held: boolean; status?: string } {
   if (!processAlive(pid)) return { held: false }
-  const dir = join(process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".noa"), "sessions")
+  const dir = join(configHome(), "sessions")
   try {
     const entry = JSON.parse(readFileSync(join(dir, `${pid}.json`), "utf8"))
     return entry.sessionId === sessionId ? { held: true, status: entry.status } : { held: false }
@@ -575,6 +574,23 @@ export function attachAgent(ws: ServerWebSocket<SocketData>, root: string) {
     }
     runs.set(run.id, run)
     const current = run
+    // Hold the next queued turn until the finished turn's diff is written, so
+    // its after-tree and the next turn's before-tree cannot race.
+    let cliTurns = 0
+    const turnSettled = async () => {
+      const seen = cliTurns
+      await finalizeTurnDiff(current)
+      // The CLI began a turn of its own meanwhile; that turn's result or idle settles instead.
+      if (seen !== cliTurns) return
+      current.busy = false
+      // A failed turn holds the queue visibly, so the client shows Resume instead of a silent stall.
+      if (current.turnSucceeded === false && current.queue.length && !current.queuePaused) {
+        current.queuePaused = true
+        emit(current, queueEnvelope(current))
+      }
+      if (current.turnSucceeded && !current.queuePaused) void startNext(current)
+      reclaimIfIdle(current)
+    }
     lines(proc.stdout, async (line) => {
       if (!line.trim()) return
       let message: AgentMessage
@@ -656,6 +672,8 @@ export function attachAgent(ws: ServerWebSocket<SocketData>, root: string) {
       if (message.type === "system" && message.subtype === "init") current.sessionId = message.session_id
       if (message.type === "control_request") current.waiting.set(message.request_id, waitKind(message.request))
       if (message.type === "control_cancel_request") current.waiting.delete(message.request_id)
+      // The CLI answers a finished background task with a turn of its own; queued messages wait for it.
+      if (message.type === "assistant" && !message.parent_tool_use_id && (!current.turn || current.turn.finalizing)) { current.busy = true; cliTurns++ }
       trackTurnResult(current, message)
       emit(current, { kind: "agent", message })
       if (message.type === "result" && !message.parent_tool_use_id) {
@@ -666,22 +684,10 @@ export function attachAgent(ws: ServerWebSocket<SocketData>, root: string) {
         }
         current.turnSucceeded = !message.is_error
         void finalizeTurnDiff(current)
+        // The CLI reports idle only after its background tasks end, so a turn that leaves one running settles here.
+        if (current.activeTasks.size) void turnSettled()
       }
-      if (message.type === "system" && message.subtype === "session_state_changed" && message.state === "idle") {
-        // Hold the next queued turn until the finished turn's diff is written, so
-        // its after-tree and the next turn's before-tree cannot race.
-        void (async () => {
-          await finalizeTurnDiff(current)
-          current.busy = false
-          // A failed turn holds the queue visibly, so the client shows Resume instead of a silent stall.
-          if (current.turnSucceeded === false && current.queue.length && !current.queuePaused) {
-            current.queuePaused = true
-            emit(current, queueEnvelope(current))
-          }
-          if (current.turnSucceeded && !current.queuePaused) void startNext(current)
-          reclaimIfIdle(current)
-        })()
-      }
+      if (message.type === "system" && message.subtype === "session_state_changed" && message.state === "idle") void turnSettled()
     }).catch((error) => emit(current, { kind: "log", text: String(error) }))
     lines(proc.stderr, (text) => emit(current, { kind: "log", text })).catch(() => {})
     proc.exited.then((code) => {

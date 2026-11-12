@@ -8,7 +8,7 @@ import { isManagedWorktree, mediaResponse, projectWorktrees, workspaceRequest } 
 import { listPlugins, pluginAction } from "./plugins"
 import { skillAction, skillsState } from "./skills"
 import { statsSummary } from "./stats"
-import { attachAgent, agentMessage, detachAgent, listAgentRuns, releaseSessionRuns, SPAWN_PERMISSION_MODES, type SocketData } from "./agents"
+import { attachAgent, agentMessage, detachAgent, externalHolder, listAgentRuns, releaseSessionRuns, SPAWN_PERMISSION_MODES, type SocketData } from "./agents"
 import { attachTerminal, detachTerminal, TERMINAL_ID, terminalMessage, terminalSize, type TerminalSocketData } from "./terminal"
 
 const REPO_ROOT = resolve(import.meta.dir, "../..")
@@ -156,6 +156,7 @@ async function sessionRequest(req: Request, cwd: string, id: string): Promise<Re
     }
   }
   if (req.method === "DELETE") {
+    if (externalHolder(id)) return json({ error: "This task is open in another Noa process. Close it there before deleting it." }, 409)
     if (!await releaseSessionRuns(cwd, id)) return json({ error: "Stop the task before deleting it" }, 409)
     try {
       deleteSession(cwd, id)

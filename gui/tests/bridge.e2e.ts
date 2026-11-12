@@ -111,7 +111,14 @@ const provider = Bun.serve({
     if (JSON.stringify(last).includes("GUI_STEER")) await Bun.sleep(10000)
     if (JSON.stringify(body.messages).includes("ADDED_SOURCE_CONTENT") && JSON.stringify(body.messages).includes("GUI_ADD_DIR"))
       sawAdditionalSource = true
-    const block = mcp
+    if (JSON.stringify(last).includes("GUI_SUBWORK") && !JSON.stringify(last).includes("GUI_BGAGENT")) await Bun.sleep(4000)
+    const longTask = hasResult || JSON.stringify(last).includes("task-notification") ? undefined
+      : JSON.stringify(last).includes("GUI_BGLONG")
+        ? { type: "tool_use", id: `bash_${calls}`, name: "Bash", input: { command: "sleep 4; printf GUI_BGLONG_OK", description: "Long background task", run_in_background: true } }
+        : JSON.stringify(last).includes("GUI_BGAGENT")
+          ? { type: "tool_use", id: `agent_${calls}`, name: "Agent", input: { description: "Background subagent", prompt: "GUI_SUBWORK", subagent_type: "general-purpose", run_in_background: true } }
+          : undefined
+    const block = longTask ? longTask : mcp
       ? {
           type: "tool_use",
           id: `mcp_${calls}`,
@@ -235,7 +242,8 @@ const bridge = Bun.spawn([process.execPath, "run", bridgeEntry], {
     NOA_GUI_INSECURE: "1",
     NOA_GUI_TOKEN: "",
     NOA_GUI_DEFAULT_CWD: cwd,
-    CLAUDE_CONFIG_DIR: config,
+    // The launcher lets the product dir win; the bridge has to read the same one.
+    CLAUDE_CONFIG_DIR: join(directory, "unused-config"),
     CLAUDE_CODE_PRODUCT_DIR: config,
     CLAUDE_CODE_CACHE_DIR: join(directory, "cache"),
     CLAUDE_CODE_USE_OPENAI: "",
@@ -1079,6 +1087,42 @@ try {
   const emptyReplacement = connect(crypto.randomUUID())
   assert.notEqual((await emptyReplacement.initialize()).pid, emptyBefore.pid)
   console.log("PASS a new empty task reconnects before a session id exists")
+
+  // The CLI stays "running" until its background work ends, so the next message cannot wait for idle.
+  let heldSession = ""
+  for (const [prompt, label] of [["GUI_BGLONG", "Bash task"], ["GUI_BGAGENT", "subagent"]] as const) {
+    const session = connect(crypto.randomUUID())
+    await session.initialize()
+    session.send({ type: "user", message: { role: "user", content: prompt }, parent_tool_use_id: null })
+    const answered = new Set<string>()
+    await wait(() => {
+      const ask = session.events.find((e) => e.kind === "agent" && e.message.type === "control_request" && !answered.has(e.message.request_id)) as any
+      if (ask) {
+        answered.add(ask.message.request_id)
+        session.send({ type: "control_response", response: { subtype: "success", request_id: ask.message.request_id, response: { behavior: "allow", updatedInput: ask.message.request.input } } })
+      }
+      return session.results().length >= 1
+    }, `${label} turn result`)
+    const finished = () => session.events.some((e) => e.kind === "agent" && e.message.type === "system" && e.message.subtype === "task_notification" && e.message.status === "completed")
+    assert.ok(!finished(), `${label} must still be running when its turn ends`)
+    const followUp = `GUI_AFTER ${label}`
+    session.send({ type: "user", message: { role: "user", content: followUp }, parent_tool_use_id: null })
+    await wait(() => finished() || session.events.some((e) => e.kind === "user" && e.content === followUp), `${label} follow-up`)
+    assert.ok(!finished(), `A message sent while a background ${label} runs must start without waiting for it`)
+    await wait(() => finished() && (session.events.findLast((e) => e.kind === "agent" && e.message.type === "system" && e.message.subtype === "session_state_changed") as any)?.message.state === "idle", `${label} session idle`)
+    heldSession = (session.events.find((e) => e.kind === "agent" && e.message.type === "system" && e.message.subtype === "init") as any).message.session_id
+    session.socket.close()
+    console.log(`PASS a message sent while a background ${label} runs starts without waiting for it`)
+  }
+
+  await wait(async () => !(await (await fetch(`http://127.0.0.1:${port}/api/runs`)).json() as any[]).some((run) => run.sessionId === heldSession), "held session released")
+  const holderFile = join(config, "sessions", `${process.pid}.json`)
+  writeFileSync(holderFile, JSON.stringify({ pid: process.pid, ppid: 1, sessionId: heldSession, kind: "interactive", cwd }))
+  const heldUrl = `http://127.0.0.1:${port}/api/sessions/${heldSession}?${new URLSearchParams({ cwd })}`
+  assert.equal((await fetch(heldUrl, { method: "DELETE" })).status, 409)
+  rmSync(holderFile)
+  assert.equal((await fetch(heldUrl, { method: "DELETE" })).status, 200)
+  console.log("PASS deleting a task another live Noa process holds is refused until it lets go")
 
 
 } finally {

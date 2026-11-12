@@ -1,9 +1,9 @@
 import { createHash, randomUUID } from "node:crypto"
 import { createReadStream } from "node:fs"
 import { opendir, readdir, rmdir, realpath, stat, lstat, readFile, writeFile, rename, chmod, unlink } from "node:fs/promises"
-import { homedir } from "node:os"
 import { basename, dirname, join, relative, resolve, sep, extname } from "node:path"
 import { createTwoFilesPatch, parsePatch, formatPatch } from "diff"
+import { configHome } from "./sessions"
 
 const MAX_PREVIEW = 512 * 1024
 const digest = (data: string | Uint8Array) => createHash("sha256").update(data).digest("hex")
@@ -231,7 +231,7 @@ async function switchBranch(cwd: string, body: { action?: unknown; branch?: unkn
 }
 
 // Worktrees for new tasks live outside the project so they never show up as untracked files in it.
-const WORKTREES_ROOT = join(process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".noa"), "worktrees")
+const WORKTREES_ROOT = join(configHome(), "worktrees")
 
 export function isManagedWorktree(cwd: string) {
   return cwd.startsWith(WORKTREES_ROOT + sep)

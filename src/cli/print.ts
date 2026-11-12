@@ -2318,9 +2318,12 @@ function runHeadlessStreaming(
                   output.enqueue(event)
                 }
 
-                // Hold-back: don't emit result while background agents are running
+                // Hold-back: don't emit result while background agents are running.
+                // A consumer of session state events takes idle as that signal and
+                // needs each turn's result when the turn ends.
                 const currentState = getAppState()
                 if (
+                  !isEnvTruthy(process.env.CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS) &&
                   getRunningTasks(currentState).some(
                     t =>
                       (t.type === 'local_agent' ||
