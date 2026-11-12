@@ -5,6 +5,8 @@ import { join, resolve } from "node:path"
 import { initialState, reducer } from "../src/agent/reducer"
 import type { ControlRequest, Envelope, Outgoing } from "../src/agent/protocol"
 
+const runtimeRoot = resolve(process.argv[2] ?? join(import.meta.dir, "../.."))
+const bridgeEntry = existsSync(join(runtimeRoot, "gui/server/main.ts")) ? "server/main.ts" : "server/main.js"
 const directory = realpathSync(mkdtempSync(join(tmpdir(), "noa-gui-runtime-")))
 const cwd = join(directory, "workspace")
 const aliasCwd = join(directory, "workspace-alias")
@@ -225,8 +227,8 @@ if (process.env.NOA_GUI_BROWSER_FIXTURE === "1") {
 const reservation = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Response() })
 const port = reservation.port!
 reservation.stop(true)
-const bridge = Bun.spawn([process.execPath, "run", "server/main.ts"], {
-  cwd: resolve(import.meta.dir, ".."),
+const bridge = Bun.spawn([process.execPath, "run", bridgeEntry], {
+  cwd: join(runtimeRoot, "gui"),
   env: {
     ...process.env,
     NOA_GUI_PORT: String(port),
@@ -430,7 +432,9 @@ try {
   ) as any
   assert.ok(initMessage?.message.session_id)
   const acknowledged = second.events.find(event => event.kind === "user") as Extract<Envelope, { kind: "user" }>
-  const diskHistory = await (await fetch(`http://127.0.0.1:${port}/api/sessions/${initMessage.message.session_id}?${new URLSearchParams({ cwd })}`)).json() as any[]
+  const diskResponse = await fetch(`http://127.0.0.1:${port}/api/sessions/${initMessage.message.session_id}?${new URLSearchParams({ cwd })}`)
+  assert.equal(diskResponse.status, 200, "Task history must load from the runtime being tested")
+  const diskHistory = await diskResponse.json() as any[]
   assert.ok(diskHistory.some(item => item.kind === "user" && item.id === acknowledged.id), "Live user identity must survive disk restoration")
   const titledId = initMessage.message.session_id as string
   const listedTitle = async () => ((await (await fetch(`http://127.0.0.1:${port}/api/sessions?${new URLSearchParams({ cwd })}`)).json()) as { id: string; title: string }[]).find((s) => s.id === titledId)?.title
@@ -443,7 +447,7 @@ try {
 
   // A terminal (another parent process) holding the task: the GUI follows its transcript read-only,
   // then attaches its own CLI once the terminal exits.
-  const terminal = Bun.spawn([process.execPath, resolve(import.meta.dir, "../../run-noa.js"), "-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--model", "claude-sonnet-4-6", "--resume", titledId], {
+  const terminal = Bun.spawn([process.execPath, join(runtimeRoot, "run-noa.js"), "-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--model", "claude-sonnet-4-6", "--resume", titledId], {
     cwd, env: { ...process.env, CLAUDE_CONFIG_DIR: config, ANTHROPIC_API_KEY: "local-fixture", ANTHROPIC_BASE_URL: `http://127.0.0.1:${provider.port}` }, stdin: "pipe", stdout: "ignore", stderr: "ignore",
   })
   const holderPid = () => existsSync(join(config, "sessions")) ? readdirSync(join(config, "sessions")).filter((file) => /^\d+\.json$/.test(file)).map((file) => JSON.parse(readFileSync(join(config, "sessions", file), "utf8"))).find((entry) => entry.sessionId === titledId && entry.pid === terminal.pid)?.pid as number | undefined : undefined

@@ -22,6 +22,8 @@ The desktop new-task page shows usage stats under its title, computed by the sam
 
 The built desktop GUI uses `http://127.0.0.1:18787` so browser settings and drafts remain available across launches. A second launch focuses the existing window; the desktop bridge requires port 18787 to be free.
 
+Before publishing a desktop release, run `bun run --cwd gui tests/bridge.e2e.ts release-runtime/repo` after `desktop:prepare` (or pass the packaged app's `Contents/Resources/repo` path). This runs the bridge checks, including history loading and fresh-process resume, against the bundled runtime without relying on the source checkout. A new-chat initialization or `--version` check alone does not cover conversation recovery.
+
 Editing a queued message pauses the queue; saving or cancelling leaves it paused until you continue. Closing the desktop app asks for confirmation when tasks are running or messages are queued. Queued messages are discarded on exit, not restored on relaunch. An explicit `?cwd=` workspace takes precedence over the last saved task.
 
 Configuration editors retain unsaved drafts across settings pages and connection/busy state changes. Leaving with unsaved changes requires confirmation. MCP writes recheck the displayed revision while holding a cross-process lock; a concurrent stale save is refused. Reconnecting explicitly replaces the idle CLI, disconnects other attached clients, and waits for exit before resuming; running or queued work blocks this action. Rewind scope controls remain disabled while the preview loads. Regression checks: `bun run --cwd gui scripts/e2e-configuration-editing.ts` and `bun run --cwd gui scripts/e2e-mcp-configuration.ts`.

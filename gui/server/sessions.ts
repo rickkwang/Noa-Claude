@@ -318,7 +318,7 @@ export function deleteSession(cwd: string, id: string): void {
 
 async function conversationChain(file: string, includeSidechain = false): Promise<Entry[]> {
   // Load the CLI's recovery rules, including compact/snip and orphaned tool results.
-  const modulePath = "../../src/utils/sessionStorage.ts"
+  const modulePath = "../../src/utils/sessionStorage"
   const { loadTranscriptFile, buildConversationChain } = await import(modulePath)
   const { messages, leafUuids } = await loadTranscriptFile(file) as { messages: Map<string, Entry>; leafUuids: Set<string> }
   let hasUuid = false

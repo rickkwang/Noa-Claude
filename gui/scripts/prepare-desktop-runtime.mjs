@@ -106,9 +106,9 @@ async function bundle(options) {
   if (!result.success) fail(`bundling failed:\n${result.logs.map(String).join("\n")}`)
 }
 await bundle({ entrypoints: [join(gui, "server", "main.ts")], outdir: join(runtimeGui, "server") })
-// server/stats.ts loads these CLI modules by path at run time, so bundle them where it looks.
+// The bridge loads stats and transcript recovery by path at run time, so keep their bundled modules.
 await bundle({
-  entrypoints: ["stats.ts", "format.ts", "model/model.ts"].map((file) => join(repo, "src", "utils", file)),
+  entrypoints: ["stats.ts", "format.ts", "model/model.ts", "sessionStorage.ts"].map((file) => join(repo, "src", "utils", file)),
   root: join(repo, "src", "utils"),
   outdir: join(runtimeRepo, "src", "utils"),
   splitting: true,

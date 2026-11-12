@@ -284,5 +284,5 @@ Bun.serve<BridgeSocketData>({
 
 console.log(`Noa GUI bridge listening on http://localhost:${PORT}`)
 // Load the transcript recovery code while the user is choosing a session.
-const transcriptModule = "../../src/utils/sessionStorage.ts"
+const transcriptModule = "../../src/utils/sessionStorage"
 void import(transcriptModule).catch(() => {})
