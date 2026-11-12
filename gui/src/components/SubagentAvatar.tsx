@@ -87,7 +87,7 @@ const avatars = [
   [light27, dark27],
 ]
 
-export function SubagentAvatar({ id, size = 14 }: { id: string; size?: number }) {
+export function SubagentAvatar({ id, size = 14 }: { id: string; size?: number | string }) {
   const [darkTheme, setDarkTheme] = useState(() => document.documentElement.dataset.theme === "dark")
   useEffect(() => {
     const root = document.documentElement
