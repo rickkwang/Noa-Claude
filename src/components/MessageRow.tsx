@@ -12,7 +12,7 @@ import { type buildMessageLookups, EMPTY_STRING_SET, getProgressMessagesFromLook
 import { Message } from './Message.js';
 import { MessageModel } from './MessageModel.js';
 import { shouldRenderStatically } from './Messages.js';
-import { MessageTimestamp } from './MessageTimestamp.js';
+import { MessageTimestamp, shouldShowMessageTimestamp } from './MessageTimestamp.js';
 import { OffscreenFreeze } from './OffscreenFreeze.js';
 export type Props = {
   message: RenderableMessage;
@@ -219,7 +219,7 @@ function MessageRowImpl(t0) {
   }
   let t5;
   if ($[34] !== displayMsg || $[35] !== isTranscriptMode || $[64] !== showTimestamps) {
-    t5 = displayMsg.type === "assistant" && displayMsg.message.content.some(_temp) && (isTranscriptMode ? displayMsg.timestamp || displayMsg.message.model : showTimestamps && displayMsg.timestamp);
+    t5 = shouldShowMessageTimestamp(displayMsg, isTranscriptMode, showTimestamps) || isTranscriptMode && displayMsg.type === "assistant" && displayMsg.message.content.some(_temp) && displayMsg.message.model;
     $[34] = displayMsg;
     $[35] = isTranscriptMode;
     $[64] = showTimestamps;

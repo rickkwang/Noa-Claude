@@ -72,9 +72,17 @@ export function matchAllowlist(querySource: string, allowlist: string[]): boolea
   )
 }
 
+// Sources that run inline with the main conversation (permission classifier,
+// memory relevance pick), so they follow `promptCacheTtl`.
+const MAIN_CONVERSATION_SOURCES = [
+  ...PROMPT_CACHE_1H_DEFAULT_SOURCES,
+  'auto_mode',
+  'memdir_relevance',
+]
+
 /**
  * `promptCacheTtl` / `subagentPromptCacheTtl` settings, consulted only when
- * the env opt-in is unset. Main-thread and SDK sources use the former, every
+ * the env opt-in is unset. Main-conversation sources use the former, every
  * other source the latter. undefined = unset (fall through to automatic).
  */
 export function getPromptCacheTtlSetting(
@@ -82,7 +90,7 @@ export function getPromptCacheTtlSetting(
 ): '5m' | '1h' | undefined {
   if (querySource === undefined) return undefined
   const settings = getInitialSettings()
-  return matchAllowlist(querySource, PROMPT_CACHE_1H_DEFAULT_SOURCES)
+  return matchAllowlist(querySource, MAIN_CONVERSATION_SOURCES)
     ? settings.promptCacheTtl
     : settings.subagentPromptCacheTtl
 }
