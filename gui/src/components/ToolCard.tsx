@@ -87,7 +87,7 @@ export function ToolCard({ block, step: stepProp, defaultOpen = false, active = 
         <ChevronRight size={12} className={`shrink-0 opacity-0 transition-[transform,opacity] duration-300 group-hover/tool:opacity-100 group-focus-visible/tool:opacity-100 ${open ? "rotate-90" : ""}`} />
       </button>
       <Collapsible open={open}>
-        <div className="mt-1 mb-2 flex flex-col gap-2 ps-1">
+        <div className={`mt-1 mb-2 flex flex-col gap-2 ${block.name === "Bash" && !task ? "" : "ps-1"}`}>
           {task ? <TaskDetail task={task} tasks={tasks} onStopTask={onStopTask} onOpenTask={onOpenTask} /> : <ToolBody block={block} active={active} onRaw={() => setRawOpen(true)} onCollapse={() => setOpen(false)} />}
           {!!block.images?.length && (
             <ToolImages
@@ -455,32 +455,35 @@ function ShellOutput({ block, onCollapse }: { block: ToolBlock; onCollapse: () =
     timerRef.current = setTimeout(() => setCopied(undefined), 1500)
   }
 
+  const status = block.status === "running" ? null
+    : block.status === "error" ? `Exit code ${block.exitCode ?? "unknown"}`
+    : block.status === "unknown" ? "Connection lost"
+    : block.status === "stopped" || block.interrupted ? "Stopped"
+    : <><Check size={12} aria-hidden="true" />Success</>
+  const headerButton = "flex size-7 items-center justify-center rounded-md hover:bg-[var(--fill-hover)] hover:text-[var(--text-primary)]"
+  const corner = "absolute end-2 top-0 flex size-6 items-center justify-center rounded-md text-[var(--sidebar-text-muted,#898781)] opacity-0 transition-opacity hover:bg-[var(--fill-hover)] focus-visible:opacity-100"
+
   return (
-    <div className="overflow-hidden rounded-lg border border-[var(--border-default)] bg-[var(--bg-secondary,#F9F9F7)]">
-      <div className="flex h-8 items-center justify-between border-b border-[var(--divider-subtle)] px-3 text-caption text-[var(--sidebar-text-muted,#898781)]">
-        <span>Shell</span>
-        <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover/tool:opacity-100 focus-within:opacity-100">
+    <div className="noa-code-block overflow-hidden rounded-[20px] border pb-3">
+      <div className="flex h-10 items-center gap-2 px-5 font-ui text-caption text-[var(--text-secondary)]">
+        <span className="flex-1">Shell</span>
+        <div className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover/tool:opacity-100 focus-within:opacity-100">
           <button
             type="button"
             onClick={() => copy("all", [`$ ${command}`, output].filter(Boolean).join("\n"))}
-            className="flex size-5 items-center justify-center rounded hover:bg-[var(--fill-hover)]"
+            className={headerButton}
             aria-label={copied === "all" ? "Copied shell contents" : "Copy shell contents"}
             title={copied === "all" ? "Copied shell contents" : "Copy shell contents"}
           >
-            {copied === "all" ? <Check size={12} /> : <Copy size={12} />}
+            {copied === "all" ? <Check size={14} /> : <Copy size={14} />}
           </button>
-          <button
-            type="button"
-            onClick={onCollapse}
-            className="flex size-5 items-center justify-center rounded hover:bg-[var(--fill-hover)]"
-            aria-label="Collapse shell"
-            title="Collapse shell"
-          >
-            <ChevronUp size={12} />
+          <button type="button" onClick={onCollapse} className={headerButton} aria-label="Collapse shell" title="Collapse shell">
+            <ChevronUp size={14} />
           </button>
         </div>
+        {status && <span className={`flex items-center gap-1 ${block.status === "error" ? "text-[#C24444]" : ""}`}>{status}</span>}
       </div>
-      <div className="group/command relative py-2">
+      <div className="group/command relative">
         <pre
           role="button"
           tabIndex={0}
@@ -491,14 +494,14 @@ function ShellOutput({ block, onCollapse }: { block: ToolBlock; onCollapse: () =
             event.preventDefault()
             setCommandExpanded((value) => !value)
           }}
-          className={`noa-selectable m-0 cursor-pointer whitespace-pre-wrap break-words pe-8 ps-3 font-mono text-[length:var(--code-font-size)] leading-[max(1.5em,20px)] text-[var(--text-secondary,#5D5D5D)] ${commandExpanded ? "" : "line-clamp-2"}`}
+          className={`noa-selectable m-0 cursor-pointer whitespace-pre-wrap break-words pe-10 ps-5 font-mono text-[length:var(--code-font-size)] leading-[max(1.5em,20px)] text-[var(--text-primary)] ${commandExpanded ? "" : "line-clamp-2"}`}
         >
-          <span className="text-[var(--text-tertiary,#8F8F8F)]">$</span> {command}
+          <span className="select-none text-[var(--text-tertiary,#8F8F8F)]">$</span> {command}
         </pre>
         <button
           type="button"
           onClick={() => copy("command", command)}
-          className="absolute end-1 top-1 flex size-5 items-center justify-center rounded text-[var(--sidebar-text-muted,#898781)] opacity-0 transition-opacity hover:bg-[var(--fill-hover)] focus-visible:opacity-100 group-hover/command:opacity-100"
+          className={`${corner} group-hover/command:opacity-100`}
           aria-label={copied === "command" ? "Copied command" : "Copy command"}
           title={copied === "command" ? "Copied command" : "Copy command"}
         >
@@ -506,14 +509,14 @@ function ShellOutput({ block, onCollapse }: { block: ToolBlock; onCollapse: () =
         </button>
       </div>
       {output ? (
-        <div className="group/output relative">
+        <div className="group/output relative mt-2">
           <div ref={outputRef} role="region" aria-label="Command output" tabIndex={0} onKeyDown={(event) => { if (event.key === "Home" || event.key === "End") { event.preventDefault(); event.currentTarget.scrollTop = event.key === "Home" ? 0 : event.currentTarget.scrollHeight } }} className="noa-shell-output" data-overflow={overflowing}>
-            <pre className="noa-selectable m-0 px-3 py-2 font-mono text-[length:var(--code-font-size)] leading-[max(1.5em,20px)] whitespace-pre">{output}</pre>
+            <pre className="noa-selectable m-0 px-5 font-mono text-[length:var(--code-font-size)] leading-[max(1.5em,20px)] whitespace-pre">{output}</pre>
           </div>
           <button
             type="button"
             onClick={() => copy("output", output)}
-            className="absolute end-1 top-1 flex size-5 items-center justify-center rounded text-[var(--sidebar-text-muted,#898781)] opacity-0 transition-opacity hover:bg-[var(--fill-hover)] focus-visible:opacity-100 group-hover/output:opacity-100"
+            className={`${corner} group-hover/output:opacity-100`}
             aria-label={copied === "output" ? "Copied output" : "Copy output"}
             title={copied === "output" ? "Copied output" : "Copy output"}
           >
@@ -521,25 +524,9 @@ function ShellOutput({ block, onCollapse }: { block: ToolBlock; onCollapse: () =
           </button>
         </div>
       ) : block.status === "running" ? null : (
-        <div className="px-3 pb-2 text-caption text-[var(--sidebar-text-muted,#898781)]">No output</div>
+        <div className="mt-2 px-5 text-caption text-[var(--sidebar-text-muted,#898781)]">No output</div>
       )}
-      {copyError && <span role="status" className="px-3 text-caption text-[#C24444]">Could not copy. Try again.</span>}
-      {block.status !== "running" && (
-        <div className={`flex items-center justify-end gap-1 border-t border-[var(--divider-subtle)] px-3 py-1 text-caption ${block.status === "error" ? "text-[#C24444]" : "text-[var(--sidebar-text-muted,#898781)]"}`}>
-          {block.status === "error" ? (
-            `Exit code ${block.exitCode ?? "unknown"}`
-          ) : block.status === "unknown" ? (
-            "Connection lost"
-          ) : block.status === "stopped" || block.interrupted ? (
-            "Stopped"
-          ) : (
-            <>
-              <Check size={12} aria-hidden="true" />
-              Success
-            </>
-          )}
-        </div>
-      )}
+      {copyError && <span role="status" className="mt-2 block px-5 text-caption text-[#C24444]">Could not copy. Try again.</span>}
     </div>
   )
 }
