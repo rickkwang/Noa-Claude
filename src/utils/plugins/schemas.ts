@@ -1330,8 +1330,19 @@ export const PluginMarketplaceSchema = lazySchema(() =>
     owner: PluginAuthorSchema().describe(
       'Marketplace maintainer or curator information',
     ),
+    // Entries whose source type this build doesn't know (e.g. newer upstream
+    // source kinds) are dropped so they don't fail the whole marketplace.
     plugins: z
-      .array(PluginMarketplaceEntrySchema())
+      .preprocess(
+        value =>
+          Array.isArray(value)
+            ? value.filter(
+                entry =>
+                  PluginSourceSchema().safeParse(entry?.source).success,
+              )
+            : value,
+        z.array(PluginMarketplaceEntrySchema()),
+      )
       .describe('Collection of available plugins in this marketplace'),
     forceRemoveDeletedPlugins: z
       .boolean()
