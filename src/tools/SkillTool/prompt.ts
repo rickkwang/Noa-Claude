@@ -39,18 +39,19 @@ export function getCharBudget(contextWindowTokens?: number): number {
   return DEFAULT_CHAR_BUDGET
 }
 
-function getCommandDescription(cmd: Command): string {
+function getCommandDescription(
+  cmd: Command,
+  maxChars: number = MAX_LISTING_DESC_CHARS,
+): string {
   const desc = cmd.whenToUse
     ? `${cmd.description} - ${cmd.whenToUse}`
     : cmd.description
-  const maxChars =
-    getInitialSettings().skillListingMaxDescChars ?? MAX_LISTING_DESC_CHARS
   return desc.length > maxChars
     ? desc.slice(0, maxChars - 1) + '\u2026'
     : desc
 }
 
-function formatCommandDescription(cmd: Command): string {
+function formatCommandDescription(cmd: Command, maxChars: number): string {
   // Debug: log if userFacingName differs from cmd.name for plugin skills
   const displayName = getCommandName(cmd)
   if (
@@ -67,7 +68,7 @@ function formatCommandDescription(cmd: Command): string {
     return `- ${cmd.name}`
   }
 
-  return `- ${cmd.name}: ${getCommandDescription(cmd)}`
+  return `- ${cmd.name}: ${getCommandDescription(cmd, maxChars)}`
 }
 
 const MIN_DESC_LENGTH = 20
@@ -80,15 +81,31 @@ export function formatCommandsWithinBudget(
 
   const budget = getCharBudget(contextWindowTokens)
 
-  // Try full descriptions first
-  const fullEntries = commands.map(cmd => ({
-    cmd,
-    full: formatCommandDescription(cmd),
-  }))
-  // join('\n') produces N-1 newlines for N entries
-  const fullTotal =
-    fullEntries.reduce((sum, e) => sum + stringWidth(e.full), 0) +
-    (fullEntries.length - 1)
+  // Try full descriptions first, at the configured per-entry cap. A raised cap
+  // that overflows the budget would only force a uniform trim that can land
+  // below the default cap, so fall back to the default cap before trimming.
+  const buildEntries = (maxChars: number) => {
+    const entries = commands.map(cmd => ({
+      cmd,
+      full: formatCommandDescription(cmd, maxChars),
+    }))
+    // join('\n') produces N-1 newlines for N entries
+    const total =
+      entries.reduce((sum, e) => sum + stringWidth(e.full), 0) +
+      (entries.length - 1)
+    return { entries, total }
+  }
+  // Clamped here, not in the schema: an out-of-range value must not invalidate
+  // the whole settings file.
+  let maxChars = Math.max(
+    MIN_DESC_LENGTH,
+    getInitialSettings().skillListingMaxDescChars ?? MAX_LISTING_DESC_CHARS,
+  )
+  let { entries: fullEntries, total: fullTotal } = buildEntries(maxChars)
+  if (fullTotal > budget && maxChars > MAX_LISTING_DESC_CHARS) {
+    maxChars = MAX_LISTING_DESC_CHARS
+    ;({ entries: fullEntries, total: fullTotal } = buildEntries(maxChars))
+  }
 
   if (fullTotal <= budget) {
     return fullEntries.map(e => e.full).join('\n')
@@ -149,7 +166,7 @@ export function formatCommandsWithinBudget(
   // Truncate non-bundled descriptions to fit within budget
   const truncatedCount = count(
     restCommands,
-    cmd => stringWidth(getCommandDescription(cmd)) > maxDescLen,
+    cmd => stringWidth(getCommandDescription(cmd, maxChars)) > maxDescLen,
   )
   if (process.env.USER_TYPE === 'ant') {
     logEvent('tengu_skill_descriptions_truncated', {
@@ -170,7 +187,7 @@ export function formatCommandsWithinBudget(
       // Bundled skills always get full descriptions
       if (bundledIndices.has(i)) return fullEntries[i]!.full
       if (cmd.nameOnly === true) return `- ${cmd.name}`
-      const description = getCommandDescription(cmd)
+      const description = getCommandDescription(cmd, maxChars)
       return `- ${cmd.name}: ${truncate(description, maxDescLen)}`
     })
     .join('\n')

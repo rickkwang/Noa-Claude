@@ -72,8 +72,12 @@ export function matchAllowlist(querySource: string, allowlist: string[]): boolea
   )
 }
 
-// Sources that run inline with the main conversation (permission classifier,
-// memory relevance pick), so they follow `promptCacheTtl`.
+// Sources that follow `promptCacheTtl`: the main conversation plus the two
+// helpers upstream groups with it (permission classifier, memory relevance
+// pick). Deliberately wider than PROMPT_CACHE_1H_DEFAULT_SOURCES: an explicit
+// setting is a statement about the whole main-conversation group, while the
+// bare-boolean env opt-in stays narrow so existing users' 1h writes (billed at
+// 2x) do not grow to cover the back-to-back helper calls.
 const MAIN_CONVERSATION_SOURCES = [
   ...PROMPT_CACHE_1H_DEFAULT_SOURCES,
   'auto_mode',

@@ -91,6 +91,7 @@ type Setting = (SettingBase & {
 type SubMenu = 'Theme' | 'Model' | 'TeammateModel' | 'ExternalIncludes' | 'OutputStyle' | 'ChannelDowngrade' | 'Language' | 'EnableAutoUpdates';
 // Columns between the label column and the value column (matches upstream).
 const LABEL_GUTTER = 1;
+const TIME_FORMAT_PRESETS = ['auto', '12-hour', '24-hour', '24-hour-utc'];
 export function Config({
   onClose,
   context,
@@ -618,24 +619,27 @@ export function Config({
   }, {
     id: 'timeFormat',
     label: 'Time format',
-    // A strftime pattern set in settings.json is shown as-is; the picker only offers presets.
     value: settingsData?.timeFormat ?? 'auto',
-    options: ['auto', '12-hour', '24-hour', '24-hour-utc'],
+    // A strftime pattern from settings.json stays in the cycle for the whole dialog, so
+    // cycling past it never loses it.
+    options: [...new Set([...[initialSettingsData.current?.timeFormat, settingsData?.timeFormat].filter((v): v is string => !!v && !TIME_FORMAT_PRESETS.includes(v)), ...TIME_FORMAT_PRESETS])],
     type: 'enum' as const,
     onChange(selected: string) {
       const timeFormat = selected === 'auto' ? undefined : selected;
       updateSettingsForSource('userSettings', {
         timeFormat
       });
+      // Show the effective value: a project/local timeFormat still wins over user settings.
+      const effectiveTimeFormat = getInitialSettings().timeFormat;
       setSettingsData(prev => ({
         ...prev,
-        timeFormat
+        timeFormat: effectiveTimeFormat
       }));
       setAppState(prev => ({
         ...prev,
         settings: {
           ...prev.settings,
-          timeFormat
+          timeFormat: effectiveTimeFormat
         }
       }));
     }

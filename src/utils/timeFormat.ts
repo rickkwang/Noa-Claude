@@ -70,9 +70,16 @@ function strftime(pattern: string, d: Date): string {
  * Time of day under the `timeFormat` setting, or undefined for "auto"/unset/an
  * unrecognized value so callers keep their own default rendering.
  */
-export function formatConfiguredClock(
+export function formatConfiguredClock(date: Date): string | undefined {
+  return formatClock(date, getInitialSettings().timeFormat)
+}
+
+// Same as formatConfiguredClock for an explicit format; an unset format never
+// falls back to the settings files here, so callers that hold the live
+// (app-state) value stay consistent with what /config shows.
+function formatClock(
   date: Date,
-  format: string | undefined = getInitialSettings().timeFormat,
+  format: string | undefined,
 ): string | undefined {
   if (!format) return undefined
   if (format.includes('%')) return strftime(format, date)
@@ -97,7 +104,7 @@ export function formatMessageTime(
 ): string {
   if (!withDate) {
     return (
-      formatConfiguredClock(date, format) ??
+      formatClock(date, format) ??
       date.toLocaleTimeString('en-US', {
         hour: '2-digit',
         minute: '2-digit',
