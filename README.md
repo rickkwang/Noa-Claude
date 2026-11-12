@@ -1,8 +1,35 @@
 # Noa Claude
 
-A local-first coding agent for software work — long sessions, resumable forks, multi-provider routing, and privacy defaults that don't require configuration.
+A local-first coding agent for software work — in your terminal or as a desktop app. Long sessions, resumable forks, any model provider, and privacy defaults that don't require configuration.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/desktop-dark.png">
+  <img alt="Noa Agent desktop app: the agent explains the root cause of a failing test and reports the two files it fixed" src="docs/images/desktop-light.png">
+</picture>
 
 Noa is a productized reconstruction based on publicly exposed Claude Code source, independently maintained for developers who want local control, provider flexibility, and continuity features that hold up under real daily use.
+
+## See It Work
+
+Every screenshot here is a real run: the same prompt — *"`bun test` is failing on the invoice totals. Find the root cause, fix it, and make sure all tests pass."* — against a small demo repository with two floating-point bugs.
+
+### Desktop app
+
+Describe the task, watch the agent run commands, and review what it changed without leaving the window. The right panel holds the file tree, a working-tree diff with per-hunk stage/revert and a local browser preview; a terminal opens in the bottom panel. Conversations fork and rewind from the task menu, and settings, permission rules and MCP servers are edited in the app. The app runs on this computer and shares `~/.noa` with the CLI — see [Desktop App](#desktop-app-macos-apple-silicon).
+
+<img alt="The Changes panel with the applied diff beside the conversation that explains the fix" src="docs/images/desktop-review.png">
+
+### Terminal
+
+The same agent as an interactive TUI, or non-interactive with `noa -p`. Sessions resume after compaction, fork into background sessions (`/background`, `noa agents`) and rewind code and conversation together (`/rewind`).
+
+<img alt="Noa Claude in a terminal: the agent finds the floating-point root cause, fixes two files and reports all three tests passing" src="docs/images/cli-fix.png">
+
+### Any provider
+
+Switch between saved provider profiles with `/provider`: Anthropic, OpenAI-compatible endpoints, a ChatGPT plan, Bedrock, Vertex, Foundry, and Anthropic-compatible services such as Kimi, MiniMax and DeepSeek. Different sub-agents can run on different models. See [Multi-Provider Support](#multi-provider-support).
+
+<img alt="The /provider picker listing Anthropic, MiniMax, Kimi Code, DeepSeek and ChatGPT profiles" src="docs/images/cli-providers.png">
 
 ## Quick Start
 
