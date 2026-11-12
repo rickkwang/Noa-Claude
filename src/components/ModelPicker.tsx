@@ -300,7 +300,7 @@ export function ModelPicker(t0) {
   }
   useKeybindings(t12, t13);
   let t14;
-  if ($[35] !== effort || $[36] !== hasToggledEffort || $[37] !== onSelect || $[38] !== setAppState || $[39] !== skipSettingsWrite) {
+  if (true || $[35] !== effort || $[36] !== hasToggledEffort || $[37] !== onSelect || $[38] !== setAppState || $[39] !== skipSettingsWrite) {
     t14 = function handleSelect(value_0) {
       if (value_0 === MORE_MODELS_VALUE) {
         setMoreExpanded(prev => !prev);
@@ -326,7 +326,9 @@ export function ModelPicker(t0) {
       const selectedModel = resolveOptionModel(value_0);
       const selectedEffort = hasToggledEffort && selectedModel && modelSupportsEffort(selectedModel) ? effort : undefined;
       if (value_0 === NO_PREFERENCE) {
-        onSelect(null, selectedEffort);
+        // When the Default row stands for a saved pick, keep that pick;
+        // clearing it would silently fall back to the built-in default.
+        onSelect(baseValue === NO_PREFERENCE ? safeInitial : null, selectedEffort);
         return;
       }
       onSelect(value_0, selectedEffort);
