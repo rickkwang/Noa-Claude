@@ -3,7 +3,7 @@ import { c as _c } from "react/compiler-runtime";
 import React, { useEffect, useState } from 'react';
 import { type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS, logEvent } from 'src/services/analytics/index.js';
 import { Box, Link, Text, useInput } from '../../ink.js';
-import { type AccountSettings, calculateShouldShowGrove, type GroveConfig, getGroveNoticeConfig, getGroveSettings, markGroveNoticeViewed, updateGroveSettings } from '../../services/api/grove.js';
+import { type AccountSettings, calculateShouldShowGrove, type GroveConfig, getGroveNoticeConfig, getGroveSettings, markGroveNoticeViewed, recordGroveChoice, updateGroveSettings } from '../../services/api/grove.js';
 import { Select } from '../CustomSelect/index.js';
 import { Byline } from '../design-system/Byline.js';
 import { Dialog } from '../design-system/Dialog.js';
@@ -158,6 +158,9 @@ export function GroveDialog(t0) {
       const checkGroveSettings = async function checkGroveSettings() {
         const [settingsResult, configResult] = await Promise.all([getGroveSettings(), getGroveNoticeConfig()]);
         const config = configResult.success ? configResult.data : null;
+        if (settingsResult.success) {
+          recordGroveChoice(settingsResult.data.grove_enabled !== null);
+        }
         setGroveConfig(config);
         const shouldShow = calculateShouldShowGrove(settingsResult, configResult, showIfAlreadyViewed);
         setShouldShowDialog(shouldShow);

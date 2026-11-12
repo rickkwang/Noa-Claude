@@ -264,6 +264,7 @@ import {
 import { setupVscodeSdkMcp } from 'src/services/mcp/vscodeSdkMcp.js'
 import { getAllMcpConfigs } from 'src/services/mcp/config.js'
 import {
+  hasMadeGroveChoice,
   isQualifiedForGrove,
   checkGroveForNonInteractive,
 } from 'src/services/api/grove.js'
@@ -638,7 +639,7 @@ export async function runHeadless(
   headlessProfilerCheckpoint('runHeadless_entry')
 
   // Check Grove requirements for non-interactive consumer subscribers
-  if (await isQualifiedForGrove()) {
+  if (!hasMadeGroveChoice() && (await isQualifiedForGrove())) {
     await checkGroveForNonInteractive()
   }
   headlessProfilerCheckpoint('after_grove_check')

@@ -14,7 +14,7 @@ import type { RenderOptions, Root, TextProps } from './ink.js';
 import { KeybindingSetup } from './keybindings/KeybindingProviderSetup.js';
 import { startDeferredPrefetches } from './main.js';
 import { checkGate_CACHED_OR_BLOCKING, initializeGrowthBook, resetGrowthBook } from './services/analytics/growthbook.js';
-import { isQualifiedForGrove } from './services/api/grove.js';
+import { hasMadeGroveChoice, isQualifiedForGrove } from './services/api/grove.js';
 import { handleMcpjsonServerApprovals } from './services/mcpServerApproval.js';
 import { AppStateProvider } from './state/AppState.js';
 import { onChangeAppState } from './state/onChangeAppState.js';
@@ -190,7 +190,7 @@ export async function showSetupScreens(root: Root, permissionMode: PermissionMod
   // In normal mode, this happens after the trust dialog is accepted
   // This includes potentially dangerous environment variables from untrusted sources
   applyConfigEnvironmentVariables();
-  if (await isQualifiedForGrove()) {
+  if (!hasMadeGroveChoice() && (await isQualifiedForGrove())) {
     const {
       GroveDialog
     } = await import('src/components/grove/Grove.js');

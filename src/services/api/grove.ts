@@ -69,6 +69,7 @@ export const getGroveSettings = memoize(
               ...authHeaders.headers,
               'User-Agent': getClaudeCodeUserAgent(),
             },
+            timeout: 3000, // Startup waits on this; never hang on a slow network
           },
         )
       })
@@ -84,6 +85,43 @@ export const getGroveSettings = memoize(
     }
   },
 )
+
+// A recently confirmed choice lets startup skip the Grove dialog and its two requests;
+// after an hour the next launch checks the server again, so a reset choice is noticed.
+// isQualifiedForGrove stays unchanged: /privacy-settings still needs it to revisit the choice.
+const GROVE_CHOICE_SEEN_TTL_MS = 60 * 60 * 1000
+
+function isRecentGroveChoice(at: number | undefined): boolean {
+  if (at === undefined) return false
+  const age = Date.now() - at
+  return age >= 0 && age < GROVE_CHOICE_SEEN_TTL_MS
+}
+
+export function hasMadeGroveChoice(): boolean {
+  const accountId = getOauthAccountInfo()?.accountUuid
+  return (
+    !!accountId &&
+    isRecentGroveChoice(getGlobalConfig().groveChoiceSeenAt?.[accountId])
+  )
+}
+
+export function recordGroveChoice(chosen: boolean): void {
+  const accountId = getOauthAccountInfo()?.accountUuid
+  if (!accountId) return
+  const seen = getGlobalConfig().groveChoiceSeenAt?.[accountId]
+  if (chosen ? isRecentGroveChoice(seen) : seen === undefined) return
+  saveGlobalConfig(current => {
+    const others = Object.entries(current.groveChoiceSeenAt ?? {}).filter(
+      ([id, at]) => id !== accountId && isRecentGroveChoice(at),
+    )
+    return {
+      ...current,
+      groveChoiceSeenAt: Object.fromEntries(
+        chosen ? [...others, [accountId, Date.now()]] : others,
+      ),
+    }
+  })
+}
 
 /**
  * Mark that the Grove notice has been viewed by the user
@@ -143,6 +181,7 @@ export async function updateGroveSettings(
     // Invalidate memoized settings so the post-toggle confirmation
     // read in privacy-settings.tsx picks up the new value.
     getGroveSettings.cache.clear?.()
+    recordGroveChoice(true)
   } catch (err) {
     logError(err)
   }
@@ -326,6 +365,9 @@ export async function checkGroveForNonInteractive(): Promise<void> {
     getGroveSettings(),
     getGroveNoticeConfig(),
   ])
+  if (settingsResult.success) {
+    recordGroveChoice(settingsResult.data.grove_enabled !== null)
+  }
 
   // Check if user hasn't made a choice yet (returns false on API failure)
   const shouldShowGrove = calculateShouldShowGrove(

@@ -338,6 +338,8 @@ export type GlobalConfig = {
     string,
     { grove_enabled: boolean; timestamp: number }
   >
+  // Account UUID -> when the server last confirmed a Grove choice; startup skips the dialog while recent
+  groveChoiceSeenAt?: Record<string, number>
 
   // Guest passes upsell tracking
   passesUpsellSeenCount?: number // Number of times the guest passes upsell has been shown
