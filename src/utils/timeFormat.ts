@@ -26,8 +26,10 @@ function strftime(pattern: string, d: Date): string {
  * Time of day under the `timeFormat` setting, or undefined for "auto"/unset/an
  * unrecognized value so callers keep their own default rendering.
  */
-export function formatConfiguredClock(date: Date): string | undefined {
-  const format = getInitialSettings().timeFormat
+export function formatConfiguredClock(
+  date: Date,
+  format: string | undefined = getInitialSettings().timeFormat,
+): string | undefined {
   if (!format) return undefined
   if (format.includes('%')) return strftime(format, date)
   if (format === '12-hour') return strftime('%I:%M %p', date)

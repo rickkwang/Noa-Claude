@@ -3,6 +3,7 @@ import { c as _c } from "react/compiler-runtime";
 import * as React from 'react';
 import type { Command } from '../commands.js';
 import { Box } from '../ink.js';
+import { useAppState } from '../state/AppState.js';
 import type { Screen } from '../screens/REPL.js';
 import type { Tools } from '../Tool.js';
 import type { RenderableMessage } from '../types/message.js';
@@ -91,7 +92,7 @@ export function hasContentAfterIndex(messages: RenderableMessage[], index: numbe
   return false;
 }
 function MessageRowImpl(t0) {
-  const $ = _c(64);
+  const $ = _c(66);
   const {
     message: msg,
     isUserContinuation,
@@ -110,6 +111,7 @@ function MessageRowImpl(t0) {
     lookups
   } = t0;
   const isTranscriptMode = screen === "transcript";
+  const showTimestamps = useAppState(s => s.settings.showMessageTimestamps === true);
   const isGrouped = msg.type === "grouped_tool_use";
   const isCollapsed = msg.type === "collapsed_read_search";
   let t1;
@@ -216,10 +218,11 @@ function MessageRowImpl(t0) {
     }
   }
   let t5;
-  if ($[34] !== displayMsg || $[35] !== isTranscriptMode) {
-    t5 = isTranscriptMode && displayMsg.type === "assistant" && displayMsg.message.content.some(_temp) && (displayMsg.timestamp || displayMsg.message.model);
+  if ($[34] !== displayMsg || $[35] !== isTranscriptMode || $[64] !== showTimestamps) {
+    t5 = displayMsg.type === "assistant" && displayMsg.message.content.some(_temp) && (isTranscriptMode ? displayMsg.timestamp || displayMsg.message.model : showTimestamps && displayMsg.timestamp);
     $[34] = displayMsg;
     $[35] = isTranscriptMode;
+    $[64] = showTimestamps;
     $[36] = t5;
   } else {
     t5 = $[36];
@@ -263,10 +266,11 @@ function MessageRowImpl(t0) {
     return t9;
   }
   let t9;
-  if ($[57] !== displayMsg || $[58] !== isTranscriptMode) {
+  if ($[57] !== displayMsg || $[58] !== isTranscriptMode || $[65] !== showTimestamps) {
     t9 = <Box flexDirection="row" justifyContent="flex-end" gap={1} marginTop={1}><MessageTimestamp message={displayMsg} isTranscriptMode={isTranscriptMode} /><MessageModel message={displayMsg} isTranscriptMode={isTranscriptMode} /></Box>;
     $[57] = displayMsg;
     $[58] = isTranscriptMode;
+    $[65] = showTimestamps;
     $[59] = t9;
   } else {
     t9 = $[59];

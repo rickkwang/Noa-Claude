@@ -741,6 +741,10 @@ export const SettingsSchema = lazySchema(() =>
         .describe(
           'Clock format for times shown in the UI: "auto" (default), "12-hour", "24-hour", "24-hour-utc" ("18:05Z"), or a strftime pattern such as "%H:%M" (any value containing "%"; other values read as "auto"). A pattern replaces the time everywhere; message timestamps show only the pattern, so include %Y-%m-%d for the date.',
         ),
+      showMessageTimestamps: z
+        .boolean()
+        .optional()
+        .describe('Stamp each assistant message with its arrival time'),
       promptCacheTtl: z
         .enum(['5m', '1h'])
         .optional()

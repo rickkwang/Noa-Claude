@@ -595,6 +595,51 @@ export function Config({
       });
     }
   }, {
+    id: 'showMessageTimestamps',
+    label: 'Show message timestamps',
+    value: settingsData?.showMessageTimestamps ?? false,
+    type: 'boolean' as const,
+    onChange(showMessageTimestamps: boolean) {
+      updateSettingsForSource('userSettings', {
+        showMessageTimestamps
+      });
+      setSettingsData(prev => ({
+        ...prev,
+        showMessageTimestamps
+      }));
+      setAppState(prev => ({
+        ...prev,
+        settings: {
+          ...prev.settings,
+          showMessageTimestamps
+        }
+      }));
+    }
+  }, {
+    id: 'timeFormat',
+    label: 'Time format',
+    // A strftime pattern set in settings.json is shown as-is; the picker only offers presets.
+    value: settingsData?.timeFormat ?? 'auto',
+    options: ['auto', '12-hour', '24-hour', '24-hour-utc'],
+    type: 'enum' as const,
+    onChange(selected: string) {
+      const timeFormat = selected === 'auto' ? undefined : selected;
+      updateSettingsForSource('userSettings', {
+        timeFormat
+      });
+      setSettingsData(prev => ({
+        ...prev,
+        timeFormat
+      }));
+      setAppState(prev => ({
+        ...prev,
+        settings: {
+          ...prev.settings,
+          timeFormat
+        }
+      }));
+    }
+  }, {
     id: 'defaultPermissionMode',
     label: 'Default permission mode',
     value: settingsData?.permissions?.defaultMode || 'default',

@@ -1,65 +1,32 @@
 // @ts-nocheck
-import { c as _c } from "react/compiler-runtime";
 import React from 'react';
 import { stringWidth } from '../ink/stringWidth.js';
 import { Box, Text } from '../ink.js';
+import { useAppState } from '../state/AppState.js';
 import type { NormalizedMessage } from '../types/message.js';
 import { formatConfiguredClock } from '../utils/timeFormat.js';
 type Props = {
   message: NormalizedMessage;
+  // Transcript mode always shows the timestamp; elsewhere showMessageTimestamps decides.
   isTranscriptMode: boolean;
 };
-export function MessageTimestamp(t0) {
-  const $ = _c(10);
-  const {
-    message,
-    isTranscriptMode
-  } = t0;
-  const shouldShowTimestamp = isTranscriptMode && message.timestamp && message.type === "assistant" && message.message.content.some(_temp);
+export function MessageTimestamp({
+  message,
+  isTranscriptMode
+}: Props) {
+  const showTimestamps = useAppState(s => s.settings.showMessageTimestamps === true);
+  const timeFormat = useAppState(s => s.settings.timeFormat);
+  const shouldShowTimestamp = (isTranscriptMode || showTimestamps) && message.timestamp && message.type === "assistant" && message.message.content.some(c => c.type === "text");
   if (!shouldShowTimestamp) {
     return null;
   }
-  let T0;
-  let formattedTimestamp;
-  let t1;
-  if ($[0] !== message.timestamp) {
-    const timestampDate = new Date(message.timestamp);
-    formattedTimestamp = formatConfiguredClock(timestampDate) ?? timestampDate.toLocaleTimeString("en-US", {
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: true
-    });
-    T0 = Box;
-    t1 = stringWidth(formattedTimestamp);
-    $[0] = message.timestamp;
-    $[1] = T0;
-    $[2] = formattedTimestamp;
-    $[3] = t1;
-  } else {
-    T0 = $[1];
-    formattedTimestamp = $[2];
-    t1 = $[3];
-  }
-  let t2;
-  if ($[4] !== formattedTimestamp) {
-    t2 = <Text dimColor={true}>{formattedTimestamp}</Text>;
-    $[4] = formattedTimestamp;
-    $[5] = t2;
-  } else {
-    t2 = $[5];
-  }
-  let t3;
-  if ($[6] !== T0 || $[7] !== t1 || $[8] !== t2) {
-    t3 = <T0 minWidth={t1}>{t2}</T0>;
-    $[6] = T0;
-    $[7] = t1;
-    $[8] = t2;
-    $[9] = t3;
-  } else {
-    t3 = $[9];
-  }
-  return t3;
-}
-function _temp(c) {
-  return c.type === "text";
+  const date = new Date(message.timestamp);
+  const formattedTimestamp = formatConfiguredClock(date, timeFormat) ?? date.toLocaleTimeString("en-US", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true
+  });
+  return <Box minWidth={stringWidth(formattedTimestamp)}>
+      <Text dimColor={true}>{formattedTimestamp}</Text>
+    </Box>;
 }
