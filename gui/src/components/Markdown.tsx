@@ -272,11 +272,13 @@ function BlockViewImpl({ block, streaming, streamKey, preserveUserText }: { bloc
     case "blockquote": return <blockquote {...props}>{children(block.tokens)}</blockquote>
     case "hr": return <hr {...props} />
     case "list": {
-      const items = block.items.map((item: Tokens.ListItem, i: number) => (
-        <li key={i} className={item.task ? "list-none" : undefined} {...(streaming && streamKey ? streamBlock(`${streamKey}:li:${i}`) : {})}>
-          {item.task ? <><input type="checkbox" checked={item.checked} readOnly className="accent-[var(--accent-color)]" /><div>{children(item.tokens)}</div></> : children(item.tokens)}
+      const items = block.items.map((item: Tokens.ListItem, i: number) => {
+        // A loose item's text tokens are paragraphs; rendered inline they would run together on one line.
+        const tokens = item.loose ? item.tokens.map(token => token.type === "text" ? { ...token, type: "paragraph" } as Token : token) : item.tokens
+        return <li key={i} className={item.task ? "list-none" : undefined} {...(streaming && streamKey ? streamBlock(`${streamKey}:li:${i}`) : {})}>
+          {item.task ? <><input type="checkbox" checked={item.checked} readOnly className="accent-[var(--accent-color)]" /><div>{children(tokens)}</div></> : children(tokens)}
         </li>
-      ))
+      })
       return block.ordered ? <ol start={block.start === 1 ? undefined : block.start || undefined}>{items}</ol> : <ul>{items}</ul>
     }
     case "table": return (

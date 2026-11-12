@@ -97,8 +97,8 @@ export function MarkdownTable({ children }: { children: ReactNode }) {
     if (scroller.firstElementChild) observer.observe(scroller.firstElementChild)
     return () => observer.disconnect()
   }, [children])
-  return <div className="noa-markdown-table relative">
-    <div data-copy-exclude className="mb-1 flex justify-end gap-3 text-caption text-[var(--text-secondary)]">
+  return <div className="noa-markdown-table group relative">
+    <div data-copy-exclude className="absolute end-0 top-0 z-10 flex gap-3 rounded-md bg-[var(--surface-page)] px-1 py-1.5 text-caption text-[var(--text-secondary)] opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
       <button type="button" aria-label="Copy table" onClick={async () => {
         try {
           const table = ref.current?.querySelector("table")

@@ -786,7 +786,6 @@ html[data-translucent-sidebar="enabled"] [data-sidebar-container] .noa-sidebar-t
 }
 .prose blockquote.noa-blockquote,
 .prose blockquote.noa-blockquote p { color: rgba(45, 45, 43, 0.75); }
-/* Loose task list wraps item text in <p>; drop its margin so text aligns with the checkbox. */
 
 [data-theme="dark"] .prose blockquote.noa-blockquote,
 [data-theme="dark"] .prose blockquote.noa-blockquote p { color: rgba(249, 249, 247, 0.72); }
@@ -1960,22 +1959,28 @@ body.noa-session-dragging * { cursor: grabbing !important; }
   overflow-wrap: anywhere;
 }
 .noa-output-markdown p { margin: 0 0 var(--output-space); }
-.noa-output-markdown > p:not(:first-child) { margin-top: calc(var(--output-space) * 2); }
-.noa-output-markdown > p + p { margin-block: calc(var(--output-space) * 4); }
+/* Any block before a paragraph leaves the same gap; a paragraph sits close to a list it introduces (its bottom margin). */
+.noa-output-markdown > * + p,
+.noa-output-markdown > :is(ul, ol, blockquote) + :is(ul, ol, blockquote) { margin-top: calc(var(--output-space) * 4); }
 .noa-output-markdown :is(h1,h2,h3,h4,h5,h6), .noa-output-markdown strong { font-weight: var(--font-weight-content-bold, 600); }
-.noa-output-markdown h1 { font-size: 1.5em; line-height: calc(var(--output-space) * 8); margin: calc(var(--output-space) * 4) 0 calc(var(--output-space) * 2); }
-.noa-output-markdown h2 { font-size: 1.25em; line-height: calc(var(--output-space) * 7); margin: calc(var(--output-space) * 4) 0 var(--output-space); }
-.noa-output-markdown h3 { font-size: 1.125em; line-height: calc(var(--output-space) * 7); margin: calc(var(--output-space) * 4) 0 var(--output-space); }
-.noa-output-markdown h4 { font-size: 1em; line-height: calc(var(--output-space) * 6); margin: calc(var(--output-space) * 4) 0 0; }
+.noa-output-markdown h1 { font-size: 1.5em; line-height: calc(var(--output-space) * 8); margin: calc(var(--output-space) * 6) 0 calc(var(--output-space) * 2); }
+.noa-output-markdown h2 { font-size: 1.25em; line-height: calc(var(--output-space) * 7); margin: calc(var(--output-space) * 6) 0 var(--output-space); }
+.noa-output-markdown h3 { font-size: 1.125em; line-height: calc(var(--output-space) * 7); margin: calc(var(--output-space) * 6) 0 var(--output-space); }
+.noa-output-markdown h4 { font-size: 1em; line-height: calc(var(--output-space) * 6); margin: calc(var(--output-space) * 6) 0 0; }
 .noa-output-markdown :is(h5,h6) { font-size: 1em; line-height: inherit; margin: 0; }
 .noa-output-markdown :is(h1,h2,h3,h4) + p { margin-top: 0; }
 .noa-output-markdown :is(ul,ol) { margin: 0; padding-inline-start: var(--font-text-md-line-height); }
 .noa-output-markdown li { margin: 0; padding-inline-start: calc(var(--output-space) * 1.5); }
-.noa-output-markdown li::marker { color: inherit; font-weight: var(--font-weight-content-bold, 600); }
-.noa-output-markdown li > p { margin: 0; }
-.noa-output-markdown li > p + p { margin-top: calc(var(--output-space) * 4); }
-.noa-output-markdown li:has(> input[type="checkbox"]) { display: grid; grid-template-columns: auto minmax(0,1fr); gap: 8px; padding-inline-start: 0; }
-.noa-output-markdown li > input[type="checkbox"] { margin-top: calc(var(--output-space) * 1.5); }
+/* The UA gives ::marker tabular-nums; match the body's digits instead. */
+.noa-output-markdown li::marker { color: inherit; font-weight: var(--font-weight-content-bold, 600); font-variant-numeric: normal; }
+.noa-output-markdown li > p,
+.noa-output-markdown li > div > p { margin: 0; }
+.noa-output-markdown li > p + p,
+.noa-output-markdown li > div > p + p,
+.noa-output-markdown li:has(> p, > div > p) + li { margin-top: calc(var(--output-space) * 4); }
+/* The checkbox sits where a list marker would, so task text lines up with other list items. */
+.noa-output-markdown li:has(> input[type="checkbox"]) { position: relative; }
+.noa-output-markdown li > input[type="checkbox"] { position: absolute; inset-inline-end: 100%; margin: calc(var(--output-space) * 1.5) 0 0; }
 .noa-output-markdown blockquote { position: relative; margin: 0 0 calc(var(--output-space) * 2); padding: calc(var(--output-space) * 2) 0 calc(var(--output-space) * 2) calc(var(--output-space) * 6); border: 0; color: inherit; font-style: normal; font-weight: normal; line-height: calc(var(--output-space) * 6); }
 .noa-output-markdown blockquote::after { content: ""; position: absolute; inset-inline-start: 0; top: calc(var(--output-space) * 2); bottom: calc(var(--output-space) * 2); width: var(--output-space); border-radius: calc(var(--output-space) / 2); background: var(--border-strong); }
 .noa-output-markdown blockquote > p { margin: 0; }
@@ -1984,7 +1989,7 @@ body.noa-session-dragging * { cursor: grabbing !important; }
 /* line-height 1 keeps the pill from growing its line box, so rows with inline code keep the same pitch as plain rows. */
 .noa-output-markdown :not(pre) > code { font-size: .92em; line-height: 1; font-weight: normal; font-family: var(--font-mono); border-radius: 6px; padding: 1px 6px; background: color-mix(in srgb, var(--text-primary) 6%, transparent); box-shadow: none; box-decoration-break: clone; }
 .noa-output-markdown .noa-code-block { margin-block: calc(var(--output-space) * 5); }
-.noa-output-markdown .noa-markdown-table { margin-block: .75em 0; }
+.noa-output-markdown .noa-markdown-table { margin-block: 1.5em 0; }
 .noa-output-markdown .noa-markdown-table + * { margin-top: 1.5em; }
 /* Tables keep their content width and scroll sideways; only breakable text wraps inside cells. */
 .noa-output-markdown table { margin: 0; width: fit-content; min-width: 100%; font-size: var(--font-text-md-size); line-height: 1.5; border-collapse: collapse; border-spacing: 0; }
