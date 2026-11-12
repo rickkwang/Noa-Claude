@@ -98,6 +98,7 @@ type LoadedPluginMarketplace = {
 
 const LEGACY_OFFICIAL_MARKETPLACE_REPOS = new Set([
   'anthropics/claude-plugins-official',
+  'rickkwang/Noa-Claude',
 ])
 
 function normalizeKnownMarketplacesConfig(
