@@ -755,6 +755,14 @@ export const SettingsSchema = lazySchema(() =>
         .describe(
           'Prompt cache TTL for subagents, workflows and helper requests. Unset = automatic. NOA_CLAUDE_PROMPT_CACHE_1H takes precedence.',
         ),
+      skillListingMaxDescChars: z
+        .number()
+        .int()
+        .positive()
+        .optional()
+        .describe(
+          'Per-skill description character cap in the skill listing sent to the model (default: 250). Longer descriptions are truncated; raise it to keep trigger phrases at the end of long descriptions, at a higher per-turn context cost.',
+        ),
       skillOverrides: z
         .record(
           z.string(),

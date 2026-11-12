@@ -14,6 +14,7 @@ import {
 import { count } from '../../utils/array.js'
 import { logForDebugging } from '../../utils/debug.js'
 import { truncate } from '../../utils/format.js'
+import { getInitialSettings } from '../../utils/settings/settings.js'
 
 // Skill listing gets 1% of the context window (in characters)
 export const SKILL_BUDGET_CONTEXT_PERCENT = 0.01
@@ -42,8 +43,10 @@ function getCommandDescription(cmd: Command): string {
   const desc = cmd.whenToUse
     ? `${cmd.description} - ${cmd.whenToUse}`
     : cmd.description
-  return desc.length > MAX_LISTING_DESC_CHARS
-    ? desc.slice(0, MAX_LISTING_DESC_CHARS - 1) + '\u2026'
+  const maxChars =
+    getInitialSettings().skillListingMaxDescChars ?? MAX_LISTING_DESC_CHARS
+  return desc.length > maxChars
+    ? desc.slice(0, maxChars - 1) + '\u2026'
     : desc
 }
 
