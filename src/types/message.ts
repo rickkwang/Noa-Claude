@@ -121,6 +121,8 @@ export type AssistantMessage = MessageBase & {
   /** The model this request asked for; a gateway may name another in `message.model`. */
   requestedModel?: string
   effort?: EffortLevel
+  /** The level this reply ran at under per-message effort, where `effort` stays the conversation's top-level value. */
+  perTurnEffort?: EffortLevel
   apiError?: string
   apiFailureCategory?: ApiFailureCategory
   error?: SDKAssistantMessageError

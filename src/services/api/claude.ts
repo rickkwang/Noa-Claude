@@ -252,7 +252,9 @@ import {
   checkResponseForCacheBreak,
   recordPromptState,
 } from './promptCacheBreakDetection.js'
-import { applyRequestLatches } from './requestLatches.js'
+import { applyRequestLatches, PER_TURN_EFFORT_FIELD, isRequestFieldRejected } from './requestLatches.js'
+import { MID_CONVERSATION_OUTPUT_CONFIG_BETA_HEADER } from '../../constants/betas.js'
+import { insertPerTurnEffort, planPerTurnEffort, shouldUsePerTurnEffort } from '../../utils/perTurnEffort.js'
 import {
   CannotRetryError,
   FallbackTriggeredError,
@@ -1471,6 +1473,21 @@ async function* queryModel(
   const effort = resolveAppliedEffort(options.model, options.effortValue)
   const shouldStripExtraBodyEffort = options.agentId !== undefined
 
+  // Per-message effort: the top-level effort stays at the conversation's first
+  // level and later changes ride in effort-only system messages, so changing
+  // effort mid-conversation keeps the prompt cache. Re-planned per attempt
+  // because the endpoint may reject the system messages.
+  const planPerTurn = () =>
+    typeof effort === 'string' &&
+    // Haiku 5.5 rejects a changed per-message effort while thinking is off.
+    (modelThinkingCannotBeDisabled(apiModel) ||
+      (thinkingConfig.type !== 'disabled' &&
+        !isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_THINKING))) &&
+    shouldUsePerTurnEffort(apiModel) &&
+    !isRequestFieldRejected(apiModel, PER_TURN_EFFORT_FIELD)
+      ? planPerTurnEffort(messagesForAPI, effort)
+      : undefined
+
   if (feature('PROMPT_CACHE_BREAK_DETECTION')) {
     // Exclude defer_loading tools from the hash -- the API strips them from the
     // prompt, so they never affect the actual cache key. Including them creates
@@ -1493,7 +1510,7 @@ async function* queryModel(
       betas,
       autoModeActive: afkHeaderLatched,
       isUsingOverage: currentLimits.isUsingOverage ?? false,
-      effortValue: effort,
+      effortValue: planPerTurn()?.baseEffort ?? effort,
       extraBodyParams: getExtraBodyParams(undefined, {
         stripEffort: shouldStripExtraBodyEffort,
       }),
@@ -1544,6 +1561,7 @@ async function* queryModel(
   // were dynamically added, so we can log and send it to telemetry.
   let lastRequestBetas: string[] | undefined
   let sentEffort: EffortLevel | undefined
+  let sentPerTurnEffort: EffortLevel | undefined
   const messageThreadRequest = createMessageThreadRequest(options.querySource, options.agentId, options.model)
 
   const paramsFromContext = (retryContext: RetryContext) => {
@@ -1754,14 +1772,24 @@ async function* queryModel(
       }
     }
 
+    const perTurn = planPerTurn()
+    if (perTurn) {
+      if (outputConfig.effort === effort) outputConfig.effort = perTurn.baseEffort
+      if (!betasParams.includes(MID_CONVERSATION_OUTPUT_CONFIG_BETA_HEADER)) {
+        betasParams.push(MID_CONVERSATION_OUTPUT_CONFIG_BETA_HEADER)
+      }
+    }
+    const cachedMessages = addCacheBreakpoints(
+      messagesForAPI,
+      enablePromptCaching,
+      options.querySource,
+      options.skipCacheWrite,
+    )
     const params = applyRequestLatches({
       model: normalizeModelStringForAPI(options.model),
-      messages: addCacheBreakpoints(
-        messagesForAPI,
-        enablePromptCaching,
-        options.querySource,
-        options.skipCacheWrite,
-      ),
+      messages: perTurn
+        ? insertPerTurnEffort(cachedMessages, perTurn.insertions)
+        : cachedMessages,
       system,
       tools: allTools,
       tool_choice: options.toolChoice,
@@ -1782,6 +1810,7 @@ async function* queryModel(
     lastRequestBetas = params.betas ?? []
     const requestEffort = params.output_config?.effort
     sentEffort = typeof requestEffort === 'string' && isEffortLevel(requestEffort) ? requestEffort : undefined
+    sentPerTurnEffort = perTurn?.turnEffort
     return params
   }
 
@@ -2296,6 +2325,7 @@ async function* queryModel(
                 research !== undefined && { research }),
               requestedModel: options.model,
               ...(sentEffort !== undefined && { effort: sentEffort }),
+        ...(sentPerTurnEffort !== undefined && { perTurnEffort: sentPerTurnEffort }),
               ...(advisorModel && { advisorModel }),
             }
             newMessages.push(m)
@@ -2760,6 +2790,7 @@ async function* queryModel(
           }),
         requestedModel: options.model,
         ...(sentEffort !== undefined && { effort: sentEffort }),
+        ...(sentPerTurnEffort !== undefined && { perTurnEffort: sentPerTurnEffort }),
         ...(advisorModel && {
           advisorModel,
         }),
@@ -2881,6 +2912,7 @@ async function* queryModel(
             research !== undefined && { research }),
           requestedModel: options.model,
           ...(sentEffort !== undefined && { effort: sentEffort }),
+        ...(sentPerTurnEffort !== undefined && { perTurnEffort: sentPerTurnEffort }),
           ...(advisorModel && { advisorModel }),
         }
         if (

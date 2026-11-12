@@ -40,6 +40,14 @@ export const THINKING_BINDING_CONTROLS_BETA_HEADER =
   'thinking-binding-controls-2026-08-01'
 
 /**
+ * Per-message effort: a `role: "system"` message in `messages` carrying
+ * `output_config.effort` changes the level mid-conversation without changing
+ * the top-level value, so the cached prefix still matches.
+ */
+export const MID_CONVERSATION_OUTPUT_CONFIG_BETA_HEADER =
+  'mid-conversation-output-config-2026-07-01'
+
+/**
  * Bedrock only supports a limited number of beta headers and only through
  * extraBodyParams. This set maintains the beta strings that should be in
  * Bedrock extraBodyParams *and not* in Bedrock headers.

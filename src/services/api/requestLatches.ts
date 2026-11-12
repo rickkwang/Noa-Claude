@@ -13,6 +13,14 @@ const sentBetas = new Map<string, readonly string[]>()
 // The output-token ceiling an endpoint named when it rejected max_tokens.
 const outputCaps = new Map<string, number>()
 
+// Effort-only system messages in `messages` (per-message effort). Not an
+// optional root: only these messages are dropped, never the conversation.
+export const PER_TURN_EFFORT_FIELD = 'messages.output_config'
+
+export function isRequestFieldRejected(model: string, field: string): boolean {
+  return rejectedFields.get(endpointKey(model))?.has(field) ?? false
+}
+
 const OPTIONAL_ROOTS = new Set([
   'thinking',
   'output_config',
@@ -73,6 +81,9 @@ export function classifyRejectedField(
   ) {
     return 'output_config.effort'
   }
+  // "messages.3.output_config: Extra inputs are not permitted": the beta header
+  // is missing or unknown to the endpoint.
+  if (/messages\.\d+\.output_config/.test(message)) return PER_TURN_EFFORT_FIELD
   const thinkingField = /thinking\.(?:adaptive|enabled)\.(display|block_binding)\b/.exec(message)
   if (thinkingField) return `thinking.${thinkingField[1]}`
   if (/anthropic[-_]beta/.test(message)) {
@@ -179,6 +190,10 @@ export function applyRequestLatches<T extends object>(params: T, model: string):
     if (out.thinking === undefined) delete out.thinking
     for (const field of fields) {
       if (field.startsWith('thinking.type:')) continue
+      if (field === PER_TURN_EFFORT_FIELD) {
+        out.messages = out.messages?.filter((m: Record<string, unknown>) => !(m.role === 'system' && 'output_config' in m))
+        continue
+      }
       if (field.startsWith('beta:')) {
         out.betas = out.betas?.filter((beta: string) => beta !== field.slice(5))
       } else if (field === 'cache_control' || field === 'cache_control.ttl') {

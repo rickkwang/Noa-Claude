@@ -24,6 +24,7 @@ describe('classifyRejectedField', () => {
     ['cache_control is not permitted in system messages', 'cache_control'],
     ['messages.0.content.0.tool_result.cache_control: Extra inputs are not permitted', 'cache_control'],
     ['system.0.cache_control.ttl: Extra inputs are not permitted', 'cache_control.ttl'],
+    ['messages.3.output_config: Extra inputs are not permitted', 'messages.output_config'],
     ["effort 'max' is not supported when thinking is disabled", undefined],
     ["effort 'xhigh' is not supported by this model", undefined],
     ['messages: Extra inputs are not permitted', undefined],
@@ -48,6 +49,20 @@ describe('request latches', () => {
     expect(block.cache_control.ttl).toBe('1h')
     expect(reject(model, 'system.0.cache_control.ttl: Extra inputs are not permitted')).toBeUndefined()
     expect(getRequestLatchSummary()).toContain(`${model}: cache_control.ttl`)
+  })
+
+  test('drops only the effort-only system messages once they are rejected', () => {
+    const model = 'per-turn-effort-latch-test'
+    const messages = [
+      { role: 'user', content: 'a' },
+      { role: 'assistant', content: 'b' },
+      { role: 'system', content: [], output_config: { effort: 'low' } },
+      { role: 'user', content: 'c' },
+    ]
+    expect(reject(model, 'messages.2.output_config: Extra inputs are not permitted')).toBe('messages.output_config')
+    const sent = applyRequestLatches({ model, output_config: { effort: 'high' }, messages }, model) as Record<string, any>
+    expect(sent.messages.map((m: { role: string }) => m.role)).toEqual(['user', 'assistant', 'user'])
+    expect(sent.output_config).toEqual({ effort: 'high' })
   })
 
   test('rewrites and strips rejected fields, and refuses to heal the same field twice', () => {

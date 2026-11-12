@@ -10,6 +10,7 @@ import type { LocalJSXCommandOnDone } from '../../types/command.js';
 import { type EffortValue, convertEffortValueToLevel, getDisplayedEffortLevel, getEffortEnvOverride, getEffortSettingsUpdate, getInitialEffortSetting, getEffortValueDescription, isEffortLevel, modelSupportsEffort, resolveAppliedEffort, toPersistableEffort } from '../../utils/effort.js';
 import { getMainLoopModel } from '../../utils/model/model.js';
 import { withCacheSwitchNotice } from '../../utils/cacheSwitchNotice.js';
+import { shouldUsePerTurnEffort } from '../../utils/perTurnEffort.js';
 import { getActiveProviderEffortLevels } from '../../utils/model/providerModels.js';
 import { isOpenAIChatCompletionsRoute } from '../../utils/model/providers.js';
 import { isEnvTruthy } from '../../utils/envUtils.js';
@@ -302,7 +303,7 @@ function EffortSlider({ onDone, model }: { onDone: LocalJSXCommandOnDone; model:
       if (result.effortUpdate) {
         setAppState((prev: any) => ({ ...prev, effortValue: result.effortUpdate!.value }));
       }
-      onDone(result.effortUpdate && level !== currentEffort ? withCacheSwitchNotice(result.message) : result.message);
+      onDone(result.effortUpdate && level !== currentEffort && !shouldUsePerTurnEffort(getMainLoopModel()) ? withCacheSwitchNotice(result.message) : result.message);
     } else if (key.escape) {
       cancel();
     }
@@ -368,7 +369,7 @@ export async function call(onDone: LocalJSXCommandOnDone, context: any, args?: s
   }
   const result = executeEffort(args, getMainLoopModel());
   const previousEffort = context.getAppState().effortValue ?? null;
-  if (result.effortUpdate && (result.effortUpdate.value ?? null) !== previousEffort) {
+  if (result.effortUpdate && (result.effortUpdate.value ?? null) !== previousEffort && !shouldUsePerTurnEffort(getMainLoopModel())) {
     result.message = withCacheSwitchNotice(result.message);
   }
   return <ApplyEffortAndClose result={result} onDone={onDone} />;
