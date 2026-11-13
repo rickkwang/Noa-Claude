@@ -85,6 +85,7 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
   const mcpTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const contextTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const contextRefreshAfterRef = useRef<"summary" | "full" | undefined>(undefined)
+  const authCompletedRef = useRef(false)
 
   const write = useCallback((message: Outgoing) => {
     const socket = socketRef.current
@@ -274,7 +275,7 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
                 const error = message.response.error ?? "Agent rejected the request"
                 if (kind === "context_usage") dispatch({ type: "context-error", error })
                 else if (kind === "auth_urls" || kind === "auth_complete") dispatch({ type: "auth-error", error })
-                else if (kind === "provider") { dispatch({ type: "provider-pending", pending: false }); dispatch({ type: "error", text: error }) }
+                else if (kind === "provider") dispatch({ type: "provider-error", error })
                 else dispatch({ type: "error", text: error })
                 if (kind === "initialize" || kind === "startup_settings") socket.close()
               } else routeResponse(kind, message.response.response)
@@ -362,9 +363,24 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
         return
       }
       if (kind === "auth_complete") {
-        const body = (response ?? {}) as { account?: AccountInfo }
-        dispatch({ type: "auth-complete", account: body.account ?? {} })
+        if (authCompletedRef.current) return
+        authCompletedRef.current = true
+        const body = (response ?? {}) as Record<string, unknown>
+        if (Array.isArray(body.providers) && Array.isArray(body.models)) {
+          dispatch({
+            type: "control",
+            payload: {
+              kind: "provider",
+              models: body.models as ModelInfo[],
+              providers: body.providers as ProviderInfo[],
+              account: body.account as AccountInfo | undefined,
+              model: body.model as string | undefined,
+            },
+          })
+        }
+        dispatch({ type: "auth-complete", account: (body.account as AccountInfo | undefined) ?? {} })
         control({ subtype: "get_settings" }, "settings")
+        control({ subtype: "get_context_usage", detail: "summary" }, "context_usage")
         return
       }
       if (kind === "provider") {
@@ -478,20 +494,24 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
     [control],
   )
 
-  const setProvider = useCallback(
-    (providerId: string) => {
+  const sendProviderControl = useCallback(
+    (payload: ControlRequest) => {
       dispatch({ type: "provider-pending", pending: true })
-      control({ subtype: "set_provider", providerId }, "provider")
+      if (!control(payload, "provider"))
+        dispatch({ type: "provider-error", error: "Noa is not connected. Reconnect and try again." })
     },
     [control],
   )
 
+  const setProvider = useCallback(
+    (providerId: string) => sendProviderControl({ subtype: "set_provider", providerId }),
+    [sendProviderControl],
+  )
+
   const saveProvider = useCallback(
-    (draft: { id?: string; type?: string; name: string; baseUrl: string; apiKey: string; model: string }) => {
-      dispatch({ type: "provider-pending", pending: true })
-      control({ subtype: "provider_save", ...draft }, "provider")
-    },
-    [control],
+    (draft: { id?: string; type?: string; name: string; baseUrl: string; apiKey: string; model: string }) =>
+      sendProviderControl({ subtype: "provider_save", ...draft }),
+    [sendProviderControl],
   )
 
   // Lists the endpoint's models. The agent also keeps them on the saved profile and replies with the refreshed provider state.
@@ -514,11 +534,8 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
   )
 
   const deleteProvider = useCallback(
-    (providerId: string) => {
-      dispatch({ type: "provider-pending", pending: true })
-      control({ subtype: "provider_delete", providerId }, "provider")
-    },
-    [control],
+    (providerId: string) => sendProviderControl({ subtype: "provider_delete", providerId }),
+    [sendProviderControl],
   )
 
   const setPermissionMode = useCallback(
@@ -607,6 +624,7 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
   )
   const clearDiffAction = useCallback(() => dispatch({ type: "diff-action-clear" }), [])
   const startAuthentication = useCallback(() => {
+    authCompletedRef.current = false
     dispatch({ type: "auth-start" })
     if (!control({ subtype: "claude_authenticate", loginWithClaudeAi: true }, "auth_urls"))
       dispatch({ type: "auth-error", error: "Noa is not connected. Reconnect and try again." })

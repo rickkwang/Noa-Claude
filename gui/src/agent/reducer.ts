@@ -112,6 +112,7 @@ export interface AgentState {
   models: ModelInfo[]
   providers: ProviderInfo[]
   providerPending: boolean
+  providerError?: string
   commands: SlashCommand[]
   account?: AccountInfo
   auth?: {
@@ -172,6 +173,7 @@ type Action =
   | { type: "control"; payload: ControlPayload }
   | { type: "model-set"; model: string }
   | { type: "provider-pending"; pending: boolean }
+  | { type: "provider-error"; error?: string }
   | { type: "effort-set"; effort?: string }
   | { type: "output-style-set"; style?: string }
   | { type: "permission-mode-set"; mode: PermissionMode }
@@ -284,6 +286,8 @@ export function reducer(state: AgentState, action: Action): AgentState {
         liveDiff: action.status === "closed" ? undefined : state.liveDiff,
         permissions: action.status === "closed" ? [] : state.permissions,
         elicitations: action.status === "closed" ? [] : state.elicitations,
+        providerPending: action.status === "closed" ? false : state.providerPending,
+        providerError: action.status === "closed" ? undefined : state.providerError,
         auth: action.status === "closed" && state.auth && state.auth.status !== "complete"
           ? { ...state.auth, status: "error", error: "Noa disconnected during sign-in. Reconnect and try again." }
           : state.auth,
@@ -360,7 +364,9 @@ export function reducer(state: AgentState, action: Action): AgentState {
     case "permission-answered":
       return { ...state, permissions: state.permissions.filter((p) => p.requestId !== action.requestId), elicitations: state.elicitations.filter((p) => p.requestId !== action.requestId) }
     case "provider-pending":
-      return { ...state, providerPending: action.pending }
+      return { ...state, providerPending: action.pending, ...(action.pending ? { providerError: undefined } : {}) }
+    case "provider-error":
+      return { ...state, providerPending: false, providerError: action.error }
     case "model-set":
       return { ...state, model: action.model }
     case "effort-set":
@@ -393,6 +399,7 @@ export function reducer(state: AgentState, action: Action): AgentState {
           model: action.payload.model ?? state.model,
           contextUsage: undefined,
           providerPending: false,
+          providerError: undefined,
         }
       }
       return { ...state, contextUsage: action.payload.usage, contextLoading: false, contextError: undefined, contextUpdatedAt: Date.now() }

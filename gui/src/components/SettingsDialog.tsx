@@ -359,6 +359,7 @@ export function SettingsDialog({
               providers={agent.providers}
               busy={agent.busy}
               pending={agent.providerPending}
+              error={agent.providerError}
               onUse={onProvider}
               onSave={onSaveProvider}
               onDelete={onDeleteProvider}

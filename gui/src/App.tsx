@@ -1165,14 +1165,9 @@ function Workspace({ cwd }: { cwd: string }) {
           onCloseAuthentication={() => {
             const completed = state.auth?.status === "complete"
             closeAuthentication()
-            if (completed) {
-              const resume = state.sessionId ?? session.resume
-              setSession((current) => ({
-                cwd: current.cwd,
-                resume,
-                runtimeId: crypto.randomUUID(),
-                key: current.key + 1,
-              }))
+            if (completed && settingsSignIn) {
+              setSettingsOpen(false)
+              setSettingsSignIn(false)
             }
           }}
         />

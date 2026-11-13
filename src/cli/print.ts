@@ -193,7 +193,7 @@ import {
   type PromptVariant,
 } from 'src/services/PromptSuggestion/promptSuggestion.js'
 import { getLastCacheSafeParams } from 'src/utils/forkedAgent.js'
-import { getAccountInformation } from 'src/utils/auth.js'
+import { getAccountInformation, isAnthropicAuthEnabled } from 'src/utils/auth.js'
 import { OAuthService } from 'src/services/oauth/index.js'
 import { installOAuthTokens } from 'src/cli/handlers/auth.js'
 import { getAPIProvider } from 'src/utils/model/providers.js'
@@ -315,6 +315,11 @@ import {
   switchToAnthropicAccount,
 } from 'src/utils/providerProfile.js'
 import { clearProviderSwitchCaches } from 'src/utils/providerSwitch.js'
+import {
+  resetAutoModeGateCheck,
+  resetBypassPermissionsCheck,
+} from 'src/utils/permissions/bypassPermissionsKillswitch.js'
+import { refreshGrowthBookAfterAuthChange } from 'src/services/analytics/growthbook.js'
 import { resetUserCache } from 'src/utils/user.js'
 import { getGlobalConfig } from 'src/utils/config.js'
 import {
@@ -2860,6 +2865,27 @@ function runHeadlessStreaming(
     })
   }
 
+  const applyProviderSwitchSideEffects = () => {
+    clearProviderSwitchCaches()
+    resetUserCache()
+    resetCostState()
+    refreshGrowthBookAfterAuthChange()
+    resetBypassPermissionsCheck()
+    resetAutoModeGateCheck()
+    setMainLoopModelOverride(undefined)
+    activeUserSpecifiedModel = undefined
+    options.userSpecifiedModel = undefined
+    mutableMessages.splice(
+      0,
+      mutableMessages.length,
+      ...stripSignatureBlocks(mutableMessages),
+    )
+    setAppState(prev => ({
+      ...prev,
+      authVersion: prev.authVersion + 1,
+    }))
+  }
+
   // Shared reply for every provider request: the lists and account the GUI
   // needs to redraw after the active provider or a profile changed.
   const sendProviderState = async (
@@ -3094,17 +3120,7 @@ function runHeadlessStreaming(
             // Same cascade as the TUI picker (onProviderSwitch): signature
             // blocks are bound to the previous credentials, and the session
             // model override belongs to the previous provider.
-            clearProviderSwitchCaches()
-            resetUserCache()
-            resetCostState()
-            setMainLoopModelOverride(undefined)
-            activeUserSpecifiedModel = undefined
-            options.userSpecifiedModel = undefined
-            mutableMessages.splice(
-              0,
-              mutableMessages.length,
-              ...stripSignatureBlocks(mutableMessages),
-            )
+            applyProviderSwitchSideEffects()
             await sendProviderState(message)
           } catch (error) {
             sendControlResponseError(message, errorMessage(error))
@@ -3886,6 +3902,13 @@ function runHeadlessStreaming(
             )
           }
         } else if (message.request.subtype === 'claude_authenticate') {
+          if (running) {
+            sendControlResponseError(
+              message,
+              'Cannot sign in while a turn is running',
+            )
+            continue
+          }
           // Anthropic OAuth over the control channel. The SDK client owns
           // the user's browser (we're headless in -p mode); we hand back
           // both URLs and wait. Automatic URL → localhost listener catches
@@ -3935,14 +3958,7 @@ function runHeadlessStreaming(
               // getClaudeAIOAuthTokens in this process is invalidated; the
               // next API call re-reads keychain/file and works. No respawn.
               await installOAuthTokens(tokens)
-              activeUserSpecifiedModel = undefined
-              setMainLoopModelOverride(undefined)
-              const unsignedMessages = stripSignatureBlocks(mutableMessages)
-              mutableMessages.splice(
-                0,
-                mutableMessages.length,
-                ...unsignedMessages,
-              )
+              applyProviderSwitchSideEffects()
               logEvent('tengu_oauth_success', {
                 loginWithClaudeAi: loginWithClaudeAi ?? true,
               })
@@ -4013,19 +4029,7 @@ function runHeadlessStreaming(
             // claudeOAuth is nulled in flow's own .finally.
             const { flow } = claudeOAuth
             void flow.then(
-              () => {
-                const accountInfo = getAccountInformation()
-                sendControlResponseSuccess(message, {
-                  account: {
-                    email: accountInfo?.email,
-                    organization: accountInfo?.organization,
-                    subscriptionType: accountInfo?.subscription,
-                    tokenSource: accountInfo?.tokenSource,
-                    apiKeySource: accountInfo?.apiKeySource,
-                    apiProvider: getAPIProvider(),
-                  },
-                })
-              },
+              () => void sendProviderState(message),
               (error: unknown) =>
                 sendControlResponseError(message, errorMessage(error)),
             )
@@ -4768,7 +4772,7 @@ async function listProviderChoices(): Promise<
             name: email ? `Anthropic (${email})` : 'Anthropic',
             type: 'anthropic',
             typeLabel: 'Anthropic',
-            active: !activeProfile,
+            active: !activeProfile && isAnthropicAuthEnabled(),
           },
         ]
       : []),

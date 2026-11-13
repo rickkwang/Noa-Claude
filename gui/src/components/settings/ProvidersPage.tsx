@@ -162,6 +162,7 @@ export function ProvidersPage({
   providers,
   busy,
   pending,
+  error,
   onUse,
   onSave,
   onDelete,
@@ -170,6 +171,7 @@ export function ProvidersPage({
   providers: ProviderInfo[]
   busy: boolean
   pending: boolean
+  error?: string
   onUse: (id: string) => void
   onSave: (draft: ProviderDraft) => void
   onDelete: (id: string) => void
@@ -181,16 +183,21 @@ export function ProvidersPage({
   const remove = async (p: ProviderInfo) => {
     if (await confirm({ title: `Remove ${p.name}?`, description: "Its saved API key is deleted too.", confirmLabel: "Remove", danger: true })) onDelete(p.id)
   }
-  // A save or removal answers with the refreshed list; collapse the form once it lands.
+  // A save or removal answers with the refreshed list; collapse the form once it lands without error.
   const wasPending = useRef(false)
   useEffect(() => {
-    if (wasPending.current && !pending) setOpen(undefined)
+    if (wasPending.current && !pending && !error) setOpen(undefined)
     wasPending.current = pending
-  }, [pending])
+  }, [pending, error])
   const configuredTypes = new Set(providers.map((p) => p.type))
   const available = PROVIDER_CATALOG.filter((entry) => !configuredTypes.has(entry.type))
   return (
     <>
+      {error && (
+        <p role="alert" className="m-0 rounded-xl border border-[#C24444]/40 bg-[#C24444]/10 px-3 py-2 text-caption text-[#C24444]">
+          {error}
+        </p>
+      )}
       <Section title="Configured">
         {providers.map((p) => {
           // The name already says which provider this is; the model is the one detail that changes what runs.

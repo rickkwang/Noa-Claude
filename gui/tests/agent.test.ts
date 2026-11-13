@@ -663,6 +663,30 @@ test("Anthropic sign-in codes and account responses stay in sync", () => {
   expect(state.account?.email).toBe("person@example.invalid")
 })
 
+test("provider errors clear pending state and reset on success or disconnect", () => {
+  let state = reducer(initialState, { type: "provider-pending", pending: true })
+  expect(state.providerPending).toBe(true)
+
+  state = reducer(state, { type: "provider-error", error: "Invalid API key" })
+  expect(state.providerPending).toBe(false)
+  expect(state.providerError).toBe("Invalid API key")
+
+  state = reducer(state, { type: "provider-pending", pending: true })
+  expect(state.providerError).toBeUndefined()
+
+  state = reducer(state, { type: "connection", status: "closed" })
+  expect(state.providerPending).toBe(false)
+  expect(state.providerError).toBeUndefined()
+
+  state = reducer(state, { type: "provider-error", error: "Temporary failure" })
+  state = reducer(state, {
+    type: "control",
+    payload: { kind: "provider", models: [], providers: [] },
+  })
+  expect(state.providerPending).toBe(false)
+  expect(state.providerError).toBeUndefined()
+})
+
 test("approval scope labels follow permission destinations", async () => {
   const { permissionRememberLabel } = await import("../src/components/PermissionCard")
   expect(permissionRememberLabel([{ destination: "session" }])).toBe("Allow this conversation")
