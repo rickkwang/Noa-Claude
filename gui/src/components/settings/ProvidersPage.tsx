@@ -205,7 +205,7 @@ export function ProvidersPage({
           const editable = p.id !== "__anthropic__"
           return (
             <div key={p.id}>
-              <Row label={p.name} description={detail} icon={<ProviderIcon type={p.type} size={16} />}>
+              <Row label={p.name} description={detail} icon={<ProviderIcon type={p.id === "c3aee1e0-34b9-4363-be13-e9db4fe0bb33" ? "magpie" : p.type} size={16} />}>
                 <div className="flex shrink-0 items-center gap-2">
                   {editable && (
                     <button type="button" className={providerButton} aria-expanded={open === p.id} onClick={() => toggle(p.id)}>
