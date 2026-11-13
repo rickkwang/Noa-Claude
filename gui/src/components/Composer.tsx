@@ -3,7 +3,7 @@ import { SlashCommandMenu } from "./SlashCommandMenu"
 import { composerCommands, findComposerCommand, filterComposerCommands, slashAtCaret, type ComposerCommand, type GuiCommandAction } from "../agent/commands"
 import { loadImageDraft, saveImageDraft } from "../agent/imageDrafts"
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from "react"
-import { startEffortMaxFill } from "./effortMaxFill"
+import { startEffortPixelGrid } from "./effortPixelGrid"
 import type { ContextUsage, ImageAttachment, RateLimitInfo, UserContent, ModelInfo, PermissionMode, SlashCommand } from "../agent/protocol"
 import { RateLimitNotice } from "./RateLimitNotice"
 import { FileAttachmentCard } from "./FileAttachmentCard"
@@ -1327,62 +1327,18 @@ function EffortSlider({
   )
 }
 
-function trackParticleHash(index: number, salt: number) {
-  const n = Math.sin((index + 1) * 12.9898 + salt * 78.233) * 43758.5453
-  return n - Math.floor(n)
-}
-
-function randomParticle(next: () => number) {
-  const x = next()
-  const y = next()
-  return { scale: 0.8 + next() * 1.2, dx: Math.round((x - 0.5) * 8), y: Math.round(12 + (y - 0.5) * 14) }
-}
-
-function TrackParticle({ index, animate }: { index: number; animate: boolean }) {
-  const [state, setState] = useState(() => {
-    let salt = 1
-    return randomParticle(() => trackParticleHash(index, salt++))
-  })
-  useEffect(() => {
-    if (!animate) return
-    let timer = 0
-    const tick = () => {
-      const next = randomParticle(Math.random)
-      setState(next)
-      timer = window.setTimeout(tick, 1600 * next.scale)
-    }
-    const frame = requestAnimationFrame(tick)
-    return () => {
-      cancelAnimationFrame(frame)
-      clearTimeout(timer)
-    }
-  }, [animate])
-  return (
-    <span
-      className="noa-model-picker-particle"
-      style={{
-        left: `calc(${Math.round(4 + trackParticleHash(index, 14) * 92)}% + ${state.dx}px)`,
-        top: state.y,
-        opacity: 0.4 + trackParticleHash(index, 11) * 0.6,
-        transform: `translate(-50%, -50%) scale(${0.5 + trackParticleHash(index, 12) * 0.45})`,
-        transitionDuration: `${1.6 * state.scale}s`,
-      }}
-    />
-  )
-}
-
-// Top effort level: drifting gradient fill plus sparkles inside the filled track.
+// Top effort level: a dot-matrix fill inside the filled track.
 function EffortMaxEffects({ closing, reveal }: { closing: boolean; reveal: boolean }) {
-  const host = useRef<HTMLSpanElement>(null)
+  const grid = useRef<HTMLSpanElement>(null)
   const still = typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches
   useLayoutEffect(() => {
-    const el = host.current
+    const el = grid.current
     const track = el?.closest<HTMLElement>(".noa-model-picker-track")
     const measure = () => track?.style.setProperty("--effort-track-w", `${track.offsetWidth}px`)
     measure()
     const observer = track ? new ResizeObserver(measure) : undefined
     if (track) observer?.observe(track)
-    const stop = el ? startEffortMaxFill(el, still) : undefined
+    const stop = el ? startEffortPixelGrid(el, still, reveal) : undefined
     return () => {
       observer?.disconnect()
       stop?.()
@@ -1390,13 +1346,8 @@ function EffortMaxEffects({ closing, reveal }: { closing: boolean; reveal: boole
   }, [still])
   return (
     <span aria-hidden="true" className="noa-model-picker-max" data-state={closing ? "closing" : "open"}>
-      <span className="noa-model-picker-max-fill" data-reveal={reveal && !still}>
-        <span className="noa-model-picker-max-mask">
-          <span ref={host} className="noa-model-picker-max-canvas" />
-        </span>
-      </span>
-      <span className="noa-model-picker-particles">
-        {Array.from({ length: 14 }, (_, i) => <TrackParticle key={i} index={i} animate={!still && !closing} />)}
+      <span className="noa-model-picker-max-fill">
+        <span ref={grid} className="noa-model-picker-max-grid" />
       </span>
     </span>
   )
