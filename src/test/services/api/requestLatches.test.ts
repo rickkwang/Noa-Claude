@@ -25,6 +25,7 @@ describe('classifyRejectedField', () => {
     ['messages.0.content.0.tool_result.cache_control: Extra inputs are not permitted', 'cache_control'],
     ['system.0.cache_control.ttl: Extra inputs are not permitted', 'cache_control.ttl'],
     ['messages.3.output_config: Extra inputs are not permitted', 'messages.output_config'],
+    ['output_config.effort requires a model that supports per-turn effort; this model does not', 'messages.output_config'],
     ["effort 'max' is not supported when thinking is disabled", undefined],
     ["effort 'xhigh' is not supported by this model", undefined],
     ['messages: Extra inputs are not permitted', undefined],

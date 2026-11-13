@@ -76,14 +76,19 @@ export function classifyRejectedField(
   // Only the parameter itself: a rejected effort *value* is not a missing field.
   if (
     (lower.includes('effort parameter') && lower.includes('not support')) ||
-    lower.includes('output_config.effort: extra inputs are not permitted') ||
-    lower.includes('requires a model that supports per-turn effort')
+    lower.includes('output_config.effort: extra inputs are not permitted')
   ) {
     return 'output_config.effort'
   }
   // "messages.3.output_config: Extra inputs are not permitted": the beta header
-  // is missing or unknown to the endpoint.
-  if (/messages\.\d+\.output_config/.test(message)) return PER_TURN_EFFORT_FIELD
+  // is missing or unknown to the endpoint. "requires a model that supports
+  // per-turn effort": the model does not accept effort-only system messages.
+  if (
+    /messages\.\d+\.output_config/.test(message) ||
+    lower.includes('requires a model that supports per-turn effort')
+  ) {
+    return PER_TURN_EFFORT_FIELD
+  }
   const thinkingField = /thinking\.(?:adaptive|enabled)\.(display|block_binding)\b/.exec(message)
   if (thinkingField) return `thinking.${thinkingField[1]}`
   if (/anthropic[-_]beta/.test(message)) {

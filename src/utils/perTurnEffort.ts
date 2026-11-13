@@ -91,7 +91,8 @@ export function planPerTurnEffort(
     }
     if (!answered) level = currentEffort
     if (level === undefined || level === previous) continue
-    // A system message cannot lead the conversation.
+    // Nothing goes before the first turn: it ran at the top-level effort, and
+    // a message added there later would sit before an already-sent turn.
     if (i > 0) insertions.push({ index: i, effort: level })
     previous = level
   }

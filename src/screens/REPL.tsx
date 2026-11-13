@@ -2768,8 +2768,8 @@ export function REPL({
   const onQueryEvent = useCallback((event: Parameters<typeof handleMessageFromStream>[0]) => {
     if (event.type === 'stream_event' && event.event.type === 'message_start') {
       setSentEffort(event.sentEffort);
-    } else if (event.type === 'assistant' && event.effort !== undefined) {
-      setSentEffort(event.effort);
+    } else if (event.type === 'assistant' && (event.perTurnEffort ?? event.effort) !== undefined) {
+      setSentEffort(event.perTurnEffort ?? event.effort);
     }
     handleMessageFromStream(event, newMessage => {
       // Heartbeat ticks are keep-alive for headless/remote consumers only; the

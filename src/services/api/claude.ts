@@ -2427,7 +2427,9 @@ async function* queryModel(
         yield {
           type: 'stream_event',
           event: part,
-          ...(part.type === 'message_start' ? { ttftMs, sentEffort } : undefined),
+          // The level this reply runs at: under per-message effort the
+          // top-level value stays at the conversation's base level.
+          ...(part.type === 'message_start' ? { ttftMs, sentEffort: sentPerTurnEffort ?? sentEffort } : undefined),
         }
       }
       // Clear the idle timeout watchdog now that the stream loop has exited
