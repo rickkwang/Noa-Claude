@@ -4,14 +4,16 @@ import {
   DEFAULT_SEMANTIC_COLORS,
   deriveSurfaces,
   exportCodexThemeString,
+  getPresetDefaultCodeThemeId,
   parseCodexThemeString,
   presetsForVariant,
   resolveChromeTheme,
   resolveCodeThemeId,
   resolveSemanticColors,
   resolveVariantFonts,
+  THEME_PRESETS,
 } from '../src/lib/themePalette';
-import { getCodeThemeOptions, resolveCodeTheme } from '../src/lib/codeThemes';
+import { CODE_THEMES, getCodeThemeOptions, resolveCodeTheme } from '../src/lib/codeThemes';
 
 describe('themePalette', () => {
   test('defaults to Noa light and dark tokens aligned with Absolutely', () => {
@@ -131,5 +133,80 @@ describe('themePalette', () => {
     expect(parsed?.chromeTheme.codeThemeId).toBe('dracula');
     expect(parsed?.chromeTheme.semanticColors).toEqual({ skill: '#445566' });
     expect(parsed?.chromeTheme.fonts).toEqual({ code: 'JetBrains Mono' });
+  });
+
+  test('includes Codex light/dark presets and pairs them with matching code themes', () => {
+    const lightIds = presetsForVariant('light').map((p) => p.id);
+    const darkIds = presetsForVariant('dark').map((p) => p.id);
+
+    for (const id of ['proof', 'raycast', 'rose-pine', 'solarized', 'vercel', 'vscode-plus', 'xcode']) {
+      expect(lightIds).toContain(id);
+    }
+    expect(lightIds).not.toContain('lobster');
+    expect(lightIds).not.toContain('sentry');
+    expect(lightIds).not.toContain('temple');
+    expect(lightIds).not.toContain('tokyo-night');
+
+    for (const id of ['lobster', 'raycast', 'rose-pine', 'sentry', 'solarized', 'temple', 'tokyo-night', 'vercel', 'vscode-plus', 'xcode']) {
+      expect(darkIds).toContain(id);
+    }
+    expect(darkIds).not.toContain('proof');
+
+    expect(getPresetDefaultCodeThemeId('solarized', 'light')).toBe('solarized-light');
+    expect(getPresetDefaultCodeThemeId('solarized', 'dark')).toBe('solarized-dark');
+    expect(getPresetDefaultCodeThemeId('rose-pine', 'light')).toBe('rose-pine-dawn');
+    expect(getPresetDefaultCodeThemeId('rose-pine', 'dark')).toBe('rose-pine');
+    expect(getPresetDefaultCodeThemeId('tokyo-night', 'dark')).toBe('tokyo-night');
+    expect(getPresetDefaultCodeThemeId('everforest', 'dark')).toBe('everforest-dark');
+    expect(getPresetDefaultCodeThemeId('night-owl', 'dark')).toBe('night-owl');
+    expect(getPresetDefaultCodeThemeId('noa', 'dark')).toBe('codex');
+  });
+
+  test('every preset and code theme resolves, derives surfaces, and round-trips cleanly', () => {
+    const hexRe = /^#[0-9A-F]{6}$/;
+    const rgbRe = /^rgb\(\d+,\d+,\d+\)$/;
+
+    for (const preset of THEME_PRESETS) {
+      for (const variant of ['light', 'dark'] as const) {
+        if (!preset[variant]) continue;
+        const isDark = variant === 'dark';
+        const key = isDark ? 'darkChromeTheme' : 'lightChromeTheme';
+        const codeThemeId = getPresetDefaultCodeThemeId(preset.id, variant);
+        const appearance = {
+          ...defaultSettings.appearance,
+          [key]: { presetId: preset.id, codeThemeId },
+        };
+
+        const resolved = resolveChromeTheme(appearance, isDark);
+        expect(resolved.presetId).toBe(preset.id);
+        expect(resolved.surface).toMatch(hexRe);
+        expect(resolved.ink).toMatch(hexRe);
+        expect(resolved.accent).toMatch(hexRe);
+
+        const surfaces = deriveSurfaces(resolved, isDark, isDark ? 60 : 45);
+        expect(surfaces.primary).toBe(resolved.surface);
+        expect(surfaces.secondary).toMatch(rgbRe);
+        expect(surfaces.sidebarMaterial).toMatch(rgbRe);
+        expect(surfaces.card).toMatch(rgbRe);
+        expect(surfaces.surfaceUnder).toMatch(rgbRe);
+
+        expect(resolveCodeThemeId(appearance, isDark)).toBe(codeThemeId);
+
+        const parsed = parseCodexThemeString(exportCodexThemeString(appearance, isDark));
+        expect(parsed?.variant).toBe(variant);
+        expect(parsed?.chromeTheme.presetId).toBe(preset.id);
+      }
+    }
+
+    for (const codeTheme of CODE_THEMES) {
+      const variants = codeTheme.variant === 'both' ? (['light', 'dark'] as const) : ([codeTheme.variant] as const);
+      for (const variant of variants) {
+        const resolved = resolveCodeTheme(codeTheme.id, variant);
+        expect(resolved.id).toBe(codeTheme.id);
+        expect(resolved.colors.keyword.length).toBeGreaterThan(0);
+        expect(resolved.colors.string.length).toBeGreaterThan(0);
+        expect(resolved.colors.comment.length).toBeGreaterThan(0);
+      }
+    }
   });
 });

@@ -14,14 +14,15 @@ export interface ThemeTokens {
 export interface ThemePresetDefinition {
   id: string;
   label: string;
-  light?: ThemeTokens;
-  dark?: ThemeTokens;
+  light?: ThemeTokens & { codeThemeId?: string };
+  dark?: ThemeTokens & { codeThemeId?: string };
 }
 
 export const DEFAULT_PRESET_ID = 'noa';
 
 /**
- * Built-in presets: Noa (aligned with Codex's Absolutely tokens) first, followed by Codex's chrome themes.
+ * Built-in presets: Noa (aligned with Codex's Absolutely tokens) first,
+ * followed by Codex and the full alphabetical list of Codex-aligned chrome themes.
  */
 export const THEME_PRESETS: readonly ThemePresetDefinition[] = [
   {
@@ -37,34 +38,74 @@ export const THEME_PRESETS: readonly ThemePresetDefinition[] = [
     dark: { surface: '#181818', ink: '#FFFFFF', accent: '#339CFF' },
   },
   {
+    id: 'ayu',
+    label: 'Ayu',
+    dark: { surface: '#10141C', ink: '#BFBDB6', accent: '#E6B450', codeThemeId: 'ayu-dark' },
+  },
+  {
     id: 'catppuccin',
     label: 'Catppuccin',
-    light: { surface: '#EFF1F5', ink: '#4C4F69', accent: '#8839EF' },
-    dark: { surface: '#1E1E2E', ink: '#CDD6F4', accent: '#CBA6F7' },
+    light: { surface: '#EFF1F5', ink: '#4C4F69', accent: '#8839EF', codeThemeId: 'catppuccin-latte' },
+    dark: { surface: '#1E1E2E', ink: '#CDD6F4', accent: '#CBA6F7', codeThemeId: 'catppuccin-mocha' },
   },
   {
-    id: 'github',
-    label: 'GitHub',
-    light: { surface: '#FFFFFF', ink: '#1F2328', accent: '#0969DA' },
-    dark: { surface: '#0D1117', ink: '#E6EDF3', accent: '#1F6FEB' },
+    id: 'og',
+    label: 'ChatGPT Classic',
+    dark: { surface: '#343541', ink: '#D1D5DB', accent: '#10A37F' },
   },
   {
-    id: 'gruvbox',
-    label: 'Gruvbox',
-    light: { surface: '#FBF1C7', ink: '#3C3836', accent: '#458588' },
-    dark: { surface: '#282828', ink: '#EBDBB2', accent: '#458588' },
+    id: 'dracula',
+    label: 'Dracula',
+    dark: { surface: '#282A36', ink: '#F8F8F2', accent: '#FF79C6', codeThemeId: 'dracula' },
   },
   {
     id: 'everforest',
     label: 'Everforest',
-    light: { surface: '#FDF6E3', ink: '#5C6A72', accent: '#93B259' },
-    dark: { surface: '#2D353B', ink: '#D3C6AA', accent: '#A7C080' },
+    light: { surface: '#FDF6E3', ink: '#5C6A72', accent: '#93B259', codeThemeId: 'everforest-light' },
+    dark: { surface: '#2D353B', ink: '#D3C6AA', accent: '#A7C080', codeThemeId: 'everforest-dark' },
+  },
+  {
+    id: 'github',
+    label: 'GitHub',
+    light: { surface: '#FFFFFF', ink: '#1F2328', accent: '#0969DA', codeThemeId: 'github-light' },
+    dark: { surface: '#0D1117', ink: '#E6EDF3', accent: '#1F6FEB', codeThemeId: 'github-dark' },
+  },
+  {
+    id: 'gruvbox',
+    label: 'Gruvbox',
+    light: { surface: '#FBF1C7', ink: '#3C3836', accent: '#458588', codeThemeId: 'gruvbox-light' },
+    dark: { surface: '#282828', ink: '#EBDBB2', accent: '#458588', codeThemeId: 'gruvbox-dark' },
   },
   {
     id: 'linear',
     label: 'Linear',
     light: { surface: '#FCFCFD', ink: '#1B1B1B', accent: '#5E6AD2' },
     dark: { surface: '#0F0F11', ink: '#E3E4E6', accent: '#606ACC' },
+  },
+  {
+    id: 'lobster',
+    label: 'Lobster',
+    dark: { surface: '#131B2E', ink: '#E5E7EB', accent: '#EF4444' },
+  },
+  {
+    id: 'material',
+    label: 'Material',
+    dark: { surface: '#212121', ink: '#EEFFFF', accent: '#80CBC4', codeThemeId: 'material' },
+  },
+  {
+    id: 'monokai',
+    label: 'Monokai',
+    dark: { surface: '#272822', ink: '#F8F8F2', accent: '#A6E22E', codeThemeId: 'monokai' },
+  },
+  {
+    id: 'night-owl',
+    label: 'Night Owl',
+    dark: { surface: '#011627', ink: '#D6DEEB', accent: '#82AAFF', codeThemeId: 'night-owl' },
+  },
+  {
+    id: 'nord',
+    label: 'Nord',
+    dark: { surface: '#2E3440', ink: '#D8DEE9', accent: '#88C0D0', codeThemeId: 'nord' },
   },
   {
     id: 'notion',
@@ -75,43 +116,64 @@ export const THEME_PRESETS: readonly ThemePresetDefinition[] = [
   {
     id: 'one',
     label: 'One',
-    light: { surface: '#FAFAFA', ink: '#383A42', accent: '#526FFF' },
-    dark: { surface: '#282C34', ink: '#ABB2BF', accent: '#4D78CC' },
+    light: { surface: '#FAFAFA', ink: '#383A42', accent: '#526FFF', codeThemeId: 'one-light' },
+    dark: { surface: '#282C34', ink: '#ABB2BF', accent: '#4D78CC', codeThemeId: 'one-dark' },
   },
   {
-    id: 'dracula',
-    label: 'Dracula',
-    dark: { surface: '#282A36', ink: '#F8F8F2', accent: '#FF79C6' },
+    id: 'proof',
+    label: 'Proof',
+    light: { surface: '#F5F5F0', ink: '#2E332E', accent: '#2E6F40' },
   },
   {
-    id: 'nord',
-    label: 'Nord',
-    dark: { surface: '#2E3440', ink: '#D8DEE9', accent: '#88C0D0' },
+    id: 'raycast',
+    label: 'Raycast',
+    light: { surface: '#FFFFFF', ink: '#1A1A1A', accent: '#FF6363' },
+    dark: { surface: '#141414', ink: '#EEEEEE', accent: '#FF6363' },
   },
   {
-    id: 'ayu',
-    label: 'Ayu',
-    dark: { surface: '#10141C', ink: '#BFBDB6', accent: '#E6B450' },
+    id: 'rose-pine',
+    label: 'Rose Pine',
+    light: { surface: '#FAF4ED', ink: '#575279', accent: '#D7827E', codeThemeId: 'rose-pine-dawn' },
+    dark: { surface: '#191724', ink: '#E0DEF4', accent: '#EBBCBA', codeThemeId: 'rose-pine' },
   },
   {
-    id: 'monokai',
-    label: 'Monokai',
-    dark: { surface: '#272822', ink: '#F8F8F2', accent: '#99947C' },
+    id: 'sentry',
+    label: 'Sentry',
+    dark: { surface: '#2D2935', ink: '#E6E2EE', accent: '#7055F6' },
   },
   {
-    id: 'night-owl',
-    label: 'Night Owl',
-    dark: { surface: '#011627', ink: '#D6DEEB', accent: '#44596B' },
+    id: 'solarized',
+    label: 'Solarized',
+    light: { surface: '#FDF6E3', ink: '#586E75', accent: '#B58900', codeThemeId: 'solarized-light' },
+    dark: { surface: '#002B36', ink: '#93A1A1', accent: '#DC322F', codeThemeId: 'solarized-dark' },
   },
   {
-    id: 'material',
-    label: 'Material',
-    dark: { surface: '#212121', ink: '#EEFFFF', accent: '#80CBC4' },
+    id: 'temple',
+    label: 'Temple',
+    dark: { surface: '#0B140E', ink: '#E2EDE5', accent: '#D4E600' },
   },
   {
-    id: 'og',
-    label: 'ChatGPT Classic',
-    dark: { surface: '#343541', ink: '#D1D5DB', accent: '#10A37F' },
+    id: 'tokyo-night',
+    label: 'Tokyo Night',
+    dark: { surface: '#1A1B26', ink: '#C0CAF5', accent: '#7AA2F7', codeThemeId: 'tokyo-night' },
+  },
+  {
+    id: 'vercel',
+    label: 'Vercel',
+    light: { surface: '#FFFFFF', ink: '#171717', accent: '#0070F3' },
+    dark: { surface: '#000000', ink: '#EDEDED', accent: '#0070F3' },
+  },
+  {
+    id: 'vscode-plus',
+    label: 'VS Code Plus',
+    light: { surface: '#FFFFFF', ink: '#1F1F1F', accent: '#007ACC', codeThemeId: 'vscode-plus' },
+    dark: { surface: '#1E1E1E', ink: '#D4D4D4', accent: '#007ACC', codeThemeId: 'vscode-plus' },
+  },
+  {
+    id: 'xcode',
+    label: 'Xcode',
+    light: { surface: '#FFFFFF', ink: '#262626', accent: '#0066FF', codeThemeId: 'xcode' },
+    dark: { surface: '#292A30', ink: '#DFDFE0', accent: '#4B8BF5', codeThemeId: 'xcode' },
   },
 ];
 
@@ -141,7 +203,14 @@ export function getPresetTokens(presetId: string | undefined, variant: ThemeVari
   const fallback: ThemeTokens = variant === 'dark'
     ? { surface: '#2D2D2B', ink: '#F9F9F7', accent: '#CC7D5E' }
     : { surface: '#F9F9F7', ink: '#2D2D2B', accent: '#CC7D5E' };
-  return preset?.[variant] ?? THEME_PRESETS[0]?.[variant] ?? fallback;
+  const entry = preset?.[variant] ?? THEME_PRESETS[0]?.[variant] ?? fallback;
+  return { surface: entry.surface, ink: entry.ink, accent: entry.accent };
+}
+
+export function getPresetDefaultCodeThemeId(presetId: string | undefined, variant: ThemeVariant): string {
+  const preset = THEME_PRESETS.find((item) => item.id === presetId);
+  const candidate = preset?.[variant]?.codeThemeId;
+  return candidate ? resolveCodeTheme(candidate, variant).id : DEFAULT_CODE_THEME_ID;
 }
 
 export interface ResolvedChromeTheme extends ThemeTokens {

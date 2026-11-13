@@ -8,6 +8,7 @@ import { activeTranslucency, supportsSidebarTranslucency } from "../../lib/trans
 import {
   DEFAULT_SEMANTIC_COLORS,
   exportCodexThemeString,
+  getPresetDefaultCodeThemeId,
   getPresetTokens,
   normalizeHex,
   parseCodexThemeString,
@@ -62,10 +63,11 @@ export function AppearancePage({
   )
 
   const selectPreset = (presetId: string) => {
+    const pairedCodeThemeId = getPresetDefaultCodeThemeId(presetId, variant)
     change({
       [chromeKey]: {
         presetId,
-        ...(activeChrome?.codeThemeId ? { codeThemeId: activeChrome.codeThemeId } : {}),
+        ...(pairedCodeThemeId !== DEFAULT_CODE_THEME_ID ? { codeThemeId: pairedCodeThemeId } : {}),
         ...(activeChrome?.semanticColors ? { semanticColors: activeChrome.semanticColors } : {}),
         ...(activeChrome?.fonts ? { fonts: activeChrome.fonts } : {}),
       },
