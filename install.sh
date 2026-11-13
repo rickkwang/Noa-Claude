@@ -257,7 +257,7 @@ check_install_target() {
   local target="$PERSISTENT_INSTALL_DIR"
   local home_real config_real
   home_real="$(canonical_path "$HOME")"
-  config_real="$(canonical_path "${CLAUDE_CODE_PRODUCT_DIR-${CLAUDE_CONFIG_DIR-${HOME}/.noa}}")"
+  config_real="$(canonical_path "${CLAUDE_CODE_PRODUCT_DIR:-${CLAUDE_CONFIG_DIR:-${HOME}/.noa}}")"
   if [[ "$target" == "/" || "$target" == "$home_real" || "$home_real" == "$target/"* ]]; then
     echo "Error: refusing to install into HOME or its ancestor: $target" >&2
     exit 1
@@ -283,7 +283,7 @@ check_install_target() {
 }
 
 persist_downloaded_source() {
-  if [[ "$ROOT_DIR" == "$PERSISTENT_INSTALL_DIR" ]]; then
+  if [[ "$SOURCE_ROOT_DIR" == "$(canonical_path "$PERSISTENT_INSTALL_DIR")" ]]; then
     return
   fi
 

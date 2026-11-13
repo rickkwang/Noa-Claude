@@ -243,6 +243,7 @@ const numModified = modifiedFiles.size
 // block and the signal handlers can clean it up when a build stops in between.
 let compileSource: string | null = null
 let compileSourceDir: string | null = null
+let minifyTmpDir: string | null = null
 
 // Restore source files on abrupt termination
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
@@ -250,6 +251,9 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const) {
     restoreModifiedFiles()
     if (compileSourceDir) {
       rmSync(compileSourceDir, { recursive: true, force: true })
+    }
+    if (minifyTmpDir) {
+      rmSync(minifyTmpDir, { recursive: true, force: true })
     }
     process.exit(signal === 'SIGINT' ? 130 : 143)
   })
@@ -541,7 +545,7 @@ try {
     // Staged inside dist/ rather than os.tmpdir(): the rename below has to stay
     // on one filesystem, and /tmp is a separate tmpfs mount on most Linux
     // distributions (EXDEV).
-    const minifyTmpDir = mkdtempSync(join(dirname(expectedPath), '.minify-'))
+    minifyTmpDir = mkdtempSync(join(dirname(expectedPath), '.minify-'))
     try {
       const minifyResult = await Bun.build({
         entrypoints: [expectedPath],
@@ -570,7 +574,10 @@ try {
         `Minified ${outfile}: ${(statSync(expectedPath).size / 1e6).toFixed(1)}MB`,
       )
     } finally {
-      rmSync(minifyTmpDir, { recursive: true, force: true })
+      if (minifyTmpDir) {
+        rmSync(minifyTmpDir, { recursive: true, force: true })
+        minifyTmpDir = null
+      }
     }
   }
 

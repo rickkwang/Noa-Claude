@@ -144,7 +144,7 @@ async function checkForUpdates({ manual }) {
       detail: String(err.message ?? err),
       buttons: ['Download', 'OK'], defaultId: 0, cancelId: 1,
     })
-    if (response === 0) shell.openExternal(err.releaseUrl)
+    if (response === 0) openExternalSafe(err.releaseUrl)
     return
   }
   if (!manual) return
@@ -278,6 +278,27 @@ async function startBridge() {
   return port
 }
 
+function isHttpUrl(raw) {
+  try {
+    const parsed = new URL(raw)
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:'
+  } catch {
+    return false
+  }
+}
+
+function isSameOrigin(raw, expectedOrigin) {
+  try {
+    return new URL(raw).origin === expectedOrigin
+  } catch {
+    return false
+  }
+}
+
+function openExternalSafe(url) {
+  if (isHttpUrl(url)) shell.openExternal(url)
+}
+
 function createWindow(port) {
   const origin = DEV ? `http://127.0.0.1:${VITE_PORT}` : `http://127.0.0.1:${port}`
   const area = screen.getPrimaryDisplay().workArea
@@ -325,15 +346,15 @@ function createWindow(port) {
     }
   })
 
-  // Only the bridge origin renders inside the app; any other link opens in the default browser.
+  // Only the bridge origin renders inside the app; any other http(s) link opens in the default browser.
   win.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url)
+    openExternalSafe(url)
     return { action: 'deny' }
   })
   win.webContents.on('will-navigate', (event, url) => {
-    if (!url.startsWith(origin)) {
+    if (!isSameOrigin(url, origin)) {
       event.preventDefault()
-      shell.openExternal(url)
+      openExternalSafe(url)
     }
   })
 
