@@ -36,8 +36,8 @@ const dev = args.includes('--dev')
 // STT endpoint needs claude.ai OAuth. Its branches stay in source, inert.
 //
 // The remaining never-buildable flags (BG_SESSIONS, DIRECT_CONNECT,
-// FORK_SUBAGENT, KAIROS_GITHUB_WEBHOOKS, MCP_SKILLS, MONITOR_TOOL,
-// REVIEW_ARTIFACT, SSH_REMOTE, TEMPLATES, UDS_INBOX, WORKFLOW_SCRIPTS) have had
+// FORK_SUBAGENT, KAIROS_GITHUB_WEBHOOKS, MCP_SKILLS, REVIEW_ARTIFACT,
+// SSH_REMOTE, TEMPLATES, UDS_INBOX, WORKFLOW_SCRIPTS) have had
 // their feature() branches deleted from source entirely — they no longer gate
 // anything and are simply absent below. See FEATURES.md.
 const fullExperimentalFeatures = [

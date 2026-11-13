@@ -22,7 +22,6 @@ This file is the single availability audit for this repository: build profiles, 
   - `Implemented but Non-Baseline`: callable, but not part of primary workflow.
   - `Build-Excluded`: not registered in the runtime command loader; an `E_BUILD_EXCLUDED_*` contract is retained for governance and CI assertions.
   - `Stub`: placeholder tracked in governance only; not registered in runtime and has no functional implementation.
-- Default `bun run build` profile in this repo is conservative; expanded unlock profile is opt-in via `bun run build:dev:full`.
 
 Default `bun run build` profile in this repo is conservative; the expanded unlock profile is opt-in via `bun run build:dev:full`.
 

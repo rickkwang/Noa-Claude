@@ -3,7 +3,7 @@ paths:
   - "src/test/**"
   - "gui/tests/**"
   - "**/*.test.ts"
-  - "scripts/e2e-*.mjs"
+  - "scripts/e2e-*"
 ---
 
 # Tests

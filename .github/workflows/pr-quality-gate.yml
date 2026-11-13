@@ -49,7 +49,7 @@ jobs:
           # Unknown or truncated (the compare API stops at 300 files): run everything.
           # docs/release-notes.md is bundled into the build, so it is code here.
           if [ -z "$files" ] || [ "$(wc -l <<< "$files")" -ge 300 ] ||
-             grep -qvE '^((README|FEATURES|FEATURE_AVAILABILITY_MATRIX|CLAUDE)\.md|(src|gui|scripts)/(.+/)?CLAUDE\.md|docs/.+\.md)$' <<< "$files" ||
+             grep -qvE '^((README|FEATURES|CLAUDE)\.md|(src|gui|scripts)/(.+/)?CLAUDE\.md|docs/.+\.md)$' <<< "$files" ||
              grep -qx 'docs/release-notes.md' <<< "$files"; then
             echo code=true >> "$GITHUB_OUTPUT"
           else

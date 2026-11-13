@@ -54,7 +54,9 @@
     "e2e:thinking": "NODE_ENV=development bun ./scripts/e2e-thinking-binding.ts",
     "e2e:startup": "node ./scripts/e2e-startup-boundaries.mjs",
     "e2e:install": "node ./scripts/e2e-install-lifecycle.mjs",
-    "e2e:sandbox": "NODE_ENV=development bun ./scripts/e2e-sandbox-override.ts"
+    "e2e:sandbox": "NODE_ENV=development bun ./scripts/e2e-sandbox-override.ts",
+    "e2e:sandbox-startup": "NODE_ENV=development bun ./scripts/e2e-sandbox-shell-startup.ts",
+    "e2e:removal": "NODE_ENV=development bun ./scripts/e2e-removal-permissions.ts"
   },
   "dependencies": {
     "@anthropic-ai/bedrock-sdk": "^0.33.8",
@@ -111,6 +113,7 @@
     "url-handler-napi": "^0.0.1",
     "usehooks-ts": "^3.1.1",
     "vscode-jsonrpc": "^8.2.1",
+    "ws": "^8.20.0",
     "xss": "^1.0.15",
     "yaml": "^2.8.3",
     "zod": "^3.23.8"
