@@ -64,6 +64,8 @@ export interface AppSettings {
     /** Shows Full access in the composer's permission menu. Off by default. */
     showFullAccess: boolean;
     showContextUsage: boolean;
+    /** Native caret in the composer instead of the animated one. Off by default. */
+    systemCaret: boolean;
     /** Synthesized notes while a reply streams in. Off by default. */
     streamSound: { enabled: boolean; preset: 'classic' | 'ethereal'; volume: number };
   };

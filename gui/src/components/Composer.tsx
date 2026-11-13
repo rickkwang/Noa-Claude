@@ -6,6 +6,7 @@ import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type Keybo
 import { startEffortPixelGrid } from "./effortPixelGrid"
 import type { ContextUsage, ImageAttachment, RateLimitInfo, UserContent, ModelInfo, PermissionMode, SlashCommand } from "../agent/protocol"
 import { RateLimitNotice } from "./RateLimitNotice"
+import { ComposerCaret } from "./ComposerCaret"
 import { FileAttachmentCard } from "./FileAttachmentCard"
 import { Check, Edit2, FileText, List, Photo, Queue, RotateCcw, Steer, Terminal, X } from "../lib/icons"
 import { Lightbox } from "./Lightbox"
@@ -94,6 +95,7 @@ interface ComposerProps {
   followUpMode?: AppSettings["composer"]["followUpMode"]
   // Full access is hidden from the permission menu until the user opts in from settings.
   showFullAccess?: boolean
+  systemCaret?: boolean
   contextUsage?: ContextUsage
   // Usage-limit notice: shown in the environment strip for new tasks, above the composer otherwise.
   rateLimit?: RateLimitInfo
@@ -149,6 +151,7 @@ export const Composer = memo(function Composer({
   sendShortcut = "enter",
   followUpMode = "queue",
   showFullAccess = false,
+  systemCaret = false,
   rateLimit,
   onDismissRateLimit,
 }: ComposerProps) {
@@ -854,35 +857,38 @@ export const Composer = memo(function Composer({
             ))}
           </div>
         )}
-        <textarea
-          ref={textareaRef}
-          value={text}
-          onChange={(e) => { setText(e.target.value); setCaret(e.target.selectionStart ?? e.target.value.length) }}
-          onSelect={(e) => setCaret(e.currentTarget.selectionStart ?? 0)}
-          onPaste={(event) => {
-            const files = Array.from(event.clipboardData.items).filter((item) => item.kind === "file").map((item) => item.getAsFile()).filter((file): file is File => file !== null)
-            if (files.length) { event.preventDefault(); void addImages(files) }
-          }}
-          onKeyDown={onKeyDown}
-          onFocus={() => setInputFocused(true)}
-          onBlur={(event) => {
-            if (event.relatedTarget instanceof Node && composerRef.current?.contains(event.relatedTarget)) return
-            setInputFocused(false)
-            setBrowserOpen(false)
-            setBrowserAction(undefined)
-            setBrowserSearch("")
-          }}
-          aria-autocomplete="list"
-          aria-controls={mentionOpen ? "noa-file-mentions" : menuOpen ? "noa-slash-commands" : undefined}
-          aria-activedescendant={mentionOpen && mentionItems[mentionIndex] ? `noa-file-option-${mentionIndex}` : menuOpen && menuItems[menuIndex] ? `noa-slash-option-${menuIndex}` : undefined}
-          onCompositionStart={() => setComposing(true)}
-          onCompositionEnd={() => { setComposing(false); compositionEndAt.current = performance.now() }}
-          placeholder={readOnly ? "Running in a terminal" : connection === "closed" ? "Noa disconnected" : disabled ? "Starting Noa…" : busy ? followUpMode === "steer" ? "Add a follow-up…" : "Add a follow-up to the queue…" : newTask ? "Do anything" : "Work with Noa"}
-          aria-label="Task instruction"
-          disabled={!!readOnly && disabled}
-          rows={1}
-          className="w-full min-h-[34px] max-h-[min(25dvh,var(--composer-editor-max-height,25dvh))] resize-none border-none bg-transparent px-3 py-0 text-[13px] leading-5 outline-none placeholder:text-[color-mix(in_srgb,var(--text-primary)_50%,transparent)]"
-        />
+        <div className="relative flex flex-col overflow-hidden">
+          <textarea
+            ref={textareaRef}
+            value={text}
+            onChange={(e) => { setText(e.target.value); setCaret(e.target.selectionStart ?? e.target.value.length) }}
+            onSelect={(e) => setCaret(e.currentTarget.selectionStart ?? 0)}
+            onPaste={(event) => {
+              const files = Array.from(event.clipboardData.items).filter((item) => item.kind === "file").map((item) => item.getAsFile()).filter((file): file is File => file !== null)
+              if (files.length) { event.preventDefault(); void addImages(files) }
+            }}
+            onKeyDown={onKeyDown}
+            onFocus={() => setInputFocused(true)}
+            onBlur={(event) => {
+              if (event.relatedTarget instanceof Node && composerRef.current?.contains(event.relatedTarget)) return
+              setInputFocused(false)
+              setBrowserOpen(false)
+              setBrowserAction(undefined)
+              setBrowserSearch("")
+            }}
+            aria-autocomplete="list"
+            aria-controls={mentionOpen ? "noa-file-mentions" : menuOpen ? "noa-slash-commands" : undefined}
+            aria-activedescendant={mentionOpen && mentionItems[mentionIndex] ? `noa-file-option-${mentionIndex}` : menuOpen && menuItems[menuIndex] ? `noa-slash-option-${menuIndex}` : undefined}
+            onCompositionStart={() => setComposing(true)}
+            onCompositionEnd={() => { setComposing(false); compositionEndAt.current = performance.now() }}
+            placeholder={readOnly ? "Running in a terminal" : connection === "closed" ? "Noa disconnected" : disabled ? "Starting Noa…" : busy ? followUpMode === "steer" ? "Add a follow-up…" : "Add a follow-up to the queue…" : newTask ? "Do anything" : "Work with Noa"}
+            aria-label="Task instruction"
+            disabled={!!readOnly && disabled}
+            rows={1}
+            className={`w-full min-h-[34px] max-h-[min(25dvh,var(--composer-editor-max-height,25dvh))] resize-none border-none bg-transparent px-3 py-0 text-[13px] leading-5 outline-none placeholder:text-[color-mix(in_srgb,var(--text-primary)_50%,transparent)] ${systemCaret ? "" : "caret-transparent"}`}
+          />
+          {!systemCaret && <ComposerCaret textareaRef={textareaRef} value={text} disabled={!!readOnly && disabled} />}
+        </div>
         {argumentCommand?.argumentHint && !submenu && <p className="m-0 px-3 pb-1 text-caption text-[var(--sidebar-text-muted)]">/{argumentCommand.name} {argumentCommand.argumentHint}</p>}
         <div className="noa-agent-footer mb-1.5 mt-0.5 flex min-h-7 items-center justify-between gap-1 px-2">
           <div className="flex min-w-0 items-center gap-1">

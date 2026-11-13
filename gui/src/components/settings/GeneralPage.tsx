@@ -143,6 +143,12 @@ export function GeneralPage({
             }
           />
         </Row>
+        <Row label="Use system caret" description="Use the native caret in the composer instead of the animated one.">
+          <Toggle
+            checked={settings.composer.systemCaret}
+            onChange={(systemCaret) => onChange({ ...settings, composer: { ...settings.composer, systemCaret } })}
+          />
+        </Row>
         <Row label="Streaming sound" description="Play soft synthesized notes while a reply streams in.">
           <Toggle checked={sound.enabled} onChange={(enabled) => setSound({ enabled })} />
         </Row>

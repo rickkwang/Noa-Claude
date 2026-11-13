@@ -1045,6 +1045,7 @@ function Workspace({ cwd }: { cwd: string }) {
                   sendShortcut={settings.composer.sendShortcut}
                   followUpMode={settings.composer.followUpMode}
                   showFullAccess={settings.composer.showFullAccess}
+                  systemCaret={settings.composer.systemCaret}
                   connection={forkPending ? "connecting" : state.connection}
                   forking={forkPending}
                   readOnly={!!state.external}
