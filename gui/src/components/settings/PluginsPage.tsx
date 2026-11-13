@@ -329,7 +329,7 @@ export function PluginsPage({ skills: promptCommands, onReloadCommands, onOpenMc
             {menuOpen && (
               <>
                 <button type="button" aria-label="Close menu" className="fixed inset-0 z-10 cursor-default" onClick={() => setRowMenu(undefined)} />
-                <div role="menu" className="absolute right-0 top-full z-20 mt-1 flex min-w-44 flex-col rounded-xl border border-[var(--border-default)] bg-[var(--bg-card)] p-1 shadow-[var(--shadow-dialog)]">
+                <div role="menu" className="noa-floating-panel absolute right-0 top-full z-20 mt-1 flex min-w-44 flex-col rounded-[var(--menu-popover-radius)] bg-[var(--bg-card)] p-1 shadow-[var(--menu-shadow)]">
                   <button type="button" role="menuitem" className="h-8 rounded-lg px-2.5 text-left text-body hover:bg-[var(--settings-fill-hover)]" onClick={() => { setRowMenu(undefined); setSkillName(command.name) }}>Details</button>
                   {own && (
                     <>
@@ -401,7 +401,7 @@ export function PluginsPage({ skills: promptCommands, onReloadCommands, onOpenMc
             {menuOpen && (
               <>
                 <button type="button" aria-label="Close menu" className="fixed inset-0 z-10 cursor-default" onClick={() => setMenuOpen(false)} />
-                <div role="menu" className="absolute right-0 top-full z-20 mt-1.5 flex min-w-48 flex-col rounded-xl border border-[var(--border-default)] bg-[var(--bg-card)] p-1 shadow-[var(--shadow-dialog)]">
+                <div role="menu" className="noa-floating-panel absolute right-0 top-full z-20 mt-1.5 flex min-w-48 flex-col rounded-[var(--menu-popover-radius)] bg-[var(--bg-card)] p-1 shadow-[var(--menu-shadow)]">
                   <button type="button" role="menuitem" className="h-8 rounded-lg px-2.5 text-left text-body hover:bg-[var(--settings-fill-hover)]" onClick={() => { setMenuOpen(false); setAdding(true); setTab("marketplace"); setBrowsing(false) }}>Add marketplace</button>
                   <button type="button" role="menuitem" className="h-8 rounded-lg px-2.5 text-left text-body hover:bg-[var(--settings-fill-hover)]" onClick={() => { setMenuOpen(false); onOpenMcp() }}>Add MCP server</button>
                 </div>
@@ -493,7 +493,7 @@ export function PluginsPage({ skills: promptCommands, onReloadCommands, onOpenMc
                     {skillMenu && (
                       <>
                         <button type="button" aria-label="Close menu" className="fixed inset-0 z-10 cursor-default" onClick={() => setSkillMenu(false)} />
-                        <div role="menu" className="absolute right-0 top-full z-20 mt-1 flex min-w-44 flex-col rounded-xl border border-[var(--border-default)] bg-[var(--bg-card)] p-1 shadow-[var(--shadow-dialog)]">
+                        <div role="menu" className="noa-floating-panel absolute right-0 top-full z-20 mt-1 flex min-w-44 flex-col rounded-[var(--menu-popover-radius)] bg-[var(--bg-card)] p-1 shadow-[var(--menu-shadow)]">
                           <button type="button" role="menuitem" className="h-8 rounded-lg px-2.5 text-left text-body hover:bg-[var(--settings-fill-hover)]" onClick={() => { setSkillMenu(false); void runSkillAction("reveal", currentSkill.name).catch((e: Error) => setError(e.message)) }}>Reveal in Finder</button>
                           <button type="button" role="menuitem" disabled={skillText === undefined} className="h-8 rounded-lg px-2.5 text-left text-body hover:bg-[var(--settings-fill-hover)] disabled:opacity-40" onClick={() => { setSkillMenu(false); void navigator.clipboard.writeText(skillText ?? "") }}>Copy Markdown</button>
                         </div>

@@ -245,7 +245,7 @@ export function DiffActionDialog({ action, result, onClose }: {
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className="w-full max-w-md rounded-xl bg-[var(--surface-page,#F9F9F7)] p-4 text-[var(--text-primary)] shadow-[var(--shadow-dialog)]"
+        className="noa-confirm-dialog w-full max-w-md rounded-2xl bg-[var(--bg-card)] p-5 font-ui text-[var(--text-primary)]"
         onClick={(event) => event.stopPropagation()}
       >
         <h2 className="m-0 text-balance text-[length:var(--font-text-md-size)] font-medium tabular-nums">{title}</h2>

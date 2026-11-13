@@ -170,7 +170,7 @@ function ToolPermissionCard({ permission, onAnswer }: PermissionCardProps) {
               >
                 <ChevronDown size={14} className="opacity-50" aria-hidden="true" />
               </summary>
-              <div role="menu" className="noa-floating-panel absolute bottom-full end-0 z-30 mb-1 w-48 rounded-lg bg-[var(--bg-card)] p-1 text-caption">
+              <div role="menu" className="noa-floating-panel absolute bottom-full end-0 z-30 mb-1 w-48 rounded-[var(--menu-popover-radius)] bg-[var(--bg-card)] p-1 text-caption shadow-[var(--menu-shadow)]">
                 <button
                   type="button"
                   role="menuitem"

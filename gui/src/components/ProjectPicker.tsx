@@ -45,7 +45,7 @@ export function ProjectPicker({
     <div
       ref={ref}
       role="menu"
-      className="noa-floating-panel absolute left-1/2 top-full z-50 mt-2 w-64 -translate-x-1/2 rounded-panel bg-[var(--bg-card)] p-1 text-left font-ui"
+      className="noa-floating-panel absolute left-1/2 top-full z-50 mt-2 w-64 -translate-x-1/2 rounded-[var(--menu-popover-radius)] bg-[var(--bg-card)] p-1 text-left font-ui shadow-[var(--menu-shadow)]"
     >
       <div className="flex items-center gap-2 px-2.5 py-1.5 text-[var(--sidebar-text-muted,#898781)]">
         <Search size={14} className="shrink-0" />

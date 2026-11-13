@@ -1230,9 +1230,9 @@ html[data-translucent-sidebar="enabled"] [data-sidebar-container] .noa-sidebar-t
 @media (prefers-reduced-motion: reduce) {
   .noa-model-picker-views[data-ready="true"], .noa-model-picker-views[data-ready="true"] * { transition: none; }
 }
-.noa-model-picker.rounded-panel { border-radius: 18px; }
+.noa-model-picker.rounded-panel { border-radius: var(--menu-popover-radius); }
 :root:not([data-theme="dark"]) .noa-model-picker.noa-floating-panel.rounded-panel { background-color: var(--effort-menu) !important;
-  box-shadow: 0 0 0 .5px var(--border-default), 0 8px 24px 0 rgba(0, 0, 0, .07);
+  box-shadow: var(--menu-shadow);
 }
 /* The panel pads 4px; the list reaches its edge so the scrollbar sits flush, and restores that inset for rows. */
 .noa-model-picker-list { max-height: 316px; overflow-y: auto; margin: 0 -4px; padding: 0 4px 4px; }

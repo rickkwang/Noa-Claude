@@ -905,7 +905,7 @@ function ProjectRow({
             {menuOpen && (
               <div
                 role="menu"
-                className="noa-floating-panel absolute right-0 top-full z-50 mt-1 w-44 rounded-panel bg-[var(--bg-card)] p-1"
+                className="noa-floating-panel absolute right-0 top-full z-50 mt-1 w-44 rounded-[var(--menu-popover-radius)] bg-[var(--bg-card)] p-1 shadow-[var(--menu-shadow)]"
                 onClick={(event) => event.stopPropagation()}
               >
                 <button

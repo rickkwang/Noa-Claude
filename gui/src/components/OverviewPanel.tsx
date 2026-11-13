@@ -314,7 +314,7 @@ export function OverviewPanel({ state, cwd, open, workspaceRefreshKey, endInset,
     {docked
       ? <aside ref={panelRef} aria-label="Overview" className="flex flex-col gap-2 p-px font-ui">{cardEls}</aside>
       : <aside ref={panelRef} aria-label="Overview" className="noa-overview font-ui">{cardEls}</aside>}
-    {menu && <div role="menu" aria-label="Overview cards" style={{ position: "fixed", left: menu.x, top: menu.y }} onPointerDown={(event) => event.stopPropagation()} className="pointer-events-auto z-50 min-w-40 rounded-xl border border-[var(--border-default)] bg-[var(--bg-card)] p-1 font-ui text-body shadow-lg">
+    {menu && <div role="menu" aria-label="Overview cards" style={{ position: "fixed", left: menu.x, top: menu.y }} onPointerDown={(event) => event.stopPropagation()} className="noa-floating-panel pointer-events-auto z-50 min-w-40 rounded-[var(--menu-popover-radius)] bg-[var(--bg-card)] p-1 font-ui text-body shadow-[var(--menu-shadow)]">
       <div className={`px-2 py-1 ${MUTED}`}>Show</div>
       {CARDS.map((card) => <button key={card.id} type="button" role="menuitemcheckbox" aria-checked={!layout.hidden.includes(card.id)} onClick={() => update({ ...layout, hidden: layout.hidden.includes(card.id) ? layout.hidden.filter((id) => id !== card.id) : [...layout.hidden, card.id] })} className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-start hover:bg-[var(--fill-hover)]">
         <span className="w-3 text-center">{layout.hidden.includes(card.id) ? "" : "✓"}</span>{card.title}
