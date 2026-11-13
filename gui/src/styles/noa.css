@@ -1420,6 +1420,37 @@ kbd.noa-review-menu-hint { font-family: inherit; }
   font-size: 13px;
   line-height: calc(1.25 / 0.875);
 }
+.noa-popup-menu-scroll {
+  max-height: min(320px, calc(100vh - 24px));
+  overflow-y: auto;
+  scrollbar-width: none;
+  scroll-padding-block: 16px;
+  --noa-fade-ramp:
+    rgb(0 0 0 / 0) calc(var(--noa-fade-top, 0) * 0px),
+    rgb(0 0 0 / 0.05) calc(var(--noa-fade-top, 0) * 2.4px),
+    rgb(0 0 0 / 0.15) calc(var(--noa-fade-top, 0) * 4.8px),
+    rgb(0 0 0 / 0.3) calc(var(--noa-fade-top, 0) * 7.2px),
+    rgb(0 0 0 / 0.5) calc(var(--noa-fade-top, 0) * 9.6px),
+    rgb(0 0 0 / 0.7) calc(var(--noa-fade-top, 0) * 12px),
+    rgb(0 0 0 / 0.85) calc(var(--noa-fade-top, 0) * 14.4px),
+    rgb(0 0 0 / 1) calc(var(--noa-fade-top, 0) * 16px),
+    rgb(0 0 0 / 1) calc(100% - var(--noa-fade-bottom, 0) * 16px),
+    rgb(0 0 0 / 0.85) calc(100% - var(--noa-fade-bottom, 0) * 14.4px),
+    rgb(0 0 0 / 0.7) calc(100% - var(--noa-fade-bottom, 0) * 12px),
+    rgb(0 0 0 / 0.5) calc(100% - var(--noa-fade-bottom, 0) * 9.6px),
+    rgb(0 0 0 / 0.3) calc(100% - var(--noa-fade-bottom, 0) * 7.2px),
+    rgb(0 0 0 / 0.15) calc(100% - var(--noa-fade-bottom, 0) * 4.8px),
+    rgb(0 0 0 / 0.05) calc(100% - var(--noa-fade-bottom, 0) * 2.4px),
+    rgb(0 0 0 / 0) calc(100% - var(--noa-fade-bottom, 0) * 0px);
+  animation-name: noa-fade-top-in, noa-fade-bottom-out;
+  animation-timing-function: linear;
+  animation-fill-mode: both;
+  animation-timeline: scroll(self block), scroll(self block);
+  animation-range: 0px 16px, calc(100% - 16px) 100%;
+  -webkit-mask-image: linear-gradient(to bottom, var(--noa-fade-ramp));
+  mask-image: linear-gradient(to bottom, var(--noa-fade-ramp));
+}
+.noa-popup-menu-scroll::-webkit-scrollbar { display: none; }
 .noa-popup-menu .noa-context-menu-entry > button { display: flex; width: 100%; max-width: none; min-height: 28px; align-items: center; font-size: 12px; line-height: calc(1.25 / 0.875); gap: 6px; padding: 5px 8px; border-radius: 12px; color: var(--text-primary); text-align: left; white-space: nowrap; }
 .noa-popup-menu .noa-context-menu-entry > button:hover,
 .noa-popup-menu .noa-context-menu-entry > button:focus-visible,
@@ -2673,3 +2704,9 @@ html[data-translucent-sidebar="enabled"] .noa-confirm-scrim { backdrop-filter: n
 .noa-new-tab-row {background: color-mix(in oklab, var(--text-primary, #2D2D2B) 2.5%, transparent); transition: background-color 120ms ease; }
 .noa-new-tab-row:hover, .noa-new-tab-row:has([aria-expanded="true"]) { background: var(--fill-hover); }
 .noa-new-tab-key { display: inline-flex; padding: 2px 6px; border: 0; border-radius: 6px; background: color-mix(in srgb, currentColor 10%, transparent); color: var(--text-secondary, #7B7974); font-family: var(--font-ui, inherit); font-size: var(--text-micro, 11px); line-height: 1; }
+
+/* Keep native number spin buttons compact to match Codex's proportion inside settings inputs. */
+input[type="number"]::-webkit-inner-spin-button {
+  transform: scale(0.76);
+  transform-origin: right center;
+}

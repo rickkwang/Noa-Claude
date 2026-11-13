@@ -37,6 +37,7 @@ export default function ThemeInjector({ settings }: ThemeInjectorProps) {
     // theme-bootstrap.js paints <html> opaque for the pre-React frame; once body and the shell
     // take over it must go, or it covers the native material under the translucent sidebar.
     root.style.removeProperty('background-color');
+    root.style.colorScheme = variant;
     root.dataset.appearancePreset = resolved.presetId;
     root.style.setProperty('--bg-primary', surfaces.primary);
     // Page surface: the colour the old remap gave the literal #F9F9F7 classes, in both themes.

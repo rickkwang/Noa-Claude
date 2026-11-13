@@ -1,5 +1,6 @@
-import { Children, useEffect, useState, type ReactNode } from "react"
+import { Children, useEffect, useRef, useState, type ReactNode } from "react"
 import { ChevronDown } from "../../lib/icons"
+import { PopupMenu, anchorBelow, type PopupMenuAnchor } from "../PopupMenu"
 
 export const actionButton =
   "h-8 shrink-0 rounded-lg border border-[var(--border-default)] px-3 text-body hover:bg-[var(--settings-fill-hover)] disabled:opacity-40"
@@ -60,24 +61,24 @@ export function NumberField({
   }
   return (
     <div className="flex shrink-0 items-center gap-2">
-    <input
-      type="number"
-      value={draft}
-      min={min}
-      max={max}
-      step={1}
-      inputMode="numeric"
-      onChange={(e) => {
-        setDraft(e.target.value)
-        // Spinner arrows and in-range typing apply at once; out-of-range text waits for blur to clamp.
-        const next = Number(e.target.value)
-        if (e.target.value.trim() !== "" && Number.isInteger(next) && next >= min && next <= max) onChange(next)
-      }}
-      onBlur={commit}
-      onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
-      className="h-8 w-16 rounded-lg border border-[var(--border-default)] bg-[var(--bg-card)] px-2 text-body text-[var(--text-primary)] outline-none"
-    />
-    <span className="text-caption text-[var(--sidebar-text-muted)]">px</span>
+      <input
+        type="number"
+        value={draft}
+        min={min}
+        max={max}
+        step={1}
+        inputMode="numeric"
+        onChange={(e) => {
+          setDraft(e.target.value)
+          // Spinner arrows and in-range typing apply at once; out-of-range text waits for blur to clamp.
+          const next = Number(e.target.value)
+          if (e.target.value.trim() !== "" && Number.isInteger(next) && next >= min && next <= max) onChange(next)
+        }}
+        onBlur={commit}
+        onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+        className="h-8 w-16 rounded-lg border border-[var(--border-default)] bg-[var(--bg-card)] px-2 text-body tabular-nums text-[var(--text-primary)] outline-none focus:border-[var(--accent-color)]"
+      />
+      <span className="text-caption text-[var(--sidebar-text-muted)]">px</span>
     </div>
   )
 }
@@ -132,22 +133,55 @@ export function Select({
   disabled?: boolean
   label?: string
 }) {
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const [menu, setMenu] = useState<{ anchor: PopupMenuAnchor; minWidth: number }>()
+  const selectedLabel = options.find(([v]) => v === value)?.[1] ?? options[0]?.[1] ?? ""
+
+  const toggle = () => {
+    if (disabled) return
+    if (menu) {
+      setMenu(undefined)
+      return
+    }
+    const el = triggerRef.current
+    if (!el) return
+    setMenu({
+      anchor: anchorBelow(el),
+      minWidth: Math.max(176, Math.round(el.getBoundingClientRect().width)),
+    })
+  }
+
   return (
     <div className="relative shrink-0">
-      <select
+      <button
+        ref={triggerRef}
+        type="button"
         aria-label={label}
-        value={value}
+        aria-haspopup="menu"
+        aria-expanded={Boolean(menu)}
         disabled={disabled}
-        onChange={(e) => onChange(e.target.value)}
-        className="h-8 min-w-44 appearance-none rounded-lg border border-[var(--border-default)] bg-[var(--bg-card)] pr-8 pl-3 text-body text-[var(--text-primary)] outline-none disabled:opacity-40"
+        onClick={toggle}
+        className="flex h-8 min-w-44 items-center justify-between gap-2 rounded-lg border border-[var(--border-default)] bg-[var(--bg-card)] pr-2.5 pl-3 text-left text-body text-[var(--text-primary)] outline-none transition-colors hover:bg-[var(--settings-fill-hover)] disabled:pointer-events-none disabled:opacity-40"
       >
-        {options.map(([v, label]) => (
-          <option key={v} value={v}>
-            {label}
-          </option>
-        ))}
-      </select>
-      <ChevronDown size={14} className="pointer-events-none absolute top-1/2 right-2.5 -translate-y-1/2 text-[var(--sidebar-text-muted)]" />
+        <span className="truncate">{selectedLabel}</span>
+        <ChevronDown size={14} className="shrink-0 text-[var(--sidebar-text-muted)]" />
+      </button>
+      {menu && (
+        <PopupMenu
+          anchor={menu.anchor}
+          trigger={triggerRef.current}
+          label={label ?? "Select option"}
+          scrollable
+          minWidth={menu.minWidth}
+          onClose={() => setMenu(undefined)}
+          entries={options.map(([v, optionLabel]) => ({
+            key: v,
+            label: optionLabel,
+            checked: v === value,
+            onSelect: () => onChange(v),
+          }))}
+        />
+      )}
     </div>
   )
 }

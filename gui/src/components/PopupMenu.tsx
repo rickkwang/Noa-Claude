@@ -32,6 +32,8 @@ export function PopupMenu({
   label,
   onClose,
   trigger,
+  scrollable,
+  minWidth,
 }: {
   anchor: PopupMenuAnchor
   entries: PopupMenuEntry[]
@@ -39,6 +41,8 @@ export function PopupMenu({
   onClose: () => void
   // The button that opened the menu: pressing it again toggles the menu instead of reopening it.
   trigger?: Element | null
+  scrollable?: boolean
+  minWidth?: number
 }) {
   const root = useRef<HTMLDivElement>(null)
   const [position, setPosition] = useState({ left: anchor.left, top: anchor.top })
@@ -56,8 +60,10 @@ export function PopupMenu({
       left: Math.max(8, Math.min(anchor.left, window.innerWidth - width - 8)),
       top: below ? anchor.top : Math.max(8, anchor.bottom - height),
     })
+    const checkedItem = menu.querySelector<HTMLElement>('[aria-checked="true"]')
+    if (scrollable && checkedItem) checkedItem.scrollIntoView({ block: "nearest" })
     menu.querySelector<HTMLElement>('[role="menu"]')?.focus()
-  }, [anchor])
+  }, [anchor, scrollable])
 
   useLayoutEffect(() => {
     const submenu = root.current?.querySelector<HTMLElement>(".is-submenu")
@@ -94,67 +100,88 @@ export function PopupMenu({
     if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return
     event.preventDefault()
     event.stopPropagation()
-    const items = [...event.currentTarget.querySelectorAll<HTMLElement>(':scope > .noa-context-menu-entry > [role^="menuitem"]:not(:disabled)')]
+    const hasScrollContainer = !event.currentTarget.classList.contains("is-submenu") && !!event.currentTarget.querySelector(":scope > .noa-popup-menu-scroll")
+    const selector = hasScrollContainer
+      ? ':scope > .noa-popup-menu-scroll > .noa-context-menu-entry > [role^="menuitem"]:not(:disabled)'
+      : ':scope > .noa-context-menu-entry > [role^="menuitem"]:not(:disabled)'
+    const items = [...event.currentTarget.querySelectorAll<HTMLElement>(selector)]
     const index = items.indexOf(document.activeElement as HTMLElement)
     const step = event.key === "ArrowDown" ? 1 : items.length - 1
     items[index < 0 ? (event.key === "ArrowDown" ? 0 : items.length - 1) : (index + step) % items.length]?.focus()
   }
 
-  const list = (items: PopupMenuEntry[], nested: boolean): ReactNode => (
-    <div role="menu" aria-label={nested ? undefined : label} tabIndex={-1} className={`noa-context-menu noa-popup-menu noa-floating-panel${nested ? " is-submenu" : ""}`} onKeyDown={onKey}>
-      {items.map((entry, index) => {
-        if (entry.kind === "separator") return <div key={entry.key ?? `separator-${index}`} role="separator" className="noa-context-menu-separator" />
-        if (entry.kind === "heading") return <div key={entry.key ?? `heading-${index}`} role="presentation" className="noa-popup-menu-heading">{entry.label}</div>
-        const Icon = entry.icon
-        const hasSubmenu = !!entry.submenu
-        return (
-          <div
-            key={entry.key ?? index}
-            role="none"
-            className="noa-context-menu-entry"
-            onPointerEnter={() => !nested && setOpen(hasSubmenu ? index : undefined)}
+  const list = (items: PopupMenuEntry[], nested: boolean): ReactNode => {
+    const renderedItems = items.map((entry, index) => {
+      if (entry.kind === "separator") return <div key={entry.key ?? `separator-${index}`} role="separator" className="noa-context-menu-separator" />
+      if (entry.kind === "heading") return <div key={entry.key ?? `heading-${index}`} role="presentation" className="noa-popup-menu-heading">{entry.label}</div>
+      const Icon = entry.icon
+      const hasSubmenu = !!entry.submenu
+      return (
+        <div
+          key={entry.key ?? index}
+          role="none"
+          className="noa-context-menu-entry"
+          onPointerEnter={() => !nested && setOpen(hasSubmenu ? index : undefined)}
+        >
+          <button
+            type="button"
+            role={entry.checked === undefined ? "menuitem" : "menuitemradio"}
+            aria-checked={entry.checked}
+            aria-haspopup={hasSubmenu ? "menu" : undefined}
+            aria-expanded={hasSubmenu ? open === index : undefined}
+            disabled={entry.disabled}
+            data-danger={entry.danger ? "" : undefined}
+            onClick={() => {
+              if (hasSubmenu) setOpen(open === index ? undefined : index)
+              else {
+                onClose()
+                entry.onSelect?.()
+              }
+            }}
+            onKeyDown={(event) => {
+              if (hasSubmenu && (event.key === "ArrowRight" || event.key === "Enter")) {
+                event.preventDefault()
+                event.stopPropagation()
+                setOpen(index)
+                const row = event.currentTarget.parentElement
+                requestAnimationFrame(() => row?.querySelector<HTMLElement>('.is-submenu [role^="menuitem"]')?.focus())
+              } else if (nested && event.key === "ArrowLeft") {
+                event.preventDefault()
+                event.stopPropagation()
+                setOpen(undefined)
+                root.current?.querySelector<HTMLElement>('[aria-expanded="true"]')?.focus()
+              }
+            }}
           >
-            <button
-              type="button"
-              role={entry.checked === undefined ? "menuitem" : "menuitemradio"}
-              aria-checked={entry.checked}
-              aria-haspopup={hasSubmenu ? "menu" : undefined}
-              aria-expanded={hasSubmenu ? open === index : undefined}
-              disabled={entry.disabled}
-              data-danger={entry.danger ? "" : undefined}
-              onClick={() => {
-                if (hasSubmenu) setOpen(open === index ? undefined : index)
-                else {
-                  onClose()
-                  entry.onSelect?.()
-                }
-              }}
-              onKeyDown={(event) => {
-                if (hasSubmenu && (event.key === "ArrowRight" || event.key === "Enter")) {
-                  event.preventDefault()
-                  event.stopPropagation()
-                  setOpen(index)
-                  const row = event.currentTarget.parentElement
-                  requestAnimationFrame(() => row?.querySelector<HTMLElement>('.is-submenu [role^="menuitem"]')?.focus())
-                } else if (nested && event.key === "ArrowLeft") {
-                  event.preventDefault()
-                  event.stopPropagation()
-                  setOpen(undefined)
-                  root.current?.querySelector<HTMLElement>('[aria-expanded="true"]')?.focus()
-                }
-              }}
-            >
-              {Icon && <Icon size={16} className="noa-popup-menu-icon" />}
-              <span className="noa-popup-menu-label">{entry.label}</span>
-              {entry.checked && <Check size={14} className="noa-popup-menu-trailing" />}
-              {hasSubmenu && <ChevronRight size={14} className="noa-popup-menu-trailing noa-popup-menu-chevron" />}
-            </button>
-            {hasSubmenu && open === index && list(entry.submenu!, true)}
+            {Icon && <Icon size={16} className="noa-popup-menu-icon" />}
+            <span className="noa-popup-menu-label">{entry.label}</span>
+            {entry.checked && <Check size={14} className="noa-popup-menu-trailing" />}
+            {hasSubmenu && <ChevronRight size={14} className="noa-popup-menu-trailing noa-popup-menu-chevron" />}
+          </button>
+          {hasSubmenu && open === index && list(entry.submenu!, true)}
+        </div>
+      )
+    })
+
+    return (
+      <div
+        role="menu"
+        aria-label={nested ? undefined : label}
+        tabIndex={-1}
+        style={!nested && minWidth ? { minWidth } : undefined}
+        className={`noa-context-menu noa-popup-menu noa-floating-panel${nested ? " is-submenu" : ""}`}
+        onKeyDown={onKey}
+      >
+        {!nested && scrollable ? (
+          <div className="noa-popup-menu-scroll">
+            {renderedItems}
           </div>
-        )
-      })}
-    </div>
-  )
+        ) : (
+          renderedItems
+        )}
+      </div>
+    )
+  }
 
   return createPortal(
     <div ref={root} className="noa-context-menu-root font-ui" style={position} onContextMenu={(event) => event.preventDefault()}>
