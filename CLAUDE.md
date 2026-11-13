@@ -16,7 +16,7 @@
 
 **`typecheck` proves little**: ~85% of non-test source carries `@ts-nocheck`. Checked: `query.ts`, `QueryEngine.ts`, `tools.ts`, `services/tools/`, `utils/permissions/permissions.ts`, `services/compact/compact.ts`, against the `Message` union in `types/message.ts`. The `check:nocheck` baseline may only shrink; after removing a `@ts-nocheck`, run `node scripts/check-nocheck-ratchet.mjs --update`.
 
-**Production bundles are minified**: mangled stack traces / `constructor.name` in `dist/main.js` are expected (`utils/errors.ts` and `classifyToolError` handle them); use `dev`/`build:dev` for real names. Production defines `NODE_ENV=production`, so `NODE_ENV === 'test'` branches and test hooks exist only from source.
+**Production bundles are minified**: mangled stack traces / `constructor.name` in `dist/main.js` are expected (`src/utils/errors.ts` and `classifyToolError` handle them); use `dev`/`build:dev` for real names. Production defines `NODE_ENV=production`, so `NODE_ENV === 'test'` branches and test hooks exist only from source.
 
 Dead-code checks on `src/` exports must also scan `scripts/` and `bin/`: `scripts/check-runtime-health.mjs` imports `_*ForTesting` exports that only it uses, and deleting one breaks only `bun run check:runtime` (not `bun test` or `typecheck`).
 
@@ -29,7 +29,7 @@ Path-scoped rules in `.claude/rules/` (symlinked as `.noa/rules/`) load automati
 - Prompt text or `toolToAPISchema` → `prompt-cache.md` (lean vs verbose: `src/constants/CLAUDE.md`)
 - Provider routing → `src/services/api/CLAUDE.md`; preserved thinking → `preserved-thinking.md`
 - Skill hooks, task status, transcripts, Ink `Text` → `skill-hooks.md`, `task-status.md`, `transcripts.md`, `ink-text.md`
-- Writing or deleting tests (preload, isolated tests, flaky CI case) → `testing.md`; editing CI workflows → `ci.md`
+- Writing or deleting tests (preload, isolated tests) → `testing.md`; editing CI workflows → `ci.md`
 - Verifying the model-capability tables against the upstream binary → `docs/upstream-binary.md`
 - Directory map: README.
 
