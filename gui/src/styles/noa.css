@@ -53,10 +53,13 @@
 }
 .noa-agent-input {
   border-radius: 22px;
-  background: #FAFAF8;
+  background: var(--bg-card, #FAFAF8);
   box-shadow: 0 0 0 1px var(--border-light), 0 2px 8px #0000000a, 0 4px 80px 8px #00000006;
 }
-[data-theme="dark"] .noa-agent-input { background: #424240; box-shadow: inset 0 0 1px #fff3; }
+[data-theme="dark"] .noa-agent-input {
+  background: color-mix(in srgb, var(--bg-primary, #2D2D2B) 91%, var(--text-primary, #F9F9F7) 9%);
+  box-shadow: inset 0 0 1px rgba(255, 255, 255, 0.2);
+}
 /* The home composer's environment rail: 13px inline inset, 16px top corners, 5px
    above and below 28px controls, tucked 20px under the composer. Labels are 12/16px in the primary ink with
    16px icons 6px away, at most 224px wide. */
@@ -65,12 +68,14 @@
   margin: 0 13px -20px;
   padding: 5px 6px 25px;
   border-radius: 16px 16px 0 0;
-  background: #EFEFED;
+  background: color-mix(in srgb, var(--bg-primary, #F9F9F7) 95%, var(--text-primary, #2D2D2B) 5%);
   color: var(--text-primary);
 }
 .noa-agent-environment button:not(.noa-approval-item) { gap: 6px; max-width: 224px; color: var(--text-primary); font-size: 12px; line-height: 16px; }
 .noa-agent-environment > span { gap: 6px; font-size: 12px; line-height: 16px; }
-[data-theme="dark"] .noa-agent-environment { background: #383836; }
+[data-theme="dark"] .noa-agent-environment {
+  background: color-mix(in srgb, var(--bg-primary, #2D2D2B) 95%, var(--text-primary, #F9F9F7) 5%);
+}
 @media (width < 640px) {
   .noa-agent-input { box-shadow: 0 0 0 1px var(--border-light), 0 2px 8px #0000000a, 0 4px 40px 8px #00000006; }
 }
@@ -245,8 +250,8 @@ body {
   /* Pre-hydration fallback only; ThemeInjector overrides this with the
      resolved user font once settings load. See --font-ui above. */
   font-family: var(--font-ui);
-  background-color: #FCFCFB;
-  color: #2D2D2B;
+  background-color: var(--bg-primary, #FCFCFB);
+  color: var(--text-primary, #2D2D2B);
   margin: 0;
   padding: 0;
   overflow: hidden;
@@ -578,7 +583,7 @@ html[data-translucent-sidebar="enabled"] [data-sidebar-container] .noa-sidebar-t
 /* Menus and popovers: 12px corners and, in light mode, a white sheet that lifts off the page. !important because
    the page-surface token (--surface-page) is set per theme in ThemeInjector. */
 .noa-floating-panel.rounded-panel { border-radius: 12px; }
-:root:not([data-theme="dark"]) .noa-floating-panel.rounded-panel { background-color: #FFFFFF !important; }
+:root:not([data-theme="dark"]) .noa-floating-panel.rounded-panel { background-color: var(--bg-card, #FFFFFF) !important; }
 .noa-floating-panel.rounded-dialog {
   box-shadow: var(--shadow-dialog);
 }
@@ -591,8 +596,8 @@ html[data-translucent-sidebar="enabled"] [data-sidebar-container] .noa-sidebar-t
   max-width: min(420px, 80vw);
   margin: 1px 0 8px;
   padding: 8px 4px;
-  border-radius: var(--menu-radius);
-  background-color: #F9F9F9;
+  border-radius: var(--menu-popover-radius);
+  background-color: var(--bg-card, #F9F9F9);
   color: var(--text-primary, #1A1C1F);
   border: 0;
   box-shadow: var(--menu-shadow);
@@ -806,8 +811,7 @@ html[data-translucent-sidebar="enabled"] [data-sidebar-container] .noa-sidebar-t
 }
 
 /* ── List markers: typography's default grays wash out on cream; pin to body text colour per theme. */
-.prose li::marker { color: #2D2D2B; }
-[data-theme="dark"] .prose li::marker { color: #F9F9F7 !important; }
+.prose li::marker { color: var(--text-primary, #2D2D2B); }
 
 /* In-app "Reduce Motion" (Settings > Appearance) wins over the system setting: every animation and transition finishes instantly. */
 :root[data-reduce-motion="true"] *,
@@ -995,7 +999,7 @@ html[data-translucent-sidebar="enabled"] [data-sidebar-container] .noa-sidebar-t
 }
 /* Dropdown cards: 20px radius, half-pixel ring plus a soft xl shadow, vertical padding 8px. */
 .noa-model-picker.noa-floating-panel.rounded-panel {
-  border-radius: var(--menu-radius);
+  border-radius: var(--menu-popover-radius);
   border: 0;
   padding-block: 8px;
   box-shadow: var(--menu-shadow);
@@ -1331,10 +1335,10 @@ html[data-translucent-sidebar="enabled"] [data-sidebar-container] .noa-sidebar-t
 .noa-code-search input[aria-invalid="true"] { border-color: #C24444; }
 
 .noa-change-count { display: inline-flex; flex-shrink: 0; gap: 6px; font-size: var(--text-caption); font-variant-numeric: tabular-nums; }
-.noa-change-count .is-added { color: #168447; }
-.noa-change-count .is-removed { color: #C24444; }
-[data-theme="dark"] .noa-change-count .is-added { color: #69C98B; }
-[data-theme="dark"] .noa-change-count .is-removed { color: #EE8A8A; }
+.noa-change-count .is-added { color: var(--diff-added, #00a240); }
+.noa-change-count .is-removed { color: var(--diff-removed, #ba2623); }
+[data-theme="dark"] .noa-change-count .is-added { color: var(--diff-added, #40c977); }
+[data-theme="dark"] .noa-change-count .is-removed { color: var(--diff-removed, #fa423e); }
 .noa-viewed-label { display: inline-flex; align-items: center; gap: 5px; color: var(--sidebar-text-muted); font-size: var(--text-caption); }
 .noa-viewed-label input { accent-color: var(--accent-color); }
 .noa-panel-empty { margin: 0; padding: 24px 16px; text-align: center; color: var(--sidebar-text-muted); font-size: var(--text-chat-sm); }
@@ -1464,13 +1468,10 @@ kbd.noa-review-menu-hint { font-family: inherit; }
 .noa-popup-menu .noa-context-menu-entry > button[role="switch"]:disabled:hover { background: none; }
 .noa-popup-menu-icon { flex-shrink: 0; color: var(--text-primary); }
 .noa-popup-menu-label { min-width: 0; flex: 1; margin-inline-end: 12px; overflow: hidden; text-overflow: ellipsis; }
-.noa-popup-menu-value { color: #5D5D5D; }
-[data-theme="dark"] .noa-popup-menu-value { color: #CDCDCD; }
+.noa-popup-menu-value { color: var(--text-secondary, #5D5D5D); }
 .noa-popup-menu-trailing { flex-shrink: 0; color: var(--text-primary); }
-.noa-popup-menu-chevron { color: #8F8F8F; }
-[data-theme="dark"] .noa-popup-menu-chevron { color: #AFAFAF; }
-.noa-popup-menu-heading { padding: 4px 8px; color: #8F8F8F; font-size: 12px; line-height: 16px; }
-[data-theme="dark"] .noa-popup-menu-heading { color: #AFAFAF; }
+.noa-popup-menu-chevron { color: var(--text-tertiary, #8F8F8F); }
+.noa-popup-menu-heading { padding: 4px 8px; color: var(--text-tertiary, #8F8F8F); font-size: 12px; line-height: 16px; }
 .noa-popup-menu > .noa-context-menu-separator { margin: 0; height: auto; padding: 4px 8px; background: none; }
 .noa-popup-menu > .noa-context-menu-separator::before { content: ""; display: block; height: 1px; background: var(--border-default); }
 [data-theme="dark"] .noa-popup-menu > .noa-context-menu-separator::before { background: rgb(255 255 255 / 0.15); }
@@ -1566,8 +1567,8 @@ kbd.noa-review-menu-hint { font-family: inherit; }
 .noa-scroll-bottom[data-show="false"] { opacity: 0; pointer-events: none; }
 /* Per-turn diff card: header + up to three file rows. */
 /* Absolutely at contrast 45, matching the local Codex theme generator's control, hover and stroke tokens. */
-.noa-turn-diff-card, .noa-turn-diff-notice, .noa-live-diff, .noa-turn-review { --turn-diff-elevated: rgb(250,250,248); --turn-diff-under: #F1F1EF; --turn-diff-fill: rgba(45,45,43,.053); --turn-diff-stroke: rgba(45,45,43,.117); --turn-diff-border: rgba(45,45,43,.078); --turn-diff-secondary: rgba(45,45,43,.695); --turn-diff-focus: #CC7D5E; --turn-diff-radius: 10px; --turn-diff-corner: round; --turn-diff-added: var(--diff-added, #00C853); --turn-diff-removed: var(--diff-removed, #FF5F38); }
-[data-theme="dark"] .noa-turn-diff-card, [data-theme="dark"] .noa-turn-diff-notice, [data-theme="dark"] .noa-live-diff { --turn-diff-elevated: rgb(60,60,58); --turn-diff-under: #272725; --turn-diff-fill: rgba(249,249,247,.068); --turn-diff-stroke: rgba(249,249,247,.137); --turn-diff-border: rgba(249,249,247,.071); --turn-diff-secondary: rgba(249,249,247,.677); --turn-diff-focus: rgba(221,169,149,.727); }
+.noa-turn-diff-card, .noa-turn-diff-notice, .noa-live-diff, .noa-turn-review { --turn-diff-elevated: var(--bg-card, rgb(250,250,248)); --turn-diff-under: var(--bg-secondary, #F1F1EF); --turn-diff-fill: var(--fill-hover, rgba(45,45,43,.053)); --turn-diff-stroke: var(--border-strong, rgba(45,45,43,.117)); --turn-diff-border: var(--border-default, rgba(45,45,43,.078)); --turn-diff-secondary: var(--text-secondary, rgba(45,45,43,.695)); --turn-diff-focus: var(--accent-color, #CC7D5E); --turn-diff-radius: 10px; --turn-diff-corner: round; --turn-diff-added: var(--diff-added, #00C853); --turn-diff-removed: var(--diff-removed, #FF5F38); }
+[data-theme="dark"] .noa-turn-diff-card, [data-theme="dark"] .noa-turn-diff-notice, [data-theme="dark"] .noa-live-diff { --turn-diff-elevated: color-mix(in srgb, var(--bg-primary, #2D2D2B) 90%, var(--text-primary, #F9F9F7) 10%); --turn-diff-under: var(--bg-card, #272725); --turn-diff-fill: var(--fill-hover, rgba(249,249,247,.068)); --turn-diff-stroke: var(--border-strong, rgba(249,249,247,.137)); --turn-diff-border: var(--border-default, rgba(249,249,247,.071)); --turn-diff-secondary: var(--text-secondary, rgba(249,249,247,.677)); --turn-diff-focus: var(--accent-color, rgba(221,169,149,.727)); }
 @supports (corner-shape: superellipse(1.5)) {
   .noa-turn-diff-card, .noa-turn-diff-notice { --turn-diff-radius: 12.5px; --turn-diff-corner: superellipse(1.5); }
 }
@@ -1757,8 +1758,8 @@ kbd.noa-review-menu-hint { font-family: inherit; }
 
 /* Per-file change list, opened on hover/focus above the summary (min width 256px, max height 288px, rows padded 6px 12px). */
 .noa-turn-diff-stats { display: inline-flex; flex-shrink: 0; gap: 4px; font-size: inherit; font-variant-numeric: tabular-nums; color: var(--sidebar-text-muted); }
-.noa-turn-diff-stats .is-added { color: #168447; } .noa-turn-diff-stats .is-removed { color: #C24444; }
-[data-theme="dark"] .noa-turn-diff-stats .is-added { color: #69C98B; } [data-theme="dark"] .noa-turn-diff-stats .is-removed { color: #EE8A8A; }
+.noa-turn-diff-stats .is-added { color: var(--diff-added, #00a240); } .noa-turn-diff-stats .is-removed { color: var(--diff-removed, #ba2623); }
+[data-theme="dark"] .noa-turn-diff-stats .is-added { color: var(--diff-added, #40c977); } [data-theme="dark"] .noa-turn-diff-stats .is-removed { color: var(--diff-removed, #fa423e); }
 :is(.noa-turn-diff-card, .noa-live-diff, .noa-turn-review) .noa-turn-diff-stats .is-added { color: var(--turn-diff-added); }
 :is(.noa-turn-diff-card, .noa-live-diff, .noa-turn-review) .noa-turn-diff-stats .is-removed { color: var(--turn-diff-removed); }
 
@@ -2039,16 +2040,16 @@ body.noa-session-dragging * { cursor: grabbing !important; }
 
 /* Create project dialog, with the shared dialog, field and button rules. */
 .noa-project-dialog {
-  --project-surface: rgb(255 255 255 / 90%);
-  --project-field: rgb(227 227 227 / 96%);
-  --project-text: #1a1c1f;
-  --project-secondary: color-mix(in srgb, #1a1c1f 65%, transparent);
-  --project-tertiary: color-mix(in oklab, #1a1c1f 50%, transparent);
+  --project-surface: color-mix(in srgb, var(--bg-card, #ffffff) 90%, transparent);
+  --project-field: color-mix(in srgb, var(--bg-primary, #f9f9f7) 92%, var(--text-primary, #1a1c1f) 8%);
+  --project-text: var(--text-primary, #1a1c1f);
+  --project-secondary: var(--text-secondary, color-mix(in srgb, #1a1c1f 65%, transparent));
+  --project-tertiary: var(--text-tertiary, color-mix(in oklab, #1a1c1f 50%, transparent));
   --project-border: var(--border-default);
-  --project-hover: color-mix(in oklab, #1a1c1f 5%, transparent);
+  --project-hover: var(--fill-hover, color-mix(in oklab, #1a1c1f 5%, transparent));
   --project-focus: var(--accent-color, #cc7d5e);
-  --project-primary: #1a1c1f;
-  --project-primary-ink: #fff;
+  --project-primary: var(--text-primary, #1a1c1f);
+  --project-primary-ink: var(--surface-page, #fff);
   position: fixed;
   inset: 0;
   z-index: 50;
@@ -2064,18 +2065,18 @@ body.noa-session-dragging * { cursor: grabbing !important; }
 /* Chromium drops the native window material behind any backdrop-filter layer, so with a
    translucent sidebar the whole sidebar turns opaque while a dialog is open. Use opaque
    surfaces there instead of blurring. */
-html[data-translucent-sidebar="enabled"] .noa-project-dialog__panel { backdrop-filter: none !important; --project-surface: rgb(255 255 255); }
-html[data-translucent-sidebar="enabled"][data-theme="dark"] .noa-project-dialog__panel { --project-surface: rgb(24 24 24); }
+html[data-translucent-sidebar="enabled"] .noa-project-dialog__panel { backdrop-filter: none !important; --project-surface: var(--bg-card, rgb(255 255 255)); }
+html[data-translucent-sidebar="enabled"][data-theme="dark"] .noa-project-dialog__panel { --project-surface: var(--bg-card, rgb(24 24 24)); }
 html[data-translucent-sidebar="enabled"] .noa-confirm-scrim { backdrop-filter: none; }
 [data-theme="dark"] .noa-project-dialog {
-  --project-surface: rgb(24 24 24 / 90%);
-  --project-field: rgb(45 45 45 / 96%);
-  --project-text: #dfdfdf;
-  --project-secondary: color-mix(in srgb, #dfdfdf 65%, transparent);
-  --project-tertiary: color-mix(in oklab, #dfdfdf 50%, transparent);
-  --project-hover: color-mix(in oklab, #fff 8%, transparent);
-  --project-primary: #dfdfdf;
-  --project-primary-ink: #181818;
+  --project-surface: color-mix(in srgb, var(--bg-card, #181818) 90%, transparent);
+  --project-field: color-mix(in srgb, var(--bg-primary, #2d2d2b) 92%, var(--text-primary, #dfdfdf) 8%);
+  --project-text: var(--text-primary, #dfdfdf);
+  --project-secondary: var(--text-secondary, color-mix(in srgb, #dfdfdf 65%, transparent));
+  --project-tertiary: var(--text-tertiary, color-mix(in oklab, #dfdfdf 50%, transparent));
+  --project-hover: var(--fill-hover, color-mix(in oklab, #fff 8%, transparent));
+  --project-primary: var(--text-primary, #dfdfdf);
+  --project-primary-ink: var(--surface-page, #181818);
 }
 
 .noa-project-dialog__panel {

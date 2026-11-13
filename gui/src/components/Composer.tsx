@@ -1003,7 +1003,7 @@ export const Composer = memo(function Composer({
                 </button>
                 <span
                   role="tooltip"
-                  className={`absolute bottom-full left-1/2 z-40 mb-2.5 w-[280px] -translate-x-1/2 flex-col gap-2 whitespace-nowrap rounded-[14px] bg-[var(--bg-card)] px-4 py-3 text-caption tabular-nums text-[var(--text-primary)] shadow-[var(--shadow-dialog)] ${contextOpen ? "flex" : "hidden"}`}
+                  className={`absolute bottom-full left-1/2 z-40 mb-2.5 w-[280px] -translate-x-1/2 flex-col gap-2 whitespace-nowrap rounded-[var(--menu-popover-radius)] bg-[var(--bg-card)] px-4 py-3 text-caption tabular-nums text-[var(--text-primary)] shadow-[var(--menu-shadow)] ${contextOpen ? "noa-floating-panel flex" : "hidden"}`}
                 >
                   <span className="flex items-baseline justify-between gap-3">
                     <span>Context window</span>
@@ -1581,7 +1581,7 @@ function UsageBar({ percentage }: { percentage: number }) {
         className="block h-full rounded-full"
         style={{
           width: `${Math.min(100, Math.max(0, percentage))}%`,
-          background: percentage >= 75 ? "#e8a93b" : "#3b7ddd",
+          background: percentage >= 75 ? "#e8a93b" : "var(--accent-color, #3b7ddd)",
         }}
       />
     </span>

@@ -80,8 +80,8 @@ export function ToolCard({ block, step: stepProp, defaultOpen = false, active = 
         {elapsedLabel && <span className="shrink-0 tabular-nums opacity-80">{elapsedLabel}</span>}
         {diffStats && (
           <span className="shrink-0 text-caption tabular-nums">
-            {diffStats.additions > 0 && <span className="text-[#168447]">+{diffStats.additions}</span>}
-            {diffStats.deletions > 0 && <span className="ms-1 text-[#C24444]">-{diffStats.deletions}</span>}
+            {diffStats.additions > 0 && <span className="text-[var(--diff-added,#168447)]">+{diffStats.additions}</span>}
+            {diffStats.deletions > 0 && <span className="ms-1 text-[var(--diff-removed,#C24444)]">-{diffStats.deletions}</span>}
           </span>
         )}
         <ChevronRight size={12} className={`shrink-0 opacity-0 transition-[transform,opacity] duration-300 group-hover/tool:opacity-100 group-focus-visible/tool:opacity-100 ${open ? "rotate-90" : ""}`} />
@@ -373,7 +373,7 @@ function RawOutputDialog({ title, language, code, onClose }: {
         aria-label={`${title} raw output`}
         onMouseDown={(event) => event.stopPropagation()}
         onKeyDown={onKeyDown}
-        className="noa-confirm-dialog flex max-h-[80vh] w-full max-w-3xl flex-col overflow-hidden rounded-panel bg-[var(--bg-card)] shadow-[var(--shadow-dialog)]"
+        className="noa-confirm-dialog flex max-h-[80vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-[var(--bg-card)] font-ui"
       >
         <div className="flex h-10 shrink-0 items-center justify-between border-b border-[var(--divider-subtle)] px-3 text-body">
           <span className="truncate">{title}</span>

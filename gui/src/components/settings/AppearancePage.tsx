@@ -24,6 +24,40 @@ import { NumberField, Row, Section, Segmented, Select, Slider, Toggle, actionBut
 
 type Theme = AppSettings["appearance"]["theme"]
 
+function ColorSwatchPill({
+  ariaLabel,
+  color,
+  label,
+  mono = false,
+  onChange,
+}: {
+  ariaLabel: string
+  color: string
+  label: string
+  mono?: boolean
+  onChange: (value: string) => void
+}) {
+  return (
+    <label className="relative inline-flex h-7 cursor-pointer items-center gap-2 rounded-lg border border-[var(--border-default)] bg-[var(--bg-card)] px-2.5 transition-colors hover:border-[var(--border-strong)] focus-within:border-[var(--accent-color)] focus-within:ring-1 focus-within:ring-[var(--accent-color)]/30">
+      <input
+        type="color"
+        aria-label={ariaLabel}
+        value={color}
+        onChange={(e) => onChange(e.target.value)}
+        className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+      />
+      <span
+        aria-hidden="true"
+        className="size-3.5 shrink-0 rounded-full ring-1 ring-inset ring-black/15 dark:ring-white/20"
+        style={{ backgroundColor: color }}
+      />
+      <span className={`text-caption text-[var(--text-primary)] select-none ${mono ? "font-mono uppercase" : ""}`}>
+        {label}
+      </span>
+    </label>
+  )
+}
+
 export function AppearancePage({
   settings,
   onChange,
@@ -249,14 +283,13 @@ export function AppearancePage({
         </Row>
         <Row label="Accent" description={`Accent color for ${variant} mode.`}>
           <div className="flex shrink-0 items-center gap-2">
-            <input
-              type="color"
-              aria-label="Accent color"
-              value={resolvedTheme.accent}
-              onChange={(e) => updateAccent(e.target.value)}
-              className="h-7 w-9 cursor-pointer rounded border border-[var(--border-default)] bg-transparent p-0.5"
+            <ColorSwatchPill
+              ariaLabel="Accent color"
+              color={resolvedTheme.accent}
+              label={resolvedTheme.accent}
+              mono
+              onChange={updateAccent}
             />
-            <span className="w-16 font-mono text-caption text-[var(--text-secondary)]">{resolvedTheme.accent}</span>
             {hasCustomAccent && (
               <button type="button" className={actionButton} onClick={() => updateAccent(presetBase.accent)}>
                 Reset
@@ -265,7 +298,7 @@ export function AppearancePage({
           </div>
         </Row>
         <Row label="Semantic colors" description={`Diff added, diff removed, and skill highlight colors for ${variant} mode.`}>
-          <div className="flex shrink-0 items-center gap-2.5">
+          <div className="flex shrink-0 items-center gap-2">
             {(
               [
                 ["diffAdded", "Added", resolvedSemantics.diffAdded],
@@ -273,16 +306,13 @@ export function AppearancePage({
                 ["skill", "Skill", resolvedSemantics.skill],
               ] as const
             ).map(([key, shortLabel, colorValue]) => (
-              <label key={key} className="flex items-center gap-1 text-caption text-[var(--text-secondary)]">
-                <input
-                  type="color"
-                  aria-label={`${shortLabel} semantic color`}
-                  value={colorValue}
-                  onChange={(e) => updateSemanticColor(key, e.target.value)}
-                  className="h-6 w-7 cursor-pointer rounded border border-[var(--border-default)] bg-transparent p-0.5"
-                />
-                <span>{shortLabel}</span>
-              </label>
+              <ColorSwatchPill
+                key={key}
+                ariaLabel={`${shortLabel} semantic color`}
+                color={colorValue}
+                label={shortLabel}
+                onChange={(next) => updateSemanticColor(key, next)}
+              />
             ))}
             {hasCustomSemantics && (
               <button type="button" className={actionButton} onClick={resetSemanticColors}>

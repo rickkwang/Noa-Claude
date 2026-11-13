@@ -275,10 +275,10 @@ export function OverviewPanel({ state, cwd, open, workspaceRefreshKey, endInset,
     diagnostics: <RailCard id="diagnostics" title="Diagnostics" chrome={chromeFor("diagnostics")} summary={state.logs.length ? `${state.logs.length} ${state.logs.length === 1 ? "entry" : "entries"}` : undefined}>
       <pre className="noa-activity-log px-2">{state.logs.join("\n") || "No agent diagnostics"}</pre>
     </RailCard>,
-    changes: changes?.isGit ? <RailCard id="changes" title="Changes" chrome={chromeFor("changes")} summary={<span><span className="text-[#3E8E57]">+{changes.additions}</span> <span className="text-[#C24444]">−{changes.deletions}</span></span>}>
+    changes: changes?.isGit ? <RailCard id="changes" title="Changes" chrome={chromeFor("changes")} summary={<span><span className="text-[var(--diff-added,#3E8E57)]">+{changes.additions}</span> <span className="text-[var(--diff-removed,#C24444)]">−{changes.deletions}</span></span>}>
       <div className={iconRow}>
         <PlusMinus size={16} className={`shrink-0 ${MUTED}`} aria-hidden="true" />
-        {changes.files.length ? <span className="shrink-0 whitespace-nowrap"><span className="text-[#3E8E57]">+{changes.additions}</span> <span className="text-[#C24444]">−{changes.deletions}</span></span> : <span className={`min-w-0 truncate ${MUTED}`}>Working tree clean</span>}
+        {changes.files.length ? <span className="shrink-0 whitespace-nowrap"><span className="text-[var(--diff-added,#3E8E57)]">+{changes.additions}</span> <span className="text-[var(--diff-removed,#C24444)]">−{changes.deletions}</span></span> : <span className={`min-w-0 truncate ${MUTED}`}>Working tree clean</span>}
         <button type="button" onClick={onOpenChanges} className="ms-auto h-6 shrink-0 whitespace-nowrap rounded-lg bg-[var(--fill-hover)] px-2.5 text-[var(--text-primary)] hover:bg-[var(--fill-hover)]">Review changes</button>
       </div>
     </RailCard> : null,
