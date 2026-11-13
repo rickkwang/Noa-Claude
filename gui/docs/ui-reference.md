@@ -136,7 +136,7 @@ column that swaps between the tree and the file. Verify with `bun run --cwd gui 
 
 Overview is not a right-column tab. It is opened from the titlebar button beside the column toggle and
 has the two states of Claude's session rail (its bundled frontend was read for the rules and values).
-The logic is Claude's: a remembered "shown" preference (default on) plus a width test. The docked column is
+The logic is Claude's: a session-only "shown" state (default off, never persisted) plus a width test. The docked column is
 visible when it is shown and the chat area is wide enough (611px, or 771px with the right column open):
 a 280px column of ring cards, 12px radius, 10px apart, no animation, and the chat and composer make room.
 When it does not fit, the column is hidden and the toggle opens a transient flat popover instead (200ms

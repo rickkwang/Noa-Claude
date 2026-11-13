@@ -1,5 +1,5 @@
 // Checks GitHub Releases for a newer desktop build. It only reports the release; installing it is
-// appUpdate.cjs's job. Desktop releases are tagged
+// macUpdateInstaller.cjs's job. Desktop releases are tagged
 // gui-v<version>, which the CLI installer ignores (it accepts only vX.Y.Z tags).
 const http = require('http')
 const https = require('https')

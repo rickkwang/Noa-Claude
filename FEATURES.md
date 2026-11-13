@@ -40,7 +40,7 @@ Default `bun run build` profile in this repo is conservative; the expanded unloc
 | CLI startup (`noa`) | Available | Stable, isolated product directory defaults. |
 | Non-interactive (`--print`) | Available | Regular MCP now uses bounded wait + background continue. |
 | Interactive REPL | Available | Mainline usable; some historical complexity remains. |
-| Desktop GUI (`gui/`) | Implemented but Non-Baseline | Development Electron shell; Browser tabs for any HTTP/HTTPS address and Suggested website cards from terminal output/completed replies, with isolated, persisted per-project browser sessions that keep public pages away from private addresses (`bun run --cwd gui test:browser`); new-task usage stats from the CLI `/stats` aggregation (`bun run --cwd gui test:stats`); a Files pane that keeps the tree beside the open file when wide enough (`bun run --cwd gui test:files-split`); searchable files, guarded text editing, unified/split local Git review and per-file and staged/unstaged-hunk stage/unstage/revert, context and tool activity; searchable settings, composer preferences, CLI-backed configuration/Hook/skill/plugin inspection and MCP controls; math/diagrams, scoped media, review comments, structured results and paged conversation history. Grouped subagent creation, event-ordered lifecycle rows and a task-specific Active/Done Subagents panel; expandable returned thinking, paged questions and syntax-highlighted Write previews. New-task “Work in” menu selects “This computer”; Cloud is disabled with an explanation because cloud execution is unavailable. 512 KiB text/image preview / 3,000 rendered-line limits; no full Codex parity claim. Verified with `scripts/e2e-gui-workspace.mjs`; native conversation fixtures: `bun run --cwd gui test:rendering`. |
+| Desktop GUI (`gui/`) | Implemented but Non-Baseline | Development Electron shell; Browser tabs for any HTTP/HTTPS address and Suggested website cards from terminal output/completed replies, with isolated, persisted per-project browser sessions that keep public pages away from private addresses (`bun run --cwd gui test:browser`); new-task usage stats from the CLI `/stats` aggregation (`bun run --cwd gui test:stats`); a Files pane that keeps the tree beside the open file when wide enough (`bun run --cwd gui test:files-split`); searchable files, guarded text editing, unified/split local Git review and per-file and staged/unstaged-hunk stage/unstage/revert, context and tool activity; searchable settings, composer preferences, CLI-backed configuration/Hook/skill/plugin inspection and MCP controls; math/diagrams, scoped media, review comments, structured results and paged conversation history. Grouped subagent creation, event-ordered lifecycle rows and a task-specific Active/Done Subagents panel; expandable returned thinking, paged questions and syntax-highlighted Write previews. New-task environment row shows “This computer” as a static label (cloud execution is unavailable, so there is no “Work in” menu). 512 KiB text/image preview / 3,000 rendered-line limits; no full Codex parity claim. Verified with `scripts/e2e-gui-workspace.mjs`; native conversation fixtures: `bun run --cwd gui test:rendering`. |
 | MiniMax Anthropic-compatible backend | Available | Default product path and launcher checks in place. |
 | Official Claude OAuth fallback on 3P path | Disabled by policy | Missing/invalid 3P token fails clearly; no OAuth fallback. |
 
@@ -92,13 +92,13 @@ Bridge/remote runtime modules can exist in source, but this build does not regis
 ## Runtime Modes Outside Slash Commands
 | Capability | Status | Source |
 |---|---|---|
-| Daemon mode | Build-Excluded | `src/daemon/main.ts` |
-| Daemon worker registry | Build-Excluded | `src/daemon/workerRegistry.ts` |
-| Environment runner | Build-Excluded | `src/environment-runner/main.ts` |
-| Self-hosted runner | Build-Excluded | `src/self-hosted-runner/main.ts` |
+| Daemon mode | Build-Excluded | Not in source |
+| Daemon worker registry | Build-Excluded | Not in source |
+| Environment runner | Build-Excluded | Not in source |
+| Self-hosted runner | Build-Excluded | Not in source |
 | Background sessions + agents view (`noa agents`, `noa --bg <task>`, `noa attach/logs/stop/kill/respawn/rm <id>`, `noa reply <id> <message>`) | Available (core) | `src/utils/background/`, `src/components/FleetView/` — detached PTY host per session, no daemon. `disableAgentView` / `NOA_CLAUDE_DISABLE_AGENT_VIEW=1` turns it off; `leftArrowOpensAgents: false` (or ← opens agents in `/config`) keeps ← a cursor key. Writes into the shared checkout are blocked until the session isolates via EnterWorktree (`worktree.bgIsolation` / `NOA_CLAUDE_BG_ISOLATION`, default `worktree`) |
 | Local subagent coordination | Available | Ordinary background subagents can use `SendMessage` for peer communication, subject to parent permissions and agent tool restrictions. Foreground and background ordinary local subagents share `NOA_CLAUDE_MAX_CONCURRENT_AGENTS` (default 20; `0` disables the cap); running parents retain their slot while awaiting children. Covered by `scripts/e2e-agent-coordination.mjs` |
-| Template jobs | Build-Excluded | `src/cli/handlers/templateJobs.ts` |
+| Template jobs | Build-Excluded | Not in source |
 | Remote control in this build | Build-Excluded | `src/bridge/bridgeEnabled.ts` |
 | Channels in print mode | Build-Excluded | `src/cli/print.ts` |
 | Auto/Bypass mode tool reminders | Available | Auto uses the upstream bias-toward-action reminder; Auto/Bypass can add bash-first guidance when Bash and Edit or Write are available. `NOA_CLAUDE_BASH_FIRST=0` disables it; `NOA_CLAUDE_BASH_FIRST_VARIANT=strict|relaxed` overrides the model-dependent wording. Covered by `scripts/e2e-agent-loop.mjs --case mode-auto` / `--case mode-bypass` and interactive `scripts/e2e-startup-boundaries.mjs --case bypass-mode-prompt` |
@@ -255,11 +255,9 @@ Refer to the command-level availability tables above.
   user themes from `<config>/themes/*.json`, plugin-provided themes
   (`themes/` dir or `themes`/`experimental.themes` manifest paths, slugs
   namespaced `<plugin>:`), `custom:<slug>` values for the `theme` setting,
-  the picker's custom-theme rows + ctrl+e edit, and the theme editor
-  (fork-on-edit for plugin themes). Intentional deviation: upstream gates
-  custom themes behind safe mode (`--safe-mode` / `CLAUDE_CODE_SAFE_MODE=1`)
-  and shows a "disabled in safe mode" notice; this fork has no safe-mode
-  concept, so that gate and its copy are absent.
+  the picker's custom-theme rows + ctrl+e edit, the theme editor
+  (fork-on-edit for plugin themes), and safe-mode gating
+  (`--safe-mode` / `NOA_CLAUDE_SAFE_MODE=1`).
 - **`/status` "Session kind" row** — the upstream row uses
   `CLAUDE_CODE_SESSION_KIND=bg` and `attacherCaps`. This fork has detached
   background sessions with its own `NOA_CLAUDE_BG_JOB` marker and PTY

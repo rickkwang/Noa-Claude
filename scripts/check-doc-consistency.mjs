@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import {
   COMMAND_SURFACE_STATUS,
@@ -275,6 +275,13 @@ for (const [label, text] of [
   }
   if (/legacy \\.claude\/commands/i.test(text)) {
     failures.push(`${label} still mentions legacy .claude/commands`)
+  }
+}
+
+for (const match of matrix.matchAll(/`(src\/[^`\s]+)`/g)) {
+  const relPath = match[1]
+  if (!existsSync(resolve(root, relPath))) {
+    failures.push(`Feature matrix references missing path ${relPath}`)
   }
 }
 
