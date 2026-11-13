@@ -141,15 +141,23 @@ const settledStreamTokens = new Set<string>()
 // harmless re-fade if that block is ever mounted again.
 function settleStreamToken(key: string) {
   settledStreamTokens.add(key)
-  streamTokenDelays.delete(key)
+  streamTokenStarts.delete(key)
   if (settledStreamTokens.size > 4000) {
     const oldest = settledStreamTokens.values().next().value
     if (oldest !== undefined) settledStreamTokens.delete(oldest)
   }
 }
 
-// Each word keeps the delay it first rendered with, so settling earlier words cannot shift it mid-fade.
-const streamTokenDelays = new Map<string, number>()
+// When each word's fade begins. Settling earlier words cannot shift it, and an answer that
+// remounts mid-fade (the finished turn folds into another layout) resumes rather than restarts it.
+const streamTokenStarts = new Map<string, number>()
+
+function StreamToken({ tokenKey, token }: { tokenKey: string; token: string }) {
+  // Fixed for this element's lifetime; negative once the fade is already under way.
+  const delay = useRef<number | null>(null)
+  if (delay.current === null) delay.current = Math.round((streamTokenStarts.get(tokenKey) ?? performance.now()) - performance.now())
+  return <span className="noa-stream-seg" style={{ animationDelay: `${delay.current}ms` }} onAnimationEnd={() => settleStreamToken(tokenKey)}>{token}</span>
+}
 const settledStreamBlocks = new Set<string>()
 
 function settleStreamBlock(key: string) {
@@ -178,6 +186,7 @@ function streamTokens(text: string, key: string, counter: { node: number }): Rea
   const start = Math.max(0, tokens.length - STREAM_SEGMENT_LIMIT)
   const node = counter.node++
   const nodes: ReactNode[] = []
+  const now = performance.now()
   // New words in one chunk fade in as a wave rather than all at once.
   let freshChars = 0
   if (start > 0) nodes.push(tokens.slice(0, start).join(""))
@@ -189,25 +198,14 @@ function streamTokens(text: string, key: string, counter: { node: number }): Rea
     }
     const tokenKey = `${key}-${node}-${i}`
     const settled = settledStreamTokens.has(tokenKey)
-    let delay = streamTokenDelays.get(tokenKey)
-    if (!settled) {
-      if (delay === undefined) {
-        delay = Math.min(freshChars * STREAM_DELAY_PER_CHAR_MS, STREAM_SEGMENT_MAX_DELAY_MS)
-        streamTokenDelays.set(tokenKey, delay)
-        if (streamTokenDelays.size > 4000) streamTokenDelays.delete(streamTokenDelays.keys().next().value!)
-      }
+    // Only words first rendered in this pass form the wave; words still fading from earlier
+    // passes must not push new ones to the delay cap all at once.
+    if (!settled && !streamTokenStarts.has(tokenKey)) {
+      streamTokenStarts.set(tokenKey, now + Math.min(freshChars * STREAM_DELAY_PER_CHAR_MS, STREAM_SEGMENT_MAX_DELAY_MS))
+      if (streamTokenStarts.size > 4000) streamTokenStarts.delete(streamTokenStarts.keys().next().value!)
       freshChars += token.length
     }
-    nodes.push(
-      <span
-        key={tokenKey}
-        className={settled ? undefined : "noa-stream-seg"}
-        style={settled ? undefined : { animationDelay: `${delay}ms` }}
-        onAnimationEnd={settled ? undefined : () => settleStreamToken(tokenKey)}
-      >
-        {token}
-      </span>,
-    )
+    nodes.push(settled ? <span key={tokenKey}>{token}</span> : <StreamToken key={tokenKey} tokenKey={tokenKey} token={token} />)
   }
   return nodes
 }

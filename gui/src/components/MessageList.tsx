@@ -1219,66 +1219,113 @@ function MessageActions({ text, kind = "assistant", onEdit, onRewind, rewindBloc
   )
 }
 
-// Some models deliver a whole answer in one burst. Reveal it in word-sized steps whose
-// pace follows the backlog (about 0.55s behind the stream), and keep draining after the
-// stream ends.
-const REVEAL_STEP_CHARS = 22
-const REVEAL_TARGET_LAG_MS = 550
-const REVEAL_MIN_STEP_MS = 25
-const REVEAL_MAX_STEP_MS = 150
-const REVEAL_CATCH_UP_WINDOW_MS = 75
+// Providers often deliver text as bursts of small deltas, the bursts seconds apart. Reveal at the
+// stream's average arrival rate, but never faster than lets the buffer last 1.2x the longest gap
+// seen, counting the current wait as a gap, so the text slows through the wait for the next burst
+// instead of racing ahead and stopping. For the first second the rate is unknown and the reveal
+// starts slow; a short initial hold builds a cushion.
+const REVEAL_MIN_CPS = 15
+const REVEAL_MAX_CPS = 300
+const REVEAL_HOLD_CHARS = 30
+const REVEAL_HOLD_MS = 600
+const REVEAL_MIN_CUSHION_MS = 500
+const REVEAL_RATE_FLOOR_MS = 1000
+// The buffer never holds more than this much text, so lag stays bounded on a fast stream.
+const REVEAL_MAX_LAG_MS = 4000
+// Speed changes ease in over this time constant, so a new clump never causes a jump.
+const REVEAL_RATE_SMOOTH_MS = 300
+// After the stream ends the rest keeps the current speed, going faster only to finish within this time.
+const REVEAL_FLUSH_MS = 4000
 // A row that remounts later (virtual list) must not replay an answer it already revealed.
 const FRESH_TEXT_MS = 15_000
 const revealedTexts = new Set<string>()
 
-// End a step on a word boundary when one is close, so words are never split mid-reveal.
-function stepEnd(text: string, from: number, chars: number): number {
-  const target = Math.min(text.length, from + chars)
-  if (target >= text.length) return text.length
-  for (let i = target; i < Math.min(text.length, target + 12); i++) if (/\s/.test(text[i]!)) return i + 1
-  const code = text.charCodeAt(target - 1)
-  return code >= 0xd800 && code <= 0xdbff ? target + 1 : target
-}
+type RevealPace = { shown: number; arrived: number; frame: number; last: number; rate: number; carry: number; flush: number; first: number; lastArrival: number; arrivals: number; received: number; maxGap: number }
+// A finished turn folds into a different layout, and the virtual list can remount a row mid-stream;
+// both remount the answer, so its reveal progress lives here and the new instance carries on.
+const revealPaces = new Map<string, RevealPace>()
 
 function PacedMarkdown({ text, streaming, fresh, streamKey }: { text: string; streaming?: boolean; fresh: boolean; streamKey?: string }) {
   const reduceMotion = typeof document !== "undefined" && (document.documentElement.dataset.reduceMotion === "true" || window.matchMedia("(prefers-reduced-motion: reduce)").matches)
   const replay = fresh && !(streamKey && revealedTexts.has(streamKey))
-  const [shown, setShown] = useState(streaming || replay ? 0 : text.length)
-  const shownRef = useRef(shown)
+  const pace = useRef<RevealPace | null>(null)
+  if (!pace.current) {
+    // Resume only a reveal that has seen live text and is still live or was running a moment ago (a remount,
+    // not a return to the conversation later); text present at mount counts as arrived only when it is live.
+    const saved = streamKey ? revealPaces.get(streamKey) : undefined
+    const start = streaming || replay ? 0 : text.length
+    pace.current = saved?.arrivals && (streaming || performance.now() - saved.last < 1000) ? saved : { shown: start, arrived: streaming ? 0 : text.length, frame: 0, last: 0, rate: 0, carry: 0, flush: 0, first: 0, lastArrival: 0, arrivals: 0, received: 0, maxGap: 0 }
+    if (streamKey) {
+      revealPaces.set(streamKey, pace.current)
+      // Entries leave once revealed; this only bounds ones a stopped stream never finished.
+      if (revealPaces.size > 200) revealPaces.delete(revealPaces.keys().next().value!)
+    }
+  }
+  const [shown, setShown] = useState(pace.current.shown)
   const textRef = useRef(text)
   textRef.current = text
-  // Survives effect restarts, so a steady trickle of deltas cannot keep postponing the next step.
-  const lastStep = useRef(0)
+  const streamingRef = useRef(streaming)
+  streamingRef.current = streaming
   useEffect(() => {
-    if (reduceMotion || (shownRef.current > text.length)) { shownRef.current = text.length; setShown(text.length); return }
-    if (shownRef.current >= text.length) return
-    // Text that was never streamed here (history, replay of finished messages) appears at once.
-    if (!streaming && !replay && shownRef.current === 0) { shownRef.current = text.length; setShown(text.length); return }
-    let timer: ReturnType<typeof setTimeout> | undefined
-    const step = () => {
-      const target = textRef.current
-      if (document.hidden) { shownRef.current = target.length; setShown(target.length); return }
-      const backlog = target.length - shownRef.current
-      if (backlog <= 0) return
+    const p = pace.current!
+    if (reduceMotion || (p.shown > text.length)) { p.shown = text.length; setShown(text.length); return }
+    if (text.length > p.arrived) {
       const now = performance.now()
-      const interval = Math.min(REVEAL_MAX_STEP_MS, Math.max(REVEAL_MIN_STEP_MS, REVEAL_TARGET_LAG_MS * REVEAL_STEP_CHARS / backlog))
-      const elapsed = now - lastStep.current
-      if (elapsed < interval) { timer = setTimeout(step, interval - elapsed); return }
-      lastStep.current = now
-      // A large backlog takes bigger steps so the lag stays near the target.
-      const extra = Math.max(0, backlog - REVEAL_TARGET_LAG_MS * REVEAL_STEP_CHARS / REVEAL_MIN_STEP_MS)
-      const next = stepEnd(target, shownRef.current, REVEAL_STEP_CHARS + Math.ceil(extra * Math.min(1, elapsed / REVEAL_CATCH_UP_WINDOW_MS)))
-      shownRef.current = next
-      setShown(next)
-      if (next < target.length) timer = setTimeout(step, REVEAL_MIN_STEP_MS)
+      if (p.lastArrival) p.maxGap = Math.max(p.maxGap, now - p.lastArrival)
+      if (!p.first) p.first = now
+      p.lastArrival = now
+      p.arrivals++
+      p.received += text.length - p.arrived
+      p.flush = 0
     }
-    timer = setTimeout(step, 0)
-    return () => clearTimeout(timer)
+    p.arrived = text.length
+    if (p.shown >= text.length) return
+    // Text that was never streamed here (history, replay of finished messages) appears at once.
+    if (!streaming && !replay && p.shown === 0) { p.shown = text.length; setShown(text.length); return }
+    if (p.frame) return
+    const tick = (now: number) => {
+      const target = textRef.current
+      const backlog = target.length - p.shown
+      if (backlog <= 0 || document.hidden) {
+        if (backlog > 0) { p.shown = target.length; setShown(target.length) }
+        p.frame = 0; p.last = 0; p.carry = 0; p.flush = 0
+        return
+      }
+      const dt = p.last ? Math.min(now - p.last, 50) : 16
+      p.last = now
+      const live = streamingRef.current
+      if (live && p.shown === 0 && backlog < REVEAL_HOLD_CHARS && now - p.first < REVEAL_HOLD_MS) { p.frame = requestAnimationFrame(tick); return }
+      let desired: number
+      if (live) {
+        const average = now - p.first >= REVEAL_RATE_FLOOR_MS ? p.received * 1000 / (now - p.first) : REVEAL_MIN_CPS
+        const cushion = Math.min(REVEAL_MAX_LAG_MS, Math.max(REVEAL_MIN_CUSHION_MS, Math.max(p.maxGap, now - p.lastArrival) * 1.2))
+        desired = Math.min(REVEAL_MAX_CPS, Math.max(REVEAL_MIN_CPS, backlog * 1000 / REVEAL_MAX_LAG_MS, Math.min(average, backlog * 1000 / cushion)))
+      } else {
+        if (!p.flush) p.flush = Math.max(p.rate, backlog * 1000 / REVEAL_FLUSH_MS)
+        desired = p.flush
+      }
+      p.rate += (desired - p.rate) * Math.min(1, dt / REVEAL_RATE_SMOOTH_MS)
+      p.carry += p.rate * dt / 1000
+      const chars = Math.min(Math.floor(p.carry), backlog)
+      if (chars > 0) {
+        p.carry -= chars
+        let next = p.shown + chars
+        const code = target.charCodeAt(next - 1)
+        if (code >= 0xd800 && code <= 0xdbff && next < target.length) next++
+        p.shown = next
+        setShown(next)
+      }
+      p.frame = requestAnimationFrame(tick)
+    }
+    p.frame = requestAnimationFrame(tick)
   }, [text, streaming, replay, reduceMotion])
+  // StrictMode replays unmount then mount; clearing the handle lets the replayed effect restart the loop.
+  useEffect(() => () => { cancelAnimationFrame(pace.current!.frame); pace.current!.frame = 0 }, [])
   const caughtUp = shown >= text.length
   useEffect(() => {
     if (!caughtUp || streaming || !streamKey) return
     revealedTexts.add(streamKey)
+    revealPaces.delete(streamKey)
     if (revealedTexts.size > 2000) revealedTexts.delete(revealedTexts.values().next().value!)
   }, [caughtUp, streaming, streamKey])
   return <Markdown text={caughtUp ? text : text.slice(0, shown)} streaming={streaming || !caughtUp} streamKey={streamKey} />

@@ -14,6 +14,7 @@
     "test:rendering": "bun scripts/e2e-conversation-remaining.ts",
     "test:session-sync": "bun scripts/e2e-session-sync.ts",
     "test:scroll": "bun scripts/e2e-scroll.ts",
+    "test:streaming": "bun scripts/e2e-streaming.ts",
     "test:terminal": "bun scripts/e2e-terminal.ts",
     "test:browser": "bun scripts/e2e-browser.ts",
     "test:stats": "bun scripts/e2e-stats.ts",
