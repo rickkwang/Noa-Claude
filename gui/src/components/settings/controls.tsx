@@ -3,7 +3,7 @@ import { ChevronDown } from "../../lib/icons"
 import { PopupMenu, anchorBelow, type PopupMenuAnchor } from "../PopupMenu"
 
 export const actionButton =
-  "h-8 shrink-0 rounded-lg border border-[var(--border-default)] px-3 text-body hover:bg-[var(--settings-fill-hover)] disabled:opacity-40"
+  "h-7 shrink-0 rounded-[10px] border border-[var(--border-default)] px-3 text-body hover:bg-[var(--settings-fill-hover)] disabled:opacity-40"
 
 export function Section({ title, children }: { title?: string; children: ReactNode }) {
   const rows = Children.toArray(children)
@@ -30,7 +30,7 @@ export function Row({ label, description, icon, children }: { label: string; des
         {icon}
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           <span className="text-chat-sm leading-[18px] font-medium">{label}</span>
-          {description && <span className="max-w-[52ch] text-caption leading-4 text-pretty text-[var(--sidebar-text-muted)]">{description}</span>}
+          {description && <span className="min-w-0 text-caption leading-4 text-pretty break-words text-[var(--sidebar-text-muted)]">{description}</span>}
         </div>
       </div>
       {children}
@@ -147,7 +147,7 @@ export function Select({
     if (!el) return
     setMenu({
       anchor: anchorBelow(el),
-      minWidth: Math.max(176, Math.round(el.getBoundingClientRect().width)),
+      minWidth: Math.max(140, Math.round(el.getBoundingClientRect().width)),
     })
   }
 
@@ -161,7 +161,7 @@ export function Select({
         aria-expanded={Boolean(menu)}
         disabled={disabled}
         onClick={toggle}
-        className="flex h-8 min-w-44 items-center justify-between gap-2 rounded-lg border border-[var(--border-default)] bg-[var(--bg-card)] pr-2.5 pl-3 text-left text-body text-[var(--text-primary)] outline-none transition-colors hover:bg-[var(--settings-fill-hover)] disabled:pointer-events-none disabled:opacity-40"
+        className="flex h-7 max-w-52 items-center justify-between gap-1.5 rounded-[10px] border border-[var(--border-default)] bg-[var(--bg-card)] pr-2.5 pl-3 text-left text-body text-[var(--text-primary)] outline-none transition-colors hover:bg-[var(--settings-fill-hover)] disabled:pointer-events-none disabled:opacity-40"
       >
         <span className="truncate">{selectedLabel}</span>
         <ChevronDown size={14} className="shrink-0 text-[var(--sidebar-text-muted)]" />
@@ -194,7 +194,7 @@ export function Segmented({ value, options, onChange }: { value: string; options
           key={v}
           onClick={() => onChange(v)}
           aria-pressed={value === v}
-          className={`h-8 rounded-lg px-3 ${
+          className={`h-7 rounded-[10px] px-2.5 ${
             value === v ? "bg-[var(--settings-fill-active)] text-[var(--text-primary)]" : "text-[var(--sidebar-text-muted)] hover:bg-[var(--settings-fill-hover)]"
           }`}
         >
