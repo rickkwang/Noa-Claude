@@ -2,12 +2,25 @@
 
 import {
   applyLauncherDefaults,
+  DEFAULT_CONFIG_DIR,
   LAUNCHER_MACRO,
   validateLauncherConfiguration,
 } from './launcher-config.js';
 
-applyLauncherDefaults();
-validateLauncherConfiguration(process.argv);
+const launcherArgs = process.argv.slice(2);
+const infoOnly = launcherArgs.some(arg =>
+  ['-h', '--help', '-v', '-V', '--version'].includes(arg),
+);
+const versionOnly = launcherArgs.length === 1 &&
+  ['-v', '-V', '--version'].includes(launcherArgs[0]);
+if (launcherArgs[0] === 'uninstall' || versionOnly) {
+  process.env.CLAUDE_CONFIG_DIR = DEFAULT_CONFIG_DIR;
+} else {
+  const resolvedLauncherConfig = applyLauncherDefaults({
+    skipGlobalConfig: infoOnly,
+  });
+  validateLauncherConfiguration(process.argv, resolvedLauncherConfig);
+}
 
 function getFlagValue(argv, flagNames) {
   const args = argv.slice(2);
@@ -62,9 +75,8 @@ try {
         console.error('main() promise resolved');
       }
     }).catch((e) => {
-      if (launcherDebugEnabled) {
-        console.error('main() promise rejected:', e.message);
-      }
+      console.error('main() promise rejected:', e?.message ?? e);
+      process.exit(1);
     });
   }
 } catch (e) {

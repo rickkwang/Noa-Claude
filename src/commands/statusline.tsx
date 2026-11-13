@@ -1,7 +1,9 @@
 // @ts-nocheck
 import type { ContentBlockParam } from '@anthropic-ai/sdk/resources/index.mjs';
+import { join } from 'path';
 import type { Command } from '../commands.js';
 import { AGENT_TOOL_NAME } from '../tools/AgentTool/constants.js';
+import { getClaudeConfigHomeDir } from '../utils/envUtils.js';
 const statusline = {
   type: 'prompt',
   description: "Set up Noa Claude's status line UI (settings in ~/.noa/settings.json)",
@@ -10,7 +12,13 @@ const statusline = {
   aliases: [],
   name: 'statusline',
   progressMessage: 'setting up statusLine',
-  allowedTools: [AGENT_TOOL_NAME, 'Read(~/**)', 'Edit(~/.noa/settings.json)'],
+  get allowedTools() {
+    return [
+      AGENT_TOOL_NAME,
+      'Read(~/**)',
+      `Edit(${join(getClaudeConfigHomeDir(), 'settings.json')})`,
+    ];
+  },
   source: 'builtin',
   disableNonInteractive: true,
   // Setup rewrites user settings; only an explicit /statusline should start it.

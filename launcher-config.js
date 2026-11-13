@@ -58,10 +58,10 @@ export const LAUNCHER_MACRO = {
   VERSION: pkg.version,
   DISPLAY_VERSION: pkg.version,
   BUILD_TIME: '',
-  FEEDBACK_CHANNEL: `#${PRODUCT_NAMESPACE}`,
-  ISSUES_EXPLAINER: 'https://github.com/rickkwang/Noa-Claude/issues',
+  FEEDBACK_CHANNEL: 'github',
+  ISSUES_EXPLAINER: 'report the issue at https://github.com/rickkwang/Noa-Claude/issues',
   PACKAGE_URL: '@rickkwang/noa-claude',
-  NATIVE_PACKAGE_URL: '@rickkwang/noa-claude',
+  NATIVE_PACKAGE_URL: undefined,
   DISTRIBUTION: 'curl',
 };
 
@@ -138,15 +138,15 @@ export function getResolvedLauncherConfig({ skipGlobalConfig = false } = {}) {
       ? settings.env
       : {};
 
+  const settingsBaseUrl = getSettingString(settingsEnv.ANTHROPIC_BASE_URL);
   const configuredBaseUrl =
-    getSettingString(settingsEnv.ANTHROPIC_BASE_URL) ??
-    getSettingString(process.env.ANTHROPIC_BASE_URL);
+    settingsBaseUrl ?? getSettingString(process.env.ANTHROPIC_BASE_URL);
+  const settingsApiKey = getSettingString(settingsEnv.ANTHROPIC_API_KEY);
   const apiKey =
-    getSettingString(settingsEnv.ANTHROPIC_API_KEY) ??
-    getSettingString(process.env.ANTHROPIC_API_KEY);
+    settingsApiKey ?? getSettingString(process.env.ANTHROPIC_API_KEY);
+  const settingsAuthToken = getSettingString(settingsEnv.ANTHROPIC_AUTH_TOKEN);
   const authToken =
-    getSettingString(settingsEnv.ANTHROPIC_AUTH_TOKEN) ??
-    getSettingString(process.env.ANTHROPIC_AUTH_TOKEN);
+    settingsAuthToken ?? getSettingString(process.env.ANTHROPIC_AUTH_TOKEN);
   // Same as the official CLI: no third-party base URL or model unless configured.
   const apiBaseUrl = configuredBaseUrl;
   const model =
@@ -157,6 +157,9 @@ export function getResolvedLauncherConfig({ skipGlobalConfig = false } = {}) {
     apiBaseUrl,
     apiKey,
     authToken,
+    apiBaseUrlSource: settingsBaseUrl ? PRODUCT_SETTINGS_PATH : 'environment',
+    apiKeySource: settingsApiKey ? PRODUCT_SETTINGS_PATH : 'environment',
+    authTokenSource: settingsAuthToken ? PRODUCT_SETTINGS_PATH : 'environment',
     model,
     settings,
     settingsEnv,
@@ -168,7 +171,15 @@ export function validateLauncherConfiguration(
   argv = process.argv,
   resolved = getResolvedLauncherConfig(),
 ) {
-  const { apiBaseUrl, apiKey, authToken, launcherProvider } = resolved;
+  const {
+    apiBaseUrl,
+    apiKey,
+    authToken,
+    launcherProvider,
+    apiBaseUrlSource = PRODUCT_SETTINGS_PATH,
+    apiKeySource = PRODUCT_SETTINGS_PATH,
+    authTokenSource = PRODUCT_SETTINGS_PATH,
+  } = resolved;
   const commandLine = argv.slice(2);
   const isNonInteractive =
     commandLine.includes('-p') || commandLine.includes('--print');
@@ -176,6 +187,7 @@ export function validateLauncherConfiguration(
     commandLine.includes('-h') ||
     commandLine.includes('--help') ||
     commandLine.includes('-v') ||
+    commandLine.includes('-V') ||
     commandLine.includes('--version');
 
   if (apiBaseUrl) {
@@ -185,7 +197,7 @@ export function validateLauncherConfiguration(
       throw new Error(
         formatDiagnosticError(
           DIAGNOSTIC_ERROR_CODES.CONFIG_ERROR,
-          `Invalid ANTHROPIC_BASE_URL in ${PRODUCT_SETTINGS_PATH}: ${error?.message ?? error}`,
+          `Invalid ANTHROPIC_BASE_URL in ${apiBaseUrlSource}: ${error?.message ?? error}`,
         ),
       );
     }
@@ -195,7 +207,7 @@ export function validateLauncherConfiguration(
     throw new Error(
       formatDiagnosticError(
         DIAGNOSTIC_ERROR_CODES.CONFIG_ERROR,
-        `ANTHROPIC_API_KEY in ${PRODUCT_SETTINGS_PATH} still contains a placeholder value`,
+        `ANTHROPIC_API_KEY in ${apiKeySource} still contains a placeholder value`,
       ),
     );
   }
@@ -204,7 +216,7 @@ export function validateLauncherConfiguration(
     throw new Error(
       formatDiagnosticError(
         DIAGNOSTIC_ERROR_CODES.CONFIG_ERROR,
-        `ANTHROPIC_AUTH_TOKEN in ${PRODUCT_SETTINGS_PATH} still contains a placeholder value`,
+        `ANTHROPIC_AUTH_TOKEN in ${authTokenSource} still contains a placeholder value`,
       ),
     );
   }

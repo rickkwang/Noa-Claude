@@ -28,7 +28,7 @@ function printAndExit(code, message) {
 try {
   const launcherArgs = process.argv.slice(2);
   const infoOnly = launcherArgs.some(arg =>
-    ['-h', '--help', '-v', '--version'].includes(arg),
+    ['-h', '--help', '-v', '-V', '--version'].includes(arg),
   );
   // Uninstall is a recovery command; version checks also validate reinstall
   // health. Neither should depend on settings JSON or model credentials.
@@ -312,6 +312,7 @@ try {
       }
     }).catch((e) => {
       console.error('main() promise rejected:', e?.message ?? e);
+      process.exit(1);
     });
   }
 } catch (e) {

@@ -67,14 +67,25 @@ function readRecord(value: unknown): ProjectRecord | null {
   }
 }
 
+let storeCache: { path: string; mtimeMs: number; size: number; records: ProjectRecord[] } | null = null
+
 function readStore(defaultCwd: string): ProjectRecord[] {
-  if (existsSync(storePath())) {
+  const path = storePath()
+  const stat = statSync(path, { throwIfNoEntry: false })
+  if (stat && storeCache && storeCache.path === path && storeCache.mtimeMs === stat.mtimeMs && storeCache.size === stat.size) {
+    return storeCache.records
+  }
+  if (stat) {
     try {
-      const projects = JSON.parse(readFileSync(storePath(), "utf8")).projects
-      if (Array.isArray(projects)) return projects.flatMap((project) => {
-        const record = readRecord(project)
-        return record ? [record] : []
-      })
+      const projects = JSON.parse(readFileSync(path, "utf8")).projects
+      if (Array.isArray(projects)) {
+        const records = projects.flatMap((project) => {
+          const record = readRecord(project)
+          return record ? [record] : []
+        })
+        storeCache = { path, mtimeMs: stat.mtimeMs, size: stat.size, records }
+        return records
+      }
     } catch {
       // Unreadable store: fall through and reseed rather than hide every project.
     }
@@ -86,7 +97,10 @@ function readStore(defaultCwd: string): ProjectRecord[] {
 
 function writeStore(projects: ProjectRecord[]) {
   mkdirSync(configHome(), { recursive: true })
-  writeFileSync(storePath(), JSON.stringify({ projects }, null, 2))
+  const path = storePath()
+  writeFileSync(path, JSON.stringify({ projects }, null, 2))
+  const stat = statSync(path, { throwIfNoEntry: false })
+  storeCache = stat ? { path, mtimeMs: stat.mtimeMs, size: stat.size, records: projects } : null
 }
 
 function sourcesFor(project: ProjectRecord): string[] {

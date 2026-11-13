@@ -78,27 +78,7 @@ export function useSessionSync({
       try {
         const runsResponse = await fetch("/api/runs")
         const runs = await runsResponse.json() as { cwd: string; sessionId?: string; title?: string; busy: boolean; waiting: boolean; queued: number }[]
-        const results = await Promise.allSettled(projects.map(async (project) => {
-          const sessions = await fetchSessions(project.path)
-          if (!cancelled) setLoadedProjects((current) => {
-            if ((sessions.length < SESSION_LIST_LIMIT) === current.has(project.path)) return current
-            const next = new Set(current)
-            if (sessions.length < SESSION_LIST_LIMIT) next.add(project.path)
-            else next.delete(project.path)
-            return next
-          })
-          if (!cancelled) setSessionsByProject((current) => {
-            const visible = sessions.map((session): SessionSummary => {
-              const run = runs.find((r) => r.cwd === (session.cwd ?? project.path) && r.sessionId === session.id)
-              return { ...session, status: run?.waiting ? "waiting" : run?.busy ? "running" : run?.queued ? "queued" : undefined }
-            })
-            for (const run of runs.filter((r) => r.cwd === project.path && r.sessionId)) {
-              if (!visible.some((s) => s.id === run.sessionId)) visible.unshift({ id: run.sessionId!, title: run.title ?? "New task", updatedAt: Date.now(), createdAt: Date.now(), status: run.waiting ? "waiting" : run.busy ? "running" : run.queued ? "queued" : undefined })
-            }
-            return { ...current, [project.path]: visible }
-          })
-          return sessions
-        }))
+        const results = await Promise.allSettled(projects.map((project) => fetchSessions(project.path)))
         const completeResults = results.map((result) => result.status === "fulfilled" && result.value.length < SESSION_LIST_LIMIT)
         const active = activeSessionRef.current
         const activeKey = active.id ? sessionUpdateKey(active.cwd, active.id) : undefined
@@ -146,16 +126,42 @@ export function useSessionSync({
             }
             return next.size === current.size && [...next].every((path) => current.has(path)) ? current : next
           })
-          setSessionsByProject((current) => Object.fromEntries(projects.map((project) => {
-            const sessions = (current[project.path] ?? []).map((session): SessionSummary => {
-              const run = runs.find((r) => r.cwd === (session.cwd ?? project.path) && r.sessionId === session.id)
-              return { ...session, status: run?.waiting ? "waiting" : run?.busy ? "running" : run?.queued ? "queued" : undefined }
-            })
-            for (const run of runs.filter((r) => r.cwd === project.path && r.sessionId)) {
-              if (!sessions.some((s) => s.id === run.sessionId)) sessions.unshift({ id: run.sessionId!, title: run.title ?? "New task", updatedAt: Date.now(), createdAt: Date.now(), status: run.waiting ? "waiting" : run.busy ? "running" : run.queued ? "queued" : undefined })
+          setSessionsByProject((current) => {
+            const next: Record<string, SessionSummary[]> = {}
+            let changed = Object.keys(current).length !== projects.length
+            for (let index = 0; index < projects.length; index++) {
+              const project = projects[index]!
+              const prev = current[project.path] ?? []
+              const result = results[index]!
+              const base = result.status === "fulfilled" ? result.value : prev
+              const visible = base.map((session): SessionSummary => {
+                const run = runs.find((r) => r.cwd === (session.cwd ?? project.path) && r.sessionId === session.id)
+                return { ...session, status: run?.waiting ? "waiting" : run?.busy ? "running" : run?.queued ? "queued" : undefined }
+              })
+              for (const run of runs.filter((r) => r.cwd === project.path && r.sessionId)) {
+                if (!visible.some((s) => s.id === run.sessionId)) {
+                  const existing = prev.find((s) => s.id === run.sessionId)
+                  const now = Date.now()
+                  visible.unshift({
+                    id: run.sessionId!,
+                    title: run.title ?? "New task",
+                    updatedAt: existing?.updatedAt ?? now,
+                    createdAt: existing?.createdAt ?? now,
+                    status: run.waiting ? "waiting" : run.busy ? "running" : run.queued ? "queued" : undefined,
+                  })
+                }
+              }
+              const sameList =
+                prev.length === visible.length &&
+                prev.every((s, i) => {
+                  const v = visible[i]!
+                  return s.id === v.id && s.title === v.title && s.updatedAt === v.updatedAt && s.status === v.status && s.cwd === v.cwd
+                })
+              next[project.path] = sameList ? prev : visible
+              if (!sameList) changed = true
             }
-            return [project.path, sessions]
-          })))
+            return changed ? next : current
+          })
           if (reloadActive && activeKey) {
             pendingSessionReloadRef.current = undefined
             expectedSessionUpdatesRef.current.add(activeKey)
