@@ -1187,6 +1187,7 @@ function EffortSlider({
   const label = selected >= 0 ? levels[selected]!.charAt(0).toUpperCase() + levels[selected]!.slice(1) : "Default"
   const drag = useRef<{ x: number; y: number; grab: number; moving: boolean } | null>(null)
   const hovered = useRef(false)
+  const [pressing, setPressing] = useState(false)
   const mounted = useRef(false)
   const isMax = last > 0 && selected === last
   const maxPresence = usePresence(isMax, 300)
@@ -1226,6 +1227,7 @@ function EffortSlider({
   const release = (e: ReactPointerEvent) => {
     const state = drag.current
     drag.current = null
+    setPressing(false)
     hovered.current = selected >= 0 && Math.abs(e.clientX - thumbCenter()) <= 17
     growThumb(hovered.current)
     if (state?.moving) springs.pos.to(Math.round(springs.pos.value * last) / Math.max(1, last), THUMB_TRAVEL)
@@ -1236,11 +1238,6 @@ function EffortSlider({
       <div className="noa-model-picker-controls" data-active={active}>
         <button type="button" onClick={onToggleModels} aria-label="Select model" className="noa-model-picker-view">
           <span className="noa-model-picker-labels">
-            <span
-              className={`text-body font-medium ${selected >= 0 ? "text-[var(--accent-color)]" : "text-[var(--sidebar-text-muted)]"}`}
-            >
-              {label}
-            </span>
             <span className="noa-model-picker-model">{modelName}</span>
             <ComposerChevronIcon width={12} height={12} />
           </span>
@@ -1253,7 +1250,7 @@ function EffortSlider({
           onClick={() => commit(null)}
           className="noa-model-picker-reset"
         >
-          <RotateCcw size={16} />
+          <RotateCcw size={14} />
         </button>
       </div>
       <div className="noa-model-picker-slider" data-active={active}>
@@ -1271,6 +1268,7 @@ function EffortSlider({
             e.currentTarget.setPointerCapture(e.pointerId)
             const onThumb = selected >= 0 && Math.abs(e.clientX - thumbCenter()) <= 17
             drag.current = { x: e.clientX, y: e.clientY, grab: onThumb ? e.clientX - thumbCenter() : 0, moving: false }
+            setPressing(true)
             growThumb(true)
             if (!onThumb) choose(fraction(e.clientX))
           }}
@@ -1304,6 +1302,9 @@ function EffortSlider({
           }}
           className="noa-model-picker-track"
         >
+          <span aria-hidden="true" className="noa-model-picker-tag" data-open={pressing && selected >= 0}>
+            {label}
+          </span>
           <div className="noa-model-picker-range">
             {maxPresence.mounted && active && <EffortMaxEffects closing={maxPresence.closing} reveal={burst > 0} />}
           </div>

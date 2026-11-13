@@ -1009,7 +1009,7 @@ html[data-translucent-sidebar="enabled"] [data-sidebar-container] .noa-sidebar-t
   display: flex;
   justify-content: center;
   align-items: center;
-  min-height: 44px;
+  min-height: 36px;
   padding-inline: 32px;
 }
 .noa-model-picker-view {
@@ -1021,28 +1021,22 @@ html[data-translucent-sidebar="enabled"] [data-sidebar-container] .noa-sidebar-t
 .noa-model-picker-labels {
   display: grid;
   grid-template-columns: 16px minmax(0, auto) 16px;
-  grid-template-rows: 18px 16px;
+  grid-template-rows: 18px;
   align-items: center;
   padding: 2px 4px;
   border-radius: 6px;
 }
-.noa-model-picker-labels > :first-child {
-  grid-area: 1 / 1 / 2 / -1;
-  text-align: center;
-  font-size: 13px;
-  line-height: 18px;
-}
 .noa-model-picker-model {
-  grid-area: 2 / 2;
+  grid-area: 1 / 2;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   color: color-mix(in srgb, var(--text-primary) 65%, transparent);
-  font-size: 12px;
-  line-height: 16px;
+  font-size: 13px;
+  line-height: 18px;
 }
 .noa-model-picker-labels > svg {
-  grid-area: 2 / 3;
+  grid-area: 1 / 3;
   justify-self: end;
   color: color-mix(in srgb, var(--text-primary) 48%, transparent);
 }
@@ -1053,17 +1047,18 @@ html[data-translucent-sidebar="enabled"] [data-sidebar-container] .noa-sidebar-t
 .noa-model-picker-reset {
   position: absolute;
   right: 0;
-  top: 0;
+  top: 50%;
+  translate: 0 -50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  width: 28px;
+  height: 28px;
   border-radius: 7px;
   color: color-mix(in srgb, var(--text-primary) 48%, transparent);
 }
 .noa-model-picker-reset:disabled { opacity: .4; }
-.noa-model-picker-slider { padding: 5px 8px 6px; }
+.noa-model-picker-slider { padding: 8px 8px 6px; }
 .noa-model-picker-track {
   --effort-pos: 0;
   --effort-scale: 1;
@@ -1081,7 +1076,6 @@ html[data-translucent-sidebar="enabled"] [data-sidebar-container] .noa-sidebar-t
   height: 24px;
   border-radius: 7px;
   background: var(--effort-track);
-  box-shadow: inset 0 0 0 .5px var(--divider-subtle);
 }
 .noa-model-picker-range {
   position: absolute;
@@ -1103,7 +1097,7 @@ html[data-translucent-sidebar="enabled"] [data-sidebar-container] .noa-sidebar-t
   border-radius: 50%;
   background: currentColor;
   transform: translate(-50%, -50%);
-  transition: background-color .3s cubic-bezier(.23, 1, .32, 1), filter .12s ease, transform .12s ease;
+  transition: background-color .3s cubic-bezier(.23, 1, .32, 1), opacity .3s cubic-bezier(.23, 1, .32, 1), filter .12s ease, transform .12s ease;
 }
 .noa-model-picker-tick::before { content: ""; position: absolute; inset: -6px; }
 .noa-model-picker-tick[data-selected="true"] { color: rgba(255, 255, 255, .3); }
@@ -1122,9 +1116,49 @@ html[data-translucent-sidebar="enabled"] [data-sidebar-container] .noa-sidebar-t
   transform: translateX(-50%) scale(var(--effort-scale));
   pointer-events: none;
 }
+/* Level tag: grows out of the track's top edge while pressed and rides the thumb; its anchor slides from left edge to
+   right edge across the track so it never leaves the bar. Concave corners blend it into the track; it sits under the
+   fill so the fill stays whole. The track color is translucent, so the tag lays it over the panel's own opaque color
+   to match the track exactly. */
+.noa-model-picker-tag {
+  position: absolute;
+  bottom: calc(100% - 2px);
+  left: calc(12px + (100% - 24px) * var(--effort-pos));
+  padding: 2px 9px 5px;
+  border-radius: 8px 8px 0 0;
+  background: linear-gradient(var(--effort-track), var(--effort-track)), var(--effort-menu);
+  color: color-mix(in srgb, var(--text-primary) 65%, transparent);
+  font-size: 11px;
+  line-height: 14px;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateX(calc(-100% * var(--effort-pos))) translateY(4px);
+  transition: opacity .18s cubic-bezier(.23, 1, .32, 1), translate .18s cubic-bezier(.23, 1, .32, 1);
+}
+.noa-model-picker-tag::before, .noa-model-picker-tag::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  width: 9px; /* 1px overlaps the tag so no seam shows */
+  height: 8px;
+}
+.noa-model-picker-tag::before {
+  right: calc(100% - 1px);
+  background: radial-gradient(circle at 0 0, transparent 7.5px, var(--effort-track) 8px),
+    radial-gradient(circle at 0 0, transparent 7.5px, var(--effort-menu) 8px);
+}
+.noa-model-picker-tag::after {
+  left: calc(100% - 1px);
+  background: radial-gradient(circle at 100% 0, transparent 7.5px, var(--effort-track) 8px),
+    radial-gradient(circle at 100% 0, transparent 7.5px, var(--effort-menu) 8px);
+}
+.noa-model-picker-tag[data-open="true"],
+.noa-model-picker-track[data-empty="false"]:focus-visible .noa-model-picker-tag { opacity: 1; translate: 0 -4px; }
 .noa-model-picker-track:active { cursor: grabbing; }
 .noa-model-picker-track:focus-visible { outline: none; }
-.noa-model-picker-track:focus-visible .noa-model-picker-thumb { outline: 2px solid var(--accent-color); outline-offset: 0; }
+.noa-model-picker-track:focus-visible .noa-model-picker-thumb,
+.noa-model-picker-track[data-empty="true"]:focus-visible::before { outline: 2px solid var(--accent-color); outline-offset: 0; }
 
 /* Top effort level: the solid fill gives way to a dot-matrix field over the bare track, plus a burst around the thumb. */
 .noa-model-picker-max { position: absolute; inset: 0; animation: noa-effort-max-in .3s cubic-bezier(.23, 1, .32, 1) both; }
@@ -1134,7 +1168,7 @@ html[data-translucent-sidebar="enabled"] [data-sidebar-container] .noa-sidebar-t
 .noa-model-picker-max-fill { position: absolute; top: -1px; bottom: -1px; left: -1px; width: calc(var(--effort-track-w, 100%) + 2px); }
 .noa-model-picker-max-grid { position: absolute; inset: 0; contain: paint; }
 .noa-model-picker-range:has(.noa-model-picker-max:not([data-state="closing"]) canvas) { background-color: transparent; }
-.noa-model-picker-track:has(.noa-model-picker-max:not([data-state="closing"])) .noa-model-picker-tick { color: color-mix(in srgb, var(--text-primary) 24%, transparent); }
+.noa-model-picker-track:has(.noa-model-picker-max:not([data-state="closing"])) .noa-model-picker-tick { opacity: 0; }
 .noa-model-picker-max-grid canvas { display: block; width: 100%; height: 100%; }
 .noa-model-picker-burst {
   position: absolute;
