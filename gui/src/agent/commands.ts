@@ -118,6 +118,9 @@ export function composerCommands(commands: SlashCommand[]): ComposerCommand[] {
       .map((command) => ({ ...command, group: command.type === "prompt" ? "Skills" : "Commands" })),
   ].sort((a, b) => a.group.localeCompare(b.group) || a.name.localeCompare(b.name))
 }
+export function isGuiCommand(name: string): boolean {
+  return findComposerCommand(guiCommands, name)?.action !== undefined
+}
 export function findComposerCommand(commands: ComposerCommand[], name: string): ComposerCommand | undefined {
   const normalized = name.toLowerCase()
   return commands.find(

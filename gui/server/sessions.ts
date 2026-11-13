@@ -5,6 +5,7 @@ import { StringDecoder } from "node:string_decoder"
 import { homedir } from "node:os"
 import { dirname, join } from "node:path"
 import type { AgentMessage, ContentBlock, ImageBlock, TurnDiff } from "../src/agent/protocol"
+import { isGuiCommand } from "../src/agent/commands"
 import { sanitizePath } from "../../src/utils/sessionStoragePortable"
 
 export const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -185,6 +186,15 @@ function isCommandEntry(entry: Entry): boolean {
   return typeof text === "string" && text.trimStart().startsWith("<command-name>")
 }
 
+function isGuiCommandEntry(entry: Entry): boolean {
+  const content = entry.type === "user" ? entry.message?.content : entry.content
+  const text = typeof content === "string" ? content : Array.isArray(content) ? content.find((b) => b?.type === "text")?.text : undefined
+  if (typeof text !== "string") return false
+  const command = text.trimStart().match(/^<command-name>\/([^<]+)<\/command-name>/)?.[1]
+    ?? (entry.type === "system" && entry.subtype === "local_command" && text.startsWith("/") ? text.slice(1).split(/\s/, 1)[0] : undefined)
+  return command !== undefined && isGuiCommand(command.trim())
+}
+
 function userText(entry: Entry): string | null {
   if (entry.type !== "user" || entry.isMeta || entry.isCompactSummary || entry.isSidechain) return null
   const content = entry.message?.content
@@ -200,6 +210,7 @@ function userText(entry: Entry): string | null {
   if (!text.trim()) return Array.isArray(content) && content.some((b: any) => b?.type === "image") ? "[Image]" : null
   const command = text.trimStart().match(/^<command-name>(\/[^<]+)<\/command-name>/)?.[1]
   if (command) {
+    if (isGuiCommand(command.slice(1).trim())) return null
     const args = text.match(/<command-args>([\s\S]*?)<\/command-args>/)?.[1]?.trim()
     return `${command}${args ? ` ${args}` : ""}`
   }
@@ -221,7 +232,7 @@ export function countUserTurns(cwd: string, id: string): number {
   for (const entry of scanEntries(file)) {
     if (entry.isSidechain) continue
     if (entry.type === "system" && entry.subtype === "local_command" && entry.content?.startsWith("/")) {
-      count++
+      if (!isGuiCommandEntry(entry)) count++
       continue
     }
     if (userText(entry) !== null) {
@@ -429,6 +440,7 @@ export async function loadHistory(cwd: string, id: string): Promise<HistoryItem[
   const owner = entries.find((entry) => typeof entry.cwd === "string")?.cwd
   if (owner && canonicalCwd(owner) !== canonicalCwd(cwd)) return null
 
+  const guiCommandIds = new Set(entries.flatMap(entry => entry.uuid && isGuiCommandEntry(entry) ? [entry.uuid] : []))
   const items: HistoryItem[] = []
   const restoredAgents = new Set<string>()
   const byUser = new Map<string, TurnDiff>()
@@ -479,7 +491,7 @@ export async function loadHistory(cwd: string, id: string): Promise<HistoryItem[
   if (byTurn.size) {
     let rawTurn = 0
     for (const entry of scanEntries(file)) {
-      if ((entry.type === "system" && entry.subtype === "local_command" && entry.content?.startsWith("/")) || userText(entry) !== null) {
+      if ((entry.type === "system" && entry.subtype === "local_command" && entry.content?.startsWith("/") && !isGuiCommandEntry(entry)) || userText(entry) !== null) {
         rawTurn++
         const messages = byTurn.get(rawTurn)
         if (messages && entry.uuid) {
@@ -515,8 +527,8 @@ export async function loadHistory(cwd: string, id: string): Promise<HistoryItem[
 
     if (entry.type === "system" && entry.subtype === "local_command" && entry.content) {
       const output = entry.content.match(/^<local-command-(?:stdout|stderr)>([\s\S]*?)<\/local-command-(?:stdout|stderr)>$/)?.[1]
-      if (output) items.push({ kind: "agent", message: { type: "assistant", message: { content: [{ type: "text", text: output }] }, parent_tool_use_id: null } })
-      else if (entry.content.startsWith("/")) {
+      if (output && !(entry.parentUuid && guiCommandIds.has(entry.parentUuid))) items.push({ kind: "agent", message: { type: "assistant", message: { content: [{ type: "text", text: output }] }, parent_tool_use_id: null } })
+      else if (entry.content.startsWith("/") && !isGuiCommandEntry(entry)) {
         if (currentUserMessageId === undefined) turnNumber++
         currentUserMessageId = entry.uuid ?? currentUserMessageId
         items.push({ kind: "user", id: userId, text: entry.content, sentAt: entryTime(entry) })

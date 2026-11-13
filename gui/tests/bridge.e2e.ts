@@ -887,6 +887,13 @@ try {
   assert.ok(JSON.stringify(restoredCommand).includes("/pause-memory"), JSON.stringify(restoredCommand))
   assert.ok(JSON.stringify(restoredCommand).includes(commandResult.message.result))
   console.log("PASS native slash input and output restore from the real CLI transcript")
+  await commandRun.request({ subtype: "set_model", model: "claude-sonnet-4-6" })
+  commandRun.send({ type: "user", message: { role: "user", content: "Flush the model switch into transcript history" }, parent_tool_use_id: null })
+  await wait(() => commandRun.results().length === 2, "turn after model switch")
+  const restoredModelSwitch = await fetch(`http://127.0.0.1:${port}/api/sessions/${commandResult.message.session_id}?${new URLSearchParams({cwd})}`).then((r) => r.json())
+  assert.ok(!JSON.stringify(restoredModelSwitch).includes("/model"), JSON.stringify(restoredModelSwitch))
+  assert.ok(JSON.stringify(restoredModelSwitch).includes("/pause-memory"))
+  console.log("PASS GUI model controls do not restore as user messages")
   mkdirSync(join(cwd, ".noa", "skills", "gui-slash"), { recursive: true })
   writeFileSync(
     join(cwd, ".noa", "skills", "gui-slash", "SKILL.md"),
@@ -927,10 +934,10 @@ try {
     },
     parent_tool_use_id: null,
   })
-  await wait(() => commandRun.results().length === 2, "skill slash turn")
+  await wait(() => commandRun.results().length === 3, "skill slash turn")
   assert.ok(sawSkillWithImage)
   assert.deepEqual([...observedModels], ["claude-sonnet-4-6"])
-  const cached = connect(crypto.randomUUID(), (commandRun.results()[1] as any).message.session_id)
+  const cached = connect(crypto.randomUUID(), (commandRun.results()[2] as any).message.session_id)
   const cachedInit = await cached.initialize()
   assert.ok(cachedInit.commands.some((c: any) => c.name === "gui-slash"))
   console.log("PASS slash skills expand through Noa with image input, and refreshed commands survive reconnect")

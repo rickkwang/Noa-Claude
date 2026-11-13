@@ -721,6 +721,19 @@ test("local command input and output survive transcript restoration", async () =
   expect(JSON.stringify(history)).toContain("Auto-memory paused")
 })
 
+test("GUI command history hides its linked local output without hiding the next prompt", async () => {
+  const cwd = "/private/tmp/gui-command-history"
+  const id = transcript(cwd, [
+    { type: "user", uuid: "model", parentUuid: null, message: { content: "<command-name>/model</command-name>" } },
+    { type: "system", subtype: "local_command", uuid: "model-system", parentUuid: "model", content: "<command-name>/model</command-name>" },
+    { type: "system", subtype: "local_command", uuid: "model-output", parentUuid: "model-system", content: "<local-command-stdout>Kept model as `Fable 5.2`</local-command-stdout>" },
+    { type: "user", uuid: "next", parentUuid: "model-output", message: { content: "Continue the task" } },
+  ])
+  const history = await loadHistory(cwd, id)
+  expect(history).toHaveLength(1)
+  expect(history?.[0]).toMatchObject({ kind: "user", id: "next", text: "Continue the task" })
+})
+
 test("symlinked project paths restore the CLI’s canonical transcript", async () => {
   const folder = join(config, "canonical-project")
   mkdirSync(folder)
