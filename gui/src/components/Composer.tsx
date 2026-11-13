@@ -259,7 +259,7 @@ export const Composer = memo(function Composer({
   const [composing, setComposing] = useState(false)
   // macOS Electron dispatches a final Enter with isComposing=false just after compositionend.
   // The timestamp guard keeps that phantom key from sending a half-finished CJK sentence.
-  const compositionEndAt = useRef(-1)
+  const compositionEndAt = useRef(-Infinity)
   const [imagePreview, setImagePreview] = useState<number>()
   const [caret, setCaret] = useState(0)
   const [mentionItems, setMentionItems] = useState<MentionEntry[]>([])
@@ -603,7 +603,9 @@ export const Composer = memo(function Composer({
     // CJK IME: Enter confirms a composition and must not send.
     if (composing || e.nativeEvent.isComposing || e.keyCode === 229) return
     if (e.defaultPrevented) return
-    if (e.key === "Enter" && performance.now() - compositionEndAt.current < 500) return
+    const justEndedComposition = performance.now() - compositionEndAt.current < 50
+    compositionEndAt.current = -Infinity
+    if (e.key === "Enter" && justEndedComposition) return
 
     if (mentionOpen) {
       if (e.key === "ArrowDown" || e.key === "ArrowUp") {
@@ -1210,11 +1212,11 @@ function EffortSlider({
 
   const fraction = (clientX: number, grab = 0) => {
     const rect = trackRef.current!.getBoundingClientRect()
-    return Math.min(1, Math.max(0, (clientX - rect.left - 14 - grab) / Math.max(1, rect.width - 28)))
+    return Math.min(1, Math.max(0, (clientX - rect.left - 12 - grab) / Math.max(1, rect.width - 24)))
   }
   const thumbCenter = () => {
     const rect = trackRef.current!.getBoundingClientRect()
-    return rect.left + 14 + (rect.width - 28) * springs.pos.value
+    return rect.left + 12 + (rect.width - 24) * springs.pos.value
   }
   const choose = (ratio: number) => {
     const level = levels[Math.round(ratio * last)]!
@@ -1310,7 +1312,7 @@ function EffortSlider({
               key={level}
               className="noa-model-picker-tick"
               data-selected={i <= selected}
-              style={{ left: `calc(14px + (100% - 28px) * ${last > 0 ? i / last : 0})` }}
+              style={{ left: `calc(12px + (100% - 24px) * ${last > 0 ? i / last : 0})` }}
             />
           ))}
           {burst > 0 && (
@@ -1534,7 +1536,7 @@ function Picker({
           setShowingModels(false)
           setOpen((o) => !o)
         }}
-        className={`flex h-7 min-w-0 items-center gap-1 whitespace-nowrap rounded-full ${iconOnly ? "w-7 justify-center p-0" : compactPadding ? "px-1.5" : "px-2"} text-[12px] font-normal leading-[18px] transition-colors hover:bg-[var(--fill-hover)] disabled:opacity-40 ${
+        className={`flex h-7 min-w-0 items-center gap-1 whitespace-nowrap rounded-lg ${iconOnly ? "w-7 justify-center p-0" : compactPadding ? "px-1.5" : hideChevron ? "px-2.5" : "pl-2.5 pr-1.5"} text-[12px] font-normal leading-[18px] transition-colors hover:bg-[var(--fill-hover)] aria-expanded:bg-[var(--fill-hover)] disabled:opacity-40 ${
           tone === "danger" ? "text-[#C24444]" : "text-[var(--sidebar-text,#52514E)]"
         }`}
       >

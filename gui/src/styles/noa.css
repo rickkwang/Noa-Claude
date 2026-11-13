@@ -1079,7 +1079,7 @@ html[data-translucent-sidebar="enabled"] [data-sidebar-container] .noa-sidebar-t
   inset-inline: 0;
   top: 2px;
   height: 24px;
-  border-radius: 12px;
+  border-radius: 7px;
   background: var(--effort-track);
   box-shadow: inset 0 0 0 .5px var(--divider-subtle);
 }
@@ -1088,8 +1088,8 @@ html[data-translucent-sidebar="enabled"] [data-sidebar-container] .noa-sidebar-t
   top: 2px;
   left: 0;
   height: 24px;
-  width: calc(28px + (100% - 28px) * var(--effort-pos));
-  border-radius: 12px;
+  width: calc(24px + (100% - 24px) * var(--effort-pos));
+  border-radius: 7px;
   background: var(--accent-color);
   overflow: hidden;
 }
@@ -1097,8 +1097,8 @@ html[data-translucent-sidebar="enabled"] [data-sidebar-container] .noa-sidebar-t
 .noa-model-picker-tick {
   position: absolute;
   top: 50%;
-  width: 4px;
-  height: 4px;
+  width: 3px;
+  height: 3px;
   border-radius: 50%;
   background: currentColor;
   transform: translate(-50%, -50%);
@@ -1110,16 +1110,15 @@ html[data-translucent-sidebar="enabled"] [data-sidebar-container] .noa-sidebar-t
 .noa-model-picker-track:not(:active) .noa-model-picker-tick:hover { filter: brightness(.85); transform: translate(-50%, -50%) scale(2); }
 .noa-model-picker-thumb {
   position: absolute;
-  top: 50%;
-  left: calc(14px + (100% - 28px) * var(--effort-pos));
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
+  top: 2px;
+  left: calc(12px + (100% - 24px) * var(--effort-pos));
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
   background: var(--effort-thumb);
   z-index: 3;
-  border: .5px solid var(--border-default);
-  box-shadow: 0 0 2px rgba(0, 0, 0, .1);
-  transform: translate(-50%, -50%) scale(var(--effort-scale));
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .2);
+  transform: translateX(-50%) scale(var(--effort-scale));
   pointer-events: none;
 }
 .noa-model-picker-track:active { cursor: grabbing; }
@@ -1163,7 +1162,7 @@ html[data-translucent-sidebar="enabled"] [data-sidebar-container] .noa-sidebar-t
   position: absolute;
   z-index: 2;
   top: 50%;
-  left: calc(14px + (100% - 28px) * var(--effort-pos));
+  left: calc(12px + (100% - 24px) * var(--effort-pos));
   width: 76px;
   height: 76px;
   transform: translate(-50%, -50%);
@@ -1667,13 +1666,13 @@ kbd.noa-review-menu-hint { font-family: inherit; }
 @keyframes noa-shimmer { 0% { background-position: -100% 0; } 25%, 100% { background-position: 250% 0; } }
 @media (prefers-reduced-motion: reduce) { .noa-shimmer { animation: none; color: var(--noa-shimmer-foreground); background: none; -webkit-text-fill-color: currentColor; } }
 
-/* New live text and block decorations fade in as they arrive over 0.4s. */
+/* New live text and block decorations fade in as they arrive: readable quickly, settling over 0.5s. */
 .noa-stream-seg,
 .noa-stream-block {
-  animation: noa-stream-in 400ms linear both;
+  animation: noa-stream-in 500ms cubic-bezier(.22, 1, .36, 1) both;
 }
 .noa-stream-block::marker {
-  animation: noa-stream-in 400ms linear both;
+  animation: noa-stream-in 500ms cubic-bezier(.22, 1, .36, 1) both;
 }
 @keyframes noa-stream-in { from { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) {
