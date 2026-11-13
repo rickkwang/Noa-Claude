@@ -27,7 +27,7 @@ const pages: { key: Page; label: string; group: string; icon: ReactNode; rows: s
     label: "General",
     group: "Personal",
     icon: <Settings size={16} />,
-    rows: ["Account", "Default permissions", "Default output style", "Send shortcut", "Show context window usage", "Turn notifications", "Notification sound", "Permission requests", "Questions", "Dock badge"],
+    rows: ["Account", "Default permissions", "Default output style", "Send shortcut", "Show context window usage", "Streaming sound", "Sound preset", "Sound volume", "Turn notifications", "Notification sound", "Permission requests", "Questions", "Dock badge"],
   },
   {
     key: "appearance",

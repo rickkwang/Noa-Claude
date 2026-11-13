@@ -64,6 +64,8 @@ export interface AppSettings {
     /** Shows Full access in the composer's permission menu. Off by default. */
     showFullAccess: boolean;
     showContextUsage: boolean;
+    /** Synthesized notes while a reply streams in. Off by default. */
+    streamSound: { enabled: boolean; preset: 'classic' | 'ethereal'; volume: number };
   };
   terminal: {
     /** Where the terminal shortcut opens a terminal: the bottom panel or a right-panel tab. */

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react"
 import type { AppSettings } from "../types"
 import { migrateAppearance } from "../lib/appearanceMigration"
 import { defaultSettings } from "../theme/settings"
+import { configureStreamSound } from "../lib/streamSound"
 import { SHORTCUT_IDS, isBinding, type ShortcutBindings } from "../lib/shortcuts"
 
 // Keep only known shortcut ids with well-formed bindings; anything else would break the keydown matcher.
@@ -59,5 +60,6 @@ export function useAppSettings() {
   useEffect(() => {
     window.noaDesktop?.notifications?.configure(settings.notifications).catch(() => undefined)
   }, [settings.notifications])
+  useEffect(() => configureStreamSound(settings.composer.streamSound), [settings.composer.streamSound])
   return [settings, setSettings] as const
 }

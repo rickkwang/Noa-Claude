@@ -31,6 +31,7 @@ import { contextCardFor } from "./ContextCard"
 import { stripAnsi } from "../lib/contextOutput"
 import { RewindButton } from "./SessionActions"
 import { LiveDiffSummary, TurnDiffCard } from "./TurnDiffCard"
+import { streamSound } from "../lib/streamSound"
 
 interface MessageListProps {
   turns: Turn[]
@@ -1314,6 +1315,8 @@ function PacedMarkdown({ text, streaming, fresh, streamKey }: { text: string; st
         if (code >= 0xd800 && code <= 0xdbff && next < target.length) next++
         p.shown = next
         setShown(next)
+        // Only text that streamed in here; a replay of a finished answer stays silent.
+        if (p.arrivals) streamSound(p.rate)
       }
       p.frame = requestAnimationFrame(tick)
     }

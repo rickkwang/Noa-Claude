@@ -2,7 +2,8 @@ import type { AppSettings } from "../../types"
 import type { AccountInfo, ModelInfo } from "../../agent/protocol"
 import { outputStyleOptions } from "../../lib/outputStyles"
 import { useConfirm } from "../ConfirmDialog"
-import { actionButton, Row, Section, Select, TextField, Toggle } from "./controls"
+import { previewStreamSound } from "../../lib/streamSound"
+import { actionButton, Row, Section, Select, Slider, TextField, Toggle } from "./controls"
 
 type DefaultMode = AppSettings["agent"]["permissionDefault"]
 
@@ -42,6 +43,9 @@ export function GeneralPage({
   const permissionMode = settings.agent.permissionDefault
   const modifierLabel = navigator.platform.includes("Mac") ? "⌘" : "Ctrl"
   const providerLabel = account?.apiProvider ? providerDisplayName(account.apiProvider) : undefined
+  const sound = settings.composer.streamSound
+  const setSound = (next: Partial<typeof sound>) =>
+    onChange({ ...settings, composer: { ...settings.composer, streamSound: { ...sound, ...next } } })
   const setPermission = (permissionDefault: DefaultMode) =>
     onChange({ ...settings, agent: { ...settings.agent, permissionDefault } })
 
@@ -139,6 +143,26 @@ export function GeneralPage({
             }
           />
         </Row>
+        <Row label="Streaming sound" description="Play soft synthesized notes while a reply streams in.">
+          <Toggle checked={sound.enabled} onChange={(enabled) => setSound({ enabled })} />
+        </Row>
+        {sound.enabled && (
+          <Row label="Sound preset" description={sound.preset === "classic" ? "Warm triangle wave with a light reverb." : "Soft sine wave with an airy reverb."}>
+            <div className="flex items-center gap-2">
+              <button type="button" className={actionButton} onClick={() => previewStreamSound()}>Preview</button>
+              <Select
+                value={sound.preset}
+                options={[["classic", "Classic"], ["ethereal", "Ethereal"]]}
+                onChange={(preset) => setSound({ preset: preset as typeof sound.preset })}
+              />
+            </div>
+          </Row>
+        )}
+        {sound.enabled && (
+          <Row label="Sound volume">
+            <Slider value={sound.volume} label="Sound volume" onChange={(volume) => setSound({ volume })} />
+          </Row>
+        )}
       </Section>
       <Section title="Terminal">
         <Row label="Default terminal location" description="Choose where the terminal shortcut opens terminal tabs.">
