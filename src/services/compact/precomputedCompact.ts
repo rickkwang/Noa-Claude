@@ -20,8 +20,9 @@
 //   - Any mismatch (history rewound, tail too large, compute failed/aborted)
 //     discards the precompute and the caller falls back to synchronous compact.
 //
-// Off by default. Enable at runtime with NOA_CLAUDE_PRECOMPUTE_COMPACT=1
-// (legacy CLAUDE_CODE_PRECOMPUTE_COMPACT also accepted). When disabled the
+// On by default. Disable with NOA_CLAUDE_PRECOMPUTE_COMPACT=0 (legacy
+// CLAUDE_CODE_PRECOMPUTE_COMPACT also accepted) or precomputeCompactEnabled:
+// false in the global config. When disabled the
 // entry points are cheap no-ops and behaviour is identical to before.
 
 import type { UUID } from 'crypto'
@@ -29,7 +30,7 @@ import type { ToolUseContext } from '../../Tool.js'
 import type { AssistantMessage, Message } from '../../types/message.js'
 import { getGlobalConfig } from '../../utils/config.js'
 import { logForDebugging } from '../../utils/debug.js'
-import { isEnvTruthy } from '../../utils/envUtils.js'
+import { isEnvDefinedFalsy, isEnvTruthy } from '../../utils/envUtils.js'
 import type { CacheSafeParams } from '../../utils/forkedAgent.js'
 import { logError } from '../../utils/log.js'
 import {
@@ -41,10 +42,10 @@ import { estimateMessageTokens } from './microCompact.js'
 import { getPartialCompactPrompt } from './prompt.js'
 
 export function isPrecomputeEnabled(): boolean {
-  if (isEnvTruthy(process.env.NOA_CLAUDE_PRECOMPUTE_COMPACT)) return true
-  if (isEnvTruthy(process.env.CLAUDE_CODE_PRECOMPUTE_COMPACT)) return true
-  // Optional persisted opt-in (defaults false when unset).
-  return getGlobalConfig().precomputeCompactEnabled === true
+  const env = process.env.NOA_CLAUDE_PRECOMPUTE_COMPACT ?? process.env.CLAUDE_CODE_PRECOMPUTE_COMPACT
+  if (isEnvTruthy(env)) return true
+  if (isEnvDefinedFalsy(env)) return false
+  return getGlobalConfig().precomputeCompactEnabled !== false
 }
 
 type ArmedState = {

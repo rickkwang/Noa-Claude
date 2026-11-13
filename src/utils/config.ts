@@ -255,7 +255,7 @@ export type GlobalConfig = {
   bypassPermissionsModeAccepted?: boolean
   hasUsedBackslashReturn?: boolean
   autoCompactEnabled: boolean // Controls whether auto-compact is enabled
-  precomputeCompactEnabled?: boolean // Opt-in: precompute the auto-compact summary in the background to hide compaction latency. Off by default. Env NOA_CLAUDE_PRECOMPUTE_COMPACT also enables it.
+  precomputeCompactEnabled?: boolean // Precompute the auto-compact summary in the background to hide compaction latency. On by default; false (or env NOA_CLAUDE_PRECOMPUTE_COMPACT=0) disables it.
   idleCompaction?: boolean // Opt-in: clear old tool results through server-side context management after a long idle gap. Off by default (upstream ships it behind a rollout); set true, or NOA_CLAUDE_IDLE_COMPACTION=1, to enable it. NOA_CLAUDE_IDLE_COMPACTION=shadow logs what it would clear without sending the edit.
   reactiveCompactEnabled?: boolean // Opt-out: recover from a context overflow auto-compact did not prevent (main-query prompt-too-long / media-size) by compacting in place and retrying once, instead of surfacing the error. On whenever auto-compact is; set false, or NOA_CLAUDE_REACTIVE_COMPACT=0, to turn off just this layer.
   autoModeClassifierQueueEnabled?: boolean // Opt-out: serialize auto mode classifier API calls per agent instead of firing them concurrently. On by default (upstream made it unconditional — serializing is what lets a parallel tool batch share one cached conversation prefix). Set false, or NOA_CLAUDE_AUTO_MODE_CLASSIFIER_QUEUE=0, to force it off.

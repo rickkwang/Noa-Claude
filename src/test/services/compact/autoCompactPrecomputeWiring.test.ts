@@ -222,7 +222,7 @@ describe('autoCompactIfNeeded consume branch', () => {
   test('disabled precompute never touches the slot even when armed', async () => {
     const messages = overThresholdMessages()
     armReadyAt2(messages)
-    delete process.env.NOA_CLAUDE_PRECOMPUTE_COMPACT
+    process.env.NOA_CLAUDE_PRECOMPUTE_COMPACT = '0'
 
     const result = await autoCompactIfNeeded(
       messages,
