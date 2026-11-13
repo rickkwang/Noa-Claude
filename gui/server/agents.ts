@@ -99,11 +99,12 @@ function reclaimIfIdle(run: AgentRun): void {
 
 // Serialize snapshots and mutations within one workspace, never across projects.
 function afterWorkspaceOperation<T>(cwd: string, operation: () => Promise<T>): Promise<T> {
-  const previous = workspaceOperations.get(cwd) ?? Promise.resolve()
+  const key = canonicalCwd(cwd)
+  const previous = workspaceOperations.get(key) ?? Promise.resolve()
   const result = previous.then(operation)
   const settled = result.then(() => undefined, () => undefined)
-  workspaceOperations.set(cwd, settled)
-  settled.then(() => { if (workspaceOperations.get(cwd) === settled) workspaceOperations.delete(cwd) })
+  workspaceOperations.set(key, settled)
+  settled.then(() => { if (workspaceOperations.get(key) === settled) workspaceOperations.delete(key) })
   return result
 }
 
@@ -309,7 +310,8 @@ async function turnDiffAction(run: AgentRun, turnIndex: number, action: "undo" |
   const fail = (result: TurnDiffActionResult) =>
     emit(run, { kind: "turn-diff-action", turnIndex, action, result })
   await afterWorkspaceOperation(run.cwd, async () => {
-    if ([...runs.values()].some((active) => active.cwd === run.cwd && !active.exited && (active.busy || active.sessionAction || active.waiting.size || active.activeTasks.size)))
+    const cwdKey = canonicalCwd(run.cwd)
+    if ([...runs.values()].some((active) => canonicalCwd(active.cwd) === cwdKey && !active.exited && (active.busy || active.sessionAction || active.waiting.size || active.activeTasks.size)))
       return fail({ ok: false, errorCode: "apply-failed", error: "Wait for running tasks in this workspace to finish before changing a workspace snapshot.", appliedPaths: [], skippedPaths: [], conflictedPaths: [] })
     if (!run.sessionId)
       return fail({ ok: false, errorCode: "no-patch", appliedPaths: [], skippedPaths: [], conflictedPaths: [] })
@@ -472,11 +474,12 @@ function followExternal(ws: ServerWebSocket<SocketData>, sessionId: string, hold
   void tick()
 }
 export function attachAgent(ws: ServerWebSocket<SocketData>, root: string) {
+  const targetCwd = canonicalCwd(ws.data.cwd)
   let run = runs.get(ws.data.runtimeId)
   if (!run && ws.data.resume)
     run = [...runs.values()].find(
       (r) =>
-        r.cwd === ws.data.cwd &&
+        canonicalCwd(r.cwd) === targetCwd &&
         r.sessionId === ws.data.resume &&
         !r.exited &&
         // A replacement can start while the previous CLI finalizes; the
@@ -487,7 +490,7 @@ export function attachAgent(ws: ServerWebSocket<SocketData>, root: string) {
     ws.close(1012, "Noa is restarting. Reconnect to continue.")
     return
   }
-  if (run && run.cwd !== ws.data.cwd) {
+  if (run && canonicalCwd(run.cwd) !== targetCwd) {
     ws.close(1008, "Workspace mismatch")
     return
   }
@@ -750,11 +753,12 @@ export async function agentMessage(ws: ServerWebSocket<SocketData>, raw: string 
     // A dry run only reads checkpoints. Rewinding just the conversation touches only this session;
     // anything that writes files must also wait for other sessions working in the same folder.
     const request = message.request
+    const cwdKey = canonicalCwd(run.cwd)
     const writesFiles = request.action === "fork" || (request.mode !== undefined && request.mode !== "conversation")
     const blocked = request.dry_run
       ? !!run.sessionAction
       : !!run.sessionAction || run.busy || !!run.turn || run.queue.length > 0 || run.waiting.size > 0 || run.activeTasks.size > 0 ||
-        (writesFiles && ([...runs.values()].some(active => active !== run && active.cwd === run.cwd && !active.exited && (active.busy || active.sessionAction || active.activeTasks.size)) || workspaceOperations.has(run.cwd)))
+        (writesFiles && ([...runs.values()].some(active => active !== run && canonicalCwd(active.cwd) === cwdKey && !active.exited && (active.busy || active.sessionAction || active.activeTasks.size)) || workspaceOperations.has(cwdKey)))
     if (blocked) {
       const error = run.sessionAction ? "Another change to this conversation is still in progress."
         : run.busy || run.turn || run.queue.length || run.waiting.size || run.activeTasks.size ? "Stop running tasks and clear queued messages before changing this conversation."
@@ -769,8 +773,8 @@ export async function agentMessage(ws: ServerWebSocket<SocketData>, raw: string 
     // Only a file-writing action takes the folder lock; a preview or a conversation-only rewind must not
     // replace the lock another session's operation holds.
     if (writesFiles && !request.dry_run) {
-      workspaceOperations.set(run.cwd, operation)
-      operation.then(() => { if (workspaceOperations.get(run.cwd) === operation) workspaceOperations.delete(run.cwd) })
+      workspaceOperations.set(cwdKey, operation)
+      operation.then(() => { if (workspaceOperations.get(cwdKey) === operation) workspaceOperations.delete(cwdKey) })
     }
     run.sessionAction = { release, requestId: message.request_id, rewind: (message.request.action === "rewind" || message.request.action === "undo_rewind") && !message.request.dry_run, filesFrom: !message.request.dry_run && message.request.mode && message.request.mode !== "conversation" ? message.request.user_message_id : undefined }
     if (!write(run, message)) {

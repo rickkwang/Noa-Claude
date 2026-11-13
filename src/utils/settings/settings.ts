@@ -1,15 +1,7 @@
 // @ts-nocheck
 import { feature } from 'bun:bundle'
 import mergeWith from 'lodash-es/mergeWith.js'
-import { randomUUID } from 'node:crypto'
-import {
-  chmodSync,
-  mkdirSync as mkdirLockSync,
-  readFileSync as readLockFileSync,
-  rmSync as rmLockSync,
-  statSync as statLockSync,
-  writeFileSync as writeLockFileSync,
-} from 'node:fs'
+import { chmodSync } from 'node:fs'
 import { dirname, join, resolve } from 'path'
 import { z } from 'zod/v4'
 import {
@@ -42,6 +34,7 @@ import {
   type SettingSource,
 } from './constants.js'
 import { markInternalWrite } from './internalWrites.js'
+import { acquireSettingsLock } from './settingsLock.js'
 import {
   getManagedFilePath,
   getManagedSettingsDropInDir,
@@ -411,8 +404,6 @@ function getSettingsForSourceUncached(
   return fileSettings
 }
 
-const settingsLockWaitArray = new Int32Array(new SharedArrayBuffer(4))
-
 // env.* keys that hold secrets; their presence in settings.json requires 0600.
 const CREDENTIAL_ENV_KEYS = new Set([
   'ANTHROPIC_API_KEY',
@@ -421,172 +412,6 @@ const CREDENTIAL_ENV_KEYS = new Set([
   'ANTHROPIC_FOUNDRY_API_KEY',
   'AWS_BEARER_TOKEN_BEDROCK',
 ])
-const SETTINGS_LOCK_TIMEOUT_MS = 6_000
-const LEGACY_SETTINGS_LOCK_STALE_MS = 10_000
-const SETTINGS_LOCK_RECOVERY_GUARD_STALE_MS = 2_000
-const SETTINGS_LOCK_MAX_OWNER_AGE_MS = 5 * 60_000
-
-type SettingsLockOwner = {
-  pid: number
-  token: string
-  acquiredAt: number
-}
-
-type SettingsLockState =
-  | { kind: 'owned'; owner: SettingsLockOwner }
-  | { kind: 'unowned'; ageMs: number }
-
-function getSettingsLockAgeMs(path: string): number {
-  try {
-    return Math.max(0, Date.now() - statLockSync(path).mtimeMs)
-  } catch {
-    return 0
-  }
-}
-
-function readSettingsLockState(lockPath: string): SettingsLockState {
-  try {
-    const parsed = JSON.parse(
-      readLockFileSync(join(lockPath, 'owner.json'), 'utf8'),
-    )
-    if (
-      typeof parsed?.pid === 'number' &&
-      Number.isInteger(parsed.pid) &&
-      parsed.pid > 0 &&
-      typeof parsed.token === 'string' &&
-      parsed.token.length > 0 &&
-      typeof parsed.acquiredAt === 'number'
-    ) {
-      return { kind: 'owned', owner: parsed }
-    }
-  } catch {
-    // A proper-lockfile lock from an older build has no owner metadata. The
-    // same is briefly true between mkdir and owner.json creation below.
-  }
-  return { kind: 'unowned', ageMs: getSettingsLockAgeMs(lockPath) }
-}
-
-function isSettingsLockOwnerRunning(pid: number): boolean {
-  try {
-    process.kill(pid, 0)
-    return true
-  } catch (error) {
-    return getErrnoCode(error) === 'EPERM'
-  }
-}
-
-function isRecoverableSettingsLock(state: SettingsLockState): boolean {
-  if (state.kind === 'owned') {
-    return (
-      Date.now() - state.owner.acquiredAt >=
-        SETTINGS_LOCK_MAX_OWNER_AGE_MS ||
-      !isSettingsLockOwnerRunning(state.owner.pid)
-    )
-  }
-  return state.ageMs >= LEGACY_SETTINGS_LOCK_STALE_MS
-}
-
-function tryRecoverSettingsLock(lockPath: string): boolean {
-  const recoveryPath = `${lockPath}.recovery`
-
-  try {
-    mkdirLockSync(recoveryPath)
-  } catch (error) {
-    if (getErrnoCode(error) !== 'EEXIST') {
-      throw error
-    }
-    if (
-      getSettingsLockAgeMs(recoveryPath) <
-      SETTINGS_LOCK_RECOVERY_GUARD_STALE_MS
-    ) {
-      return false
-    }
-    rmLockSync(recoveryPath, { recursive: true, force: true })
-    try {
-      mkdirLockSync(recoveryPath)
-    } catch (retryError) {
-      if (getErrnoCode(retryError) === 'EEXIST') {
-        return false
-      }
-      throw retryError
-    }
-  }
-
-  try {
-    if (!isRecoverableSettingsLock(readSettingsLockState(lockPath))) {
-      return false
-    }
-    rmLockSync(lockPath, { recursive: true, force: true })
-    return true
-  } finally {
-    rmLockSync(recoveryPath, { recursive: true, force: true })
-  }
-}
-
-function createSettingsLockError(): Error {
-  return Object.assign(new Error('Lock file is already being held'), {
-    code: 'ELOCKED',
-  })
-}
-
-function acquireSettingsLock(filePath: string): () => void {
-  const lockPath = `${filePath}.lock`
-  const owner: SettingsLockOwner = {
-    pid: process.pid,
-    token: randomUUID(),
-    acquiredAt: Date.now(),
-  }
-  const standardDeadline = Date.now() + SETTINGS_LOCK_TIMEOUT_MS
-  const legacyDeadline =
-    Date.now() + LEGACY_SETTINGS_LOCK_STALE_MS + SETTINGS_LOCK_TIMEOUT_MS
-  let waitMs = 5
-
-  while (true) {
-    try {
-      mkdirLockSync(lockPath)
-      try {
-        writeLockFileSync(
-          join(lockPath, 'owner.json'),
-          JSON.stringify(owner),
-          { mode: 0o600 },
-        )
-      } catch (error) {
-        rmLockSync(lockPath, { recursive: true, force: true })
-        throw error
-      }
-
-      return () => {
-        const currentState = readSettingsLockState(lockPath)
-        if (
-          currentState.kind !== 'owned' ||
-          currentState.owner.token !== owner.token
-        ) {
-          throw new Error(`Settings lock ownership changed at ${lockPath}`)
-        }
-        rmLockSync(lockPath, { recursive: true, force: true })
-      }
-    } catch (error) {
-      if (getErrnoCode(error) !== 'EEXIST') {
-        throw error
-      }
-
-      const state = readSettingsLockState(lockPath)
-      if (isRecoverableSettingsLock(state)) {
-        if (tryRecoverSettingsLock(lockPath)) {
-          continue
-        }
-      }
-
-      const deadline =
-        state.kind === 'unowned' ? legacyDeadline : standardDeadline
-      if (Date.now() >= deadline) {
-        throw createSettingsLockError()
-      }
-      Atomics.wait(settingsLockWaitArray, 0, 0, waitMs)
-      waitMs = Math.min(Math.ceil(waitMs * 1.5), 100)
-    }
-  }
-}
 
 /**
  * Get the origin of the highest-priority active policy settings source.

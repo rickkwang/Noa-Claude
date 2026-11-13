@@ -1,10 +1,11 @@
 // Settings-page skill management: on/off through the CLI's `skillModes` setting, plus reading, revealing and
 // removing skills that live under the user's own skills folder. Other skills (bundled, plugin, project) are
 // reported but never touched here.
-import { existsSync } from "node:fs"
+import { existsSync, mkdirSync } from "node:fs"
 import { lstat, readFile, readdir, realpath, rename, rm, unlink, writeFile } from "node:fs/promises"
-import { join, sep } from "node:path"
+import { dirname, join, sep } from "node:path"
 import { getClaudeConfigHomeDir } from "../../src/utils/envUtils"
+import { acquireSettingsLock } from "../../src/utils/settings/settingsLock"
 
 const NAME = /^[A-Za-z0-9][A-Za-z0-9._:-]*$/
 
@@ -88,19 +89,31 @@ function writeMode(name: string, mode: "on" | "off"): Promise<void> {
 }
 
 async function writeModeNow(name: string, mode: "on" | "off"): Promise<void> {
-  const { file, data } = await readSettings()
-  const modes = { ...((data.skillModes as Record<string, string> | undefined) ?? {}) }
-  const overrides = (data.skillOverrides as Record<string, string> | undefined) ?? {}
-  // "on" is the default for a skill, so enabling just drops the override, unless
-  // skillOverrides also names it: then an explicit "on" has to outrank that entry.
-  if (mode === "off") modes[name] = "off"
-  else if (name in overrides) modes[name] = "on"
-  else delete modes[name]
-  if (Object.keys(modes).length) data.skillModes = modes
-  else delete data.skillModes
-  const temp = `${file}.${process.pid}.${tempCounter++}.tmp`
-  await writeFile(temp, JSON.stringify(data, null, 2) + "\n")
-  await rename(temp, file)
+  const link = join(configHome(), "settings.json")
+  mkdirSync(dirname(link), { recursive: true })
+  const releaseLock = acquireSettingsLock(link)
+  try {
+    const { file, data } = await readSettings()
+    const modes = { ...((data.skillModes as Record<string, string> | undefined) ?? {}) }
+    const overrides = (data.skillOverrides as Record<string, string> | undefined) ?? {}
+    // "on" is the default for a skill, so enabling just drops the override, unless
+    // skillOverrides also names it: then an explicit "on" has to outrank that entry.
+    if (mode === "off") modes[name] = "off"
+    else if (name in overrides) modes[name] = "on"
+    else delete modes[name]
+    if (Object.keys(modes).length) data.skillModes = modes
+    else delete data.skillModes
+    const temp = `${file}.${process.pid}.${tempCounter++}.tmp`
+    try {
+      await writeFile(temp, JSON.stringify(data, null, 2) + "\n")
+      await rename(temp, file)
+    } catch (error) {
+      await unlink(temp).catch(() => {})
+      throw error
+    }
+  } finally {
+    releaseLock()
+  }
 }
 
 export async function skillsState(): Promise<{ modes: Record<string, string>; userSkills: { name: string; description: string }[] }> {
