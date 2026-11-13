@@ -830,7 +830,7 @@ export const Composer = memo(function Composer({
         )}
         {sendWhenReady && <p className="m-0 px-3 pt-2 text-caption text-[var(--sidebar-text-muted)]">Sends when Noa is ready…</p>}
         {attachmentError && <p role="alert" className="m-0 px-3 pt-2 text-caption text-[#C24444]">{attachmentError}</p>}
-        {references.length === 0 && <div aria-hidden="true" className="h-3.5 shrink-0" />}
+        {references.length === 0 && <div aria-hidden="true" className="h-3 shrink-0" />}
         {references.length > 0 && (
           <div className="flex flex-wrap gap-1 px-2 pb-1.5 pt-2">
             {references.map((path) => (
@@ -879,10 +879,10 @@ export const Composer = memo(function Composer({
           aria-label="Task instruction"
           disabled={!!readOnly && disabled}
           rows={1}
-          className="w-full min-h-[44px] max-h-[min(25dvh,var(--composer-editor-max-height,25dvh))] resize-none border-none bg-transparent px-3 py-0 text-[13px] leading-5 outline-none placeholder:text-[color-mix(in_srgb,var(--text-primary)_50%,transparent)]"
+          className="w-full min-h-[34px] max-h-[min(25dvh,var(--composer-editor-max-height,25dvh))] resize-none border-none bg-transparent px-3 py-0 text-[13px] leading-5 outline-none placeholder:text-[color-mix(in_srgb,var(--text-primary)_50%,transparent)]"
         />
         {argumentCommand?.argumentHint && !submenu && <p className="m-0 px-3 pb-1 text-caption text-[var(--sidebar-text-muted)]">/{argumentCommand.name} {argumentCommand.argumentHint}</p>}
-        <div className="noa-agent-footer mb-2 mt-1 flex min-h-7 items-center justify-between gap-1 px-2">
+        <div className="noa-agent-footer mb-1.5 mt-0.5 flex min-h-7 items-center justify-between gap-1 px-2">
           <div className="flex min-w-0 items-center gap-1">
             <Picker
               align="left"
