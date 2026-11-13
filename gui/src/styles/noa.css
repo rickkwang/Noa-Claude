@@ -89,19 +89,20 @@
   .noa-caret { transition: none; }
   .noa-caret[data-blink="true"] { animation-timing-function: steps(1, end); }
 }
-/* The home composer's environment rail: 13px inline inset, 16px top corners, 5px
-   above and below 28px controls, tucked 20px under the composer. Labels are 12/16px in the primary ink with
-   16px icons 6px away, at most 224px wide. */
+/* The home composer's environment rail: 13px inline inset, 16px top corners, 2px
+   above and below 28px controls, tucked 20px under the composer. Labels are 11/16px in the primary ink with
+   15px icons 6px away, at most 224px wide. */
 .noa-agent-environment {
-  height: 58px;
+  height: 52px;
   margin: 0 13px -20px;
-  padding: 5px 6px 25px;
+  padding: 2px 6px 22px;
   border-radius: 16px 16px 0 0;
   background: color-mix(in srgb, var(--bg-primary, #F9F9F7) 95%, var(--text-primary, #2D2D2B) 5%);
   color: var(--text-primary);
 }
-.noa-agent-environment button:not(.noa-approval-item) { gap: 6px; max-width: 224px; color: var(--text-primary); font-size: 12px; line-height: 16px; }
-.noa-agent-environment > span { gap: 6px; font-size: 12px; line-height: 16px; }
+.noa-agent-environment button:not(.noa-approval-item) { gap: 6px; max-width: 224px; color: var(--text-primary); font-size: 11px; line-height: 16px; }
+.noa-agent-environment > span { gap: 6px; font-size: 11px; line-height: 16px; }
+.noa-agent-environment svg { width: 15px; height: 15px; transform: translateY(1px); }
 [data-theme="dark"] .noa-agent-environment {
   background: color-mix(in srgb, var(--bg-primary, #2D2D2B) 95%, var(--text-primary, #F9F9F7) 5%);
 }
