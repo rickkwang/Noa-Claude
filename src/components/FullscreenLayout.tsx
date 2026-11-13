@@ -14,6 +14,7 @@ import type { Message } from '../types/message.js';
 import { openBrowser, openPath } from '../utils/browser.js';
 import { logDebugDiagnosticWarn } from '../utils/debugDiagnostics.js';
 import { isFullscreenEnvEnabled } from '../utils/fullscreen.js';
+import { stringWidth } from '../ink/stringWidth.js';
 import { TerminalSizeContext } from '../ink/components/TerminalSizeContext.js';
 import { plural } from '../utils/stringUtils.js';
 import { isNullRenderingAttachment } from './messages/nullRenderingAttachments.js';
@@ -280,7 +281,7 @@ export function computeUnseenDivider(messages: readonly Message[], dividerIndex:
  * so nothing can accidentally render outside it.
  */
 export function FullscreenLayout(t0) {
-  const $ = _c(47);
+  const $ = _c(48);
   const {
     scrollable,
     bottom,
@@ -305,6 +306,9 @@ export function FullscreenLayout(t0) {
     columns
   } = useTerminalSize();
   const [stickyPrompt, setStickyPrompt] = useState(null);
+  // Right-end label for the modal's ▔ divider, contributed by the Pane inside
+  // it (see ModalContext.setTopRight).
+  const [modalTopRight, setModalTopRight] = useState<string | null>(null);
   // Hoisted above the `isFullscreenEnvEnabled()` branch below: `/tui` flips
   // that predicate mid-session, so a hook called inside the branch would change
   // the hook count between renders and crash React.
@@ -460,17 +464,19 @@ export function FullscreenLayout(t0) {
       t17 = $[32];
     }
     let t18;
-    if ($[33] !== columns || $[34] !== modal || $[35] !== modalScrollRef || $[36] !== terminalRows) {
+    if ($[33] !== columns || $[34] !== modal || $[35] !== modalScrollRef || $[36] !== terminalRows || $[47] !== modalTopRight) {
       t18 = modal != null && <ModalContext value={{
         rows: terminalRows - MODAL_TRANSCRIPT_PEEK - 1,
         columns: columns - 4,
-        scrollRef: modalScrollRef ?? null
-      }}><Box position="absolute" bottom={0} left={0} right={0} maxHeight={terminalRows - MODAL_TRANSCRIPT_PEEK} flexDirection="column" overflow="hidden" opaque={true}><Box flexShrink={0}><Text color="permission">{"\u2594".repeat(columns)}</Text></Box><Box flexDirection="column" paddingX={2} flexShrink={0} overflow="hidden">{modal}</Box></Box></ModalContext>;
+        scrollRef: modalScrollRef ?? null,
+        setTopRight: setModalTopRight
+      }}><Box position="absolute" bottom={0} left={0} right={0} maxHeight={terminalRows - MODAL_TRANSCRIPT_PEEK} flexDirection="column" overflow="hidden" opaque={true}><Box flexShrink={0}>{modalTopRight ? <Text color="permission">{"\u2594".repeat(Math.max(0, columns - stringWidth(modalTopRight) - 3))}<Text dimColor={true}>{` ${modalTopRight} `}</Text>{"\u2594"}</Text> : <Text color="permission">{"\u2594".repeat(columns)}</Text>}</Box><Box flexDirection="column" paddingX={2} flexShrink={0} overflow="hidden">{modal}</Box></Box></ModalContext>;
       $[33] = columns;
       $[34] = modal;
       $[35] = modalScrollRef;
       $[36] = terminalRows;
       $[37] = t18;
+      $[47] = modalTopRight;
     } else {
       t18 = $[37];
     }

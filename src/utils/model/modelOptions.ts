@@ -285,7 +285,7 @@ export function getSonnet46_1MOption(): ModelOption {
   }
 }
 
-// Fable 5.2 / 5.1 — top tier, above Opus. Never a default (it's the most expensive
+// Fable 5.2 — top tier, above Opus. Never a default (it's the most expensive
 // model); offered as an explicit opt-in row. The `[1m]` variant is reachable
 // via the `fable[1m]` alias.
 function getFable52Option(): ModelOption {
@@ -298,12 +298,14 @@ function getFable52Option(): ModelOption {
   }
 }
 
+// Overflow row: Fable 5.1 pinned by id (the `fable` alias resolves to 5.2).
 function getFable51Option(): ModelOption {
   return {
     value: getModelStrings().fable51,
     label: 'Fable 5.1',
-    description: 'For your toughest challenges',
-    descriptionForModel: 'Fable 5.1 - for your toughest challenges',
+    description: 'Most capable for your hardest and longest-running tasks',
+    descriptionForModel:
+      'Fable 5.1 - most capable for your hardest and longest-running tasks',
   }
 }
 
@@ -527,14 +529,15 @@ function getProviderProfileOptions(): ModelOption[] {
 
 /**
  * Previous-generation rows, in the upstream catalog's overflow order
- * (Haiku 4.5, Sonnet 5, Opus 5, Fable 5, Opus 4.8, Opus 4.7, Opus 4.6, Sonnet 4.6).
- * Every value pins a full model id — the family aliases resolve to
- * the current generation, so only a literal id reaches these. Offered on every
- * tier, not just 3P: the upstream picker lists them for first-party accounts
- * too (10 rows visible, rest behind scroll).
+ * (Fable 5.1, Haiku 4.5, Sonnet 5, Opus 5, Fable 5, Opus 4.8, Opus 4.7,
+ * Opus 4.6, Sonnet 4.6). Every value pins a full model id — the family aliases
+ * resolve to the current generation, so only a literal id reaches these.
+ * Offered on every tier, not just 3P: the upstream picker lists them for
+ * first-party accounts too (10 rows visible, rest behind scroll).
  */
 function getOverflowOptions(fastMode = false): ModelOption[] {
   return [
+    getFable51Option(),
     getHaiku45OverflowOption(),
     getSonnet5Option(),
     getOpus5Option(fastMode),
@@ -585,7 +588,7 @@ function getModelOptionsBase(fastMode = false): ModelOption[] {
       }
 
       premiumOptions.push(MaxSonnet55Option)
-      premiumOptions.push(getFable52Option(), getFable51Option())
+      premiumOptions.push(getFable52Option())
 
       premiumOptions.push(MaxHaiku55Option)
       premiumOptions.push(...getOverflowOptions(fastMode))
@@ -601,7 +604,7 @@ function getModelOptionsBase(fastMode = false): ModelOption[] {
       standardOptions.push(getMaxOpusOption())
     }
 
-    standardOptions.push(getFable52Option(), getFable51Option())
+    standardOptions.push(getFable52Option())
     standardOptions.push(MaxHaiku55Option)
     standardOptions.push(...getOverflowOptions(fastMode))
     return withDefaultFamilyRow(standardOptions, 'sonnet', fastMode)
@@ -616,7 +619,7 @@ function getModelOptionsBase(fastMode = false): ModelOption[] {
       payg1POptions.push(getMergedOpus1MOption(fastMode))
     }
     payg1POptions.push(getSonnet55Option())
-    payg1POptions.push(getFable52Option(), getFable51Option())
+    payg1POptions.push(getFable52Option())
     payg1POptions.push(getHaikuOption())
     payg1POptions.push(...getOverflowOptions(fastMode))
     if (checkSonnet1mAccess()) {
@@ -650,7 +653,7 @@ function getModelOptionsBase(fastMode = false): ModelOption[] {
     payg3pOptions.push(getSonnet55Option())
   }
 
-  payg3pOptions.push(getFable52Option(), getFable51Option())
+  payg3pOptions.push(getFable52Option())
 
   const customHaiku = getCustomHaikuOption()
   if (customHaiku !== undefined) {

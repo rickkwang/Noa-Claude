@@ -8,7 +8,7 @@ import { useTerminalSize } from '../hooks/useTerminalSize.js';
 import { useExitOnCtrlCDWithKeybindings } from 'src/hooks/useExitOnCtrlCDWithKeybindings.js';
 import { type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS, logEvent } from 'src/services/analytics/index.js';
 import { getFastModeModelDisplay, isFastModeAvailable, isFastModeCooldown, isFastModeEnabled } from 'src/utils/fastMode.js';
-import { Box, Text } from '../ink.js';
+import { BaseText, Box, Text } from '../ink.js';
 import { useKeybindings } from '../keybindings/useKeybinding.js';
 import { useAppState, useSetAppState } from '../state/AppState.js';
 import { convertEffortValueToLevel, type EffortLevel, getApiDefaultEffortForModel, getDefaultEffortForModel, getEffortEnvOverride, getEffortSettingsUpdate, getInitialEffortSetting, getMaxEffortCap, getSupportedEffortLevelsForModel, EFFORT_LEVELS, modelSupportsEffort, toPersistableEffort } from '../utils/effort.js';
@@ -143,11 +143,20 @@ export function ModelPicker(t0) {
   const optionsWithInitial = extraOptions.length === 0 ? modelOptions
     : firstDisabledIndex === -1 ? [...modelOptions, ...extraOptions]
     : [...modelOptions.slice(0, firstDisabledIndex), ...extraOptions, ...modelOptions.slice(firstDisabledIndex)];
-  // Upstream colors "Fable 5.2" in descriptions with the theme's claude color.
+  // Upstream paints "Fable 5.2" with the theme's claude color, in the row label
+  // and wherever the name appears in a description (the Default row's saved
+  // pick). The description half has to go through Ansi-escaped text because
+  // descriptions render inside <Ansi>; labels are ReactNode, so color the span.
   const claudeColor = getTheme(currentTheme).claude;
-  const optionsColored = optionsWithInitial.map(opt => opt.description
-    ? { ...opt, description: opt.description.replaceAll("Fable 5.2", colorize("Fable 5.2", claudeColor, "foreground")) }
-    : opt);
+  const optionsColored = optionsWithInitial.map(opt => {
+    const label = typeof opt.label === 'string' && opt.label.includes("Fable 5.2")
+      ? <BaseText color={claudeColor}>{opt.label}</BaseText>
+      : opt.label;
+    const description = opt.description
+      ? opt.description.replaceAll("Fable 5.2", colorize("Fable 5.2", claudeColor, "foreground"))
+      : opt.description;
+    return { ...opt, label, description };
+  });
   let t5;
   if ($[12] !== optionsColored) {
     t5 = optionsColored.map(_temp3);
@@ -393,7 +402,7 @@ export function ModelPicker(t0) {
     t21 = $[56];
   }
   const hiddenBelow = Math.max(0, selectOptions.length - visibleToIndex);
-  const t23 = <Box flexDirection="column" marginBottom={1}>{t21}{hiddenBelow > 0 && <Box paddingLeft={3}><Text dimColor={true}>...+{hiddenBelow} models</Text></Box>}</Box>;
+  const t23 = <Box flexDirection="column" marginBottom={1}>{t21}{hiddenBelow > 0 && <Box paddingLeft={3}><Text dimColor={true}>… +{hiddenBelow} models</Text></Box>}</Box>;
   let t24;
   if (true || $[62] !== displayEffort || $[63] !== focusedDefaultEffort || $[64] !== focusedModelName || $[65] !== focusedSupportsEffort) {
     t24 = focusedValue === MORE_MODELS_VALUE ? <Box marginBottom={1} flexDirection="column"><Text> </Text></Box> : <Box marginBottom={1} flexDirection="column">{focusedSupportsEffort ? <Text dimColor={true}><EffortLevelIndicator effort={displayEffort} />{" "}{displayEffort === "xhigh" ? "xHigh" : capitalize(displayEffort)} effort{displayEffort === focusedDefaultEffort ? " (default)" : ""}{" "}<KeyboardShortcutHint shortcut="←/→" action="adjust" /></Text> : <Text color="subtle"><EffortLevelIndicator effort={undefined} /> Effort not supported{focusedModelName ? ` for ${focusedModelName}` : ""}</Text>}{focusedSupportsEffort && displayEffort === "max" ? <Text dimColor={true}>May use excessive tokens resulting in long response times or overthinking. Use sparingly for the hardest tasks.</Text> : null}{focusedSupportsEffort && getEffortEnvOverride() !== undefined ? <Text color="warning">CLAUDE_CODE_EFFORT_LEVEL={process.env.CLAUDE_CODE_EFFORT_LEVEL} overrides this session</Text> : null}</Box>;

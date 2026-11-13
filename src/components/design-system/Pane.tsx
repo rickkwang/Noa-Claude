@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { c as _c } from "react/compiler-runtime";
-import React from 'react';
-import { useIsInsideModal } from '../../context/modalContext.js';
+import React, { useContext, useEffect } from 'react';
+import { ModalContext } from '../../context/modalContext.js';
 import { useTerminalSize } from '../../hooks/useTerminalSize.js';
 import { stringWidth } from '../../ink/stringWidth.js';
 import { Box, Text } from '../../ink.js';
@@ -48,7 +48,16 @@ export function Pane(t0) {
   const {
     columns
   } = useTerminalSize();
-  if (useIsInsideModal()) {
+  const modal = useContext(ModalContext);
+  const setModalTopRight = modal?.setTopRight;
+  // Inside the modal the divider is drawn by FullscreenLayout, so the label
+  // has to be handed up rather than rendered here.
+  useEffect(() => {
+    if (!setModalTopRight) return;
+    setModalTopRight(topRight ?? null);
+    return () => setModalTopRight(null);
+  }, [setModalTopRight, topRight]);
+  if (modal) {
     let t1;
     if ($[0] !== children) {
       t1 = <Box flexDirection="column" paddingX={1} flexShrink={0}>{children}</Box>;

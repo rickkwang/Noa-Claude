@@ -24,6 +24,12 @@ type ModalCtx = {
   rows: number;
   columns: number;
   scrollRef: RefObject<ScrollBoxHandle | null> | null;
+  /**
+   * Right-end label for the modal's ▔ divider. The divider belongs to
+   * FullscreenLayout, so a Pane's `topRight` badge has nowhere to render on
+   * its own inside the modal; Pane hands the label here instead.
+   */
+  setTopRight: (label: string | null) => void;
 };
 export const ModalContext = createContext<ModalCtx | null>(null);
 export function useIsInsideModal() {

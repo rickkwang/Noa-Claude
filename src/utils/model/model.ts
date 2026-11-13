@@ -521,17 +521,17 @@ export function getClaudeAiUserDefaultModelDescription(
   if (configured) {
     return renderModelName(parseUserSpecifiedModel(configured))
   }
+  // Upstream names the family, not the version: "Opus · Best for everyday…".
+  // The versioned name belongs on the family's own row, not the Default row.
   if (isOpusDefaultSubscriber()) {
     const opusModel = getDefaultOpusModel()
-    const opusName = getMarketingNameForModel(opusModel) ?? 'Opus'
     const pricing = fastMode ? getOpusPricingSuffix(true, opusModel) : ''
     if (isOpus1mMergeEnabled()) {
-      return `${opusName} with 1M context · Best for everyday, complex tasks${pricing}`
+      return `Opus with 1M context · Best for everyday, complex tasks${pricing}`
     }
-    return `${opusName} · Best for everyday, complex tasks${pricing}`
+    return `Opus · Best for everyday, complex tasks${pricing}`
   }
-  const sonnetName = getMarketingNameForModel(getDefaultSonnetModel()) ?? 'Sonnet'
-  return `${sonnetName} · Efficient for routine tasks`
+  return `Sonnet · Efficient for routine tasks`
 }
 
 export function renderDefaultModelSetting(
