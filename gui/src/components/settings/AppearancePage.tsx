@@ -4,6 +4,14 @@ import { SYSTEM_DEFAULT_FONT, CONTENT_SAME_AS_UI } from "../../lib/fontFamily"
 import { faceStyle, isRegularFace, loadFontFamilies, type LocalFontFamily } from "../../lib/localFonts"
 import { clampContrast } from "../../lib/contrast"
 import { activeTranslucency, supportsSidebarTranslucency } from "../../lib/translucency"
+import {
+  exportCodexThemeString,
+  getPresetTokens,
+  normalizeHex,
+  parseCodexThemeString,
+  presetsForVariant,
+  resolveChromeTheme,
+} from "../../lib/themePalette"
 import { useIsDark } from "../../hooks/useIsDark"
 import { defaultSettings } from "../../theme/settings"
 import { NumberField, Row, Section, Segmented, Select, Slider, Toggle, actionButton } from "./controls"
@@ -26,8 +34,63 @@ export function AppearancePage({
     dark: activeTranslucency(appearance.translucentSidebar, true),
   }
   const [fontFamilies, setFontFamilies] = useState<LocalFontFamily[]>([])
+  const [importOpen, setImportOpen] = useState(false)
+  const [importDraft, setImportDraft] = useState("")
+  const [importError, setImportError] = useState<string | null>(null)
+  const [copiedTheme, setCopiedTheme] = useState(false)
+
   const change = (patch: Partial<AppSettings["appearance"]>) =>
     onChange({ ...settings, appearance: { ...appearance, ...patch } })
+  const resolvedTheme = resolveChromeTheme(appearance, isDark)
+  const presetOptions: [string, string][] = presetsForVariant(variant).map((preset) => [preset.id, preset.label])
+  const chromeKey = isDark ? "darkChromeTheme" : "lightChromeTheme"
+  const activeChrome = appearance[chromeKey]
+  const presetBase = getPresetTokens(resolvedTheme.presetId, variant)
+  const hasCustomAccent = Boolean(activeChrome?.accent && activeChrome.accent !== presetBase.accent)
+
+  const selectPreset = (presetId: string) => {
+    change({ [chromeKey]: { presetId } })
+  }
+  const updateAccent = (accent: string) => {
+    const normalized = normalizeHex(accent)
+    if (!normalized) return
+    change({
+      [chromeKey]: {
+        ...activeChrome,
+        presetId: resolvedTheme.presetId,
+        accent: normalized === presetBase.accent ? undefined : normalized,
+      },
+    })
+  }
+  const copyTheme = async () => {
+    const text = exportCodexThemeString(appearance, isDark)
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopiedTheme(true)
+      setTimeout(() => setCopiedTheme(false), 1800)
+    } catch {
+      setImportDraft(text)
+      setImportOpen(true)
+    }
+  }
+  const applyImport = () => {
+    const parsed = parseCodexThemeString(importDraft)
+    if (!parsed) {
+      setImportError("Invalid codex-theme-v1 string")
+      return
+    }
+    const targetKey = parsed.variant === "dark" ? "darkChromeTheme" : "lightChromeTheme"
+    change({
+      theme: parsed.variant,
+      [targetKey]: parsed.chromeTheme,
+      ...(parsed.contrast !== undefined && {
+        contrast: { ...appearance.contrast, [parsed.variant]: parsed.contrast },
+      }),
+    })
+    setImportOpen(false)
+    setImportDraft("")
+    setImportError(null)
+  }
   const activeFonts = appearance.fonts ?? defaultSettings.appearance.fonts
   const updateFonts = (patch: Partial<ThemeFonts>) => change({ fonts: { ...activeFonts, ...patch } })
   const facesFor = (family: string) => fontFamilies.find((f) => f.family === family)?.faces ?? []
@@ -113,6 +176,57 @@ export function AppearancePage({
             onChange={(theme) => change({ theme: theme as Theme })}
           />
         </Row>
+        <Row label="Theme" description={`Palette for ${variant} mode; light and dark keep separate presets.`}>
+          <Select value={resolvedTheme.presetId} options={presetOptions} onChange={selectPreset} />
+        </Row>
+        <Row label="Accent" description={`Accent color for ${variant} mode.`}>
+          <div className="flex shrink-0 items-center gap-2">
+            <input
+              type="color"
+              aria-label="Accent color"
+              value={resolvedTheme.accent}
+              onChange={(e) => updateAccent(e.target.value)}
+              className="h-7 w-9 cursor-pointer rounded border border-[var(--border-default)] bg-transparent p-0.5"
+            />
+            <span className="w-16 font-mono text-caption text-[var(--text-secondary)]">{resolvedTheme.accent}</span>
+            {hasCustomAccent && (
+              <button type="button" className={actionButton} onClick={() => updateAccent(presetBase.accent)}>
+                Reset
+              </button>
+            )}
+          </div>
+        </Row>
+        <Row label="Share theme" description="Export or import a Codex-compatible theme string.">
+          <div className="flex shrink-0 items-center gap-2">
+            <button type="button" className={actionButton} onClick={() => void copyTheme()}>
+              {copiedTheme ? "Copied" : "Export"}
+            </button>
+            <button
+              type="button"
+              className={actionButton}
+              onClick={() => { setImportOpen((open) => !open); setImportError(null) }}
+            >
+              {importOpen ? "Cancel" : "Import"}
+            </button>
+          </div>
+        </Row>
+        {importOpen && (
+          <div className="px-4 pb-3 pt-1">
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                value={importDraft}
+                onChange={(e) => { setImportDraft(e.target.value); setImportError(null) }}
+                placeholder="Paste codex-theme-v1:{...}"
+                className="h-8 flex-1 rounded-lg border border-[var(--border-default)] bg-[var(--bg-card)] px-2.5 font-mono text-caption text-[var(--text-primary)] outline-none focus:border-[var(--accent-color)]"
+              />
+              <button type="button" className={actionButton} onClick={applyImport}>
+                Apply
+              </button>
+            </div>
+            {importError && <p className="mt-1 text-caption text-[var(--text-danger)]">{importError}</p>}
+          </div>
+        )}
         {supportsSidebarTranslucency() && (
           <Row label="Translucent sidebar" description="Let the desktop material show behind the sidebar, per theme.">
             <Toggle

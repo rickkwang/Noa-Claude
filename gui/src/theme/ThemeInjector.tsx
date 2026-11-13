@@ -4,7 +4,7 @@ import { SYSTEM_DEFAULT_FONT, CONTENT_SAME_AS_UI, MONO_FONT_STACK, resolveFontFa
 import { faceFamilyName, faceFontFaceRule, quoteFamily } from '../lib/localFonts';
 import { CONTRAST_DEFAULTS, activeContrast, effectiveContrast, inkAlpha, mixRgb } from '../lib/contrast';
 import { activeTranslucency, supportsSidebarTranslucency } from '../lib/translucency';
-import { themeSurfaces } from '../lib/themePalette';
+import { deriveSurfaces, hexToRgbTriplet, resolveChromeTheme } from '../lib/themePalette';
 import type { AppSettings, ThemeFontFace } from '../types';
 
 interface ThemeInjectorProps {
@@ -16,14 +16,13 @@ export default function ThemeInjector({ settings }: ThemeInjectorProps) {
 
   useLayoutEffect(() => {
     const root = document.documentElement;
-    const surfaces = themeSurfaces(isDark);
-    // One value drives every tier below, as in the reference theme: borders and dividers, the ghost hover wash, the
-    // secondary/tertiary text and icon inks, and the floor behind the content card. `raw` (0-100) is what the slider
-    // stores and scales the floor; `contrast` is the remapped value the alpha tiers use.
     const variant = isDark ? 'dark' : 'light';
     const raw = activeContrast(settings.appearance, isDark);
     const contrast = effectiveContrast(raw, variant);
-    const ink = isDark ? '249,249,247' : '45,45,43';
+    const resolved = resolveChromeTheme(settings.appearance, isDark);
+    const surfaces = deriveSurfaces(resolved, isDark, raw);
+    const ink = hexToRgbTriplet(resolved.ink);
+    const surfaceRgb = hexToRgbTriplet(resolved.surface);
     const alpha = (value: number) => `rgba(${ink},${value})`;
     // Structural rules (titlebar, panel edges, separators) sit on the default border tier, as the reference's
     // `border-default` separators do; the lighter tier is kept for rules inside a card or list.
@@ -35,34 +34,31 @@ export default function ThemeInjector({ settings }: ThemeInjectorProps) {
     // Ghost hover is the control surface's hover tier, which moves with contrast; the pressed tier is a
     // fixed 12%/16% wash, so it does not.
     const fillHover = alpha(isDark ? 0.06 + contrast * 0.03 : 0.04 + contrast * 0.03);
-    // Dark floor behind the content card: the surface mixed toward black, more so as contrast rises. Light uses the
-    // fixed sidebar colour from the palette instead.
-    const surfaceUnder = `rgb(${mixRgb('45,45,43', '0,0,0', 0.14 + (raw - CONTRAST_DEFAULTS.dark) * 0.0015)})`;
     // theme-bootstrap.js paints <html> opaque for the pre-React frame; once body and the shell
     // take over it must go, or it covers the native material under the translucent sidebar.
     root.style.removeProperty('background-color');
+    root.dataset.appearancePreset = resolved.presetId;
     root.style.setProperty('--bg-primary', surfaces.primary);
     // Page surface: the colour the old remap gave the literal #F9F9F7 classes, in both themes.
     root.style.setProperty('--surface-page', 'var(--bg-primary)');
-    // Light ink for text on dark surfaces. Fixed in both themes: it is only used in dark branches.
-    root.style.setProperty('--ink-on-dark', '#F9F9F7');
+    // Light ink for text on dark surfaces.
+    root.style.setProperty('--ink-on-dark', isDark ? resolved.ink : '#F9F9F7');
     root.style.setProperty('--bg-secondary', surfaces.secondary);
     // Opaque sidebar floor; --sidebar-material-color is the separate translucent tint.
-    root.style.setProperty('--bg-sidebar', isDark ? surfaceUnder : surfaces.sidebarMaterial);
+    root.style.setProperty('--bg-sidebar', isDark ? surfaces.surfaceUnder : surfaces.sidebarMaterial);
     root.style.setProperty('--sidebar-material-color', surfaces.sidebarMaterial);
     // In dark the card shares the sidebar floor; the palette's lighter card read too pale on it.
-    root.style.setProperty('--bg-card', isDark ? surfaceUnder : surfaces.card);
+    root.style.setProperty('--bg-card', isDark ? surfaces.surfaceUnder : surfaces.card);
 
     if (isDark) {
       root.setAttribute('data-theme', 'dark');
       root.style.setProperty('--sidebar-material-tint', '70%');
       // Four stacked layers approximate light falloff; a single shadow reads as a band with a visible edge on dark.
       root.style.setProperty('--sidebar-preview-shadow', '0 0 0 1px rgba(0,0,0,0.07), 3px 0 6px -2px rgba(0,0,0,0.09), 10px 0 22px -6px rgba(0,0,0,0.11), 26px 0 54px -16px rgba(0,0,0,0.12)');
-      // Codex Absolutely Dark: #2D2D2B surface + #F9F9F7 ink.
-      root.style.setProperty('--text-primary', '#F9F9F7');
+      root.style.setProperty('--text-primary', resolved.ink);
       root.style.setProperty('--text-secondary', textSecondary);
       root.style.setProperty('--text-tertiary', textTertiary);
-      root.style.setProperty('--sidebar-text', 'rgba(249,249,247,0.85)');
+      root.style.setProperty('--sidebar-text', alpha(0.85));
       root.style.setProperty('--sidebar-text-muted', textSecondary);
       root.style.setProperty('--icon-ink', textSecondary);
       root.style.setProperty('--divider-subtle', border);
@@ -73,21 +69,20 @@ export default function ThemeInjector({ settings }: ThemeInjectorProps) {
       root.style.setProperty('--panel-divider', 'var(--divider-subtle)');
       root.style.setProperty('--control-shadow-ink', '#000000');
       // Model/effort popover (dark).
-      root.style.setProperty('--effort-menu', '#474745');
-      root.style.setProperty('--effort-chip', 'rgba(249,249,247,0.052)');
-      root.style.setProperty('--effort-track', 'rgba(249,249,247,0.084)');
-      root.style.setProperty('--effort-dot', 'rgba(249,249,247,0.71)');
-      root.style.setProperty('--effort-thumb', '#F9F9F7');
+      root.style.setProperty('--effort-menu', surfaces.card);
+      root.style.setProperty('--effort-chip', alpha(0.052));
+      root.style.setProperty('--effort-track', alpha(0.084));
+      root.style.setProperty('--effort-dot', alpha(0.71));
+      root.style.setProperty('--effort-thumb', resolved.ink);
     } else {
       root.removeAttribute('data-theme');
       root.style.setProperty('--sidebar-material-tint', '70%');
       // Light counterpart of the dark stack, at lower weight since light floors don't band.
-      root.style.setProperty('--sidebar-preview-shadow', '0 0 0 1px rgba(45,45,43,0.03), 3px 0 6px -2px rgba(45,45,43,0.035), 10px 0 22px -6px rgba(45,45,43,0.04), 26px 0 54px -16px rgba(45,45,43,0.05)');
-      // Codex Absolutely Light: #F9F9F7 surface + #2D2D2B ink.
-      root.style.setProperty('--text-primary', '#2D2D2B');
+      root.style.setProperty('--sidebar-preview-shadow', `0 0 0 1px rgba(${ink},0.03), 3px 0 6px -2px rgba(${ink},0.035), 10px 0 22px -6px rgba(${ink},0.04), 26px 0 54px -16px rgba(${ink},0.05)`);
+      root.style.setProperty('--text-primary', resolved.ink);
       root.style.setProperty('--text-secondary', textSecondary);
       root.style.setProperty('--text-tertiary', textTertiary);
-      root.style.setProperty('--sidebar-text', 'rgba(45,45,43,0.85)');
+      root.style.setProperty('--sidebar-text', alpha(0.85));
       root.style.setProperty('--sidebar-text-muted', textSecondary);
       root.style.setProperty('--icon-ink', textSecondary);
       root.style.setProperty('--divider-subtle', border);
@@ -97,15 +92,14 @@ export default function ThemeInjector({ settings }: ThemeInjectorProps) {
       root.style.setProperty('--border-primary', 'var(--border-default)');
       root.style.setProperty('--panel-divider', 'var(--divider-subtle)');
       root.style.setProperty('--control-shadow-ink', '#000000');
-      root.style.setProperty('--effort-menu', '#FAFAF8');
-      root.style.setProperty('--effort-chip', 'rgba(45,45,43,0.049)');
-      root.style.setProperty('--effort-track', 'rgba(45,45,43,0.078)');
-      root.style.setProperty('--effort-dot', 'rgba(45,45,43,0.695)');
-      root.style.setProperty('--effort-thumb', '#FAFAF9');
+      root.style.setProperty('--effort-menu', `rgb(${mixRgb(surfaceRgb, '255,255,255', 0.45)})`);
+      root.style.setProperty('--effort-chip', alpha(0.049));
+      root.style.setProperty('--effort-track', alpha(0.078));
+      root.style.setProperty('--effort-dot', alpha(0.695));
+      root.style.setProperty('--effort-thumb', surfaces.card);
     }
 
-    // Accent is a fixed theme token (coral in both themes), not user-configurable.
-    root.style.setProperty('--accent-color', '#CC7D5E');
+    root.style.setProperty('--accent-color', resolved.accent);
     // Interactive fills follow the same contrast-driven control tiers as the reference palette.
     root.style.setProperty('--fill-hover', fillHover);
     root.style.setProperty('--fill-active', alpha(isDark ? 0.16 : 0.12));
@@ -120,7 +114,16 @@ export default function ThemeInjector({ settings }: ThemeInjectorProps) {
     // fallback colour used when translucency is off or the platform has no backdrop support.
     void window.noaDesktop?.appearance?.setSidebarTranslucency?.(translucent, surfaces.primary, settings.appearance.theme)
       ?.catch(() => { /* desktop-only; ignore if the bridge is unavailable */ });
-  }, [isDark, settings.appearance.theme, settings.appearance.contrast, settings.appearance.translucentSidebar, settings.appearance.usePointerCursors, settings.appearance.motion]);
+  }, [
+    isDark,
+    settings.appearance.theme,
+    settings.appearance.lightChromeTheme,
+    settings.appearance.darkChromeTheme,
+    settings.appearance.contrast,
+    settings.appearance.translucentSidebar,
+    settings.appearance.usePointerCursors,
+    settings.appearance.motion,
+  ]);
 
   const themeFonts = settings.appearance.fonts;
   const uiFamily = themeFonts?.ui ?? SYSTEM_DEFAULT_FONT;

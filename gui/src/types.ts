@@ -21,9 +21,18 @@ export interface ThemeFonts {
   codeFace?: ThemeFontFace;
 }
 
+export interface ChromeThemeConfig {
+  presetId: string;
+  surface?: string;
+  ink?: string;
+  accent?: string;
+}
+
 export interface AppSettings {
   appearance: {
     theme: 'light' | 'dark' | 'system';
+    lightChromeTheme?: ChromeThemeConfig;
+    darkChromeTheme?: ChromeThemeConfig;
     fonts: ThemeFonts;
     /** 0–100 per variant: the light and dark palettes have different resting points. */
     contrast: { light: number; dark: number };

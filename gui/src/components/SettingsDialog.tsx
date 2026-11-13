@@ -36,6 +36,9 @@ const pages: { key: Page; label: string; group: string; icon: ReactNode; rows: s
     icon: <Palette size={16} />,
     rows: [
       "Mode",
+      "Theme",
+      "Accent",
+      "Share theme",
       "Contrast",
       "Translucent sidebar",
       "UI font",
