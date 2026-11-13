@@ -1,16 +1,21 @@
 import { useEffect, useState } from "react"
-import type { AppSettings, ThemeFontFace, ThemeFonts } from "../../types"
+import type { AppSettings, SemanticColors, ThemeFontFace, ThemeFonts } from "../../types"
 import { SYSTEM_DEFAULT_FONT, CONTENT_SAME_AS_UI } from "../../lib/fontFamily"
 import { faceStyle, isRegularFace, loadFontFamilies, type LocalFontFamily } from "../../lib/localFonts"
+import { DEFAULT_CODE_THEME_ID, getCodeThemeOptions } from "../../lib/codeThemes"
 import { clampContrast } from "../../lib/contrast"
 import { activeTranslucency, supportsSidebarTranslucency } from "../../lib/translucency"
 import {
+  DEFAULT_SEMANTIC_COLORS,
   exportCodexThemeString,
   getPresetTokens,
   normalizeHex,
   parseCodexThemeString,
   presetsForVariant,
   resolveChromeTheme,
+  resolveCodeThemeId,
+  resolveSemanticColors,
+  resolveVariantFonts,
 } from "../../lib/themePalette"
 import { useIsDark } from "../../hooks/useIsDark"
 import { defaultSettings } from "../../theme/settings"
@@ -42,14 +47,29 @@ export function AppearancePage({
   const change = (patch: Partial<AppSettings["appearance"]>) =>
     onChange({ ...settings, appearance: { ...appearance, ...patch } })
   const resolvedTheme = resolveChromeTheme(appearance, isDark)
+  const resolvedCodeThemeId = resolveCodeThemeId(appearance, isDark)
+  const resolvedSemantics = resolveSemanticColors(appearance, isDark)
+  const defaultSemantics = DEFAULT_SEMANTIC_COLORS[variant]
   const presetOptions: [string, string][] = presetsForVariant(variant).map((preset) => [preset.id, preset.label])
+  const codeThemeOptions = getCodeThemeOptions(variant)
   const chromeKey = isDark ? "darkChromeTheme" : "lightChromeTheme"
   const activeChrome = appearance[chromeKey]
   const presetBase = getPresetTokens(resolvedTheme.presetId, variant)
   const hasCustomAccent = Boolean(activeChrome?.accent && activeChrome.accent !== presetBase.accent)
+  const hasCustomSemantics = Boolean(
+    activeChrome?.semanticColors &&
+      (activeChrome.semanticColors.diffAdded || activeChrome.semanticColors.diffRemoved || activeChrome.semanticColors.skill),
+  )
 
   const selectPreset = (presetId: string) => {
-    change({ [chromeKey]: { presetId } })
+    change({
+      [chromeKey]: {
+        presetId,
+        ...(activeChrome?.codeThemeId ? { codeThemeId: activeChrome.codeThemeId } : {}),
+        ...(activeChrome?.semanticColors ? { semanticColors: activeChrome.semanticColors } : {}),
+        ...(activeChrome?.fonts ? { fonts: activeChrome.fonts } : {}),
+      },
+    })
   }
   const updateAccent = (accent: string) => {
     const normalized = normalizeHex(accent)
@@ -59,6 +79,42 @@ export function AppearancePage({
         ...activeChrome,
         presetId: resolvedTheme.presetId,
         accent: normalized === presetBase.accent ? undefined : normalized,
+      },
+    })
+  }
+  const updateCodeTheme = (codeThemeId: string) => {
+    change({
+      [chromeKey]: {
+        ...activeChrome,
+        presetId: resolvedTheme.presetId,
+        codeThemeId: codeThemeId === DEFAULT_CODE_THEME_ID ? undefined : codeThemeId,
+      },
+    })
+  }
+  const updateSemanticColor = (key: keyof SemanticColors, value: string) => {
+    const normalized = normalizeHex(value)
+    if (!normalized) return
+    const next: SemanticColors = {
+      ...activeChrome?.semanticColors,
+      [key]: normalized.toLowerCase() === defaultSemantics[key].toLowerCase() ? undefined : normalized,
+    }
+    if (!next.diffAdded) delete next.diffAdded
+    if (!next.diffRemoved) delete next.diffRemoved
+    if (!next.skill) delete next.skill
+    change({
+      [chromeKey]: {
+        ...activeChrome,
+        presetId: resolvedTheme.presetId,
+        semanticColors: Object.keys(next).length > 0 ? next : undefined,
+      },
+    })
+  }
+  const resetSemanticColors = () => {
+    change({
+      [chromeKey]: {
+        ...activeChrome,
+        presetId: resolvedTheme.presetId,
+        semanticColors: undefined,
       },
     })
   }
@@ -91,8 +147,15 @@ export function AppearancePage({
     setImportDraft("")
     setImportError(null)
   }
-  const activeFonts = appearance.fonts ?? defaultSettings.appearance.fonts
-  const updateFonts = (patch: Partial<ThemeFonts>) => change({ fonts: { ...activeFonts, ...patch } })
+  const activeFonts = resolveVariantFonts(appearance, isDark)
+  const updateFonts = (patch: Partial<ThemeFonts>) =>
+    change({
+      [chromeKey]: {
+        ...activeChrome,
+        presetId: resolvedTheme.presetId,
+        fonts: { ...activeChrome?.fonts, ...patch },
+      },
+    })
   const facesFor = (family: string) => fontFamilies.find((f) => f.family === family)?.faces ?? []
   const faceLabel = (face: ThemeFontFace) => faceStyle(face).replace(/([a-z])([A-Z])/g, "$1 $2")
   // Prefer the family's Regular face: the platform lists faces in an arbitrary order.
@@ -179,6 +242,9 @@ export function AppearancePage({
         <Row label="Theme" description={`Palette for ${variant} mode; light and dark keep separate presets.`}>
           <Select value={resolvedTheme.presetId} options={presetOptions} onChange={selectPreset} />
         </Row>
+        <Row label="Code theme" description={`Syntax highlighting theme for ${variant} mode.`}>
+          <Select value={resolvedCodeThemeId} options={codeThemeOptions} onChange={updateCodeTheme} />
+        </Row>
         <Row label="Accent" description={`Accent color for ${variant} mode.`}>
           <div className="flex shrink-0 items-center gap-2">
             <input
@@ -191,6 +257,33 @@ export function AppearancePage({
             <span className="w-16 font-mono text-caption text-[var(--text-secondary)]">{resolvedTheme.accent}</span>
             {hasCustomAccent && (
               <button type="button" className={actionButton} onClick={() => updateAccent(presetBase.accent)}>
+                Reset
+              </button>
+            )}
+          </div>
+        </Row>
+        <Row label="Semantic colors" description={`Diff added, diff removed, and skill highlight colors for ${variant} mode.`}>
+          <div className="flex shrink-0 items-center gap-2.5">
+            {(
+              [
+                ["diffAdded", "Added", resolvedSemantics.diffAdded],
+                ["diffRemoved", "Removed", resolvedSemantics.diffRemoved],
+                ["skill", "Skill", resolvedSemantics.skill],
+              ] as const
+            ).map(([key, shortLabel, colorValue]) => (
+              <label key={key} className="flex items-center gap-1 text-caption text-[var(--text-secondary)]">
+                <input
+                  type="color"
+                  aria-label={`${shortLabel} semantic color`}
+                  value={colorValue}
+                  onChange={(e) => updateSemanticColor(key, e.target.value)}
+                  className="h-6 w-7 cursor-pointer rounded border border-[var(--border-default)] bg-transparent p-0.5"
+                />
+                <span>{shortLabel}</span>
+              </label>
+            ))}
+            {hasCustomSemantics && (
+              <button type="button" className={actionButton} onClick={resetSemanticColors}>
                 Reset
               </button>
             )}

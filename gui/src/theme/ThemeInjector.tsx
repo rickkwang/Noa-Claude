@@ -2,9 +2,17 @@ import { useLayoutEffect } from 'react';
 import { useIsDark } from '../hooks/useIsDark';
 import { SYSTEM_DEFAULT_FONT, CONTENT_SAME_AS_UI, MONO_FONT_STACK, resolveFontFamily } from '../lib/fontFamily';
 import { faceFamilyName, faceFontFaceRule, quoteFamily } from '../lib/localFonts';
+import { resolveCodeTheme } from '../lib/codeThemes';
 import { CONTRAST_DEFAULTS, activeContrast, effectiveContrast, inkAlpha, mixRgb } from '../lib/contrast';
 import { activeTranslucency, supportsSidebarTranslucency } from '../lib/translucency';
-import { deriveSurfaces, hexToRgbTriplet, resolveChromeTheme } from '../lib/themePalette';
+import {
+  deriveSurfaces,
+  hexToRgbTriplet,
+  resolveChromeTheme,
+  resolveCodeThemeId,
+  resolveSemanticColors,
+  resolveVariantFonts,
+} from '../lib/themePalette';
 import type { AppSettings, ThemeFontFace } from '../types';
 
 interface ThemeInjectorProps {
@@ -101,6 +109,25 @@ export default function ThemeInjector({ settings }: ThemeInjectorProps) {
     }
 
     root.style.setProperty('--accent-color', resolved.accent);
+    const semanticColors = resolveSemanticColors(settings.appearance, isDark);
+    root.style.setProperty('--diff-added', semanticColors.diffAdded);
+    root.style.setProperty('--diff-removed', semanticColors.diffRemoved);
+    root.style.setProperty('--skill-color', semanticColors.skill);
+
+    const codeTheme = resolveCodeTheme(resolveCodeThemeId(settings.appearance, isDark), variant);
+    root.dataset.codeTheme = codeTheme.id;
+    root.style.setProperty('--hljs-keyword', codeTheme.colors.keyword);
+    root.style.setProperty('--hljs-string', codeTheme.colors.string);
+    root.style.setProperty('--hljs-number', codeTheme.colors.number);
+    root.style.setProperty('--hljs-type', codeTheme.colors.type);
+    root.style.setProperty('--hljs-title', codeTheme.colors.title);
+    root.style.setProperty('--hljs-built-in', codeTheme.colors.builtIn);
+    root.style.setProperty('--hljs-attr', codeTheme.colors.attr);
+    root.style.setProperty('--hljs-variable', codeTheme.colors.variable);
+    root.style.setProperty('--hljs-tag', codeTheme.colors.tag);
+    root.style.setProperty('--hljs-meta', codeTheme.colors.meta);
+    root.style.setProperty('--hljs-comment', codeTheme.colors.comment);
+    root.style.setProperty('--hljs-comment-style', codeTheme.colors.commentStyle ?? 'normal');
     // Interactive fills follow the same contrast-driven control tiers as the reference palette.
     root.style.setProperty('--fill-hover', fillHover);
     root.style.setProperty('--fill-active', alpha(isDark ? 0.16 : 0.12));
@@ -126,7 +153,7 @@ export default function ThemeInjector({ settings }: ThemeInjectorProps) {
     settings.appearance.motion,
   ]);
 
-  const themeFonts = settings.appearance.fonts;
+  const themeFonts = resolveVariantFonts(settings.appearance, isDark);
   const uiFamily = themeFonts?.ui ?? SYSTEM_DEFAULT_FONT;
   const contentChoice = themeFonts?.content ?? CONTENT_SAME_AS_UI;
   const contentFamily = contentChoice === CONTENT_SAME_AS_UI ? uiFamily : contentChoice;

@@ -25,7 +25,17 @@ function CommandIcon({ command, size = 16 }: { command: ComposerCommand; size?: 
                                   : name.includes("memor") ? "brain"
                                     : name.includes("agent") ? "person-group"
                                       : command.group === "Skills" ? "sparkle-fill" : "text-page"
-  return <CodexIcon name={icon} size={size} className="shrink-0 text-[var(--sidebar-text-muted)]" />
+  return (
+    <CodexIcon
+      name={icon}
+      size={size}
+      className={
+        command.group === "Skills"
+          ? "shrink-0 text-[var(--skill-color,var(--sidebar-text-muted))]"
+          : "shrink-0 text-[var(--sidebar-text-muted)]"
+      }
+    />
+  )
 }
 
 export function SlashCommandMenu({

@@ -21,11 +21,20 @@ export interface ThemeFonts {
   codeFace?: ThemeFontFace;
 }
 
+export interface SemanticColors {
+  diffAdded?: string;
+  diffRemoved?: string;
+  skill?: string;
+}
+
 export interface ChromeThemeConfig {
   presetId: string;
   surface?: string;
   ink?: string;
   accent?: string;
+  codeThemeId?: string;
+  semanticColors?: SemanticColors;
+  fonts?: Partial<ThemeFonts>;
 }
 
 export interface AppSettings {

@@ -1,5 +1,7 @@
-import type { AppSettings, ChromeThemeConfig } from '../types';
+import type { AppSettings, ChromeThemeConfig, SemanticColors, ThemeFonts } from '../types';
+import { DEFAULT_CODE_THEME_ID, resolveCodeTheme } from './codeThemes';
 import { CONTRAST_DEFAULTS, activeContrast, mixRgb } from './contrast';
+import { CONTENT_SAME_AS_UI, SYSTEM_DEFAULT_FONT } from './fontFamily';
 
 export type ThemeVariant = 'light' | 'dark';
 
@@ -212,6 +214,64 @@ export const themeSurfaces = (
   return deriveSurfaces(resolved, isDark, rawContrast);
 };
 
+export const DEFAULT_SEMANTIC_COLORS: Record<ThemeVariant, Required<SemanticColors>> = {
+  light: {
+    diffAdded: '#00a240',
+    diffRemoved: '#ba2623',
+    skill: '#924ff7',
+  },
+  dark: {
+    diffAdded: '#40c977',
+    diffRemoved: '#fa423e',
+    skill: '#ad7bf9',
+  },
+};
+
+export function resolveSemanticColors(
+  appearance: AppSettings['appearance'] | undefined,
+  isDark: boolean,
+): Required<SemanticColors> {
+  const variant: ThemeVariant = isDark ? 'dark' : 'light';
+  const stored: ChromeThemeConfig | undefined = isDark
+    ? appearance?.darkChromeTheme
+    : appearance?.lightChromeTheme;
+  const defaults = DEFAULT_SEMANTIC_COLORS[variant];
+  return {
+    diffAdded: normalizeHex(stored?.semanticColors?.diffAdded) ?? defaults.diffAdded,
+    diffRemoved: normalizeHex(stored?.semanticColors?.diffRemoved) ?? defaults.diffRemoved,
+    skill: normalizeHex(stored?.semanticColors?.skill) ?? defaults.skill,
+  };
+}
+
+export function resolveCodeThemeId(
+  appearance: AppSettings['appearance'] | undefined,
+  isDark: boolean,
+): string {
+  const variant: ThemeVariant = isDark ? 'dark' : 'light';
+  const stored: ChromeThemeConfig | undefined = isDark
+    ? appearance?.darkChromeTheme
+    : appearance?.lightChromeTheme;
+  return resolveCodeTheme(stored?.codeThemeId, variant).id;
+}
+
+export function resolveVariantFonts(
+  appearance: AppSettings['appearance'] | undefined,
+  isDark: boolean,
+): ThemeFonts {
+  const stored: ChromeThemeConfig | undefined = isDark
+    ? appearance?.darkChromeTheme
+    : appearance?.lightChromeTheme;
+  const base: ThemeFonts = appearance?.fonts ?? {
+    ui: SYSTEM_DEFAULT_FONT,
+    content: CONTENT_SAME_AS_UI,
+    code: SYSTEM_DEFAULT_FONT,
+  };
+  return {
+    ...base,
+    ...stored?.fonts,
+  };
+}
+
 const CODEX_THEME_PREFIX = 'codex-theme-v1:';
 
 export function exportCodexThemeString(
@@ -220,8 +280,11 @@ export function exportCodexThemeString(
 ): string {
   const resolved = resolveChromeTheme(appearance, isDark);
   const contrast = activeContrast(appearance, isDark);
+  const codeThemeId = resolveCodeThemeId(appearance, isDark);
+  const semanticColors = resolveSemanticColors(appearance, isDark);
+  const fonts = resolveVariantFonts(appearance, isDark);
   return `${CODEX_THEME_PREFIX}${JSON.stringify({
-    codeThemeId: 'codex',
+    codeThemeId,
     variant: resolved.variant,
     theme: {
       presetId: resolved.presetId,
@@ -229,6 +292,11 @@ export function exportCodexThemeString(
       ink: resolved.ink,
       accent: resolved.accent,
       contrast,
+      semanticColors,
+      fonts: {
+        ui: fonts.ui === SYSTEM_DEFAULT_FONT ? null : fonts.ui,
+        code: fonts.code === SYSTEM_DEFAULT_FONT ? null : fonts.code,
+      },
     },
   })}`;
 }
@@ -244,6 +312,7 @@ export function parseCodexThemeString(raw: string): ParsedCodexThemeImport | nul
   if (!trimmed.startsWith(CODEX_THEME_PREFIX)) return null;
   try {
     const parsed = JSON.parse(trimmed.slice(CODEX_THEME_PREFIX.length)) as {
+      codeThemeId?: unknown;
       variant?: unknown;
       theme?: {
         presetId?: unknown;
@@ -251,6 +320,15 @@ export function parseCodexThemeString(raw: string): ParsedCodexThemeImport | nul
         ink?: unknown;
         accent?: unknown;
         contrast?: unknown;
+        semanticColors?: {
+          diffAdded?: unknown;
+          diffRemoved?: unknown;
+          skill?: unknown;
+        };
+        fonts?: {
+          ui?: unknown;
+          code?: unknown;
+        };
       };
     };
     const variant: ThemeVariant | null =
@@ -267,11 +345,39 @@ export function parseCodexThemeString(raw: string): ParsedCodexThemeImport | nul
     const presetId = presetExists ? candidatePreset : DEFAULT_PRESET_ID;
     const base = getPresetTokens(presetId, variant);
 
+    const resolvedCodeThemeId =
+      typeof parsed.codeThemeId === 'string'
+        ? resolveCodeTheme(parsed.codeThemeId, variant).id
+        : DEFAULT_CODE_THEME_ID;
+
+    const defaultSemantics = DEFAULT_SEMANTIC_COLORS[variant];
+    const parsedAdded = normalizeHex(parsed.theme.semanticColors?.diffAdded);
+    const parsedRemoved = normalizeHex(parsed.theme.semanticColors?.diffRemoved);
+    const parsedSkill = normalizeHex(parsed.theme.semanticColors?.skill);
+    const semanticColors: SemanticColors = {
+      ...(parsedAdded && parsedAdded.toLowerCase() !== defaultSemantics.diffAdded.toLowerCase() && { diffAdded: parsedAdded }),
+      ...(parsedRemoved && parsedRemoved.toLowerCase() !== defaultSemantics.diffRemoved.toLowerCase() && { diffRemoved: parsedRemoved }),
+      ...(parsedSkill && parsedSkill.toLowerCase() !== defaultSemantics.skill.toLowerCase() && { skill: parsedSkill }),
+    };
+
+    const uiFont = typeof parsed.theme.fonts?.ui === 'string' && parsed.theme.fonts.ui.trim() ? parsed.theme.fonts.ui.trim() : undefined;
+    const codeFont = typeof parsed.theme.fonts?.code === 'string' && parsed.theme.fonts.code.trim() ? parsed.theme.fonts.code.trim() : undefined;
+    const fonts: Partial<ThemeFonts> | undefined =
+      uiFont || codeFont
+        ? {
+            ...(uiFont && { ui: uiFont }),
+            ...(codeFont && { code: codeFont }),
+          }
+        : undefined;
+
     const chromeTheme: ChromeThemeConfig = {
       presetId,
       ...(surface !== base.surface && { surface }),
       ...(ink !== base.ink && { ink }),
       ...(accent !== base.accent && { accent }),
+      ...(resolvedCodeThemeId !== DEFAULT_CODE_THEME_ID && { codeThemeId: resolvedCodeThemeId }),
+      ...(Object.keys(semanticColors).length > 0 && { semanticColors }),
+      ...(fonts && { fonts }),
     };
 
     const contrast =

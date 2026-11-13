@@ -37,7 +37,9 @@ const pages: { key: Page; label: string; group: string; icon: ReactNode; rows: s
     rows: [
       "Mode",
       "Theme",
+      "Code theme",
       "Accent",
+      "Semantic colors",
       "Share theme",
       "Contrast",
       "Translucent sidebar",

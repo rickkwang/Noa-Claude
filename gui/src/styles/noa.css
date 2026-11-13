@@ -1499,11 +1499,11 @@ kbd.noa-review-menu-hint { font-family: inherit; }
 [data-theme="dark"] .noa-glyph-yellow { color: #ffd452; } [data-theme="dark"] .noa-glyph-orange { color: #ffa359; } [data-theme="dark"] .noa-glyph-indigo { color: #9d6afb; }
 /* Review tree stats: 12px "+N -N" in git colours, 4px apart, before the git lane. */
 .noa-row-stats { display: inline-flex; flex-shrink: 0; gap: 4px; font-size: 12px; font-variant-numeric: tabular-nums; }
-.noa-row-stats .is-added { color: #168447; } .noa-row-stats .is-removed { color: #C24444; }
-[data-theme="dark"] .noa-row-stats .is-added { color: #68CC74; } [data-theme="dark"] .noa-row-stats .is-removed { color: #F27F57; }
+.noa-row-stats .is-added { color: var(--diff-added, #168447); } .noa-row-stats .is-removed { color: var(--diff-removed, #C24444); }
+[data-theme="dark"] .noa-row-stats .is-added { color: var(--diff-added, #68CC74); } [data-theme="dark"] .noa-row-stats .is-removed { color: var(--diff-removed, #F27F57); }
 /* Diff colours: line = 12% of the base over the page (20% in dark), gutter = 5% in light and a darker floor in dark, inline emphasis = 15% alpha (20% in dark), neutral hunk separators. */
-.noa-code-view { --diff-add-base: #0DBE4E; --diff-del-base: #FF2E3F; --code-addition: color-mix(in lab, var(--surface-page, #F9F9F7) 88%, var(--diff-add-base)); --code-deletion: color-mix(in lab, var(--surface-page, #F9F9F7) 88%, var(--diff-del-base)); --code-addition-gutter: color-mix(in lab, var(--surface-page, #F9F9F7) 95%, var(--diff-add-base)); --code-deletion-gutter: color-mix(in lab, var(--surface-page, #F9F9F7) 95%, var(--diff-del-base)); line-height: 1.8; }
-[data-theme="dark"] .noa-code-view { --diff-add-base: #5ECC71; --diff-del-base: #FF6762; --code-addition: color-mix(in lab, var(--surface-page) 80%, var(--diff-add-base)); --code-deletion: color-mix(in lab, var(--surface-page) 80%, var(--diff-del-base)); --code-addition-gutter: color-mix(in lab, color-mix(in lab, var(--surface-page) 35%, #000) 85%, var(--diff-add-base)); --code-deletion-gutter: color-mix(in lab, color-mix(in lab, var(--surface-page) 35%, #000) 85%, var(--diff-del-base)); }
+.noa-code-view { --diff-add-base: var(--diff-added, #0DBE4E); --diff-del-base: var(--diff-removed, #FF2E3F); --code-addition: color-mix(in lab, var(--surface-page, #F9F9F7) 88%, var(--diff-add-base)); --code-deletion: color-mix(in lab, var(--surface-page, #F9F9F7) 88%, var(--diff-del-base)); --code-addition-gutter: color-mix(in lab, var(--surface-page, #F9F9F7) 95%, var(--diff-add-base)); --code-deletion-gutter: color-mix(in lab, var(--surface-page, #F9F9F7) 95%, var(--diff-del-base)); line-height: 1.8; }
+[data-theme="dark"] .noa-code-view { --diff-add-base: var(--diff-added, #5ECC71); --diff-del-base: var(--diff-removed, #FF6762); --code-addition: color-mix(in lab, var(--surface-page) 80%, var(--diff-add-base)); --code-deletion: color-mix(in lab, var(--surface-page) 80%, var(--diff-del-base)); --code-addition-gutter: color-mix(in lab, color-mix(in lab, var(--surface-page) 35%, #000) 85%, var(--diff-add-base)); --code-deletion-gutter: color-mix(in lab, color-mix(in lab, var(--surface-page) 35%, #000) 85%, var(--diff-del-base)); }
 .noa-code-line, .noa-source-line { min-height: 1.8em; }
 .noa-code-number { opacity: 1; color: color-mix(in srgb, var(--text-primary) 40%, transparent); }
 .noa-code-line.is-add .noa-code-number { background: var(--code-addition-gutter); }
@@ -1566,7 +1566,7 @@ kbd.noa-review-menu-hint { font-family: inherit; }
 .noa-scroll-bottom[data-show="false"] { opacity: 0; pointer-events: none; }
 /* Per-turn diff card: header + up to three file rows. */
 /* Absolutely at contrast 45, matching the local Codex theme generator's control, hover and stroke tokens. */
-.noa-turn-diff-card, .noa-turn-diff-notice, .noa-live-diff, .noa-turn-review { --turn-diff-elevated: rgb(250,250,248); --turn-diff-under: #F1F1EF; --turn-diff-fill: rgba(45,45,43,.053); --turn-diff-stroke: rgba(45,45,43,.117); --turn-diff-border: rgba(45,45,43,.078); --turn-diff-secondary: rgba(45,45,43,.695); --turn-diff-focus: #CC7D5E; --turn-diff-radius: 10px; --turn-diff-corner: round; --turn-diff-added: #00C853; --turn-diff-removed: #FF5F38; }
+.noa-turn-diff-card, .noa-turn-diff-notice, .noa-live-diff, .noa-turn-review { --turn-diff-elevated: rgb(250,250,248); --turn-diff-under: #F1F1EF; --turn-diff-fill: rgba(45,45,43,.053); --turn-diff-stroke: rgba(45,45,43,.117); --turn-diff-border: rgba(45,45,43,.078); --turn-diff-secondary: rgba(45,45,43,.695); --turn-diff-focus: #CC7D5E; --turn-diff-radius: 10px; --turn-diff-corner: round; --turn-diff-added: var(--diff-added, #00C853); --turn-diff-removed: var(--diff-removed, #FF5F38); }
 [data-theme="dark"] .noa-turn-diff-card, [data-theme="dark"] .noa-turn-diff-notice, [data-theme="dark"] .noa-live-diff { --turn-diff-elevated: rgb(60,60,58); --turn-diff-under: #272725; --turn-diff-fill: rgba(249,249,247,.068); --turn-diff-stroke: rgba(249,249,247,.137); --turn-diff-border: rgba(249,249,247,.071); --turn-diff-secondary: rgba(249,249,247,.677); --turn-diff-focus: rgba(221,169,149,.727); }
 @supports (corner-shape: superellipse(1.5)) {
   .noa-turn-diff-card, .noa-turn-diff-notice { --turn-diff-radius: 12.5px; --turn-diff-corner: superellipse(1.5); }
@@ -1926,13 +1926,19 @@ body.noa-session-dragging * { cursor: grabbing !important; }
 .noa-activity-scroll > [data-tool-activity] > button:hover { color: var(--text-primary); }
 .noa-activity-scroll > [data-tool-activity] > button > svg:first-child { width: 16px; height: 16px; }
 
-/* Absolutely Light/Dark token colours, shared by chat and file code. */
-:is(.noa-code-block, .noa-code-view) :is(.hljs-keyword, .hljs-selector-tag, .hljs-number, .hljs-literal) { color: #FF5F38 !important; }
-:is(.noa-code-block, .noa-code-view) :is(.hljs-string, .hljs-regexp, .hljs-symbol) { color: #00C853 !important; }
-:is(.noa-code-block, .noa-code-view) .hljs-type { color: #D28E73 !important; }
-:is(.noa-code-block, .noa-code-view) :is(.hljs-title, .hljs-built_in, .hljs-attr, .hljs-variable, .hljs-template-variable, .hljs-name, .hljs-tag, .hljs-meta) { color: var(--text-primary) !important; }
-:is(.noa-code-block, .noa-code-view) :is(.hljs-comment, .hljs-quote) { color: #939391 !important; font-style: normal; }
-[data-theme="dark"] :is(.noa-code-block, .noa-code-view) :is(.hljs-comment, .hljs-quote) { color: #B2B2B0 !important; }
+/* Themeable code syntax tokens, defaulting to Absolutely Light/Dark. */
+:is(.noa-code-block, .noa-code-view) :is(.hljs-keyword, .hljs-selector-tag) { color: var(--hljs-keyword, #FF5F38) !important; }
+:is(.noa-code-block, .noa-code-view) :is(.hljs-number, .hljs-literal) { color: var(--hljs-number, #FF5F38) !important; }
+:is(.noa-code-block, .noa-code-view) :is(.hljs-string, .hljs-regexp, .hljs-symbol) { color: var(--hljs-string, #00C853) !important; }
+:is(.noa-code-block, .noa-code-view) .hljs-type { color: var(--hljs-type, #D28E73) !important; }
+:is(.noa-code-block, .noa-code-view) .hljs-title { color: var(--hljs-title, var(--text-primary)) !important; }
+:is(.noa-code-block, .noa-code-view) .hljs-built_in { color: var(--hljs-built-in, var(--text-primary)) !important; }
+:is(.noa-code-block, .noa-code-view) .hljs-attr { color: var(--hljs-attr, var(--text-primary)) !important; }
+:is(.noa-code-block, .noa-code-view) :is(.hljs-variable, .hljs-template-variable) { color: var(--hljs-variable, var(--text-primary)) !important; }
+:is(.noa-code-block, .noa-code-view) :is(.hljs-name, .hljs-tag) { color: var(--hljs-tag, var(--text-primary)) !important; }
+:is(.noa-code-block, .noa-code-view) .hljs-meta { color: var(--hljs-meta, var(--text-primary)) !important; }
+:is(.noa-code-block, .noa-code-view) :is(.hljs-comment, .hljs-quote) { color: var(--hljs-comment, #939391) !important; font-style: var(--hljs-comment-style, normal); }
+[data-theme="dark"] :is(.noa-code-block, .noa-code-view) :is(.hljs-comment, .hljs-quote) { color: var(--hljs-comment, #B2B2B0) !important; }
 @supports (animation-timeline: scroll()) {
   .noa-shell-output[data-overflow="true"] {
     --edge-fade-distance: 32px;
