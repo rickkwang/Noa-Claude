@@ -84,6 +84,30 @@ export function clearWebFetchCache(): void {
   DOMAIN_CHECK_CACHE.clear()
 }
 
+// Past these depths the markdown syntax is dropped and only the text is kept.
+// Deeply nested lists and quotes indent every line once per level, so output
+// grows O(depth²) and turndown re-copies each child string at every level.
+const MAX_NESTING = { indented: 12, underlined: 1, code: 1 }
+const NESTING_KIND = new Map([
+  ['LI', 'indented'],
+  ['BLOCKQUOTE', 'indented'],
+  ['H1', 'underlined'],
+  ['H2', 'underlined'],
+  ['CODE', 'code'],
+])
+const NO_NESTING = { indented: 0, underlined: 0, code: 0 }
+
+function pastNestingLimit(node: HTMLElement): boolean {
+  const parent = node.parentNode?.nesting ?? NO_NESTING
+  const kind = NESTING_KIND.get(node.nodeName)
+  if (!kind) {
+    node.nesting = parent
+    return false
+  }
+  node.nesting = { ...parent, [kind]: parent[kind] + 1 }
+  return parent[kind] >= MAX_NESTING[kind]
+}
+
 // Lazy singleton — defers the turndown → @mixmark-io/domino import (~1.4MB
 // retained heap) until the first HTML fetch, and reuses one instance across
 // calls (construction builds 15 rule objects; .turndown() is stateless).
@@ -94,8 +118,26 @@ let turndownServicePromise: Promise<InstanceType<TurndownCtor>> | undefined
 function getTurndownService(): Promise<InstanceType<TurndownCtor>> {
   return (turndownServicePromise ??= import('turndown').then(m => {
     const Turndown = (m as unknown as { default: TurndownCtor }).default
-    return new Turndown()
+    const turndown = new Turndown()
+    turndown.remove(['style', 'script', 'noscript', 'iframe'])
+    turndown.addRule('pastNestingLimit', {
+      filter: pastNestingLimit,
+      replacement: (content, node) =>
+        node.nodeName === 'CODE' ? content : `\n\n${content}\n\n`,
+    })
+    return turndown
   }))
+}
+
+// Falls back to the raw HTML if turndown throws (e.g. stack overflow on a very
+// deep DOM), so one malformed page does not fail the whole fetch.
+export async function htmlToMarkdown(html: string): Promise<string> {
+  try {
+    return (await getTurndownService()).turndown(html)
+  } catch (e) {
+    logError(e)
+    return html
+  }
 }
 
 // PSR requested limiting the length of URLs to 250 to lower the potential
@@ -479,7 +521,7 @@ export async function getURLMarkdownContent(
   let markdownContent: string
   let contentBytes: number
   if (contentType.includes('text/html')) {
-    markdownContent = (await getTurndownService()).turndown(htmlContent)
+    markdownContent = await htmlToMarkdown(htmlContent)
     contentBytes = Buffer.byteLength(markdownContent)
   } else {
     // It's not HTML - just use it raw. The decoded string's UTF-8 byte
