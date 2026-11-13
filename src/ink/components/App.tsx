@@ -423,7 +423,6 @@ export default class App extends PureComponent<Props, State> {
     }
   };
   handleInput = (input: string | undefined): void => {
-    // Exit on Ctrl+C
     if (input === '\x03' && this.props.exitOnCtrlC) {
       this.handleExit();
     }

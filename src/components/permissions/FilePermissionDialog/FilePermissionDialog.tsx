@@ -41,7 +41,6 @@ export type FilePermissionDialogProps<T extends ToolInput = ToolInput> = {
   parseInput: (input: unknown) => T;
   operationType?: FileOperationType;
 
-  // IDE diff support
   ideDiffSupport?: IDEDiffSupport<T>;
 
   // Worker badge for teammate permission requests

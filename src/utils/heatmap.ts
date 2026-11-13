@@ -138,7 +138,6 @@ export function generateHeatmap(
     lines.push('    ' + monthLabels)
   }
 
-  // Day labels
   const dayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
   // Grid

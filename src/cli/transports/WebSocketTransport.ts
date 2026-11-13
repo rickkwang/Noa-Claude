@@ -383,7 +383,6 @@ export class WebSocketTransport implements Transport {
     this.stopPingInterval()
     this.stopKeepaliveInterval()
 
-    // Unregister session activity callback
     unregisterSessionActivityCallback()
 
     if (this.ws) {
@@ -565,7 +564,6 @@ export class WebSocketTransport implements Transport {
     this.stopPingInterval()
     this.stopKeepaliveInterval()
 
-    // Unregister session activity callback
     unregisterSessionActivityCallback()
 
     this.state = 'closing'

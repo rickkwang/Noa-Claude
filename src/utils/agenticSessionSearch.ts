@@ -208,17 +208,14 @@ export async function agenticSessionSearch(
         parts.push(`[custom title: ${log.customTitle}]`)
       }
 
-      // Tag
       if (log.tag) {
         parts.push(`[tag: ${log.tag}]`)
       }
 
-      // Git branch
       if (log.gitBranch) {
         parts.push(`[branch: ${log.gitBranch}]`)
       }
 
-      // Summary
       if (log.summary) {
         parts.push(`- Summary: ${log.summary}`)
       }

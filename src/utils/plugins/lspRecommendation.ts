@@ -235,7 +235,6 @@ export async function getMatchingLspPlugins(
 
   logForDebugging(`[lspRecommendation] Looking for LSP plugins for ${ext}`)
 
-  // Get all LSP plugins from marketplaces
   const allLspPlugins = await getLspPluginsFromMarketplaces()
 
   const config = getGlobalConfig()

@@ -1624,7 +1624,6 @@ export default class Ink {
       writeSync(1, DFE);
       // Disable bracketed paste mode
       writeSync(1, DBP);
-      // Show cursor
       writeSync(1, SHOW_CURSOR);
       // Clear tab status (OSC 21337) so a stale dot doesn't linger
       if (supportsTabStatus()) writeSync(1, wrapForMultiplexer(CLEAR_TAB_STATUS));

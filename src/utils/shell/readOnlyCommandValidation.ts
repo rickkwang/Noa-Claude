@@ -663,7 +663,6 @@ export const GIT_READ_ONLY_COMMANDS: Record<string, ExternalCommandConfig> = {
       '--no-color': 'none',
       '-o': 'none', // Only matching
       '--only-matching': 'none',
-      // Context
       '-A': 'number', // After context
       '--after-context': 'number',
       '-B': 'number', // Before context
@@ -680,7 +679,6 @@ export const GIT_READ_ONLY_COMMANDS: Record<string, ExternalCommandConfig> = {
       '--no-index': 'none',
       '--recurse-submodules': 'none',
       '--cached': 'none',
-      // Threads
       '--threads': 'number',
       // Quiet
       '-q': 'none',

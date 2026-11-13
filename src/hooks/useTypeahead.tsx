@@ -51,7 +51,6 @@ function isPathMetadata(metadata: unknown): metadata is {
 
 // Helper to determine selectedSuggestion when updating suggestions
 function getPreservedSelection(prevSuggestions: SuggestionItem[], prevSelection: number, newSuggestions: SuggestionItem[]): number {
-  // No new suggestions
   if (newSuggestions.length === 0) {
     return -1;
   }

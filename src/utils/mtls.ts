@@ -44,7 +44,6 @@ export const getMTLSConfig = memoize((): MTLSConfig | undefined => {
     }
   }
 
-  // Client key
   if (process.env.CLAUDE_CODE_CLIENT_KEY) {
     try {
       config.key = getFsImplementation().readFileSync(
@@ -59,7 +58,6 @@ export const getMTLSConfig = memoize((): MTLSConfig | undefined => {
     }
   }
 
-  // Key passphrase
   if (process.env.CLAUDE_CODE_CLIENT_KEY_PASSPHRASE) {
     config.passphrase = process.env.CLAUDE_CODE_CLIENT_KEY_PASSPHRASE
     logForDebugging('mTLS: Using client key passphrase')

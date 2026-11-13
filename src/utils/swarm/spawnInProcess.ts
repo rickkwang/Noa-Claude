@@ -187,7 +187,6 @@ export async function spawnInProcessTeammate(
     })
     taskState.unregisterCleanup = unregisterCleanup
 
-    // Register task in AppState
     registerTask(taskState, setAppState)
 
     logForDebugging(

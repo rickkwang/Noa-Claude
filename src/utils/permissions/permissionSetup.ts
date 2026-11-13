@@ -973,7 +973,6 @@ export async function initializeToolPermissionContext({
     !growthBookDisableBypassPermissionsMode &&
     !settingsDisableBypassPermissionsMode
 
-  // Load all permission rules from disk
   const rulesFromDisk = loadAllPermissionRulesFromDisk()
 
   // Ant-only: Detect overly broad shell allow rules for all modes.

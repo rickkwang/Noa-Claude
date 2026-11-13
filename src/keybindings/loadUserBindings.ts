@@ -399,7 +399,6 @@ export async function initializeKeybindingWatcher(): Promise<void> {
   watcher.on('change', handleChange)
   watcher.on('unlink', handleDelete)
 
-  // Register cleanup
   registerCleanup(async () => disposeKeybindingWatcher())
 }
 

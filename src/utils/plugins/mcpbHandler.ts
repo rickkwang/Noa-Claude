@@ -819,7 +819,6 @@ export async function loadMcpbFile(
     }
   }
 
-  // Generate content hash
   const contentHash = generateContentHash(mcpbData)
   logForDebugging(`MCPB content hash: ${contentHash}`)
 

@@ -21,7 +21,6 @@
  * ```
  */
 
-// Parser
 export { Parser } from './termio/parser.js'
 // Types
 export type {

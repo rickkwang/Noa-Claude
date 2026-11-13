@@ -832,7 +832,6 @@ function processedStatsToClaudeCodeStats(
     }
   }
 
-  // Peak activity day
   const peakActivityDay =
     dailyActivitySorted.length > 0
       ? dailyActivitySorted.reduce((max, d) =>

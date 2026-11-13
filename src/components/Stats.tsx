@@ -1246,7 +1246,6 @@ function renderOverviewToAnsi(stats: ClaudeCodeStats): string[] {
   }
   lines.push('');
 
-  // Row 2: Sessions | Longest session
   lines.push(row('Sessions', formatNumber(stats.totalSessions), 'Longest session', stats.longestSession ? formatDuration(stats.longestSession.duration) : 'N/A'));
 
   // Row 3: Current streak | Longest streak
@@ -1296,7 +1295,6 @@ function renderOverviewToAnsi(stats: ClaudeCodeStats): string[] {
   }
   lines.push('');
 
-  // Fun factoid
   const factoid = generateFunFactoid(stats);
   lines.push(h(factoid));
   lines.push(chalk.gray(`Stats from the last ${stats.totalDays} days`));

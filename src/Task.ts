@@ -105,7 +105,6 @@ export type Task = {
   kill(taskId: string, setAppState: SetAppState): Promise<void>
 }
 
-// Task ID prefixes
 const TASK_ID_PREFIXES: Record<string, string> = {
   local_bash: 'b', // Keep as 'b' for backward compatibility
   local_agent: 'a',

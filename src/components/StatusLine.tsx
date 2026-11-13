@@ -264,7 +264,6 @@ function StatusLineInner({
     prStatus
   });
 
-  // Debounce timer ref
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   // One-shot timer that re-runs the command once the earliest rate-limit
   // window resets, so the line updates without any user activity.

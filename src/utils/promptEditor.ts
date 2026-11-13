@@ -148,7 +148,6 @@ export function editPromptInEditor(
       ? expandPastedTextRefs(currentPrompt, pastedContents)
       : currentPrompt
 
-    // Write expanded prompt to temp file
     writeFileSync_DEPRECATED(tempFile, expandedPrompt, {
       encoding: 'utf-8',
       flush: true,

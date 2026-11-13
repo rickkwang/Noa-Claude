@@ -46,7 +46,6 @@ export function ResumeTask({
       setLoading(true);
       setLoadErrorType(null);
 
-      // Detect current repository
       const detectedRepo = await detectCurrentRepository();
       setCurrentRepo(detectedRepo);
       logForDebugging(`Current repository: ${detectedRepo || 'not detected'}`);

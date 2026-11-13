@@ -48,7 +48,6 @@ export async function setupTokenHandler(root: Root): Promise<void> {
   process.exit(0);
 }
 
-// install handler
 export async function installHandler(target: string | undefined, options: {
   force?: boolean;
 }): Promise<void> {

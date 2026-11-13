@@ -125,7 +125,6 @@ export function DiscoverPlugins({
   // Warning state for non-critical errors
   const [warning, setWarning] = useState<string | null>(null);
 
-  // Empty state reason
   const [emptyReason, setEmptyReason] = useState<EmptyMarketplaceReason | null>(null);
 
   // Load all plugins from all marketplaces
@@ -233,7 +232,6 @@ export function DiscoverPlugins({
     void loadAllPlugins();
   }, [setError, targetPlugin]);
 
-  // Install selected plugins
   const installSelectedPlugins = async () => {
     if (selectedForInstall.size === 0) return;
     const pluginsToInstall = availablePlugins.filter(p_1 => selectedForInstall.has(p_1.pluginId));

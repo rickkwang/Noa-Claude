@@ -168,7 +168,6 @@ Your response must be a JSON object matching one of the following schemas:
         }
       }
 
-      // Condition was met
       logForDebugging(`Hooks: Prompt hook condition was met`)
       return {
         hook,

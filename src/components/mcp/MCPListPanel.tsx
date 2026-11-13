@@ -75,7 +75,6 @@ function getScopeHeading(scope: ConfigScope): {
   }
 }
 
-// Group servers by scope
 function groupServersByScope(serverList: ServerInfo[]): Map<ConfigScope, ServerInfo[]> {
   const groups = new Map<ConfigScope, ServerInfo[]>();
   for (const server of serverList) {

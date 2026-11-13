@@ -22,7 +22,6 @@ export const UNKNOWN_OPENAI_COMPAT_CONTEXT_WINDOW = 128_000
 // Maximum output tokens for compact operations
 export const COMPACT_MAX_OUTPUT_TOKENS = 20_000
 
-// Default max output tokens
 const MAX_OUTPUT_TOKENS_DEFAULT = 32_000
 const MAX_OUTPUT_TOKENS_UPPER_LIMIT = 64_000
 

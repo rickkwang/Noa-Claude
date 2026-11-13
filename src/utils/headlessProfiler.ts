@@ -136,7 +136,6 @@ export function logHeadlessProfilerTurn(): void {
     metadata.time_to_system_message_ms = Math.round(systemMessageTime)
   }
 
-  // Time to query start
   const queryStartTime = checkpointTimes.get('query_started')
   if (queryStartTime !== undefined) {
     metadata.time_to_query_start_ms = Math.round(queryStartTime - turnStart)

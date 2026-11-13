@@ -190,7 +190,6 @@ export function KeybindingSetup({
     // Initialize file watcher (idempotent - only runs once)
     void initializeKeybindingWatcher();
 
-    // Subscribe to changes
     const unsubscribe = subscribeToKeybindingChanges(result_0 => {
       // Any callback invocation is a reload since initial load happens
       // synchronously in useState, not via this subscription

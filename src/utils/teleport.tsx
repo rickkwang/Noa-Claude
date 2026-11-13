@@ -219,7 +219,6 @@ async function ensureUpstreamIsSet(branchName: string): Promise<void> {
     code: upstreamCheckCode
   } = await execFileNoThrow(gitExe(), ['rev-parse', '--abbrev-ref', `${branchName}@{upstream}`]);
   if (upstreamCheckCode === 0) {
-    // Upstream is already set
     logForDebugging(`Branch '${branchName}' already has upstream set`);
     return;
   }

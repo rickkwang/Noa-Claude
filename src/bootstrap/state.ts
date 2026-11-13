@@ -436,16 +436,13 @@ function getInitialState(): State {
     sdkBetas: undefined,
     // 1M long-context credits clamp (set reactively on 429)
     longContext1mCreditsBlocked: false,
-    // Main thread agent type
     mainThreadAgentType: undefined,
-    // Remote mode
     isRemoteMode: false,
     ...(process.env.USER_TYPE === 'ant'
       ? {
           replBridgeActive: false,
         }
       : {}),
-    // Direct connect server URL
     directConnectServerUrl: undefined,
     // System prompt section cache state
     systemPromptSectionCache: new Map(),

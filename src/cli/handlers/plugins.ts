@@ -237,7 +237,6 @@ function printValidationResult(result: ValidationResult): void {
   }
 }
 
-// plugin validate
 export async function pluginValidateHandler(
   manifestPath: string,
   options: { cowork?: boolean },

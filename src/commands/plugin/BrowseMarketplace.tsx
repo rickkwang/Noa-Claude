@@ -314,7 +314,6 @@ export function BrowseMarketplace({
     };
   }, [selectedMarketplace, setError]);
 
-  // Install selected plugins
   const installSelectedPlugins = async () => {
     if (selectedForInstall.size === 0) return;
     const pluginsToInstall = availablePlugins.filter(p_0 => selectedForInstall.has(p_0.pluginId));

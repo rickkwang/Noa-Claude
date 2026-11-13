@@ -66,7 +66,6 @@ export async function call(onDone: (result?: string) => void, _context: unknown,
       onDone(message);
       return null;
     } else {
-      // Unknown subcommand
       const message = color('error', themeName)(`Error: Unknown subcommand "${subcommand}". Available subcommand: exclude`);
       onDone(message);
       return null;

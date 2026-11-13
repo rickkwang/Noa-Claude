@@ -400,7 +400,6 @@ export function formatWorkspaceSymbolResult(
     `Found ${validSymbols.length} ${plural(validSymbols.length, 'symbol')} in workspace:`,
   ]
 
-  // Group by file
   const byFile = groupByFile(validSymbols, cwd)
 
   for (const [filePath, symbols] of byFile) {

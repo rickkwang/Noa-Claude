@@ -718,7 +718,6 @@ export function registerAsyncAgent({
   });
   taskState.unregisterCleanup = unregisterCleanup;
 
-  // Register task in AppState
   registerTask(taskState, setAppState);
   activeAgentRuns.set(agentId, Symbol(agentId));
   return taskState;

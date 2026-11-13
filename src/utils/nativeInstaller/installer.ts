@@ -127,7 +127,6 @@ function getBaseDirectories() {
     // State directories
     locks: join(getXDGStateHome(), 'claude', 'locks'),
 
-    // User bin
     executable: join(getUserBinDir(), executableName),
   }
 }

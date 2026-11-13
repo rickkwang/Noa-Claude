@@ -286,7 +286,6 @@ When done, return your result using the ${SYNTHETIC_OUTPUT_TOOL_NAME} tool with:
         }
       }
 
-      // Condition was met
       logForDebugging(`Hooks: Agent hook condition was met`)
       logEvent('tengu_agent_stop_hook_success', {
         durationMs: Date.now() - hookStartTime,

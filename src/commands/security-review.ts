@@ -207,7 +207,6 @@ export default createMovedToPluginCommand({
     // Parse frontmatter from the markdown
     const parsed = parseFrontmatter(SECURITY_REVIEW_MARKDOWN)
 
-    // Parse allowed tools from frontmatter
     const allowedTools = parseSlashCommandToolsFromFrontmatter(
       parsed.frontmatter['allowed-tools'],
     )

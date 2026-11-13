@@ -176,7 +176,6 @@ export async function persistToolResult(
     // EEXIST: already persisted on a prior turn, fall through to preview
   }
 
-  // Generate a preview
   const { preview, hasMore } = generatePreview(contentStr, PREVIEW_SIZE_BYTES)
 
   return {

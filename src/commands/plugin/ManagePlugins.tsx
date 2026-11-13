@@ -816,7 +816,6 @@ export function ManagePlugins({
       // Sort plugin groups by the plugin name (first item in each group)
       pluginGroups.sort((a_0, b_0) => a_0[0]!.name.localeCompare(b_0[0]!.name));
 
-      // Sort standalone MCPs by name
       standaloneMcpsInScope.sort((a_1, b_1) => a_1.name.localeCompare(b_1.name));
 
       // Build final list: plugins (with their children) first, then standalone MCPs

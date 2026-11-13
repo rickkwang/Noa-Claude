@@ -63,6 +63,5 @@ export function parseEsc(chars: string): Action | null {
     return null
   }
 
-  // Unknown
   return { type: 'unknown', sequence: `\x1b${chars}` }
 }

@@ -128,7 +128,6 @@ function cleanupTerminalModes(): void {
     writeSync(1, DFE)
     // Disable bracketed paste mode
     writeSync(1, DBP)
-    // Show cursor
     writeSync(1, SHOW_CURSOR)
     // Clear iTerm2 progress bar - prevents lingering progress indicator
     // that can cause bell sounds when returning to the terminal tab.

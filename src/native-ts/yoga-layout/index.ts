@@ -1352,7 +1352,6 @@ function layoutNode(
     ? Math.max(0, crossSize - crossPadBorder)
     : NaN
 
-  // Resolve gap
   const gapMain = resolveGap(
     style,
     isMainRow ? Gutter.Column : Gutter.Row,

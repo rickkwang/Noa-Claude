@@ -698,7 +698,6 @@ export async function loadConversationForResume(
         await copyPlanForResume(log, asSessionId(sessionId))
       }
 
-      // Copy file history for resume
       void copyFileHistoryForResume(log)
 
       messages = log.messages

@@ -41,7 +41,6 @@ export type PromptResponse = {
   selected: string
 }
 
-// Sync hook response schema
 export const syncHookResponseSchema = lazySchema(() =>
   z.object({
     continue: z
@@ -163,7 +162,6 @@ export const syncHookResponseSchema = lazySchema(() =>
 
 // Zod schema for hook JSON output validation
 export const hookJSONOutputSchema = lazySchema(() => {
-  // Async hook response schema
   const asyncHookResponseSchema = z.object({
     async: z.literal(true),
     asyncTimeout: z.number().optional(),

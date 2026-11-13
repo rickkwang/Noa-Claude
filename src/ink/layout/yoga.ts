@@ -78,7 +78,6 @@ export class YogaLayoutNode implements LayoutNode {
     return p ? new YogaLayoutNode(p) : null
   }
 
-  // Layout
 
   calculateLayout(width?: number, _height?: number): void {
     this.yoga.calculateLayout(width, undefined, Direction.LTR)

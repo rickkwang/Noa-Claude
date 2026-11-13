@@ -392,12 +392,10 @@ const COMMAND_ALLOWLIST: Record<string, CommandConfig> = {
       // Merging
       '--merge': 'none',
       '-m': 'none',
-      // Buffer size
       '--buffer-size': 'string',
       '-S': 'string',
       // Parallel processing
       '--parallel': 'number',
-      // Batch size
       '--batch-size': 'number',
       // Help and version
       '--help': 'none',

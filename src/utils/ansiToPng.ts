@@ -305,7 +305,6 @@ function chunk(type: string, data: Uint8Array): Buffer {
  * color type 6 (RGBA), filter 0 (none) on every scanline, single IDAT.
  */
 function encodePng(px: Uint8Array, width: number, height: number): Buffer {
-  // IHDR
   const ihdr = Buffer.alloc(13)
   ihdr.writeUInt32BE(width, 0)
   ihdr.writeUInt32BE(height, 4)
