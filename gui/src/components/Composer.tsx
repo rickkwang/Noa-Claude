@@ -1438,7 +1438,7 @@ function Picker({
   }, [open])
 
   const list = (
-    <div className={modelPicker ? "noa-model-picker-list" : undefined}>
+    <div className={modelPicker ? "noa-model-picker-list" : menuTitle ? "noa-approval-list" : undefined}>
             {items.map((item) => (
       <div key={item.key}>
         {item.heading && (
