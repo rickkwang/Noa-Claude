@@ -81,6 +81,8 @@ export function getRunInBackgroundDescription(): string {
     : 'Set to true to run this command in the background.'
 }
 
+// The secrets example names `.noa/settings.local.json`, this app's local
+// settings file, so that line differs from upstream's by the directory name.
 function getCommitAndPRInstructions(): string {
   const taskToolName = isTodoV2Enabled()
     ? TASK_CREATE_TOOL_NAME
@@ -144,7 +146,7 @@ Git Safety Protocol:
   - Run a git log command to see recent commit messages, so that you can follow this repository's commit message style.
 2. Analyze all staged changes (both previously staged and newly added) and draft a commit message:
   - Summarize the nature of the changes (eg. new feature, enhancement to an existing feature, bug fix, refactoring, test, docs, etc.). Ensure the message accurately reflects the changes and their purpose (i.e. "add" means a wholly new feature, "update" means an enhancement to an existing feature, "fix" means a bug fix, etc.).
-  - Do not commit files that likely contain secrets (.env, credentials.json, etc). Warn the user if they specifically request to commit those files
+  - Do not commit files that likely contain secrets (.env, credentials.json, .noa/settings.local.json, etc). Warn the user if they specifically request to commit those files
   - Draft a concise (1-2 sentences) commit message that focuses on the "why" rather than the "what"
   - Ensure it accurately reflects the changes and their purpose
 3. Run the following commands in parallel:
