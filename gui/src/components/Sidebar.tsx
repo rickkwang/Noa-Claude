@@ -319,23 +319,35 @@ export function Sidebar({
     event.currentTarget.setPointerCapture(event.pointerId)
   }
 
+  function findDropSlot(container: HTMLElement | undefined, items: HTMLElement[], x: number, y: number, isStart: (el: HTMLElement) => boolean) {
+    if (!container || !items.length) return undefined
+    const bounds = container.getBoundingClientRect()
+    if (x < bounds.left - 16 || x > bounds.right + 16 || y < bounds.top - 12 || y > bounds.bottom + 12) return undefined
+    const index = items.findIndex((item) => {
+      const rect = item.getBoundingClientRect()
+      return y < rect.top + rect.height / 2
+    })
+    const targetIndex = index === -1 ? items.length : index
+    const startIndex = items.findIndex(isStart)
+    if (startIndex !== -1 && (targetIndex === startIndex || targetIndex === startIndex + 1)) return undefined
+    return targetIndex < items.length
+      ? { item: items[targetIndex]!, edge: "before" as const }
+      : { item: items.at(-1)!, edge: "after" as const }
+  }
+
   function findDropTarget(start: DragStart, x: number, y: number) {
-    const under = document.elementFromPoint(x, y) as HTMLElement | null
     if (start.kind === "project") {
-      // The whole group (header and its open tasks) is the target, so a long open project still takes a drop.
-      const group = under?.closest<HTMLElement>("[data-project-group]")
-      const path = group?.dataset.projectGroup
-      if (!group || !path || path === start.id) return undefined
-      const rect = group.getBoundingClientRect()
-      return { kind: start.kind, path: "", id: path, edge: y < rect.top + rect.height / 2 ? "before" as const : "after" as const }
+      const container = document.querySelector<HTMLElement>("[data-project-list]") ?? undefined
+      const groups = container ? [...container.querySelectorAll<HTMLElement>("[data-project-group]")] : []
+      const slot = findDropSlot(container, groups, x, y, (group) => group.dataset.projectGroup === start.id)
+      const path = slot?.item.dataset.projectGroup
+      return slot && path ? { kind: start.kind, path: "", id: path, edge: slot.edge } : undefined
     }
-    const row = under?.closest<HTMLElement>("[data-session-id]")
-    if (!row || row.dataset.sessionId === start.id) return undefined
-    // Pinned and recent blocks stay separate; a cross-block drop would snap back.
-    if ((row.dataset.sessionPinned === "true") !== isPinned(start.path, start.id)) return undefined
-    if (!isPinned(start.path, start.id) && row.dataset.sessionPath !== start.path) return undefined
-    const rect = row.getBoundingClientRect()
-    return { kind: start.kind, path: row.dataset.sessionPath!, id: row.dataset.sessionId!, edge: y < rect.top + rect.height / 2 ? "before" as const : "after" as const }
+    const listKey = isPinned(start.path, start.id) ? "pinned" : start.path
+    const container = [...document.querySelectorAll<HTMLElement>("[data-session-list]")].find((el) => el.dataset.sessionList === listKey)
+    const rows = container ? [...container.querySelectorAll<HTMLElement>("[data-session-id]")] : []
+    const slot = findDropSlot(container, rows, x, y, (row) => row.dataset.sessionId === start.id)
+    return slot ? { kind: start.kind, path: slot.item.dataset.sessionPath!, id: slot.item.dataset.sessionId!, edge: slot.edge } : undefined
   }
 
   function moveDrag(event: PointerEvent<HTMLElement>) {
@@ -459,7 +471,7 @@ export function Sidebar({
                 </button>
               </div>
               <Collapsible open={pinsOpen} duration={300} fade>
-              <div className="flex flex-col gap-px pt-1">
+              <div data-session-list="pinned" className="flex flex-col gap-px pt-1">
               {pinnedSessions.map(({ project, session }) => (
                 <SessionRow
                   key={`${project.path}\0${session.id}`}
@@ -518,7 +530,7 @@ export function Sidebar({
             </button>
           )}
           <Collapsible open={projectsOpen} duration={300} fade>
-            <div className="flex flex-col gap-px">
+            <div data-project-list className="flex flex-col gap-px pt-1">
             {groups.map(({ project, visible }) => {
               const isOpen = expanded.has(project.path)
               return (
@@ -547,7 +559,7 @@ export function Sidebar({
                     onOpenCoordinator={() => onOpenCoordinator(project.path)}
                   />
                   <Collapsible open={isOpen} duration={300} fade>
-                    <div className="flex flex-col gap-px pb-2">
+                    <div data-session-list={project.path} className="flex flex-col gap-px pb-2 pt-1">
                       {(unfolded.has(project.path) ? visible : visible.slice(0, TASK_PREVIEW)).map((session) => (
                         <SessionRow
                           key={session.id}
