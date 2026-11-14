@@ -20,7 +20,7 @@ function buildAwaySummaryPrompt(memory: string | null): string {
   const memoryBlock = memory
     ? `Session memory (broader context):\n${memory}\n\n`
     : ''
-  return `${memoryBlock}The user stepped away and is coming back. Recap in under 40 words, 1-2 plain sentences, no markdown. Lead with the overall goal and current task, then the one next action. Skip root-cause narrative, fix internals, secondary to-dos, and em-dash tangents.`
+  return `${memoryBlock}The user stepped away and is coming back. Recap in 1-2 plain sentences, no markdown. Lead with the overall goal and current task, then the one next action. Skip root-cause narrative, fix internals, secondary to-dos, and em-dash tangents.`
 }
 
 /**

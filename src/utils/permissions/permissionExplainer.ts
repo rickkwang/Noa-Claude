@@ -58,7 +58,7 @@ const EXPLAIN_COMMAND_TOOL = {
       reasoning: {
         type: 'string',
         description:
-          'Why YOU are running this command. Start with "I" - e.g. "I need to check the file contents"',
+          'What this command is for in the current task, one first-person sentence - e.g. "I need to check the file contents"',
       },
       risk: {
         type: 'string',
