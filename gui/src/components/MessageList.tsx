@@ -4,6 +4,7 @@ import { flushSync } from "react-dom"
 import { createContext, memo, use, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import type { AgentState, AgentTask, Block, ToolBlock, Turn } from "../agent/reducer"
 import type { ImageBlock, TurnDiff } from "../agent/protocol"
+import type { AppSettings } from "../types"
 import { Lightbox, type LightboxItem } from "./Lightbox"
 import {
   formatElapsed,
@@ -59,7 +60,7 @@ interface MessageListProps {
   historyBefore?: number
   historyLoading?: boolean
   onLoadEarlier?: () => void
-  verbose?: boolean
+  transcriptView?: AppSettings["appearance"]["transcriptView"]
 }
 
 // Follows the bottom while the user is near it; a scroll away releases the pin.
@@ -73,7 +74,7 @@ const ESTIMATED_TURN_HEIGHT = 160
 const TODO_TOOLS = ["TodoWrite", "TaskCreate", "TaskUpdate", "TaskList", "TaskGet"]
 const scrollPositions = new Map<string, { top: number; pinned: boolean; heights: Map<string, number> }>()
 
-export function MessageList({ turns, cwd, onOpenFile, busy, result, readingWidth, liveDiff, onTurnDiff, onTurnDiffAction, diffActionPending, onRetry, onEdit, onRewind, rewindBlocked, onUndoRewind, onQuote, tasks, onStopTask, onOpenTask, sessionId, historyBefore, historyLoading, onLoadEarlier, verbose = false }: MessageListProps) {
+export function MessageList({ turns, cwd, onOpenFile, busy, result, readingWidth, liveDiff, onTurnDiff, onTurnDiffAction, diffActionPending, onRetry, onEdit, onRewind, rewindBlocked, onUndoRewind, onQuote, tasks, onStopTask, onOpenTask, sessionId, historyBefore, historyLoading, onLoadEarlier, transcriptView = "normal" }: MessageListProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
   const layoutRef = useRef<HTMLDivElement>(null)
@@ -503,7 +504,7 @@ export function MessageList({ turns, cwd, onOpenFile, busy, result, readingWidth
         onTurnDiff={onTurnDiff ? stableTurnDiff : undefined}
         onTurnDiffAction={onTurnDiffAction ? stableTurnDiffAction : undefined}
         diffActionPending={diffActionPending}
-        verbose={verbose}
+        transcriptView={transcriptView}
       />
     )
   }
@@ -777,7 +778,7 @@ function mergeAssistantTurns(group: Extract<Turn, { role: "assistant" }>[]): Ass
 
 // Tool calls and reasoning fold into one "Worked for" row; the final answer stays visible.
 const AssistantSegment = memo(AssistantSegmentView)
-function AssistantSegmentView({ segment, busy, durationMs, interrupted, liveDiff, tasks, onStopTask, onOpenTask, onTurnDiff, onTurnDiffAction, diffActionPending, verbose = false }: {
+function AssistantSegmentView({ segment, busy, durationMs, interrupted, liveDiff, tasks, onStopTask, onOpenTask, onTurnDiff, onTurnDiffAction, diffActionPending, transcriptView = "normal" }: {
   segment: AssistantSegmentData
   busy: boolean
   durationMs?: number
@@ -789,8 +790,10 @@ function AssistantSegmentView({ segment, busy, durationMs, interrupted, liveDiff
   onTurnDiff?: (diff: TurnDiff, path?: string) => void
   onTurnDiffAction?: (diff: TurnDiff, action: "undo" | "reapply") => void
   diffActionPending?: number
-  verbose?: boolean
+  transcriptView?: AppSettings["appearance"]["transcriptView"]
 }) {
+  const isVerbose = transcriptView === "verbose"
+  const showThinking = transcriptView === "thinking" || transcriptView === "verbose"
   const units = groupActivityBlocks(segment.blocks)
   const runs = groupActivityRuns(units)
   const trackedTaskIds = new Set(segment.blocks.flatMap(block => block.kind === "subagent" ? [block.taskId] : []))
@@ -825,7 +828,12 @@ function AssistantSegmentView({ segment, busy, durationMs, interrupted, liveDiff
   // protocol has no final-channel flag, so the last text run is the final answer.
   const finalIndex = runs.map((run) => run.kind).lastIndexOf("text")
   // Without a final-channel marker, fold automatically only after the turn ends.
-  const canCollapse = !verbose && !busy && !segment.streaming && !interrupted && !segment.error && !segment.incomplete && finalIndex > 0 && runs.slice(0, finalIndex).some(run => run.kind !== "status")
+  // In Thinking mode, keep turns with reasoning expanded while still folding tool-only turns.
+  const preFinalRuns = finalIndex > 0 ? runs.slice(0, finalIndex) : []
+  const hasPreFinalThinking = preFinalRuns.some(
+    run => run.kind === "activity" && run.blocks.some(block => block.kind === "thinking"),
+  )
+  const canCollapse = !isVerbose && !(showThinking && hasPreFinalThinking) && !busy && !segment.streaming && !interrupted && !segment.error && !segment.incomplete && finalIndex > 0 && preFinalRuns.some(run => run.kind !== "status")
   const collapsedCount = finalIndex > 0
     ? runs.reduce(
         (count, run, index) => index === finalIndex
@@ -836,16 +844,16 @@ function AssistantSegmentView({ segment, busy, durationMs, interrupted, liveDiff
     : 0
   const [activityCollapsed, setActivityCollapsed] = useState(canCollapse)
   const activityToggled = useRef(false)
-  const prevVerbose = useRef(verbose)
+  const prevTranscriptView = useRef(transcriptView)
   useEffect(() => {
-    if (prevVerbose.current !== verbose) {
-      prevVerbose.current = verbose
+    if (prevTranscriptView.current !== transcriptView) {
+      prevTranscriptView.current = transcriptView
       activityToggled.current = false
       setActivityCollapsed(canCollapse)
       return
     }
     if (!activityToggled.current) setActivityCollapsed(canCollapse)
-  }, [canCollapse, verbose])
+  }, [canCollapse, transcriptView])
   function toggleActivity() {
     activityToggled.current = true
     setActivityCollapsed((collapsed) => !collapsed)
@@ -942,7 +950,32 @@ function AssistantSegmentView({ segment, busy, durationMs, interrupted, liveDiff
         if (run.kind === "status") return <StatusBlock key={index} block={run.block} />
         if (run.kind === "standalone") return renderStandalone(run.block, index)
         if (run.kind === "subagents") return renderSubagents(run, index)
-        if (run.kind === "agents") return <SubagentActivity key={`agents-${index}`} blocks={run.blocks} tasks={tasks} trackedTaskIds={trackedTaskIds} onOpenTask={onOpenTask} verbose={verbose} />
+        if (run.kind === "agents") return <SubagentActivity key={`agents-${index}`} blocks={run.blocks} tasks={tasks} trackedTaskIds={trackedTaskIds} onOpenTask={onOpenTask} verbose={isVerbose} />
+        if (showThinking && !isVerbose && run.blocks.some(b => b.kind === "thinking") && run.blocks.some(b => b.kind === "tool")) {
+          // In Thinking mode, keep reasoning visible inline while keeping tool groups collapsed.
+          const parts: ((ToolBlock | ThinkingBlockData)[])[] = []
+          for (const block of run.blocks) {
+            const last = parts.at(-1)
+            if (block.kind === "thinking" || !last || last[0]?.kind === "thinking") parts.push([block])
+            else last.push(block)
+          }
+          return parts.map((part, partIndex) =>
+            part[0]?.kind === "thinking" ? (
+              <ThinkingActivity key={`${index}-thinking-${partIndex}`} block={part[0]} expanded />
+            ) : (
+              <ActivityGroup
+                key={`${index}-tools-${partIndex}`}
+                blocks={part}
+                pending={pending && index === runs.length - 1 && partIndex === parts.length - 1}
+                tasks={tasks}
+                onStopTask={onStopTask}
+                onOpenTask={onOpenTask}
+                verbose={false}
+                showThinking={false}
+              />
+            ),
+          )
+        }
         return (
           <ActivityGroup
             key={index}
@@ -951,7 +984,8 @@ function AssistantSegmentView({ segment, busy, durationMs, interrupted, liveDiff
             tasks={tasks}
             onStopTask={onStopTask}
             onOpenTask={onOpenTask}
-            verbose={verbose}
+            verbose={isVerbose}
+            showThinking={showThinking}
           />
         )
       })}
@@ -970,7 +1004,7 @@ function AssistantSegmentView({ segment, busy, durationMs, interrupted, liveDiff
 
 // One collapsible summary per run of reasoning and tool calls, an
 // agent-activity group. The body stays folded unless the user opens it.
-function ActivityGroup({ blocks, pending, tasks, onStopTask, onOpenTask, verbose = false }: {
+function ActivityGroup({ blocks, pending, tasks, onStopTask, onOpenTask, verbose = false, showThinking = verbose }: {
   blocks: (ToolBlock | ThinkingBlockData)[]
   // The turn is waiting on the model after this group; the row keeps the wait instead of a new line below it.
   pending?: boolean
@@ -978,6 +1012,7 @@ function ActivityGroup({ blocks, pending, tasks, onStopTask, onOpenTask, verbose
   onStopTask?: (id: string) => void
   onOpenTask?: (id?: string) => void
   verbose?: boolean
+  showThinking?: boolean
 }) {
   const [open, setOpen] = useState(verbose)
   const prevVerbose = useRef(verbose)
@@ -1020,7 +1055,7 @@ function ActivityGroup({ blocks, pending, tasks, onStopTask, onOpenTask, verbose
             : summary?.kind === "web" ? Search
               : Tool
 
-  if (!tools.length) return <>{blocks.map((block, index) => block.kind === "thinking" ? <ThinkingActivity key={index} block={block} verbose={verbose} /> : null)}</>
+  if (!tools.length) return <>{blocks.map((block, index) => block.kind === "thinking" ? <ThinkingActivity key={index} block={block} expanded={showThinking} /> : null)}</>
 
   return (
     <div className="not-prose" data-work-activity={live ? "live" : "done"}>
@@ -1041,7 +1076,7 @@ function ActivityGroup({ blocks, pending, tasks, onStopTask, onOpenTask, verbose
       <Collapsible open={open}>
         <div ref={activityRef} onScroll={(event) => { const e = event.currentTarget; following.current = e.scrollHeight - e.clientHeight - e.scrollTop <= 24 }} className={`noa-activity-list ms-2 mt-2 flex flex-col gap-1 overflow-x-hidden border-l border-[var(--divider-subtle)] ps-3 focus-visible:outline-auto ${verbose ? "" : "noa-activity-scroll scrollbar-on-scroll noa-scroll-fade [--edge-fade-distance:24px] max-h-56 overflow-y-auto overscroll-contain"}`} role="region" aria-label="Tool activity" tabIndex={open ? 0 : -1}>
           {blocks.flatMap((block, i) => {
-            if (block.kind === "thinking") return [<ThinkingActivity key={`thinking-${i}`} block={block} verbose={verbose} />]
+            if (block.kind === "thinking") return [<ThinkingActivity key={`thinking-${i}`} block={block} expanded={showThinking} />]
             // A command that only reads, searches or lists shows one row per action once it finishes;
             // while it runs, the group heading names the action instead.
             if (block.status === "running" && toolShellSteps(block)) return []

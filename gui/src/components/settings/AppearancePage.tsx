@@ -405,11 +405,12 @@ export function AppearancePage({
             onChange={(transcriptTextSize) => change({ transcriptTextSize: transcriptTextSize as AppSettings["appearance"]["transcriptTextSize"] })}
           />
         </Row>
-        <Row label="Transcript view" description="Normal collapses intermediate work and reasoning. Verbose expands them inline.">
+        <Row label="Default transcript view" description="The view sessions open in. Picking a view from a session’s menu changes only that session.">
           <Segmented
             value={appearance.transcriptView}
             options={[
               ["normal", "Normal"],
+              ["thinking", "Thinking"],
               ["verbose", "Verbose"],
             ]}
             onChange={(transcriptView) => change({ transcriptView: transcriptView as AppSettings["appearance"]["transcriptView"] })}

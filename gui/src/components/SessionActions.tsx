@@ -28,6 +28,7 @@ export function SessionActions({ disabled, transcriptView, onTranscriptViewChang
       { kind: "separator" },
       { label: "Transcript view", icon: ListDetails, submenu: [
         { label: "Normal", checked: transcriptView === "normal", onSelect: () => onTranscriptViewChange("normal") },
+        { label: "Thinking", checked: transcriptView === "thinking", onSelect: () => onTranscriptViewChange("thinking") },
         { label: "Verbose", checked: transcriptView === "verbose", onSelect: () => onTranscriptViewChange("verbose") },
       ] },
     ]} />}

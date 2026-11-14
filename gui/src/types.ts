@@ -54,8 +54,8 @@ export interface AppSettings {
     uiFontSize: number;
     /** Conversation text, relative to the UI font size (small -1px, large +2px). */
     transcriptTextSize: 'small' | 'medium' | 'large';
-    /** Whether tool groups and reasoning stay folded (normal) or expand inline (verbose). */
-    transcriptView: 'normal' | 'verbose';
+    /** Whether tool groups and reasoning stay folded (normal), reasoning expands (thinking), or everything expands inline (verbose). */
+    transcriptView: 'normal' | 'thinking' | 'verbose';
     codeFontSize: number;
     fontSmoothing: boolean;
   };

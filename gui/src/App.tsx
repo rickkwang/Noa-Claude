@@ -43,6 +43,7 @@ import { SessionTitle } from "./components/SessionTitle"
 import { SearchDialog } from "./components/SearchDialog"
 import { matchesShortcut } from "./lib/shortcuts"
 import { rateLimitKey } from "./components/RateLimitNotice"
+import type { AppSettings } from "./types"
 import { ListDetails, PanelRight } from "./lib/icons"
 
 // Noa's default layout widths.
@@ -76,6 +77,7 @@ export function App() {
 
 function Workspace({ cwd }: { cwd: string }) {
   const [settings, setSettings] = useAppSettings()
+  const [sessionTranscriptViews, setSessionTranscriptViews] = useState<Record<string, AppSettings["appearance"]["transcriptView"]>>({})
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [settingsSignIn, setSettingsSignIn] = useState(false)
   // The settings page overlays the whole window, so CSS hides the app shell while it is open.
@@ -195,6 +197,7 @@ function Workspace({ cwd }: { cwd: string }) {
   const [withdrawDraft, setWithdrawDraft] = useState<{ text: string; key: number }>()
   useEffect(() => setRewindMessage(undefined), [session.key])
   const activeId = state.sessionId ?? session.resume
+  const transcriptView = (activeId ? sessionTranscriptViews[activeId] : undefined) ?? settings.appearance.transcriptView
   useEffect(() => {
     fetchProjects().then(setProjects)
   }, [])
@@ -847,8 +850,8 @@ function Workspace({ cwd }: { cwd: string }) {
             title={title}
             actions={activeId && <SessionActions
               disabled={state.connection !== "ready" || state.busy || !!state.queue.length || state.tasks.some(task => task.status === "running")}
-              transcriptView={settings.appearance.transcriptView}
-              onTranscriptViewChange={(transcriptView) => setSettings((prev) => ({ ...prev, appearance: { ...prev.appearance, transcriptView } }))}
+              transcriptView={transcriptView}
+              onTranscriptViewChange={(transcriptView) => setSessionTranscriptViews(prev => ({ ...prev, [activeId]: transcriptView }))}
               onFork={async () => {
               setForkPending(true)
               try {
@@ -957,7 +960,7 @@ function Workspace({ cwd }: { cwd: string }) {
                 tasks={state.tasks}
                 onStopTask={stopTask}
                 onOpenTask={openTask}
-                verbose={settings.appearance.transcriptView === "verbose"}
+                transcriptView={transcriptView}
               />
             ) : (
               <EmptyState
