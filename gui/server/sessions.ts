@@ -2,6 +2,7 @@
 // so the GUI can list past sessions and rebuild their history.
 import { appendFileSync, closeSync, openSync, readSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync } from "node:fs"
 import { StringDecoder } from "node:string_decoder"
+import { execFile } from "node:child_process"
 import { homedir } from "node:os"
 import { dirname, join } from "node:path"
 import type { AgentMessage, ContentBlock, ImageBlock, TurnDiff } from "../src/agent/protocol"
@@ -20,15 +21,36 @@ interface SessionSummaryCacheEntry {
   createdAt: number
   owner?: string
   title?: string
+  summary?: string
+  progress?: string
+  lastPromptId?: string
+  pr?: SessionPullRequest
 }
 
 const sessionSummaryCaches = new Map<string, Map<string, SessionSummaryCacheEntry>>()
+
+export interface SessionPullRequest {
+  number: number
+  url: string
+  repository: string
+  // From `gh pr view`; unset until the first lookup returns, or when gh cannot answer.
+  state?: PullRequestState
+}
+
+type PullRequestState = "open" | "draft" | "merged" | "closed"
 
 export interface SessionSummary {
   id: string
   title: string
   updatedAt: number
   createdAt: number
+  // One line on where the task stands: the start of the latest turn's last reply.
+  summary?: string
+  // The task-list step in progress (else the next pending one), shown while the task runs.
+  progress?: string
+  // Why the last turn failed, when it did.
+  error?: string
+  pr?: SessionPullRequest
 }
 
 export function canonicalCwd(cwd: string): string {
@@ -147,6 +169,9 @@ interface Entry {
   customTitle?: string
   aiTitle?: string
   lastPrompt?: string
+  prNumber?: number
+  prUrl?: string
+  prRepository?: string
 }
 
 function* scanEntries(file: string, offset = 0): Generator<Entry> {
@@ -292,6 +317,10 @@ export function listSessions(cwd: string): SessionSummary[] {
             ?.customTitle?.trim() || [...entries].reverse().find((entry) => entry.type === "ai-title")
             ?.aiTitle?.trim() || ([...entries].reverse().find((entry) => entry.type === "last-prompt")?.lastPrompt
             ?? first)?.replace(/\s+/g, " ").trim().slice(0, 80),
+        summary: summaryLine(entries),
+        progress: currentStep(entries),
+        lastPromptId: entries.findLast((entry) => userText(entry) !== null)?.uuid,
+        pr: pullRequest(entries),
       }
       cache.set(file.path, cached)
     }
@@ -302,10 +331,113 @@ export function listSessions(cwd: string): SessionSummary[] {
       title: cached.title,
       updatedAt: file.updatedAt,
       createdAt: cached.createdAt,
+      ...(cached.summary && { summary: cached.summary }),
+      ...(cached.progress && { progress: cached.progress }),
+      ...turnError(dir, file.id, cached.lastPromptId),
+      ...(cached.pr && { pr: { ...cached.pr, state: pullRequestState(cached.pr.url) } }),
     })
   }
   for (const path of cache.keys()) if (!seen.has(path)) cache.delete(path)
   return sessions.slice(0, MAX_SESSION_SUMMARIES)
+}
+
+// The bridge records a failed turn against its prompt; only a failure of the latest prompt counts.
+function turnError(dir: string, id: string, promptId: string | undefined): { error?: string } {
+  const file = join(dir, `${id}.turn-results.jsonl`)
+  if (!promptId || !existsSync(file)) return {}
+  for (const line of readFileSync(file, "utf8").split("\n").reverse()) {
+    try {
+      const record = JSON.parse(line) as TurnResultRecord
+      if (record.error && record.userMessageId === promptId) return { error: record.error.split("\n")[0]!.slice(0, 160) }
+    } catch { /* A live final line may be incomplete. */ }
+  }
+  return {}
+}
+
+// The latest turn's last reply, unless a later rewind discarded it. A turn still under way has none until it
+// writes one, rather than showing the previous turn's.
+// The latest turn's last reply text; none once a rewind took that turn back.
+function latestReply(entries: Entry[]): string | undefined {
+  const undone = new Set(entries.flatMap((entry) => entry.rewindUndoMetadata?.rewindUuids ?? []))
+  let text: string | undefined
+  for (let i = entries.length - 1; i >= 0 && !text; i--) {
+    const entry = entries[i]!
+    if (entry.type === "system" && entry.rewindMetadata && !undone.has(entry.uuid ?? "")) return undefined
+    if (userText(entry) !== null) break
+    if (entry.type === "assistant" && !entry.isSidechain && Array.isArray(entry.message?.content)) {
+      text = (entry.message.content as any[]).filter((block) => block?.type === "text").map((block) => String(block.text)).join("\n")
+    }
+  }
+  return text
+}
+
+export function lastReply(cwd: string, id: string): string | undefined {
+  const file = transcriptPath(cwd, id)
+  return SESSION_ID.test(id) && existsSync(file) ? latestReply(readEntries(file)) : undefined
+}
+
+function summaryLine(entries: Entry[]): string | undefined {
+  const text = latestReply(entries)
+  // Skip headings, bold labels, tables and code; prefer a sentence over a lead-in ending in a colon.
+  const lines = (text ?? "").split("\n").map((line) => line.trim()).filter((line) => line && !/^(#|\||```|\*\*[^*]+\*\*:?$)/.test(line))
+    .map((line) => line.replace(/^[>*\-\s]+|^\d+\.\s+/g, "").replace(/[*_`]/g, "").trim()).filter(Boolean)
+  return (lines.find((line) => !/[:：]$/.test(line)) ?? lines[0])?.slice(0, 160)
+}
+
+// Replays the main thread's task list: TaskCreate results name each task, TaskUpdate moves it, TodoWrite replaces the list.
+function currentStep(entries: Entry[]): string | undefined {
+  let steps = new Map<string, { subject: string; status: string }>()
+  const pending = new Map<string, any>()
+  for (const entry of entries) {
+    if (entry.isSidechain || !Array.isArray(entry.message?.content)) continue
+    for (const block of entry.message.content as any[]) {
+      if (block?.type === "tool_use" && block.name === "TodoWrite" && Array.isArray(block.input?.todos)) {
+        steps = new Map(block.input.todos.map((todo: any, index: number) => [String(index), { subject: String(todo.content ?? ""), status: String(todo.status ?? "") }]))
+      } else if (block?.type === "tool_use" && (block.name === "TaskCreate" || block.name === "TaskUpdate")) {
+        pending.set(block.id, block)
+      } else if (block?.type === "tool_result" && pending.has(block.tool_use_id) && !block.is_error) {
+        const use = pending.get(block.tool_use_id)
+        pending.delete(block.tool_use_id)
+        const task = (entry.toolUseResult as any)?.task
+        if (use.name === "TaskCreate" && task?.id) steps.set(String(task.id), { subject: String(use.input?.subject ?? task.subject ?? ""), status: "pending" })
+        else if (use.name === "TaskUpdate") {
+          const step = steps.get(String(use.input?.taskId))
+          if (step && use.input?.status === "deleted") steps.delete(String(use.input.taskId))
+          else if (step) Object.assign(step, use.input?.status && { status: use.input.status }, use.input?.subject && { subject: use.input.subject })
+        }
+      }
+    }
+  }
+  const list = [...steps.values()]
+  return (list.find((step) => step.status === "in_progress") ?? list.find((step) => step.status === "pending"))?.subject.slice(0, 160) || undefined
+}
+
+function pullRequest(entries: Entry[]): SessionPullRequest | undefined {
+  const link = [...entries].reverse().find((entry) => entry.type === "pr-link")
+  if (!link || typeof link.prNumber !== "number" || !link.prUrl) return undefined
+  return { number: link.prNumber, url: link.prUrl, repository: link.prRepository ?? "" }
+}
+
+const PULL_REQUEST_URL = /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+$/
+const PULL_REQUEST_STATE_TTL_MS = 2 * 60_000
+const pullRequestStates = new Map<string, { state?: PullRequestState; checkedAt: number; pending?: boolean }>()
+
+// Answers from the cache and refreshes it in the background, so listing tasks never waits on GitHub.
+function pullRequestState(url: string): PullRequestState | undefined {
+  const cached = pullRequestStates.get(url)
+  if (!PULL_REQUEST_URL.test(url) || cached?.pending || cached?.state === "merged" || (cached && Date.now() - cached.checkedAt < PULL_REQUEST_STATE_TTL_MS)) return cached?.state
+  pullRequestStates.set(url, { state: cached?.state, checkedAt: Date.now(), pending: true })
+  execFile("gh", ["pr", "view", url, "--json", "state,isDraft"], { timeout: 15_000 }, (error, stdout) => {
+    let state = cached?.state
+    if (!error) {
+      try {
+        const value = JSON.parse(stdout) as { state?: string; isDraft?: boolean }
+        state = value.state === "MERGED" ? "merged" : value.state === "CLOSED" ? "closed" : value.isDraft ? "draft" : "open"
+      } catch { /* Keep the last known state. */ }
+    }
+    pullRequestStates.set(url, { state, checkedAt: Date.now() })
+  })
+  return cached?.state
 }
 
 export function renameSession(cwd: string, id: string, title: string): void {

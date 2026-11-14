@@ -345,9 +345,10 @@ export function MessageList({ turns, cwd, onOpenFile, busy, result, readingWidth
         break
       }
     }
+    const relay = relayed(segment.text)
     railItems.push({
       id: segment.id,
-      label: firstLine(segment.text) || "(No content)",
+      label: firstLine(relay ? relay.kind === "activity" ? relay.lines.join(" · ") : relay.text : segment.text) || "(No content)",
       preview,
     })
   }
@@ -452,6 +453,23 @@ export function MessageList({ turns, cwd, onOpenFile, busy, result, readingWidth
   }, [turns])
 
   function renderSegment(segment: Segment, index: number) {
+    const relay = segment.role === "user" ? relayed(segment.text) : undefined
+    if (relay?.kind === "activity") {
+      return (
+        <div role="status" aria-label="Thread activity" className="flex flex-col gap-0.5 text-chat-sm leading-5 text-[var(--text-tertiary)]">
+          {relay.lines.map((line, i) => <p key={i} className="m-0 truncate">{line}</p>)}
+        </div>
+      )
+    }
+    if (segment.role === "user" && relay?.kind === "coordinator") {
+      return (
+        <div className="group/message flex flex-col items-end gap-1">
+          <span className="text-caption text-[var(--text-tertiary)]">From coordinator</span>
+          <UserBubble text={relay.text} />
+          <MessageActions text={relay.text} kind="user" sentAt={segment.sentAt} />
+        </div>
+      )
+    }
     if (segment.role === "user") {
       const { text: prose, paths } = splitReferences(segment.text)
       return (
@@ -1093,6 +1111,19 @@ function WorkedFor({ durationMs, count, interrupted, collapsed, live, onToggle }
 }
 
 // Fold long message content while keeping the toggle inside the bubble.
+// Messages between a project's coordinator and its threads carry framing the user did not write; show what they say.
+function relayed(text: string): { kind: "activity"; lines: string[] } | { kind: "coordinator"; text: string } | undefined {
+  const body = (tag: string) => text.match(new RegExp(`<${tag} nonce="([0-9a-f]{32})" untrusted="true">\\n[^\\n]*\\n([\\s\\S]*)\\n</${tag} nonce="\\1">`))?.[2]
+  if (text.startsWith("<project-activity>")) {
+    const content = body("child-session-output")
+    return content === undefined ? undefined : { kind: "activity", lines: content.split("\n").map(line => line.replace(/^- "(.*?)" \([0-9a-f-]{36}\)/, "$1").replace(/ https?:\/\/\S+/g, "")).filter(Boolean) }
+  }
+  if (text.startsWith("<project-session-instructions")) {
+    const content = body("coordinator-context")
+    return content === undefined ? undefined : { kind: "coordinator", text: content }
+  }
+}
+
 function UserBubble({ text }: { text: string }) {
   const ref = useRef<HTMLDivElement>(null)
   const fontRef = useRef<HTMLSpanElement>(null)

@@ -1839,8 +1839,10 @@ kbd.noa-review-menu-hint { font-family: inherit; }
 .noa-middle-path-base { flex-shrink: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* Git decoration in the file tree: icon, name and lane glyph share one status colour; folders holding
    changes get a half-opacity modified dot. Modified is orange in Files and blue in the Changes (review) tree. */
-.noa-workspace-panel { --git-added: #168447; --git-deleted: #C24444; --git-modified: #C2410C; }
-[data-theme="dark"] .noa-workspace-panel { --git-added: #68CC74; --git-deleted: #F27F57; --git-modified: #CD9377; }
+.noa-workspace-panel, .noa-threads-panel { --git-added: #168447; --git-deleted: #C24444; --git-modified: #C2410C; }
+.noa-threads-panel { --git-merged: #8250DF; }
+[data-theme="dark"] .noa-threads-panel { --git-merged: #A371F7; }
+[data-theme="dark"] :is(.noa-workspace-panel, .noa-threads-panel) { --git-added: #68CC74; --git-deleted: #F27F57; --git-modified: #CD9377; }
 .noa-file-row.is-added { --git-tone: var(--git-added); } .noa-file-row.is-modified { --git-tone: var(--git-modified); } .noa-file-row.is-deleted { --git-tone: var(--git-deleted); }
 .noa-file-row.is-added .noa-file-name, .noa-file-row.is-modified .noa-file-name, .noa-file-row.is-deleted .noa-file-name { color: var(--git-tone, inherit); }
 .noa-file-row.is-deleted .noa-file-name { text-decoration: line-through; }
@@ -2775,3 +2777,13 @@ input[type="number"]::-webkit-inner-spin-button {
   transform: scale(0.76);
   transform-origin: right center;
 }
+
+.noa-thread-spin { animation: noa-thread-spin 2s linear infinite; }
+@keyframes noa-thread-spin { to { transform: rotate(360deg); } }
+.noa-thread-dot { animation: noa-thread-dot 2s linear infinite; }
+@keyframes noa-thread-dot {
+  0%, 2.78% { opacity: 0; animation-timing-function: cubic-bezier(.37, 0, .63, 1); }
+  12.5%, 18.06% { opacity: .5; animation-timing-function: cubic-bezier(.37, 0, .63, 1); }
+  37.78%, 100% { opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) { .noa-thread-spin, .noa-thread-dot { animation: none; } }

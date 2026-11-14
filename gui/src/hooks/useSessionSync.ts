@@ -77,7 +77,7 @@ export function useSessionSync({
       refreshing = true
       try {
         const runsResponse = await fetch("/api/runs")
-        const runs = await runsResponse.json() as { cwd: string; sessionId?: string; title?: string; busy: boolean; waiting: boolean; queued: number }[]
+        const runs = await runsResponse.json() as { cwd: string; sessionId?: string; title?: string; coordinator?: boolean; busy: boolean; waiting: boolean; queued: number }[]
         const results = await Promise.allSettled(projects.map((project) => fetchSessions(project.path)))
         const completeResults = results.map((result) => result.status === "fulfilled" && result.value.length < SESSION_LIST_LIMIT)
         const active = activeSessionRef.current
@@ -145,6 +145,7 @@ export function useSessionSync({
                   visible.unshift({
                     id: run.sessionId!,
                     title: run.title ?? "New task",
+                    coordinator: run.coordinator,
                     updatedAt: existing?.updatedAt ?? now,
                     createdAt: existing?.createdAt ?? now,
                     status: run.waiting ? "waiting" : run.busy ? "running" : run.queued ? "queued" : undefined,
@@ -155,7 +156,8 @@ export function useSessionSync({
                 prev.length === visible.length &&
                 prev.every((s, i) => {
                   const v = visible[i]!
-                  return s.id === v.id && s.title === v.title && s.updatedAt === v.updatedAt && s.status === v.status && s.cwd === v.cwd
+                  // PR state refreshes from GitHub without touching the transcript, so updatedAt alone misses it.
+                  return s.id === v.id && s.title === v.title && s.updatedAt === v.updatedAt && s.status === v.status && s.cwd === v.cwd && s.summary === v.summary && s.error === v.error && s.pr?.state === v.pr?.state
                 })
               next[project.path] = sameList ? prev : visible
               if (!sameList) changed = true

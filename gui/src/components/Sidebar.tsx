@@ -118,6 +118,7 @@ interface SidebarProps {
   onEditProject: (project: ProjectInfo) => void
   onRemoveProject: (path: string) => void
   onRevealProject: (path: string) => void
+  onOpenCoordinator: (path: string) => void
   onDeleteSession: (cwd: string, id: string, title: string) => void
   onSearch: () => void
   onSettings: () => void
@@ -137,6 +138,7 @@ export function Sidebar({
   onEditProject,
   onRemoveProject,
   onRevealProject,
+  onOpenCoordinator,
   onDeleteSession,
   onSearch,
   onSettings,
@@ -210,7 +212,7 @@ export function Sidebar({
     const key = recentsPrefs.sort === "created" ? "createdAt" : "updatedAt"
     return projects
       .filter((project) => recentsProject === null || project.path === recentsProject)
-      .flatMap((project) => (sessions[project.path] ?? []).filter(session => !prefs.pinned[project.path]?.[session.id]).map((session) => ({ project, session })))
+      .flatMap((project) => (sessions[project.path] ?? []).filter(session => !session.coordinator && !prefs.pinned[project.path]?.[session.id]).map((session) => ({ project, session })))
       .sort((a, b) => b.session[key] - a.session[key])
   }, [projects, sessions, recentsProject, recentsPrefs.sort, prefs.pinned])
 
@@ -542,6 +544,7 @@ export function Sidebar({
                     onEdit={() => onEditProject(project)}
                     onRemove={() => onRemoveProject(project.path)}
                     onReveal={() => onRevealProject(project.path)}
+                    onOpenCoordinator={() => onOpenCoordinator(project.path)}
                   />
                   <Collapsible open={isOpen} duration={300} fade>
                     <div className="flex flex-col gap-px pb-2">
@@ -806,6 +809,7 @@ function ProjectRow({
   onEdit,
   onRemove,
   onReveal,
+  onOpenCoordinator,
   onPointerDown,
   onPointerMove,
   onPointerUp,
@@ -820,6 +824,7 @@ function ProjectRow({
   onEdit: () => void
   onRemove: () => void
   onReveal: () => void
+  onOpenCoordinator: () => void
   onPointerDown?: (event: PointerEvent<HTMLElement>) => void
   onPointerMove: (event: PointerEvent<HTMLElement>) => void
   onPointerUp: (event: PointerEvent<HTMLElement>) => void
@@ -921,6 +926,17 @@ function ProjectRow({
                 </button>
                 {!project.missing && (
                   <>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setMenuOpen(false)
+                        onOpenCoordinator()
+                      }}
+                      className="w-full rounded-md px-2.5 py-1.5 text-left text-body hover:bg-[var(--fill-hover)]"
+                    >
+                      Coordinator
+                    </button>
                     <button
                       type="button"
                       role="menuitem"

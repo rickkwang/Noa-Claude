@@ -2,7 +2,7 @@ import { defaultShortcuts, shortcutHint, type ShortcutBindings } from "../lib/sh
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties } from "react"
 import { isSubagentTask, type AgentState } from "../agent/reducer"
 import type { TurnDiff } from "../agent/protocol"
-import { Folder, Globe, MoreHorizontal, PanelBottom, Plus, PlusMinus, Terminal, Users } from "../lib/icons"
+import { Folder, Globe, ListDetails, MoreHorizontal, PanelBottom, Plus, PlusMinus, Terminal, Users } from "../lib/icons"
 import { browserVersion, closeBrowser, dismissWebUrl, localWebUrls, openBrowser, projectBrowser, selectBrowser, subscribeBrowser } from "../lib/browserTabs"
 import { BrowserPanel } from "./BrowserPanel"
 import { closeTerminal, moveTerminal, openTerminal, selectTerminal, snapshotTerminals, subscribeTerminals, terminalsVersion, terminalTabs } from "../lib/terminalSessions"
@@ -12,12 +12,14 @@ import { PopupMenu, anchorBelow, type PopupMenuAnchor } from "./PopupMenu"
 import { TurnReview } from "./TurnReview"
 import { WorkspaceFiles } from "./WorkspaceFiles"
 import { SubagentsPanel } from "./SubagentsPanel"
+import { ThreadsPanel } from "./ThreadsPanel"
+import type { SessionSummary } from "../api"
 import { NewTabPage } from "./NewTabPage"
 import { PanelTabStrip } from "./PanelTabStrip"
 import { TerminalView } from "./TerminalView"
 
 // Tools that open at most once; terminals open as many tabs as wanted.
-export type PanelTab = "files" | "changes" | "subagents"
+export type PanelTab = "files" | "changes" | "subagents" | "threads"
 // The shown pane: a tool, the New tab page, or the panel's active terminal/browser.
 export type RightTab = PanelTab | "new" | "terminal" | "browser"
 export const DEFAULT_RIGHT_TABS: PanelTab[] = ["files", "changes"]
@@ -32,9 +34,10 @@ const TOOLS = {
   files: { title: "Files", icon: Folder },
   changes: { title: "Changes", icon: PlusMinus },
   subagents: { title: "Subagents", icon: Users },
+  threads: { title: "Threads", icon: ListDetails },
 } as const
 // Subagents open from the Overview's Tasks card or the conversation, not from the New tab page.
-const NEW_TAB_TOOLS: PanelTab[] = ["files", "changes"]
+const NEW_TAB_TOOLS: PanelTab[] = ["files", "changes", "threads"]
 const TERMINAL_KEY = "terminal:"
 const BROWSER_KEY = "browser:"
 
@@ -61,10 +64,13 @@ interface RightPanelProps {
   focusFile?: { path: string; at: number; line?: number; endLine?: number }
   turnDiff?: { diff: TurnDiff; path?: string; key: number }
   focusTask?: { id?: string; key: number }
+  sessions: SessionSummary[]
+  activeSessionId?: string
+  onSelectSession: (id: string) => void
 }
 
 // Right column: one pane under a tab strip.
-export function RightPanel({ shortcuts = defaultShortcuts, state, onStopTask, cwd, open = true, tabs, onTabs, newTab, onNewTab, tab, onTab, terminalFocusKey, onBottomTerminal, onReference, onWorkspaceChange, workspaceRefreshKey, focusChange, focusFile, turnDiff, focusTask }: RightPanelProps) {
+export function RightPanel({ shortcuts = defaultShortcuts, state, onStopTask, cwd, open = true, tabs, onTabs, newTab, onNewTab, tab, onTab, terminalFocusKey, onBottomTerminal, onReference, onWorkspaceChange, workspaceRefreshKey, focusChange, focusFile, turnDiff, focusTask, sessions, activeSessionId, onSelectSession }: RightPanelProps) {
   useSyncExternalStore(subscribeTerminals, terminalsVersion, terminalsVersion)
   useSyncExternalStore(subscribeBrowser, browserVersion, browserVersion)
   const browser = projectBrowser(cwd)
@@ -317,6 +323,9 @@ export function RightPanel({ shortcuts = defaultShortcuts, state, onStopTask, cw
       </div>
       <div id="panel-subagents" role="tabpanel" aria-labelledby="panel-tab-subagents" className="min-h-0 flex-1 flex-col overflow-hidden" style={{ display: shown === "subagents" ? "flex" : "none" }}>
         <SubagentsPanel tasks={subagents} selectedId={selectedTask} onSelect={setSelectedTask} onStopTask={onStopTask} />
+      </div>
+      <div id="panel-threads" role="tabpanel" aria-labelledby="panel-tab-threads" className="min-h-0 flex-1 flex-col overflow-hidden" style={{ display: shown === "threads" ? "flex" : "none" }}>
+        <ThreadsPanel sessions={sessions} activeId={activeSessionId} onSelect={onSelectSession} />
       </div>
     </div>
   )

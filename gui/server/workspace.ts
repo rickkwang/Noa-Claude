@@ -250,7 +250,7 @@ export async function projectWorktrees(cwd: string) {
   return raw.split("\n").flatMap((line) => line.startsWith("worktree ") && isManagedWorktree(line.slice(9)) ? [line.slice(9)] : [])
 }
 
-async function worktreeRequest(cwd: string, body?: { action?: unknown; base?: unknown }) {
+export async function worktreeRequest(cwd: string, body?: { action?: unknown; base?: unknown }) {
   if (body === undefined) return { origin: await worktreeOrigin(cwd) }
   if (body.action === "create") {
     if (isManagedWorktree(cwd)) throw new Error("Start the worktree from the project, not from another worktree")

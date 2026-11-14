@@ -11,6 +11,7 @@
     "desktop:dist": "bun run build && bun scripts/launch-desktop.mjs",
     "test": "bun test",
     "test:bridge": "bun run tests/bridge.e2e.ts",
+    "test:coordinator": "bun run tests/coordinator.e2e.ts",
     "test:rendering": "bun scripts/e2e-conversation-remaining.ts",
     "test:session-sync": "bun scripts/e2e-session-sync.ts",
     "test:scroll": "bun scripts/e2e-scroll.ts",

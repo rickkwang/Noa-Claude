@@ -1,5 +1,5 @@
 import type { ServerWebSocket, Subprocess } from "bun"
-import { readdirSync, readFileSync, statSync } from "node:fs"
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs"
 import { join } from "node:path"
 import { SESSION_ID, configHome, appendTimelineEvent, appendTurnResult, appendTurnDiff, canonicalCwd, countUserTurns, findTurnDiff, findTurnUserMessage, historyPage, loadHistory, readTurnDiffs, setTurnDiffReverted, transcriptPath } from "./sessions"
 import { projectAdditionalDirectories } from "./projects"
@@ -473,6 +473,266 @@ function followExternal(ws: ServerWebSocket<SocketData>, sessionId: string, hold
   // Show the transcript right away instead of an empty view until the first poll.
   void tick()
 }
+interface SpawnOptions {
+  cwd: string
+  resume?: string
+  // A new task started under a known id, so its starter can address it before the CLI reports one.
+  sessionId?: string
+  runtimeId: string
+  mode?: string
+  outputStyle?: string
+  // Started with no window, so no client sends initialize; the bridge does, and later clients share the answer.
+  headless?: boolean
+}
+// Set by the project coordinator: what a coordinator's CLI is started with, the session tools it serves,
+// and the events of the tasks it watches.
+export const runHooks: {
+  coordinator?: (cwd: string, sessionId: string) => { appendSystemPrompt: string; server: string } | undefined
+  mcp?: (cwd: string, sessionId: string, message: { id?: string | number; method: string; params?: any }) => Promise<unknown>
+  settled?: (run: RunInfo) => void
+  waiting?: (run: RunInfo) => void
+} = {}
+export interface RunInfo { cwd: string; sessionId?: string; failed: boolean; waitingKinds: WaitKind[] }
+const runInfo = (run: AgentRun): RunInfo => ({ cwd: run.cwd, sessionId: run.sessionId, failed: run.turnSucceeded === false, waitingKinds: [...new Set(run.waiting.values())] })
+// Starts a CLI for a task; `previous` is the exited run it replaces, whose mode and queue carry over.
+function spawnRun(opts: SpawnOptions, root: string, previous?: AgentRun): AgentRun {
+  const args = [
+    process.execPath,
+    join(root, "run-noa.js"),
+    "-p",
+    "--input-format",
+    "stream-json",
+    "--output-format",
+    "stream-json",
+    "--verbose",
+    "--include-partial-messages",
+    "--permission-prompt-tool",
+    "stdio",
+  ]
+  const additionalDirectories = projectAdditionalDirectories(root, opts.cwd)
+  if (additionalDirectories.length) args.push("--add-dir", ...additionalDirectories)
+  if (opts.resume) args.push("--resume", opts.resume)
+  else if (opts.sessionId) args.push("--session-id", opts.sessionId)
+  const coordinator = runHooks.coordinator?.(opts.cwd, opts.resume ?? opts.sessionId ?? "")
+  if (coordinator) args.push("--allowedTools", `mcp__${coordinator.server}`)
+  // A respawn keeps the mode the session was in; only start-safe modes are restored, never bypass.
+  const lastMode = previous?.mode ?? runModes.get(opts.resume ?? opts.runtimeId)
+  const startMode = lastMode && SPAWN_PERMISSION_MODES.has(lastMode) ? lastMode : opts.mode
+  if (startMode) args.push("--permission-mode", startMode)
+  if (opts.outputStyle) args.push("--settings", JSON.stringify({ outputStyle: opts.outputStyle }))
+  const retainedQueue = previous?.queue ?? []
+  // A resumed session continues from its transcript turn count, not from the
+  // last stored diff, so skipped-diff turns do not shift later indexes.
+  const priorTurn = opts.resume
+    ? Math.max(
+        readTurnDiffs(opts.cwd, opts.resume).reduce((max, record) => Math.max(max, record.index), 0),
+        countUserTurns(opts.cwd, opts.resume),
+      )
+    : 0
+  const proc = Bun.spawn(args, {
+    cwd: opts.cwd,
+    env: {
+      ...process.env,
+      CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS: "1",
+      CLAUDE_CODE_EAGER_FLUSH: "1",
+      // Per-turn file-history checkpoints back the non-git diff fallback.
+      CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING: "1",
+    },
+    stdin: "pipe",
+    stdout: "pipe",
+    stderr: "pipe",
+  })
+  const run: AgentRun = {
+    id: opts.runtimeId,
+    cwd: opts.cwd,
+    additionalDirectories,
+    mode: startMode,
+    sessionId: opts.resume ?? opts.sessionId,
+    proc,
+    clients: new Set(),
+    // A queue kept across a CLI exit waits for Resume instead of sitting unpaused with nothing to start it.
+    journal: retainedQueue.length ? [{ kind: "queue", messages: retainedQueue, paused: true }] : [],
+    queue: retainedQueue,
+    queuePaused: retainedQueue.length > 0,
+    busy: false,
+    turnCounter: priorTurn,
+    waiting: new Map(),
+    activeTasks: new Set(),
+    initializeWaiters: new Map(),
+    historyReady: Promise.resolve(),
+    exited: false,
+    titlePending: !opts.resume && !coordinator,
+  }
+  // The coordinator's prompt and session tools ride on the initialize request; clients that attach share its answer.
+  if (coordinator || opts.headless) {
+    run.initializationRequest = crypto.randomUUID()
+    write(run, { type: "control_request", request_id: run.initializationRequest, request: { subtype: "initialize", ...(coordinator && { sdkMcpServers: [coordinator.server], appendSystemPrompt: coordinator.appendSystemPrompt }) } })
+  }
+  if (opts.resume) {
+    const current = run
+    current.historyReady = loadHistory(run.cwd, opts.resume)
+      .then((items) => {
+        if (!items) throw new Error("Task history not found")
+        current.history = items
+        current.journal.unshift({ kind: "history", ...historyPage(items) })
+      })
+      .catch((error) => {
+        emit(current, { kind: "log", text: `Cannot restore task: ${String(error)}` })
+        current.proc.kill()
+      })
+  }
+  runs.set(run.id, run)
+  const current = run
+  // Hold the next queued turn until the finished turn's diff is written, so
+  // its after-tree and the next turn's before-tree cannot race.
+  let cliTurns = 0
+  const turnSettled = async () => {
+    const seen = cliTurns
+    await finalizeTurnDiff(current)
+    // The CLI began a turn of its own meanwhile; that turn's result or idle settles instead.
+    if (seen !== cliTurns) return
+    current.busy = false
+    runHooks.settled?.(runInfo(current))
+    // A failed turn holds the queue visibly, so the client shows Resume instead of a silent stall.
+    if (current.turnSucceeded === false && current.queue.length && !current.queuePaused) {
+      current.queuePaused = true
+      emit(current, queueEnvelope(current))
+    }
+    if (current.turnSucceeded && !current.queuePaused) void startNext(current)
+    reclaimIfIdle(current)
+  }
+  lines(proc.stdout, async (line) => {
+    if (!line.trim()) return
+    let message: AgentMessage
+    try {
+      message = JSON.parse(line)
+    } catch {
+      emit(current, { kind: "log", text: line })
+      return
+    }
+    // The title lands in the transcript; no client asked for this response.
+    if (message.type === "control_response" && message.response.request_id === current.titleRequest) {
+      current.titleRequest = undefined
+      return
+    }
+    if (message.type === "control_response") {
+      if (current.sessionAction?.requestId === message.response.request_id) {
+        try {
+        if (message.response.subtype === "success" && current.sessionAction.rewind && current.sessionId) {
+          if (current.sessionAction.filesFrom) {
+            const records = readTurnDiffs(current.cwd, current.sessionId)
+            const target = records.find(record => record.userMessageId === current.sessionAction?.filesFrom)
+            if (target) for (const record of records) if (record.index >= target.index) appendTurnDiff(current.cwd, current.sessionId, { ...record, diff: { ...record.diff, undoable: false, restoredByRewind: true } })
+          }
+          const items = await loadHistory(current.cwd, current.sessionId) ?? []
+          current.history = items
+          current.journal = [{ kind: "history", ...historyPage(items) }, queueEnvelope(current)]
+          current.turnCounter = countUserTurns(current.cwd, current.sessionId)
+          current.lastTranscriptUuid = undefined
+          for (const client of current.clients) for (const envelope of current.journal) client.send(JSON.stringify(envelope))
+        }
+        } catch (error) {
+          message = { type: "control_response", response: { subtype: "error", request_id: message.response.request_id, error: `Conversation changed, but its view could not refresh. Reconnect before continuing. ${String(error)}` } }
+        } finally {
+          current.sessionAction.release()
+        }
+        current.sessionAction = undefined
+      }
+      const refreshedCommands = (message.response.response as { commands?: unknown } | undefined)?.commands
+      if (message.response.subtype === "success" && Array.isArray(refreshedCommands) && current.initialization) {
+        const original = current.initialization.response.response as Record<string, unknown>
+        current.initialization = { ...current.initialization, response: { ...current.initialization.response, response: { ...original, commands: refreshedCommands } } }
+      }
+      const switched = message.response.response as { models?: unknown; providers?: unknown; account?: unknown } | undefined
+      if (message.response.subtype === "success" && Array.isArray(switched?.providers) && Array.isArray(switched?.models) && current.initialization) {
+        // A provider switch changes the model list and account the cached initialize response reports.
+        const original = current.initialization.response.response as Record<string, unknown>
+        current.initialization = { ...current.initialization, response: { ...current.initialization.response, response: { ...original, models: switched.models, providers: switched.providers, account: switched.account ?? original.account } } }
+      }
+      if (message.response.request_id === current.initializationRequest) {
+        if (message.response.subtype === "success") current.initialization = message
+        for (const [client, requestId] of current.initializeWaiters)
+          client.send(
+            JSON.stringify({
+              kind: "agent",
+              message: { ...message, response: { ...message.response, request_id: requestId } },
+            }),
+          )
+        current.initializeWaiters.clear()
+        current.initializationRequest = undefined
+      } else for (const client of current.clients) client.send(JSON.stringify({ kind: "agent", message }))
+      reclaimIfIdle(current)
+      return
+    }
+    if ((message.type === "assistant" || message.type === "user" || message.type === "result") && !message.parent_tool_use_id) flushTimeline(current)
+    if ((message.type === "assistant" || message.type === "user") && !message.parent_tool_use_id) current.lastTranscriptUuid = (message as { uuid?: string }).uuid ?? current.lastTranscriptUuid
+    if (message.type === "system" && ["hook_started", "hook_response", "task_started", "task_notification"].includes(message.subtype)) {
+      const sessionId = current.sessionId ?? (message as { session_id?: string }).session_id
+      if (sessionId && SESSION_ID.test(sessionId)) {
+        try {
+          const turn = current.turn?.index ?? current.turnCounter
+          const offset = current.turn?.transcriptOffset ?? 0
+          const afterUuid = current.lastTranscriptUuid ?? (current.turn ? findTurnUserMessage(current.cwd, sessionId, offset, true) : undefined)
+          if (!afterUuid && turn > 0) (current.pendingTimeline ??= []).push({ sessionId, turn, offset, message })
+          else appendTimelineEvent(current.cwd, sessionId, { turn, afterUuid, message })
+        }
+        catch (error) { emit(current, { kind: "log", text: `Could not save activity: ${String(error)}` }) }
+      }
+    }
+    if (message.type === "control_request" && message.request.subtype === "mcp_message") {
+      const request = message.request as unknown as { server_name: string; message: { id?: string | number; method: string; params?: any } }
+      const reply = (mcp_response: unknown) => write(current, { type: "control_response", response: { subtype: "success", request_id: message.request_id, response: { mcp_response } } })
+      if (!runHooks.mcp || !current.sessionId) return void reply({ jsonrpc: "2.0", id: request.message.id ?? 0, error: { code: -32601, message: "No session tools for this task" } })
+      runHooks.mcp(current.cwd, current.sessionId, request.message).then(reply, (error) => reply({ jsonrpc: "2.0", id: request.message.id ?? 0, error: { code: -32603, message: String(error) } }))
+      return
+    }
+    if (message.type === "system" && message.subtype === "init") current.sessionId = message.session_id
+    if (message.type === "control_request") current.waiting.set(message.request_id, waitKind(message.request))
+    if (message.type === "control_cancel_request") current.waiting.delete(message.request_id)
+    // The CLI answers a finished background task with a turn of its own; queued messages wait for it.
+    if (message.type === "assistant" && !message.parent_tool_use_id && (!current.turn || current.turn.finalizing)) { current.busy = true; cliTurns++ }
+    trackTurnResult(current, message)
+    emit(current, { kind: "agent", message })
+    if (message.type === "control_request") runHooks.waiting?.(runInfo(current))
+    if (message.type === "result" && !message.parent_tool_use_id) {
+      if (message.is_error && current.sessionId && current.turn && !current.turn.interrupted) {
+        try {
+          appendTurnResult(current.cwd, current.sessionId, { index: current.turn.index, userMessageId: findTurnUserMessage(current.cwd, current.sessionId, current.turn.transcriptOffset), durationMs: message.duration_ms, error: message.errors?.join("\n") || message.result || `Agent failed (${message.subtype})` })
+        } catch (error) { emit(current, { kind: "log", text: `Could not save turn result: ${String(error)}` }) }
+      }
+      current.turnSucceeded = !message.is_error
+      void finalizeTurnDiff(current)
+      // The CLI reports idle only after its background tasks end, so a turn that leaves one running settles here.
+      if (current.activeTasks.size) void turnSettled()
+    }
+    if (message.type === "system" && message.subtype === "session_state_changed" && message.state === "idle") void turnSettled()
+  }).catch((error) => emit(current, { kind: "log", text: String(error) }))
+  lines(proc.stderr, (text) => emit(current, { kind: "log", text })).catch(() => {})
+  proc.exited.then((code) => {
+    current.sessionAction?.release()
+    current.sessionAction = undefined
+    try { flushTimeline(current) } catch (error) { emit(current, { kind: "log", text: `Could not save activity: ${String(error)}` }) }
+    if (current.turn && current.sessionId && current.turnSucceeded === undefined && !current.turn.interrupted) {
+      try {
+        appendTurnResult(current.cwd, current.sessionId, {
+          index: current.turn.index,
+          userMessageId: findTurnUserMessage(current.cwd, current.sessionId, current.turn.transcriptOffset),
+          durationMs: Date.now() - current.turn.startedAt,
+          error: `Agent exited before completing this turn (code ${code}).`,
+        })
+      } catch (error) { emit(current, { kind: "log", text: `Could not save turn result: ${String(error)}` }) }
+    }
+    const interrupted = current.busy
+    current.exited = true
+    current.busy = false
+    void finalizeTurnDiff(current)
+    if (!current.queue.length && runs.get(current.id) === current) runs.delete(current.id)
+    emit(current, { kind: "exit", code })
+    // A turn cut short by the agent exiting never reaches idle; its watchers still hear it ended.
+    if (interrupted) runHooks.settled?.(runInfo(current))
+  })
+  return run
+}
 export function attachAgent(ws: ServerWebSocket<SocketData>, root: string) {
   const targetCwd = canonicalCwd(ws.data.cwd)
   let run = runs.get(ws.data.runtimeId)
@@ -500,221 +760,9 @@ export function attachAgent(ws: ServerWebSocket<SocketData>, root: string) {
       followExternal(ws, ws.data.resume, holder)
       return
     }
-    const args = [
-      process.execPath,
-      join(root, "run-noa.js"),
-      "-p",
-      "--input-format",
-      "stream-json",
-      "--output-format",
-      "stream-json",
-      "--verbose",
-      "--include-partial-messages",
-      "--permission-prompt-tool",
-      "stdio",
-    ]
-    const additionalDirectories = projectAdditionalDirectories(root, ws.data.cwd)
-    if (additionalDirectories.length) args.push("--add-dir", ...additionalDirectories)
-    if (ws.data.resume) args.push("--resume", ws.data.resume)
-    // A respawn keeps the mode the session was in; only start-safe modes are restored, never bypass.
-    const lastMode = run?.mode ?? runModes.get(ws.data.resume ?? ws.data.runtimeId)
-    const startMode = lastMode && SPAWN_PERMISSION_MODES.has(lastMode) ? lastMode : ws.data.mode
-    if (startMode) args.push("--permission-mode", startMode)
-    if (ws.data.outputStyle) args.push("--settings", JSON.stringify({ outputStyle: ws.data.outputStyle }))
-    const retainedQueue = run?.queue ?? []
-    // A resumed session continues from its transcript turn count, not from the
-    // last stored diff, so skipped-diff turns do not shift later indexes.
-    const priorTurn = ws.data.resume
-      ? Math.max(
-          readTurnDiffs(ws.data.cwd, ws.data.resume).reduce((max, record) => Math.max(max, record.index), 0),
-          countUserTurns(ws.data.cwd, ws.data.resume),
-        )
-      : 0
-    const proc = Bun.spawn(args, {
-      cwd: ws.data.cwd,
-      env: {
-        ...process.env,
-        CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS: "1",
-        CLAUDE_CODE_EAGER_FLUSH: "1",
-        // Per-turn file-history checkpoints back the non-git diff fallback.
-        CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING: "1",
-      },
-      stdin: "pipe",
-      stdout: "pipe",
-      stderr: "pipe",
-    })
-    run = {
-      id: ws.data.runtimeId,
-      cwd: ws.data.cwd,
-      additionalDirectories,
-      mode: startMode,
-      sessionId: ws.data.resume,
-      proc,
-      clients: new Set(),
-      // A queue kept across a CLI exit waits for Resume instead of sitting unpaused with nothing to start it.
-      journal: retainedQueue.length ? [{ kind: "queue", messages: retainedQueue, paused: true }] : [],
-      queue: retainedQueue,
-      queuePaused: retainedQueue.length > 0,
-      busy: false,
-      turnCounter: priorTurn,
-      waiting: new Map(),
-      activeTasks: new Set(),
-      initializeWaiters: new Map(),
-      historyReady: Promise.resolve(),
-      exited: false,
-      titlePending: !ws.data.resume,
-    }
-    if (ws.data.resume) {
-      const current = run
-      current.historyReady = loadHistory(run.cwd, ws.data.resume)
-        .then((items) => {
-          if (!items) throw new Error("Task history not found")
-          current.history = items
-          current.journal.unshift({ kind: "history", ...historyPage(items) })
-        })
-        .catch((error) => {
-          emit(current, { kind: "log", text: `Cannot restore task: ${String(error)}` })
-          current.proc.kill()
-        })
-    }
-    runs.set(run.id, run)
-    const current = run
-    // Hold the next queued turn until the finished turn's diff is written, so
-    // its after-tree and the next turn's before-tree cannot race.
-    let cliTurns = 0
-    const turnSettled = async () => {
-      const seen = cliTurns
-      await finalizeTurnDiff(current)
-      // The CLI began a turn of its own meanwhile; that turn's result or idle settles instead.
-      if (seen !== cliTurns) return
-      current.busy = false
-      // A failed turn holds the queue visibly, so the client shows Resume instead of a silent stall.
-      if (current.turnSucceeded === false && current.queue.length && !current.queuePaused) {
-        current.queuePaused = true
-        emit(current, queueEnvelope(current))
-      }
-      if (current.turnSucceeded && !current.queuePaused) void startNext(current)
-      reclaimIfIdle(current)
-    }
-    lines(proc.stdout, async (line) => {
-      if (!line.trim()) return
-      let message: AgentMessage
-      try {
-        message = JSON.parse(line)
-      } catch {
-        emit(current, { kind: "log", text: line })
-        return
-      }
-      // The title lands in the transcript; no client asked for this response.
-      if (message.type === "control_response" && message.response.request_id === current.titleRequest) {
-        current.titleRequest = undefined
-        return
-      }
-      if (message.type === "control_response") {
-        if (current.sessionAction?.requestId === message.response.request_id) {
-          try {
-          if (message.response.subtype === "success" && current.sessionAction.rewind && current.sessionId) {
-            if (current.sessionAction.filesFrom) {
-              const records = readTurnDiffs(current.cwd, current.sessionId)
-              const target = records.find(record => record.userMessageId === current.sessionAction?.filesFrom)
-              if (target) for (const record of records) if (record.index >= target.index) appendTurnDiff(current.cwd, current.sessionId, { ...record, diff: { ...record.diff, undoable: false, restoredByRewind: true } })
-            }
-            const items = await loadHistory(current.cwd, current.sessionId) ?? []
-            current.history = items
-            current.journal = [{ kind: "history", ...historyPage(items) }, queueEnvelope(current)]
-            current.turnCounter = countUserTurns(current.cwd, current.sessionId)
-            current.lastTranscriptUuid = undefined
-            for (const client of current.clients) for (const envelope of current.journal) client.send(JSON.stringify(envelope))
-          }
-          } catch (error) {
-            message = { type: "control_response", response: { subtype: "error", request_id: message.response.request_id, error: `Conversation changed, but its view could not refresh. Reconnect before continuing. ${String(error)}` } }
-          } finally {
-            current.sessionAction.release()
-          }
-          current.sessionAction = undefined
-        }
-        const refreshedCommands = (message.response.response as { commands?: unknown } | undefined)?.commands
-        if (message.response.subtype === "success" && Array.isArray(refreshedCommands) && current.initialization) {
-          const original = current.initialization.response.response as Record<string, unknown>
-          current.initialization = { ...current.initialization, response: { ...current.initialization.response, response: { ...original, commands: refreshedCommands } } }
-        }
-        const switched = message.response.response as { models?: unknown; providers?: unknown; account?: unknown } | undefined
-        if (message.response.subtype === "success" && Array.isArray(switched?.providers) && Array.isArray(switched?.models) && current.initialization) {
-          // A provider switch changes the model list and account the cached initialize response reports.
-          const original = current.initialization.response.response as Record<string, unknown>
-          current.initialization = { ...current.initialization, response: { ...current.initialization.response, response: { ...original, models: switched.models, providers: switched.providers, account: switched.account ?? original.account } } }
-        }
-        if (message.response.request_id === current.initializationRequest) {
-          if (message.response.subtype === "success") current.initialization = message
-          for (const [client, requestId] of current.initializeWaiters)
-            client.send(
-              JSON.stringify({
-                kind: "agent",
-                message: { ...message, response: { ...message.response, request_id: requestId } },
-              }),
-            )
-          current.initializeWaiters.clear()
-          current.initializationRequest = undefined
-        } else for (const client of current.clients) client.send(JSON.stringify({ kind: "agent", message }))
-        reclaimIfIdle(current)
-        return
-      }
-      if ((message.type === "assistant" || message.type === "user" || message.type === "result") && !message.parent_tool_use_id) flushTimeline(current)
-      if ((message.type === "assistant" || message.type === "user") && !message.parent_tool_use_id) current.lastTranscriptUuid = (message as { uuid?: string }).uuid ?? current.lastTranscriptUuid
-      if (message.type === "system" && ["hook_started", "hook_response", "task_started", "task_notification"].includes(message.subtype)) {
-        const sessionId = current.sessionId ?? (message as { session_id?: string }).session_id
-        if (sessionId && SESSION_ID.test(sessionId)) {
-          try {
-            const turn = current.turn?.index ?? current.turnCounter
-            const offset = current.turn?.transcriptOffset ?? 0
-            const afterUuid = current.lastTranscriptUuid ?? (current.turn ? findTurnUserMessage(current.cwd, sessionId, offset, true) : undefined)
-            if (!afterUuid && turn > 0) (current.pendingTimeline ??= []).push({ sessionId, turn, offset, message })
-            else appendTimelineEvent(current.cwd, sessionId, { turn, afterUuid, message })
-          }
-          catch (error) { emit(current, { kind: "log", text: `Could not save activity: ${String(error)}` }) }
-        }
-      }
-      if (message.type === "system" && message.subtype === "init") current.sessionId = message.session_id
-      if (message.type === "control_request") current.waiting.set(message.request_id, waitKind(message.request))
-      if (message.type === "control_cancel_request") current.waiting.delete(message.request_id)
-      // The CLI answers a finished background task with a turn of its own; queued messages wait for it.
-      if (message.type === "assistant" && !message.parent_tool_use_id && (!current.turn || current.turn.finalizing)) { current.busy = true; cliTurns++ }
-      trackTurnResult(current, message)
-      emit(current, { kind: "agent", message })
-      if (message.type === "result" && !message.parent_tool_use_id) {
-        if (message.is_error && current.sessionId && current.turn && !current.turn.interrupted) {
-          try {
-            appendTurnResult(current.cwd, current.sessionId, { index: current.turn.index, userMessageId: findTurnUserMessage(current.cwd, current.sessionId, current.turn.transcriptOffset), durationMs: message.duration_ms, error: message.errors?.join("\n") || message.result || `Agent failed (${message.subtype})` })
-          } catch (error) { emit(current, { kind: "log", text: `Could not save turn result: ${String(error)}` }) }
-        }
-        current.turnSucceeded = !message.is_error
-        void finalizeTurnDiff(current)
-        // The CLI reports idle only after its background tasks end, so a turn that leaves one running settles here.
-        if (current.activeTasks.size) void turnSettled()
-      }
-      if (message.type === "system" && message.subtype === "session_state_changed" && message.state === "idle") void turnSettled()
-    }).catch((error) => emit(current, { kind: "log", text: String(error) }))
-    lines(proc.stderr, (text) => emit(current, { kind: "log", text })).catch(() => {})
-    proc.exited.then((code) => {
-      current.sessionAction?.release()
-      current.sessionAction = undefined
-      try { flushTimeline(current) } catch (error) { emit(current, { kind: "log", text: `Could not save activity: ${String(error)}` }) }
-      if (current.turn && current.sessionId && current.turnSucceeded === undefined && !current.turn.interrupted) {
-        try {
-          appendTurnResult(current.cwd, current.sessionId, {
-            index: current.turn.index,
-            userMessageId: findTurnUserMessage(current.cwd, current.sessionId, current.turn.transcriptOffset),
-            durationMs: Date.now() - current.turn.startedAt,
-            error: `Agent exited before completing this turn (code ${code}).`,
-          })
-        } catch (error) { emit(current, { kind: "log", text: `Could not save turn result: ${String(error)}` }) }
-      }
-      current.exited = true
-      current.busy = false
-      void finalizeTurnDiff(current)
-      if (!current.queue.length && runs.get(current.id) === current) runs.delete(current.id)
-      emit(current, { kind: "exit", code })
-    })
+    // A project's coordinator is named before its first message, so it starts under that id.
+    const fresh = ws.data.resume && runHooks.coordinator?.(ws.data.cwd, ws.data.resume) && !existsSync(transcriptPath(ws.data.cwd, ws.data.resume))
+    run = spawnRun(fresh ? { ...ws.data, resume: undefined, sessionId: ws.data.resume } : ws.data, root, run)
   }
   ws.data.run = run
   const current = run
@@ -799,12 +847,8 @@ export async function agentMessage(ws: ServerWebSocket<SocketData>, raw: string 
               .map((b) => b.text)
               .join(" ")
         ).slice(0, 80) || "Image task"
-    if (!run.busy) run.queuePaused = false
-    const queued = { id: crypto.randomUUID(), content, at: Date.now() }
-    run.queue.push(queued)
+    const queued = enqueue(run, content, message.delivery === "steer")
     if (message.delivery === "steer" && run.busy && run.turn && !run.turn.finalizing) steerQueued(run, queued.id)
-    else if (run.busy || run.waiting.size) emit(run, queueEnvelope(run))
-    else void startNext(run)
   } else if (message.type === "queue_remove") {
     run.queue = run.queue.filter((m) => m.id !== message.id)
     emit(run, queueEnvelope(run))
@@ -863,6 +907,41 @@ export async function agentMessage(ws: ServerWebSocket<SocketData>, raw: string 
     write(run, message)
   }
 }
+function enqueue(run: AgentRun, content: QueuedMessage["content"], steer = false): QueuedMessage {
+  if (!run.busy) run.queuePaused = false
+  const queued = { id: crypto.randomUUID(), content, at: Date.now() }
+  run.queue.push(queued)
+  if (steer && run.busy && run.turn && !run.turn.finalizing) return queued
+  if (run.busy || run.waiting.size) emit(run, queueEnvelope(run))
+  else void startNext(run)
+  return queued
+}
+function liveRun(sessionId: string): AgentRun | undefined {
+  return [...runs.values()].find((run) => run.sessionId === sessionId && !run.exited && !run.restarting)
+}
+// Sends a message to a task whether or not a window has it open, starting its CLI when none runs.
+export async function sendToSession(target: { cwd: string; sessionId: string; isNew?: boolean; mode?: string }, content: string, root: string): Promise<void> {
+  let run = liveRun(target.sessionId)
+  if (!run) {
+    if (!target.isNew && externalHolder(target.sessionId)) throw new Error("This task is open in another Noa process.")
+    const mode = target.mode && SPAWN_PERMISSION_MODES.has(target.mode) ? target.mode : undefined
+    run = spawnRun({ cwd: target.cwd, runtimeId: crypto.randomUUID(), mode, headless: true, ...(target.isNew ? { sessionId: target.sessionId } : { resume: target.sessionId }) }, root)
+  }
+  await run.historyReady
+  if (run.exited) throw new Error("The task's agent exited before it took the message.")
+  enqueue(run, content)
+}
+export function sessionMode(sessionId: string): string | undefined {
+  return liveRun(sessionId)?.mode ?? runModes.get(sessionId)
+}
+export function interruptSession(sessionId: string): boolean {
+  const run = liveRun(sessionId)
+  if (!run?.busy) return false
+  run.queuePaused = true
+  if (run.turn) run.turn.interrupted = true
+  emit(run, { kind: "interrupt" })
+  return write(run, { type: "control_request", request_id: crypto.randomUUID(), request: { subtype: "interrupt" } })
+}
 // Writes a queued message into the running turn instead of waiting for it to finish.
 function steerQueued(run: AgentRun, id: string) {
   const index = run.queue.findIndex((item) => item.id === id)
@@ -895,18 +974,22 @@ export function detachAgent(ws: ServerWebSocket<SocketData>) {
 export function listAgentRuns() {
   return [...runs.values()]
     .filter((r) => r.busy || r.queue.length || r.waiting.size || (r.sessionId && !r.exited))
-    .map((r) => ({
+    .map((r) => {
+      const coordinator = !!r.sessionId && !!runHooks.coordinator?.(r.cwd, r.sessionId)
+      return {
       runtimeId: r.id,
       cwd: r.cwd,
       sessionId: r.sessionId,
-      title: r.title,
+      title: coordinator ? "Coordinator" : r.title,
+      coordinator,
       busy: r.busy,
       waiting: r.waiting.size > 0,
       waitingKinds: [...new Set(r.waiting.values())],
       interrupted: r.turn?.interrupted === true,
       failed: r.turnSucceeded === false,
       queued: r.queue.length,
-    }))
+      }
+    })
 }
 // Stops the idle CLI process holding a task so its files can be deleted; false while the task is still working.
 export async function releaseSessionRuns(cwd: string, sessionId?: string, runtimeId?: string): Promise<boolean> {

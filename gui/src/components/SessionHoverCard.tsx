@@ -8,7 +8,7 @@ const CLOSE_DELAY_MS = 100
 const SIDE_OFFSET = 2
 const EDGE_PADDING = 8
 
-function ageLabel(updatedAt: number, now = Date.now()): string {
+export function ageLabel(updatedAt: number, now = Date.now()): string {
   const minutes = Math.max(0, Math.floor((now - updatedAt) / 60_000))
   if (minutes < 1) return "now"
   if (minutes < 60) return `${minutes}m`

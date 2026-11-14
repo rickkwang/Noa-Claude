@@ -6,8 +6,15 @@ export interface SessionSummary {
   updatedAt: number
   createdAt: number
   status?: "running" | "waiting" | "queued"
+  // One line on where the task stands, and the pull request the task opened.
+  summary?: string
+  progress?: string
+  error?: string
+  pr?: { number: number; url: string; repository: string; state?: "open" | "draft" | "merged" | "closed" }
   // Set when the session runs in one of the project's worktrees instead of the project folder.
   cwd?: string
+  // The project's coordinator chat, which runs the other sessions as threads.
+  coordinator?: boolean
 }
 
 export interface ProjectInfo {
@@ -136,6 +143,14 @@ export async function runSkillAction(action: "mode" | "read" | "reveal" | "unins
 
 export function query(cwd: string | undefined): string {
   return cwd ? `?cwd=${encodeURIComponent(cwd)}` : ""
+}
+
+// The project's coordinator chat, named on first use.
+export async function openCoordinator(cwd: string): Promise<string> {
+  const response = await fetch(`/api/coordinator${query(cwd)}`, { method: "POST" })
+  const body = (await response.json()) as { sessionId?: string; error?: string }
+  if (!response.ok || !body.sessionId) throw new Error(body.error ?? "Could not open the coordinator")
+  return body.sessionId
 }
 
 export async function deleteSession(cwd: string, id: string): Promise<void> {

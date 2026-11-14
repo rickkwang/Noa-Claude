@@ -13,6 +13,7 @@ import {
   revealProject,
   renameSession,
   deleteSession,
+  openCoordinator,
   type ProjectInfo,
 } from "./api"
 import { AddProjectDialog } from "./components/AddProjectDialog"
@@ -147,7 +148,7 @@ function Workspace({ cwd }: { cwd: string }) {
   const [rightTabs, setRightTabs] = useState<PanelTab[]>(() => {
     try {
       const saved = JSON.parse(localStorage.getItem("noa-agent.rightTabs") ?? "null")
-      return Array.isArray(saved) ? saved.filter((tab): tab is PanelTab => ["files", "changes", "subagents"].includes(tab)) : DEFAULT_RIGHT_TABS
+      return Array.isArray(saved) ? saved.filter((tab): tab is PanelTab => ["files", "changes", "subagents", "threads"].includes(tab)) : DEFAULT_RIGHT_TABS
     } catch { return DEFAULT_RIGHT_TABS }
   })
   useEffect(() => {
@@ -737,6 +738,7 @@ function Workspace({ cwd }: { cwd: string }) {
             }}
             onRemoveProject={removeProjectPath}
             onRevealProject={revealProject}
+            onOpenCoordinator={(path) => openCoordinator(path).then((id) => selectSession(path, id), (error) => confirm({ title: "Could not open the coordinator", description: (error as Error).message, confirmLabel: "OK", cancelLabel: "Close" }))}
             onDeleteSession={removeSession}
             onSearch={() => setSearchOpen(true)}
             onSettings={() => setSettingsOpen(true)}
@@ -821,6 +823,9 @@ function Workspace({ cwd }: { cwd: string }) {
             focusFile={focusFile}
             focusTask={focusTask}
             turnDiff={turnDiff}
+            sessions={sessionsByProject[worktreeOf ?? session.cwd] ?? []}
+            activeSessionId={activeId}
+            onSelectSession={(id) => selectSession(sessionsByProject[worktreeOf ?? session.cwd]?.find((s) => s.id === id)?.cwd ?? worktreeOf ?? session.cwd, id)}
           />
         </div>
       </div>

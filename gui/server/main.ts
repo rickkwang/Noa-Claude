@@ -9,9 +9,11 @@ import { listPlugins, pluginAction } from "./plugins"
 import { skillAction, skillsState } from "./skills"
 import { statsSummary } from "./stats"
 import { attachAgent, agentMessage, detachAgent, externalHolder, listAgentRuns, releaseSessionRuns, SPAWN_PERMISSION_MODES, type SocketData } from "./agents"
+import { coordinatorSession, ensureCoordinator, initCoordinator } from "./coordinator"
 import { attachTerminal, detachTerminal, TERMINAL_ID, terminalMessage, terminalSize, type TerminalSocketData } from "./terminal"
 
 const REPO_ROOT = resolve(import.meta.dir, "../..")
+initCoordinator(REPO_ROOT)
 const DIST_DIR = resolve(import.meta.dir, "../dist")
 const PORT = Number(process.env.NOA_GUI_PORT ?? 8787)
 
@@ -126,8 +128,17 @@ cwdRoutes["/api/sessions"] = {
   async handler({ cwd }) {
     // Sessions started in the project's worktrees are listed with it, tagged with the folder they run in.
     const worktrees = await projectWorktrees(cwd)
-    return json([...listSessions(cwd), ...worktrees.flatMap((path) => listSessions(path).map((session) => ({ ...session, cwd: path })))]
+    const coordinator = coordinatorSession(cwd)
+    return json([...listSessions(cwd).map((session) => session.id === coordinator ? { ...session, title: "Coordinator", coordinator: true } : session), ...worktrees.flatMap((path) => listSessions(path).map((session) => ({ ...session, cwd: path })))]
       .sort((a, b) => b.updatedAt - a.updatedAt))
+  },
+}
+
+cwdRoutes["/api/coordinator"] = {
+  methods: ["POST"],
+  handler({ cwd }) {
+    if (isManagedWorktree(cwd)) return json({ error: "Open the coordinator from the project, not from a worktree" }, 400)
+    return json({ sessionId: ensureCoordinator(cwd) })
   },
 }
 
