@@ -17,7 +17,6 @@ import {
 } from '../../constants/systemPromptCoreSections.js'
 import {
   hasFableMitigations,
-  MATCH_SURROUNDING_CODE_SECTION,
   TURN_UPDATES_SECTION,
 } from '../../constants/systemPromptCompact.js'
 import { getIsInteractive, setIsInteractive } from '../../bootstrap/state.js'
@@ -126,24 +125,20 @@ describe('sections that ship alongside the compact head', () => {
     }
   })
 
-  // Under the compact head this sentence is the only style guidance there is —
-  // the verbose "# Tone and style" section goes away with the long head.
-  test('the coding-style line replaces tone-and-style under the compact head', () => {
-    expect(resolve(LEAN_MODEL, 'anti_verbosity:L')).toBe(
-      MATCH_SURROUNDING_CODE_SECTION,
-    )
+  // Upstream emits nothing here under the compact head.
+  test('the compact head carries no anti-verbosity section', () => {
+    expect(resolve(LEAN_MODEL, 'anti_verbosity:L')).toBeNull()
     expect(resolve(VERBOSE_MODEL, 'anti_verbosity')).toContain(
       'End-of-turn summary: one or two sentences.',
     )
   })
 
-  // Fable/Mythos take upstream's long branch instead, which restates the
-  // one-liner as its second-to-last paragraph.
+  // Fable/Mythos take upstream's long branch instead.
   test('fable-mitigation models take the long branch', () => {
     for (const model of ['claude-fable-5', 'claude-mythos-5']) {
       const section = resolve(model, 'anti_verbosity:fable')
       expect(section).toStartWith('# Communicating with the user\n')
-      expect(section).toContain(MATCH_SURROUNDING_CODE_SECTION)
+      expect(section).toContain('Only write a code comment to state a constraint')
       expect(sectionNames(model)).not.toContain('anti_verbosity:L')
     }
   })

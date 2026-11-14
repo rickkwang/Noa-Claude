@@ -43,7 +43,6 @@ import {
 } from '../../constants/systemPromptCoreSections.js'
 import {
   getAntiVerbositySection,
-  MATCH_SURROUNDING_CODE_SECTION,
   SECURITY_POLICY,
   HAIKU_55_EARLY_STOPPING_SECTION,
   TURN_UPDATES_SECTION,
@@ -141,7 +140,6 @@ export function buildPortedSubjects(): Record<string, string> {
     PRONOUNS_SECTION,
     ACT_DONT_REDERIVE_SECTION,
     CONTEXT_MANAGEMENT_SECTION,
-    MATCH_SURROUNDING_CODE_SECTION,
     'anti_verbosity fable branch': getAntiVerbositySection(
       UNBUNDLED_MODEL,
     ) as string,
@@ -228,8 +226,7 @@ export const PORTED_DIGESTS: Record<string, string> = {
   PRONOUNS_SECTION: '3fcd2b200896a716',
   ACT_DONT_REDERIVE_SECTION: '4e4e48fb23ceb764',
   CONTEXT_MANAGEMENT_SECTION: '9856a95edb9c2bdb',
-  MATCH_SURROUNDING_CODE_SECTION: 'ee43af37398581e9',
-  'anti_verbosity fable branch': '1ffd574f62004f0b',
+  'anti_verbosity fable branch': '5ed4cea73ffcf6d5',
   // The branch checked ahead of the fable one; Fable 5.1 / Mythos 5.1 get this
   // instead of the long section.
   TURN_UPDATES_SECTION: 'f73794d3e72b5616',

@@ -1,4 +1,4 @@
-import { isAgentSpawnRestricted } from '../../utils/auth.js'
+import { isAgentSpawnRestricted, isProSubscriber } from '../../utils/auth.js'
 import { getSubagentSteer } from '../../utils/subagentSteer.js'
 import { getFeatureValue_CACHED_MAY_BE_STALE } from '../../services/analytics/growthbook.js'
 import { hasEmbeddedSearchTools } from '../../utils/embeddedTools.js'
@@ -106,7 +106,7 @@ user: "What's left on this branch before we can ship?"
 assistant: <thinking>A survey question across git state, tests, and config. I'll delegate it and ask for a short report so the raw command output stays out of my context.</thinking>
 ${AGENT_TOOL_NAME}({
   description: "Branch ship-readiness audit",
-  prompt: "Audit what's left before this branch can ship. Check: uncommitted changes, commits ahead of main, whether tests exist, whether the GrowthBook gate is wired up, whether CI-relevant files changed. Report a punch list — done vs. missing. Under 200 words."
+  prompt: "Audit what's left before this branch can ship. Check: uncommitted changes, commits ahead of main, whether tests exist, whether the feature flag is wired up, whether CI-relevant files changed. Report a punch list — done vs. missing. Under 200 words."
 })
 <commentary>
 The prompt is self-contained: it states the goal, lists what to check, and caps the response length. The agent's report comes back as the tool result; relay the findings to the user.
@@ -170,13 +170,16 @@ When using the ${AGENT_TOOL_NAME} tool, specify a subagent_type parameter to sel
   // between a long and a short variant on a steering-mode flag we don't have;
   // the long variant is the one its default mode emits.
   //
-  // The spawn restriction shows only on the pro plan, in both variants; the
-  // lean one then drops its When-to-use section, as upstream does.
+  // The spawn restriction shows on the pro plan and for third-party providers,
+  // in both variants; the lean one then drops its When-to-use section, as
+  // upstream does. "on this plan" is upstream's wording for the pro plan and
+  // means nothing to a third-party provider's user.
+  const planClause = isProSubscriber() ? ' on this plan' : ''
   const doNotSpawnNote =
     isAgentSpawnRestricted()
       ? `
 
-**Do not spawn agents unless the user asks.** Each spawn starts cold and re-derives context you already have — it's the expensive path on this plan. A task with "multiple angles," "thorough," or several parts is not a request to spawn; handle it inline with your own tools. Only use this tool when the user explicitly says to use a subagent, or names one of the available agent types.`
+**Do not spawn agents unless the user asks.** Each spawn starts cold and re-derives context you already have — it's the expensive path${planClause}. A task with "multiple angles," "thorough," or several parts is not a request to spawn; handle it inline with your own tools. Only use this tool when the user explicitly says to use a subagent, or names one of the available agent types.`
       : ''
 
   if (lean) {

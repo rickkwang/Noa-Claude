@@ -171,8 +171,8 @@ export function buildDynamicSystemPromptSections(params: {
   // model, so the lean bit is the whole key.
   const actionCautionName = lean ? 'action_caution:L' : 'action_caution'
 
-  // Upstream's first dynamic section, ahead of the pronoun guidance. Three
-  // possible texts (the Fable branch, the lean one-liner, nothing), so the key
+  // Upstream's first dynamic section, ahead of the pronoun guidance. Several
+  // possible texts (the Fable branches, the verbose one, nothing), so the key
   // names the branch rather than carrying a single lean bit.
   const antiVerbosity = getAntiVerbositySection(model)
   const subagentSteer = getSubagentSteer(model)

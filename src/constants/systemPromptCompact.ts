@@ -409,20 +409,6 @@ export function hasOpus5PromptBundle(model: string | undefined): boolean {
 }
 
 /**
- * Ported verbatim from the lean branch of upstream's `anti_verbosity` section,
- * which collapses a multi-paragraph tone-and-style section into one sentence.
- *
- * Under the compact head this is the only style guidance the agent gets: the
- * verbose head's "# Tone and style" section is dropped with the rest of the long
- * head, and upstream substitutes this in its place.
- *
- * Lives here rather than beside the other ported sections because those are
- * reached from the tool prompt modules, which import this file — routing a
- * lean-only string through them closes an import cycle.
- */
-export const MATCH_SURROUNDING_CODE_SECTION = `Write code that reads like the surrounding code: match its comment density, naming, and idiom.`
-
-/**
  * Whether the model takes upstream's `fable_5_mitigations` branch of
  * `anti_verbosity`. Upstream reads the capability from its model manifest and
  * additionally special-cases Mythos 5 by name; the capability matrix carries
@@ -562,8 +548,7 @@ function hasMidTurnUserChannel(): boolean {
 
 /**
  * Ported verbatim from the `fable_5_mitigations` branch of upstream's
- * `anti_verbosity` section. It supersedes the lean one-liner rather than
- * adding to it. Punctuation and wording are upstream's; do not tidy them
+ * `anti_verbosity` section. Punctuation and wording are upstream's; do not tidy them
  * (em dashes, "PR" vs "change") without re-checking the binary.
  */
 function getCommunicatingWithUserSection(): string {
@@ -574,9 +559,7 @@ function getCommunicatingWithUserSection(): string {
     : `Your text output is what the user reads between tool calls; they usually can't see your thinking or the raw tool results.`
 
   // Upstream separates every paragraph here with a blank line, including the
-  // one this conditional opens with — the only single newline in the section is
-  // the one before the code-comment sentence, which upstream keeps welded to
-  // MATCH_SURROUNDING_CODE_SECTION as a single code-style paragraph.
+  // one this conditional opens with.
   const finalMessageWarning = midTurnTextIsUnreliable
     ? `\n\nText you write between tool calls may not be shown to the user. Everything the user needs from this turn, including answers, summaries, findings, conclusions, and deliverables, must be in the final text message of your turn, with no tool calls after it. Keep text between tool calls to brief status notes. If something important appeared only mid-turn or in your thinking, restate it in that final message.`
     : ''
@@ -591,14 +574,13 @@ Being readable and being concise are different things, and readable matters more
 
 Match the response to the question: a simple question gets a direct answer in prose, not headers and sections. Use tables only for short enumerable facts, with explanations in the surrounding prose rather than the cells. Calibrate to the user: a bit tighter for an expert, more explanatory for someone newer.
 
-${MATCH_SURROUNDING_CODE_SECTION}
 Only write a code comment to state a constraint the code itself can't show, never to say where it came from, what the next line does, or why your change is correct; that's you talking to the reviewer, not the next reader, and it's noise the moment the change merges.`
 }
 
 /**
  * Upstream's `anti_verbosity` section has three branches, checked in this order:
  * the long "Communicating with the user" one for `fable_5_mitigations` models,
- * the one-sentence lean branch, and a long "# Text output" one for everything
+ * nothing under the lean prompt, and a long "# Text output" one for everything
  * else.
  *
  * Upstream also forces the first branch on for any model via an env/settings
@@ -623,7 +605,7 @@ export function getAntiVerbositySection(model: string | undefined): string | nul
   // capabilities (Fable 5.1, Mythos 5.1) the short form supersedes the long one.
   if (hasFable51PromptBundle(model)) return TURN_UPDATES_SECTION
   if (hasFableMitigations(model)) return getCommunicatingWithUserSection()
-  if (shouldUseCompactSystemPrompt(model)) return MATCH_SURROUNDING_CODE_SECTION
+  if (shouldUseCompactSystemPrompt(model)) return null
   return VERBOSE_TEXT_OUTPUT_SECTION
 }
 
@@ -654,9 +636,9 @@ export function getActionCautionSection(model: string | undefined): string | nul
  * A grep for the constant's name misses the template-literal interpolations in
  * the minified source, so a "declared but never referenced" reading is false.
  *
- * Lives here rather than beside the other verbose sections for the same reason
- * MATCH_SURROUNDING_CODE_SECTION does: the tool prompt modules import this file,
- * and systemPromptCoreSections.ts imports them, so this file has to stay a leaf.
+ * Lives here rather than beside the other verbose sections because the tool
+ * prompt modules import this file, and systemPromptCoreSections.ts imports them,
+ * so this file has to stay a leaf.
  */
 export const SECURITY_POLICY = `IMPORTANT: Assist with authorized security testing, defensive security, CTF challenges, and educational contexts. Refuse requests for destructive techniques, DoS attacks, mass targeting, supply chain compromise, or detection evasion for malicious purposes. Dual-use security tools (C2 frameworks, credential testing, exploit development) require clear authorization context: pentesting engagements, CTF competitions, security research, or defensive use cases.`
 
