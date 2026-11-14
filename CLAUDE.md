@@ -11,6 +11,7 @@
 ## Testing
 
 - Verify behavior with E2E tests, not new unit tests (unit tests here tend to restate implementation). End each E2E run with a reproducible artifact: exact command, revision, inputs, observed output, exit status.
+- Probe and E2E sessions that exercise harness behavior (tool calls, subagents, Monitor, compaction) run with `--model claude-haiku-5-5`; use a larger model only when the probe tests that model's own behavior.
 - Exception: a system testable only in isolation — first list every way it could fail, then write the test.
 - Assemble credential-shaped fixtures at runtime (`['xoxb', '123…', 'abc…'].join('-')`): GitHub push protection rejects any history containing a real-token-shaped literal, even an obviously fake one.
 

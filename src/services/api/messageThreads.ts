@@ -9,9 +9,7 @@ const THREAD_BETA = 'message-threads-2026-08-12'
 // Beta blocks the SDK types do not carry yet; upstream emits them for late tool loading.
 const TOOL_CHANGE_BLOCKS = new Set<string>(['tool_addition', 'tool_removal'])
 type WireMessage = BetaMessageStreamParams['messages'][number]
-type ThreadParams = BetaMessageStreamParams & {
-  thread?: { type: 'create' } | { type: 'continue'; previous_message_id: string }
-}
+type ThreadParams = BetaMessageStreamParams
 type ThreadState = { fingerprint: string; history: string[]; messageId: string }
 type ThreadOutcome = 'not_found' | 'fingerprint_mismatch' | 'already_continued' | 'unsupported_request' | 'other_thread_400'
 const threads = new Map<string, ThreadState>()
