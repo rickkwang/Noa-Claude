@@ -25,6 +25,23 @@ import type { ProjectInfo } from "../api"
 import type { AgentState } from "../agent/reducer"
 import type { AppSettings } from "../types"
 
+const NEW_TASK_PLACEHOLDERS = [
+  "A blank page, a quiet cursor.",
+  "What are we conjuring today?",
+  "Noa is listening.",
+  "Got a half-baked idea?",
+  "Do anything.",
+  "Fresh branch, clean slate.",
+]
+
+const REPLY_PLACEHOLDERS = [
+  "Work with Noa",
+  "Where to next?",
+  "Your move.",
+  "Keep the thread going.",
+  "Still here, still listening.",
+]
+
 const MODE_OPTIONS: { value: PermissionMode; label: string; description: string }[] = [
   { value: "auto", label: "Auto", description: "Noa handles permission decisions" },
   { value: "default", label: "Manual", description: "Always ask before making changes" },
@@ -504,11 +521,15 @@ export const Composer = memo(function Composer({
   }, [menuOpen])
 
   // Grow the textarea with its content, up to the CSS max-height.
+  const [multiline, setMultiline] = useState(false)
   useEffect(() => {
     const el = textareaRef.current
     if (!el) return
     el.style.height = "auto"
-    el.style.height = `${el.scrollHeight}px`
+    const h = el.scrollHeight
+    el.style.height = `${h}px`
+    const lineHeight = parseFloat(getComputedStyle(el).lineHeight) || 20
+    setMultiline(h > lineHeight * 1.6 + 20)
   }, [text])
 
   // Typing never waits for the CLI to start; a send made while it is still connecting
@@ -696,6 +717,11 @@ export const Composer = memo(function Composer({
     heading: i === 0 ? "Select model" : undefined,
   }))
 
+  const idlePlaceholder = useMemo(() => {
+    const pool = newTask ? NEW_TASK_PLACEHOLDERS : REPLY_PLACEHOLDERS
+    return pool[Math.floor(Math.random() * pool.length)]!
+  }, [newTask])
+
   return (
     <div ref={composerRef} data-new-task={newTask || undefined} className="noa-agent-composer relative">
       {!newTask && rateLimit && onDismissRateLimit && (
@@ -848,7 +874,7 @@ export const Composer = memo(function Composer({
           </div>
         )}
         <div className="relative flex items-end">
-          <div className="absolute bottom-1.5 left-2 z-10">
+          <div className={`absolute left-2 z-10 ${multiline ? "bottom-2" : "top-1/2 -translate-y-1/2"}`}>
             <Picker
             align="left"
             hideChevron
@@ -927,11 +953,11 @@ export const Composer = memo(function Composer({
               aria-activedescendant={mentionOpen && mentionItems[mentionIndex] ? `noa-file-option-${mentionIndex}` : menuOpen && menuItems[menuIndex] ? `noa-slash-option-${menuIndex}` : undefined}
               onCompositionStart={() => setComposing(true)}
               onCompositionEnd={() => { setComposing(false); compositionEndAt.current = performance.now() }}
-              placeholder={readOnly ? "Running in a terminal" : connection === "closed" ? "Noa disconnected" : disabled ? "Starting Noa…" : busy ? followUpMode === "steer" ? "Add a follow-up…" : "Add a follow-up to the queue…" : newTask ? "Do anything" : "Work with Noa"}
+              placeholder={readOnly ? "Running in a terminal" : connection === "closed" ? "Noa disconnected" : disabled ? "Starting Noa…" : busy ? followUpMode === "steer" ? "Add a follow-up…" : "Add a follow-up to the queue…" : idlePlaceholder}
               aria-label="Task instruction"
               disabled={!!readOnly && disabled}
               rows={1}
-              className={`noa-scroll-fade w-full min-h-[40px] max-h-[min(25dvh,var(--composer-editor-max-height,25dvh))] resize-none border-none bg-transparent pl-[42px] pr-[42px] py-2.5 text-[length:var(--transcript-text-size,var(--text-body))] leading-[1.45] outline-none placeholder:text-[color-mix(in_srgb,var(--text-primary)_50%,transparent)] ${systemCaret ? "" : "caret-transparent"}`}
+              className={`noa-scroll-fade w-full min-h-[40px] max-h-[min(25dvh,var(--composer-editor-max-height,25dvh))] resize-none border-none bg-transparent pl-[42px] pr-[42px] pt-[12px] pb-[8px] text-[length:var(--transcript-text-size,var(--text-body))] leading-[1.45] outline-none placeholder:text-[color-mix(in_srgb,var(--text-primary)_50%,transparent)] ${systemCaret ? "" : "caret-transparent"}`}
             />
             {!systemCaret && <ComposerCaret textareaRef={textareaRef} value={text} disabled={!!readOnly && disabled} />}
           </div>
@@ -942,7 +968,7 @@ export const Composer = memo(function Composer({
             aria-label={editDraft?.queued ? "Save queued message" : busy && empty ? "Stop (Esc)" : busy ? followUpMode === "steer" ? "Steer" : "Queue message" : "Run task"}
             title={editDraft?.queued ? "Save queued message; queue stays paused" : busy && empty ? "Stop (Esc)" : busy ? followUpMode === "steer" ? "Submit without interrupting the model" : "Queue after the current turn" : "Run task"}
             data-action={busy && empty ? "stop" : busy ? followUpMode : "send"}
-            className={`noa-primary-action absolute bottom-1.5 right-2 z-10 flex size-7 shrink-0 items-center justify-center rounded-[7px] transition-[background-color,color,opacity,transform] noa-press ${
+            className={`noa-primary-action absolute right-2 z-10 flex size-7 shrink-0 items-center justify-center rounded-[7px] transition-[background-color,color,opacity,transform] noa-press ${multiline ? "bottom-2" : "top-1/2 -translate-y-1/2"} ${
               busy && !editDraft?.queued
                 ? "bg-[var(--text-primary,#2D2D2B)] text-[var(--surface-page,#FFFFFF)] hover:opacity-90 disabled:opacity-50"
                 : "bg-transparent text-[var(--sidebar-text,#52514E)] hover:bg-[var(--fill-hover)] disabled:opacity-60"
