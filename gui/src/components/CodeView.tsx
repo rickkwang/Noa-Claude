@@ -1,10 +1,15 @@
-import { useEffect, useMemo, useRef, useState } from "react"
+import { memo, useEffect, useMemo, useRef, useState } from "react"
 import hljs from "highlight.js/lib/common"
 import { parsePatch, diffWordsWithSpace } from "diff"
 import { hideWhitespaceChanges } from "../lib/diffWhitespace"
 import { ChevronDown, ChevronUp, ChevronsUpDown } from "../lib/icons"
 
 const languages: Record<string, string> = { ts: "typescript", tsx: "typescript", js: "javascript", jsx: "javascript", mjs: "javascript", cjs: "javascript", py: "python", sh: "bash", zsh: "bash", json: "json", css: "css", html: "xml", svg: "xml", xml: "xml", md: "markdown", yml: "yaml", yaml: "yaml", rs: "rust", go: "go", java: "java", c: "c", h: "c", cpp: "cpp", sql: "sql", swift: "swift" }
+
+// A fresh innerHTML object makes React re-parse the line on every render; memo skips unchanged lines.
+const CodeHtml = memo(function CodeHtml({ html }: { html: string }) {
+  return <code dangerouslySetInnerHTML={{ __html: html }} />
+})
 
 // Keep multiline token spans balanced when each source line becomes its own grid row.
 function highlightedLines(content: string, path: string): string[] {
@@ -228,7 +233,7 @@ export default function CodeView({ path, content, diff = false, split = false, w
     <div className={`noa-code-line ${line ? `is-${line.kind}` : "is-empty"}`}>
       <span className="noa-code-number">{side === "old" || !side && line?.kind === "remove" ? line?.old : line?.next}</span>
       <span className="noa-code-sign" aria-hidden="true">{line?.kind === "add" ? "+" : line?.kind === "remove" ? "−" : ""}</span>
-      <code dangerouslySetInnerHTML={{ __html: line?.html || " " }} />
+      <CodeHtml html={line?.html || " "} />
     </div>
   )
   return (
@@ -248,7 +253,7 @@ export default function CodeView({ path, content, diff = false, split = false, w
         <button type="button" className="noa-panel-button" aria-label="Close go to line bar" onMouseDown={(event) => event.preventDefault()} onClick={closeGoto}>×</button>
       </div>}
       {content.split("\n").length > 3000 && <p className="noa-panel-notice">Large file: showing up to 3,000 lines. Open the file in your editor to read the remaining lines.</p>}
-      {!diff ? source.map((html, i) => <div className="noa-source-line" data-reference-line={referenceLine && i + 1 >= referenceLine && i + 1 <= (referenceEnd ?? referenceLine) ? "true" : undefined} key={i}><span className="noa-code-number">{i + 1}</span><code dangerouslySetInnerHTML={{ __html: html || " " }} /></div>)
+      {!diff ? source.map((html, i) => <div className="noa-source-line" data-reference-line={referenceLine && i + 1 >= referenceLine && i + 1 <= (referenceEnd ?? referenceLine) ? "true" : undefined} key={i}><span className="noa-code-number">{i + 1}</span><CodeHtml html={html || " "} /></div>)
         : hunks.length ? <>{hunks.map((hunk) => <section key={hunk.index} className="noa-diff-hunk">{(hunk.hidden > 0 || (hunkScope && hunk.complete)) && <div className="noa-diff-hunk-header">{hunk.hidden > 0 && <span className="noa-hunk-expand">{!hunk.hasAbove || hunk.hidden <= SMALL_GAP ? <button type="button" aria-label="Show unmodified lines" title="Show unmodified lines" onClick={() => expand(hunk, hunk.hidden <= SMALL_GAP ? "all" : "up")}><ChevronsUpDown size={16} /></button> : <><button type="button" aria-label="Show more lines below" title="Show more lines below" onClick={() => expand(hunk, "down")}><ChevronDown size={14} /></button><button type="button" aria-label="Show more lines above" title="Show more lines above" onClick={() => expand(hunk, "up")}><ChevronUp size={14} /></button></>}</span>}<span className="noa-hunk-label">{hunk.hidden > 0 ? `${hunk.hidden} unmodified line${hunk.hidden === 1 ? "" : "s"}` : ""}</span>{hunkScope && hunk.complete && <span className="noa-hunk-actions"><button type="button" className="noa-panel-button" aria-label={`${hunkScope === "staged" ? "Unstage" : "Stage"} hunk ${hunk.index + 1}`} onClick={() => onHunkAction?.(hunkScope === "staged" ? "unstage-hunk" : "stage-hunk", hunk.index)}>{hunkScope === "staged" ? "Unstage hunk" : "Stage hunk"}</button><button type="button" className="noa-panel-button" aria-label={`Revert hunk ${hunk.index + 1}`} onClick={() => onHunkAction?.("revert-hunk", hunk.index)}>Revert hunk</button></span>}</div>}{split && !wrap ? <div className="noa-diff-sides">{(["old", "next"] as const).map((side) => <div className="noa-diff-side" key={side}><div>{hunk.pairs.map((pair, j) => <div key={j}>{cell(pair[side === "old" ? 0 : 1], side)}</div>)}</div></div>)}</div> : split ? hunk.pairs.map(([old, next], j) => <div className="noa-diff-pair" key={j}>{cell(old, "old")}{cell(next, "next")}</div>) : hunk.lines.map((line, j) => <div key={j}>{cell(line)}</div>)}</section>)}{tail && tail.hidden > 0 && <section className="noa-diff-hunk"><div className="noa-diff-hunk-header"><span className="noa-hunk-expand"><button type="button" aria-label="Show more lines below" title="Show more lines below" onClick={() => expand({ index: TAIL, hidden: tail.hidden }, tail.hidden <= SMALL_GAP ? "all" : "down")}>{tail.hidden <= SMALL_GAP ? <ChevronsUpDown size={16} /> : <ChevronDown size={14} />}</button></span><span className="noa-hunk-label">{tail.hidden} unmodified line{tail.hidden === 1 ? "" : "s"}</span></div></section>}</>
         : <p className="noa-panel-empty">{whitespaceOnly ? "Whitespace only" : content.includes("Binary") ? "Binary file changed" : content ? "File mode, rename or other metadata change. No text hunks." : "No changes in this view"}</p>}
     </div>

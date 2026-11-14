@@ -43,8 +43,9 @@ export function MathText({ text, display, pending = false }: { text: string; dis
     try { return katex.renderToString(text, { displayMode: display, throwOnError: pending, trust: false, maxExpand: 1000, maxSize: 20 }) }
     catch { return "" }
   }, [text, display, pending])
+  const markup = useMemo(() => ({ __html: html }), [html])
   const Tag = display ? "div" : "span"
-  return <Tag className={display ? "my-4 overflow-x-auto" : undefined} dangerouslySetInnerHTML={{ __html: html }} />
+  return <Tag className={display ? "my-4 overflow-x-auto" : undefined} dangerouslySetInnerHTML={markup} />
 }
 
 export function Diagram({ code }: { code: string }) {
@@ -56,6 +57,7 @@ export function Diagram({ code }: { code: string }) {
     return () => observer.disconnect()
   }, [])
   const [svg, setSvg] = useState("")
+  const svgMarkup = useMemo(() => ({ __html: svg }), [svg])
   const [error, setError] = useState<string>()
   const [source, setSource] = useState(false)
   const [expanded, setExpanded] = useState(false)
@@ -75,8 +77,8 @@ export function Diagram({ code }: { code: string }) {
   return <div className="not-prose my-4 overflow-hidden rounded-xl border border-[var(--border-default)]">
     <div data-copy-exclude className="flex flex-wrap items-center gap-3 border-b border-[var(--divider-subtle)] px-4 py-2 text-caption"><span className="flex-1">Mermaid</span><button type="button" onClick={async () => { try { await navigator.clipboard.writeText(code); setCopyError(false); setCopied(true); setTimeout(() => setCopied(false), 2000) } catch { setCopyError(true) } }}>{copied ? "Copied" : "Copy source"}</button><button type="button" disabled={!svg} onClick={() => { const url = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" })); const link = document.createElement("a"); link.href = url; link.download = "diagram.svg"; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000) }}>Save SVG</button><button type="button" onClick={() => setSource(value => !value)}>{source ? "Diagram" : "Source"}</button><button type="button" disabled={!svg} onClick={() => setExpanded(true)}>Expand diagram</button></div>
     {copyError && <p role="status" className="px-4 text-caption">Could not copy diagram source.</p>}
-    {source || error ? <><pre className="noa-selectable overflow-auto p-4 text-[length:var(--code-font-size)]">{code}</pre>{error && <p role="status" className="px-4 pb-3 text-caption text-[var(--text-secondary)]">Diagram unavailable: {error}</p>}</> : svg ? <div className="noa-diagram overflow-auto p-4" dangerouslySetInnerHTML={{ __html: svg }} /> : <p role="status" className="p-4 text-caption">Rendering diagram…</p>}
-    {expanded && <PreviewDialog title="Diagram preview" onClose={() => setExpanded(false)}><div className="noa-diagram" dangerouslySetInnerHTML={{ __html: svg }} /></PreviewDialog>}
+    {source || error ? <><pre className="noa-selectable overflow-auto p-4 text-[length:var(--code-font-size)]">{code}</pre>{error && <p role="status" className="px-4 pb-3 text-caption text-[var(--text-secondary)]">Diagram unavailable: {error}</p>}</> : svg ? <div className="noa-diagram overflow-auto p-4" dangerouslySetInnerHTML={svgMarkup} /> : <p role="status" className="p-4 text-caption">Rendering diagram…</p>}
+    {expanded && <PreviewDialog title="Diagram preview" onClose={() => setExpanded(false)}><div className="noa-diagram" dangerouslySetInnerHTML={svgMarkup} /></PreviewDialog>}
   </div>
 }
 

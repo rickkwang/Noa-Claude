@@ -1,3 +1,4 @@
+import { useMemo } from "react"
 import { codexIcons, type CodexIconName } from "../lib/codexIcons"
 
 export function CodexIcon({ name, size = 16, className, ...rest }: {
@@ -7,6 +8,8 @@ export function CodexIcon({ name, size = 16, className, ...rest }: {
   "aria-hidden"?: boolean
 }) {
   const icon = codexIcons[name]
+  // A fresh object each render makes React re-parse the markup.
+  const html = useMemo(() => ({ __html: icon.body }), [icon])
   return (
     <svg
       width={size}
@@ -15,7 +18,7 @@ export function CodexIcon({ name, size = 16, className, ...rest }: {
       fill="none"
       className={className}
       aria-hidden={rest["aria-hidden"] ?? true}
-      dangerouslySetInnerHTML={{ __html: icon.body }}
+      dangerouslySetInnerHTML={html}
     />
   )
 }

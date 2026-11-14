@@ -644,17 +644,17 @@ function Workspace({ cwd }: { cwd: string }) {
   // Measure the chat column itself: window-size state lags a live resize and the sidebar animates, so a
   // computed width can dock the overview while the real column is too narrow to hold it.
   const chatColumnRef = useRef<HTMLDivElement>(null)
-  const [measuredChatWidth, setMeasuredChatWidth] = useState<number>()
+  // Only the docking threshold is kept, so a live resize that stays on one side of it does not re-render the app.
+  const [measuredChatWide, setMeasuredChatWide] = useState<boolean>()
   const [chatHeight, setChatHeight] = useState(window.innerHeight)
   useEffect(() => {
     const el = chatColumnRef.current
     if (!el) return
-    const observer = new ResizeObserver(() => { setMeasuredChatWidth(el.offsetWidth); setChatHeight(el.offsetHeight) })
+    const observer = new ResizeObserver(() => { setMeasuredChatWide(el.offsetWidth >= 611); setChatHeight(el.offsetHeight) })
     observer.observe(el)
     return () => observer.disconnect()
   }, [])
-  const chatWidth = measuredChatWidth ?? workspaceWidth - rightWidth
-  const overviewDocked = !rightOpen && chatWidth >= 611
+  const overviewDocked = !rightOpen && (measuredChatWide ?? workspaceWidth - rightWidth >= 611)
   const overviewDockedVisible = overviewShown && overviewDocked
   const overviewPopoverOpen = overviewPopover === session.key && !overviewDockedVisible
   const overviewVisible = overviewDockedVisible || overviewPopoverOpen

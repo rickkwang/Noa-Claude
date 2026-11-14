@@ -10,6 +10,8 @@ type IconProps = { size?: number; className?: string; style?: CSSProperties };
 // Codex icons carry their own viewBox; the size defaults to 16px to match the glyphs.
 function codex(name: CodexIconName) {
   const { viewBox, body } = codexIcons[name];
+  // React re-parses innerHTML whenever this object's identity changes, so build it once per icon.
+  const html = { __html: body };
   return function CodexGlyph({ size = 16, className, style }: IconProps) {
     return (
       <svg
@@ -21,7 +23,7 @@ function codex(name: CodexIconName) {
         className={className}
         style={style}
         aria-hidden="true"
-        dangerouslySetInnerHTML={{ __html: body }}
+        dangerouslySetInnerHTML={html}
       />
     );
   };
@@ -29,7 +31,7 @@ function codex(name: CodexIconName) {
 
 // Glyphs are filled 16px artwork, so stroke props don't apply.
 function glyph(name: string, mirrored = false) {
-  const body = GLYPHS[name]!;
+  const html = { __html: GLYPHS[name]! };
   return function GlyphIcon({ size = 16, className, style }: IconProps) {
     return (
       <svg
@@ -41,7 +43,7 @@ function glyph(name: string, mirrored = false) {
         className={className}
         style={mirrored ? { transform: "scaleX(-1)", ...style } : style}
         aria-hidden="true"
-        dangerouslySetInnerHTML={{ __html: body }}
+        dangerouslySetInnerHTML={html}
       />
     );
   };

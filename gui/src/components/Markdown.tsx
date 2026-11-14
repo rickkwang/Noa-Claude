@@ -351,6 +351,8 @@ export function CodeBlock({ lang, code, complete = true, title }: { lang: string
     if (complete && name && hljs.getLanguage(name) && code.length <= MAX_HIGHLIGHT_SIZE && !code.split("\n").some(line => line.length > MAX_HIGHLIGHT_LINE)) return hljs.highlight(code, { language: name, ignoreIllegals: true }).value
     return code.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
   }, [code, lang, complete])
+  // A fresh object each render makes React re-parse the block and drop any selection inside it.
+  const html = useMemo(() => ({ __html: highlighted }), [highlighted])
 
   async function copy() {
     try {
@@ -375,7 +377,7 @@ export function CodeBlock({ lang, code, complete = true, title }: { lang: string
         </button>}
       </div>
       {copyError && <span role="status" className="px-5 text-caption text-[#C24444]">Could not copy. Try again.</span>}
-      <pre className="noa-selectable m-0 overflow-auto px-5 pt-0 pb-3 font-mono font-normal text-[length:var(--code-font-size)] leading-[max(1.5em,20px)]" style={{ whiteSpace: wrap ? "pre-wrap" : "pre", overflowWrap: wrap ? "anywhere" : undefined }}><code className="hljs" style={{ fontSize: "inherit", fontFamily: "inherit", fontWeight: "inherit", background: "transparent", padding: 0 }} dangerouslySetInnerHTML={{ __html: highlighted }} /></pre>
+      <pre className="noa-selectable m-0 overflow-auto px-5 pt-0 pb-3 font-mono font-normal text-[length:var(--code-font-size)] leading-[max(1.5em,20px)]" style={{ whiteSpace: wrap ? "pre-wrap" : "pre", overflowWrap: wrap ? "anywhere" : undefined }}><code className="hljs" style={{ fontSize: "inherit", fontFamily: "inherit", fontWeight: "inherit", background: "transparent", padding: 0 }} dangerouslySetInnerHTML={html} /></pre>
       {preview && <PreviewDialog title="Code preview" onClose={() => setPreview(false)}><iframe title="Code preview" sandbox="" className="h-full w-full border-0 bg-white" srcDoc={"<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; style-src 'unsafe-inline'; img-src data: blob:; base-uri 'none'; form-action 'none'\">" + code} /></PreviewDialog>}
     </div>
   )
