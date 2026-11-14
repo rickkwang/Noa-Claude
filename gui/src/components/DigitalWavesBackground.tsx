@@ -118,6 +118,34 @@ void main() {
         float transmit = obsCount > 0 ? smoothstep(-24.0, 16.0, minPath) : 1.0;
 
         float dropBlue = (crest * 0.68 + tail * eddies * 0.45) * drops[i].w * onset * transmit;
+
+        if (obsCount > 0) {
+          float refl = 0.0;
+          for (int j = 0; j < 8; j++) {
+            if (j < obsCount) {
+              vec2 C = obsBox[j].xy;
+              vec2 B = obsBox[j].zw;
+              vec2 v = drops[i].xy - C;
+              vec2 nv = abs(v) / max(B, vec2(1.0));
+              vec2 n = nv.x > nv.y ? vec2(sign(v.x), 0.0) : vec2(0.0, sign(v.y));
+              if (n.x == 0.0 && n.y == 0.0) n = vec2(0.0, -1.0);
+              vec2 wallPt = C + n * B;
+              float dWall = dot(drops[i].xy - wallPt, n);
+              if (dWall > 0.0 && radius > dWall && dWall < 380.0) {
+                vec2 sRef = drops[i].xy - 2.0 * dWall * n;
+                float sideMask = smoothstep(0.0, 16.0, dot(p - wallPt, n));
+                float tangentSpan = nv.x > nv.y ? B.y : B.x;
+                float tangentPos = nv.x > nv.y ? abs(p.y - C.y) : abs(p.x - C.x);
+                float spanMask = smoothstep(0.0, 32.0, tangentSpan + 24.0 - tangentPos);
+                float refEdge = length(p - sRef) + distortion * 0.7 - radius;
+                float refRing = exp(-pow(refEdge / (width * 1.15), 2.0));
+                refl = max(refl, refRing * sideMask * spanMask);
+              }
+            }
+          }
+          dropBlue = max(dropBlue, refl * breakup * fade * 0.34 * drops[i].w * onset);
+        }
+
         blue = max(blue, dropBlue);
         float grayBand = smoothstep(-145.0 - 50.0 * (1.0 - exp(-age * 1.2)), -15.0, edge) * (1.0 - smoothstep(-6.0, 24.0, edge));
         float grayTail = grayBand * (1.0 - smoothstep(1.0, 2.4, age));
@@ -248,7 +276,6 @@ export function DigitalWavesBackground({
     let disposed = false;
     let lost = false;
     let time = 0;
-    let last = performance.now();
     let raf = 0;
     let width = 1;
     let height = 1;
@@ -256,8 +283,16 @@ export function DigitalWavesBackground({
     let rows = 1;
     let dpr = 1;
     let lastDropMs = 0;
+    let lastDrawMs = 0;
     let accentRgb = readAccentRgb(isDarkRef.current);
     let manual: DropEntry[] = [];
+    const obsBoxes = new Float32Array(MAX_OBSTACLES * 4);
+    const obsRadii = new Float32Array(MAX_OBSTACLES);
+    let obsCount = 0;
+    let obsDirty = true;
+    let obsAnimatingUntil = 0;
+    const reducedMotionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+    let reducedMotion = reducedMotionQuery.matches;
     let resources: GlResources | null = null;
     const programs: WebGLProgram[] = [];
     const locations = new Map<WebGLProgram, Record<string, WebGLUniformLocation | null>>();
@@ -408,29 +443,13 @@ export function DigitalWavesBackground({
       gl!.vertexAttribPointer(attr, 2, gl!.FLOAT, false, 0, 0);
     }
 
-    function draw() {
-      if (disposed || lost || !resources) return;
-      resize();
-
-      manual = manual.filter((d) => time - d[2] < DROP_LIFETIME);
-
-      const active = manual.slice(-MAX_ACTIVE_DROPS);
-      const data = new Float32Array(MAX_DROPS * 4);
-      active.forEach((d, i) => {
-        data[i * 4] = d[0] * width;
-        data[i * 4 + 1] = d[1] * height;
-        data[i * 4 + 2] = d[2];
-        data[i * 4 + 3] = d[3];
-      });
-
-      const obsBoxes = new Float32Array(MAX_OBSTACLES * 4);
-      const obsRadii = new Float32Array(MAX_OBSTACLES);
-      let obsCount = 0;
+    function measureObstacles() {
+      obsCount = 0;
       const canvasRect = canvas!.getBoundingClientRect();
       const obstacleEls = container!.querySelectorAll<HTMLElement>("[data-wave-obstacle]");
       for (const el of obstacleEls) {
         if (obsCount >= MAX_OBSTACLES) break;
-        if (el.closest('[inert]') || el.closest('[data-open="false"]')) continue;
+        if (el.closest("[inert]") || el.closest('[data-open="false"]')) continue;
         const r = el.getBoundingClientRect();
         if (r.width < 4 || r.height < 4) continue;
         const pad = 8;
@@ -444,6 +463,28 @@ export function DigitalWavesBackground({
         obsRadii[obsCount] = Math.min(rawRadius + pad * 0.5, hx, hy);
         obsCount++;
       }
+      obsDirty = false;
+    }
+
+    function draw() {
+      if (disposed || lost || !resources) return;
+      resize();
+
+      const nowMs = performance.now();
+      if (obsDirty || nowMs < obsAnimatingUntil) {
+        measureObstacles();
+      }
+
+      manual = manual.filter((d) => time - d[2] < DROP_LIFETIME);
+
+      const active = manual.slice(-MAX_ACTIVE_DROPS);
+      const data = new Float32Array(MAX_DROPS * 4);
+      active.forEach((d, i) => {
+        data[i * 4] = d[0] * width;
+        data[i * 4 + 1] = d[1] * height;
+        data[i * 4 + 2] = d[2];
+        data[i * 4 + 3] = d[3];
+      });
 
       const p = resources.field;
       useProgram(p);
@@ -488,7 +529,9 @@ export function DigitalWavesBackground({
     }
 
     function drop(x: number, y: number, strength = 1) {
-      if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(strength)) return;
+      if (reducedMotion || !Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(strength)) {
+        return;
+      }
       const now = performance.now();
       if (now - lastDropMs < DROP_COOLDOWN_MS) return;
       lastDropMs = now;
@@ -518,43 +561,93 @@ export function DigitalWavesBackground({
 
     function loop(now: number) {
       if (disposed) return;
-      const dt = Math.min((now - last) / 1000, 0.1);
-      last = now;
-      if (!document.hidden && !lost) {
-        time += dt;
-        draw();
+      if (!document.hidden && !lost && !reducedMotion) {
+        const minInterval = manual.length > 0 || now < obsAnimatingUntil ? 1000 / 60 : 1000 / 24;
+        if (now - lastDrawMs >= minInterval - 1) {
+          time += Math.min((now - lastDrawMs) / 1000, 0.1);
+          lastDrawMs = now;
+          draw();
+        }
+      } else {
+        lastDrawMs = now;
       }
       raf = requestAnimationFrame(loop);
     }
 
     try {
       init();
+      lastDrawMs = performance.now();
       draw();
     } catch {
       return;
     }
 
     const observer = new ResizeObserver(() => {
+      obsDirty = true;
       if (!lost && !disposed) draw();
     });
     observer.observe(canvas);
     const themeObserver = new MutationObserver(() => {
       accentRgb = readAccentRgb(isDarkRef.current);
+      if (reducedMotion && !lost && !disposed) draw();
     });
     themeObserver.observe(document.documentElement, {
       attributes: true,
       attributeFilter: ["style", "class", "data-theme"],
     });
+    const containerObserver = new MutationObserver(() => {
+      obsDirty = true;
+      obsAnimatingUntil = performance.now() + 350;
+    });
+    containerObserver.observe(container, {
+      attributes: true,
+      attributeFilter: ["data-open", "inert", "class", "style"],
+      childList: true,
+      subtree: true,
+    });
+    const onScroll = () => {
+      obsDirty = true;
+    };
+    const onTransitionStart = () => {
+      obsAnimatingUntil = performance.now() + 450;
+    };
+    const onTransitionEnd = () => {
+      obsDirty = true;
+      obsAnimatingUntil = 0;
+    };
+    const onReducedMotionChange = (e: MediaQueryListEvent) => {
+      reducedMotion = e.matches;
+      if (reducedMotion) {
+        cancelAnimationFrame(raf);
+        raf = 0;
+        manual = [];
+        if (!lost && !disposed) draw();
+      } else {
+        lastDrawMs = performance.now();
+        if (!raf) raf = requestAnimationFrame(loop);
+      }
+    };
+    container.addEventListener("scroll", onScroll, { passive: true, capture: true });
+    container.addEventListener("transitionstart", onTransitionStart);
+    container.addEventListener("transitionend", onTransitionEnd);
+    reducedMotionQuery.addEventListener("change", onReducedMotionChange);
     container.addEventListener("pointerdown", onPointerDown);
     canvas.addEventListener("webglcontextlost", onLost);
     canvas.addEventListener("webglcontextrestored", onRestored);
-    raf = requestAnimationFrame(loop);
+    if (!reducedMotion) {
+      raf = requestAnimationFrame(loop);
+    }
 
     return () => {
       disposed = true;
       cancelAnimationFrame(raf);
       observer.disconnect();
       themeObserver.disconnect();
+      containerObserver.disconnect();
+      container.removeEventListener("scroll", onScroll, { capture: true });
+      container.removeEventListener("transitionstart", onTransitionStart);
+      container.removeEventListener("transitionend", onTransitionEnd);
+      reducedMotionQuery.removeEventListener("change", onReducedMotionChange);
       container.removeEventListener("pointerdown", onPointerDown);
       canvas.removeEventListener("webglcontextlost", onLost);
       canvas.removeEventListener("webglcontextrestored", onRestored);
