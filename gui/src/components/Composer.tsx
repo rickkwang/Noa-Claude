@@ -983,7 +983,7 @@ export const Composer = memo(function Composer({
                   aria-label={`Context usage ${Math.round(contextUsage.percentage)}%`}
                   aria-expanded={contextOpen}
                   onClick={() => setContextOpen(open => !open)}
-                  className="inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded-md transition-colors hover:bg-[var(--fill-hover)] aria-expanded:bg-[var(--fill-hover)] focus-visible:outline focus-visible:outline-1"
+                  className="inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-full transition-colors hover:bg-[var(--fill-hover)] aria-expanded:bg-[var(--fill-hover)] focus-visible:outline focus-visible:outline-1"
                 >
                 <svg
                   width={12}
@@ -1494,7 +1494,7 @@ function Picker({
           setShowingModels(false)
           setOpen((o) => !o)
         }}
-        className={`flex h-7 min-w-0 items-center gap-1 whitespace-nowrap rounded-lg ${iconOnly ? "w-7 justify-center p-0" : compactPadding ? "px-1.5" : hideChevron ? "px-2.5" : "pl-2.5 pr-1.5"} text-[12px] font-normal leading-[18px] transition-colors hover:bg-[var(--fill-hover)] aria-expanded:bg-[var(--fill-hover)] disabled:opacity-40 ${
+        className={`flex h-7 min-w-0 items-center gap-1 whitespace-nowrap rounded-full ${iconOnly ? "w-7 justify-center p-0" : compactPadding ? "px-2" : hideChevron ? "px-2.5" : "pl-2.5 pr-1.5"} text-[12px] font-normal leading-[18px] transition-colors hover:bg-[var(--fill-hover)] aria-expanded:bg-[var(--fill-hover)] disabled:opacity-40 ${
           tone === "danger" ? "text-[#C24444]" : "text-[var(--sidebar-text,#52514E)]"
         }`}
       >
