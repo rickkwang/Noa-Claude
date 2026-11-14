@@ -303,7 +303,7 @@ export function StatsPanel() {
 
   return (
     <section className="flex w-full max-w-[560px] flex-col items-center text-left" aria-label="Usage stats">
-      <button type="button" onClick={toggle} aria-expanded={open} className="noa-stats-toggle flex items-center gap-1.5 rounded-full px-3 py-1 text-[length:var(--text-caption)] text-[var(--text-tertiary)]">
+      <button type="button" data-wave-obstacle="14" onClick={toggle} aria-expanded={open} className="noa-stats-toggle flex items-center gap-1.5 rounded-full px-3 py-1 text-[length:var(--text-caption)] text-[var(--text-tertiary)]">
         <span className={stats ? "" : "opacity-0"}>
           <span className="text-[var(--text-secondary)]">{stats?.allTimeMessages ?? "0"}</span> messages
           <span className="mx-1.5 opacity-60">·</span>
@@ -313,7 +313,7 @@ export function StatsPanel() {
       </button>
       <div className="noa-stats-collapse w-full" data-open={open} inert={!open}>
         <div className="min-h-0 overflow-hidden">
-          <div className={`noa-stats-card mt-2 flex flex-col gap-3 rounded-[var(--radius-panel)] p-2.5 transition-opacity ${loading ? "opacity-70" : ""}`} aria-busy={loading}>
+          <div data-wave-obstacle="16" className={`noa-stats-card mt-2 flex flex-col gap-3 rounded-[var(--radius-panel)] p-2.5 transition-opacity ${loading ? "opacity-70" : ""}`} aria-busy={loading}>
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-0.5" role="radiogroup" aria-label="Stats view" onKeyDown={radioKeys(VIEWS, view, setView)}>
                 {VIEWS.map(item => (

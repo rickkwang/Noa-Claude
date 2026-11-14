@@ -19,6 +19,7 @@ import {
 import { AddProjectDialog } from "./components/AddProjectDialog"
 import { useConfirm } from "./components/ConfirmDialog"
 import { Composer } from "./components/Composer"
+import { DigitalWavesBackground } from "./components/DigitalWavesBackground"
 import { EmptyState } from "./components/EmptyState"
 import { FileDropOverlay } from "./components/FileDropOverlay"
 import { MessageList } from "./components/MessageList"
@@ -920,6 +921,7 @@ function Workspace({ cwd }: { cwd: string }) {
             }}
             style={{ paddingRight: overviewDockInset, "--noa-overview-dock": `${overviewDockInset}px`, "--composer-overlay": `${footerHeight}px` } as React.CSSProperties}
           >
+            {!hasTurns && <DigitalWavesBackground theme={settings.appearance.theme} />}
             {draggingFiles && <FileDropOverlay />}
             {hasTurns ? (
               <MessageList
@@ -968,7 +970,7 @@ function Workspace({ cwd }: { cwd: string }) {
             {/* With a conversation the composer floats over the list:
                 messages scroll beneath it and a gradient fades them out above the card. */}
             <div ref={footerRef} className={hasTurns ? "noa-conversation-footer" : "shrink-0 pr-[var(--noa-scrollbar-strip)] pb-3 pt-2"}>
-              <div className="noa-conversation-column noa-composer-column flex flex-col gap-2" style={{ maxWidth: readingWidth }}>
+              <div data-wave-obstacle="18" className="noa-conversation-column noa-composer-column flex flex-col gap-2" style={{ maxWidth: readingWidth }}>
                 {state.external && (
                   <p role="status" className="m-0 px-2 text-caption text-[var(--text-tertiary)]">
                     {state.external.status === "busy" ? "Working in a terminal" : "Open in a terminal"} (pid {state.external.pid}). Updates appear here; close it there to continue in this window.
