@@ -469,7 +469,7 @@ const results = [];
 const children = new Set();
 
 async function run(executable, scenario, extra = [], input = 'Run the local loop fixture.') {
-  const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => ['PATH', 'HOME', 'TMPDIR', 'USER', 'LOGNAME', 'SHELL', 'LANG', 'LC_ALL'].includes(k)));
+  const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => ['PATH', 'HOME', 'TMPDIR', 'USER', 'LOGNAME', 'SHELL', 'LANG', 'LC_ALL', 'NOA_CLAUDE_SIMPLE_SYSTEM_PROMPT'].includes(k)));
   Object.assign(env, {
     ...(scenario==='blocking-limit' && {DISABLE_AUTO_COMPACT:'1'}),
     // [1m] is a real opt-in on Opus 4.6 (inert, and stripped, on newer Opus).
@@ -833,9 +833,16 @@ try {
             const firstTurn = JSON.stringify(main[0].body.messages);
             const followUp = JSON.stringify(main[1].body.messages.at(-1).content);
             if (scenario === 'mode-auto') {
-              assert.ok(firstTurn.includes('## Auto Mode Active'));
-              assert.ok(firstTurn.includes('Bias toward working without stopping'));
-              assert.ok(firstTurn.includes('Do your work through the Bash tool'));
+              // NOA_CLAUDE_SIMPLE_SYSTEM_PROMPT=1 runs the suite on the lean prompt, which sends the steer-only form with the relaxed Bash steer.
+              if (process.env.NOA_CLAUDE_SIMPLE_SYSTEM_PROMPT === '1') {
+                assert.ok(firstTurn.includes('While auto mode is active:'));
+                assert.ok(!firstTurn.includes('## Auto Mode Active'));
+                assert.ok(firstTurn.includes('You can do much of your work through the Bash tool'));
+              } else {
+                assert.ok(firstTurn.includes('## Auto Mode Active'));
+                assert.ok(firstTurn.includes('Bias toward working without stopping'));
+                assert.ok(firstTurn.includes('Do your work through the Bash tool'));
+              }
               assert.ok(!firstTurn.includes('The user chose continuous, autonomous execution'));
             } else if (scenario === 'mode-bypass') {
               assert.ok(firstTurn.includes('While bypass permissions mode is active:'));
