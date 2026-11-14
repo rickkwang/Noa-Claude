@@ -1433,7 +1433,7 @@ function RewindMarker({ block }: { block: Extract<Block, { kind: "rewind" }> }) 
   const [error, setError] = useState<string>()
   const isLive = live === block
   const action = isLive ? onUndo : undefined
-  const hint = block.filesRestored ? "Bring back the removed messages. Files stay as they are now." : "Bring back the removed messages"
+  const hint = `Bring back the removed messages${block.filesRestored ? ". Files stay as they are now" : ""}. Available until you send your next message.`
   const run = () => {
     if (!action || pending) return
     setPending(true)
@@ -1442,7 +1442,7 @@ function RewindMarker({ block }: { block: Extract<Block, { kind: "rewind" }> }) 
   }
   return <div role="status" className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[length:var(--font-text-md-size)] leading-5 text-[color-mix(in_srgb,var(--text-primary)_60%,transparent)]">
     <RotateCcw size={14} aria-hidden="true" />
-    <span>{isLive ? "Rewound to here" : "Rewound here · later messages were removed"}</span>
+    <span>{isLive ? "Rewound to here" : "Rewound here · later messages were removed"}{block.at !== undefined && <> · <time dateTime={new Date(block.at).toISOString()}>{formatSentAt(block.at)}</time></>}</span>
     {action && <>
       <span aria-hidden="true">·</span>
       <button type="button" disabled={pending || !!blocked} title={blocked ?? hint} onClick={run} className="underline decoration-[color-mix(in_srgb,currentColor_40%,transparent)] underline-offset-2 hover:text-[var(--text-primary)] disabled:no-underline disabled:opacity-60">{pending ? "Undoing…" : "Undo rewind"}</button>

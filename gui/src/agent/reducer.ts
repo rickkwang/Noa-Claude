@@ -41,7 +41,7 @@ export type ToolBlock = {
 
 type CompactionBlock = { kind: "compaction"; status: "running" | "done" | "stopped" | "unknown"; startedAt?: number; trigger?: "manual" | "auto" }
 // Marks where the conversation was rewound; it stays in the transcript so later readers see the cut.
-type RewindBlock = { kind: "rewind"; filesRestored?: boolean }
+type RewindBlock = { kind: "rewind"; filesRestored?: boolean; at?: number }
 type RetryBlock = { kind: "retry"; attempt: number; maxRetries: number; delayMs: number; errorStatus?: number | null; done?: boolean }
 export type SubagentBlock = { kind: "subagent"; id: string; taskId: string; description: string; status: AgentTask["status"] }
 export type Block =
@@ -218,7 +218,7 @@ export function reducer(state: AgentState, action: Action): AgentState {
         else if (item.kind === "turn-duration") restored = reducer(restored, { ...item, type: "turn-duration" })
         else if (item.kind === "compaction") restored = reducer(restored, { type: "compaction", trigger: item.trigger })
         // A rewind marker stands on its own after the reply it follows, outside that reply's activity group.
-        else if (item.kind === "rewind") restored = { ...restored, turns: [...restored.turns, { role: "assistant", id: crypto.randomUUID(), streaming: false, blocks: [{ kind: "rewind", filesRestored: item.filesRestored }] }] }
+        else if (item.kind === "rewind") restored = { ...restored, turns: [...restored.turns, { role: "assistant", id: crypto.randomUUID(), streaming: false, blocks: [{ kind: "rewind", filesRestored: item.filesRestored, at: item.at }] }] }
         else if (item.kind === "turn-diff") restored = reducer(restored, { type: "turn-diff", diff: item.diff })
         else restored = reducer(restored, { type: "agent", message: item.message })
       }

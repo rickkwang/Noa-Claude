@@ -806,6 +806,9 @@ export async function agentMessage(ws: ServerWebSocket<SocketData>, raw: string 
     // anything that writes files must also wait for other sessions working in the same folder.
     const request = message.request
     const cwdKey = canonicalCwd(run.cwd)
+    // The client shows a turn as finished at its result, a moment before the CLI reports idle and the
+    // turn's diff is saved. Wait that out instead of refusing an action taken in between.
+    if (!request.dry_run) for (let waited = 0; waited < 5000 && run.busy && run.turnSucceeded !== undefined && !run.exited; waited += 50) await Bun.sleep(50)
     const writesFiles = request.action === "fork" || (request.mode !== undefined && request.mode !== "conversation")
     const blocked = request.dry_run
       ? !!run.sessionAction
@@ -820,8 +823,9 @@ export async function agentMessage(ws: ServerWebSocket<SocketData>, raw: string 
     }
     let release!: () => void
     const operation = new Promise<void>(resolve => { release = () => { clearTimeout(timer); resolve() } })
-    // A CLI that never answers would hold the workspace lock until exit; restart it instead.
-    const timer = setTimeout(() => { if (run.sessionAction?.release === release) run.proc.kill() }, 60000)
+    // A CLI that never answers would hold the workspace lock until exit; restart it instead. Restoring
+    // files in a large folder can take minutes.
+    const timer = setTimeout(() => { if (run.sessionAction?.release === release) run.proc.kill() }, writesFiles ? 180000 : 60000)
     // Only a file-writing action takes the folder lock; a preview or a conversation-only rewind must not
     // replace the lock another session's operation holds.
     if (writesFiles && !request.dry_run) {

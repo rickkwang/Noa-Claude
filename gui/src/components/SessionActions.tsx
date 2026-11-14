@@ -58,6 +58,9 @@ export function RewindDialog({ message, cwd, preview, initialError, request, onC
   const [error, setError] = useState(initialError)
   const [pending, setPending] = useState(false)
   const [showFiles, setShowFiles] = useState(false)
+  // Restoring only files changes nothing in the chat, so the dialog stays to say it is done.
+  const [restored, setRestored] = useState(false)
+  const close = () => restored ? onDone("files") : onClose()
   const panel = useRef<HTMLDivElement>(null)
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null
@@ -70,7 +73,8 @@ export function RewindDialog({ message, cwd, preview, initialError, request, onC
     setError(undefined)
     try {
       await request({ subtype: "session_action", action: "rewind", user_message_id: message.id, mode })
-      onDone(mode)
+      if (mode === "files") setRestored(true)
+      else onDone(mode)
     } catch (error) { setError((error as Error).message) }
     finally { setPending(false) }
   }
@@ -80,8 +84,8 @@ export function RewindDialog({ message, cwd, preview, initialError, request, onC
   const consequence = mode === "both" ? `Removes this message and the replies after it, and puts ${fileCount} ${theWayBefore} before it.`
     : mode === "files" ? `Puts ${fileCount} ${theWayBefore} before this message. The chat stays as it is.`
       : files.length ? `Removes this message and the replies after it. ${fileCount} keep their current changes.` : "Removes this message and the replies after it."
-  return <div className="noa-confirm-scrim fixed inset-0 z-50 flex items-center justify-center p-4" onClick={event => { if (event.target === event.currentTarget && !pending) onClose() }} onKeyDown={event => {
-    if (event.key === "Escape" && !pending) { event.stopPropagation(); onClose() }
+  return <div className="noa-confirm-scrim fixed inset-0 z-50 flex items-center justify-center p-4" onClick={event => { if (event.target === event.currentTarget && !pending) close() }} onKeyDown={event => {
+    if (event.key === "Escape" && !pending) { event.stopPropagation(); close() }
     if (event.key === "Tab") {
       const items = [...panel.current!.querySelectorAll<HTMLElement>("button:not(:disabled)")]
       const first = items[0], last = items.at(-1)
@@ -90,8 +94,9 @@ export function RewindDialog({ message, cwd, preview, initialError, request, onC
     }
   }}>
     <div ref={panel} role="dialog" aria-modal="true" aria-labelledby="rewind-title" aria-busy={pending} className="noa-confirm-dialog flex max-h-[calc(100vh-32px)] w-full max-w-[440px] flex-col gap-3 overflow-y-auto rounded-2xl bg-[var(--bg-card)] p-5 font-ui">
-      <h2 id="rewind-title" className="m-0 text-body font-medium">Rewind to before this message?</h2>
+      <h2 id="rewind-title" className="m-0 text-body font-medium">{restored ? "Files restored" : "Rewind to before this message?"}</h2>
       <div className="rounded-lg bg-[var(--fill-hover)] px-3 py-2"><p className="m-0 line-clamp-2 whitespace-pre-wrap break-words text-body text-[var(--text-primary)]">{message.text}</p></div>
+      {restored ? <p role="status" className="m-0 text-caption text-[var(--text-secondary)]">{`${fileCount} ${files.length === 1 ? "is" : "are"} ${theWayBefore} before this message. The chat is unchanged.`}</p> : <>
       {files.length > 0 && <div role="radiogroup" aria-label="What to rewind" className="flex gap-1 rounded-lg bg-[var(--fill-hover)] p-0.5">
         {options.map(([value, label]) => <button key={value} type="button" role="radio" aria-checked={mode === value} disabled={pending} onClick={() => setMode(value)} className={`h-7 flex-1 rounded-md text-body ${mode === value ? "bg-[var(--bg-card)] text-[var(--text-primary)] shadow-sm" : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"}`}>{label}</button>)}
       </div>}
@@ -105,10 +110,13 @@ export function RewindDialog({ message, cwd, preview, initialError, request, onC
           <p className="m-0 text-[var(--text-tertiary)]">Changes made by shell commands, and commits, are not undone.</p>
         </>}
       </div>
+      </>}
       {error && <p role="alert" className="m-0 text-caption text-[var(--text-danger)]">{error}</p>}
       <div className="mt-1 flex justify-end gap-2">
+        {restored ? <button data-rewind-cancel autoFocus type="button" className="h-8 rounded-lg bg-[var(--text-primary)] px-3 text-body text-[var(--bg-card)]" onClick={close}>Done</button> : <>
         <button data-rewind-cancel type="button" disabled={pending} className="noa-confirm-btn h-8 rounded-lg border border-[var(--border-default)] px-3 text-body" onClick={onClose}>Cancel</button>
         <button type="button" disabled={pending} className="h-8 rounded-lg bg-[var(--text-primary)] px-3 text-body text-[var(--bg-card)] disabled:opacity-40" onClick={() => void confirm()}>{pending ? "Rewinding…" : mode === "files" ? "Restore files" : "Rewind"}</button>
+        </>}
       </div>
     </div>
   </div>

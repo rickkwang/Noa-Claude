@@ -105,6 +105,10 @@ interface ComposerProps {
 const IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"]
 
 // Noa-styled composer: a rounded card with a hairline ring, slash menu, model and mode pickers.
+// What the last rewind put into each draft, so a further rewind or an undo can take it back out. Kept
+// outside the component because the composer remounts when the conversation reloads or the task changes.
+const rewoundDrafts = new Map<string, { key: number; text: string; images: Set<string> }>()
+
 function persistDraft({ key, text }: { key: string; text: string }) {
   try {
     if (text) localStorage.setItem(key, text)
@@ -347,13 +351,29 @@ export const Composer = memo(function Composer({
     onPrefillConsumed?.()
   }, [prefill?.key, disabled])
 
-  // Editing a sent message replaces the draft with its text and images.
+  // The draft without the rewound message at its start; undefined when the user has edited that part.
+  const withoutRewound = (previous: string) => text === previous ? "" : text.startsWith(`${previous}\n\n`) ? text.slice(previous.length + 2) : undefined
+  // Editing a sent message replaces the draft with its text and images. A rewound message goes in front of
+  // the user's own draft instead, taking the place of the message an earlier rewind put there.
   useEffect(() => {
     if (!editDraft) return
-    setText(editDraft.text)
-    setImages(editDraft.images)
-    setReferences([])
-    setFiles([])
+    if (editDraft.silent) {
+      const previous = rewoundDrafts.get(draftKey)
+      // The composer remounts when the rewound conversation reloads; the message is already in the draft.
+      if (previous?.key === editDraft.key) return
+      const own = (previous && withoutRewound(previous.text)) ?? text
+      const merged = own.trim() && editDraft.text ? `${editDraft.text}\n\n${own}` : editDraft.text || own
+      setText(merged)
+      // Saved at once: a remount reads the stored draft before the delayed save would have written it.
+      persistDraft({ key: draftKey, text: merged })
+      setImages([...editDraft.images, ...images.filter(image => !previous?.images.has(image.id))])
+      rewoundDrafts.set(draftKey, { key: editDraft.key, text: editDraft.text, images: new Set(editDraft.images.map(image => image.id)) })
+    } else {
+      setText(editDraft.text)
+      setImages(editDraft.images)
+      setReferences([])
+      setFiles([])
+    }
     requestAnimationFrame(() => {
       const el = textareaRef.current
       if (!el) return
@@ -367,9 +387,12 @@ export const Composer = memo(function Composer({
   useEffect(() => {
     if (!withdrawDraft || withdrawnKey.current === withdrawDraft.key) return
     withdrawnKey.current = withdrawDraft.key
-    if (text !== withdrawDraft.text) return
-    setText("")
-    setImages([])
+    const own = withoutRewound(withdrawDraft.text)
+    if (own === undefined) return
+    setText(own)
+    const rewound = rewoundDrafts.get(draftKey)
+    setImages(images.filter(image => !rewound?.images.has(image.id)))
+    rewoundDrafts.delete(draftKey)
     onCancelEdit?.()
   }, [withdrawDraft?.key])
 

@@ -490,7 +490,7 @@ export type HistoryItem =
   | { kind: "user"; id?: string; text: string; images?: ImageBlock[]; sentAt?: number }
   | { kind: "turn-duration"; durationMs: number; interrupted?: boolean; error?: string }
   | { kind: "compaction"; trigger: "manual" | "auto" }
-  | { kind: "rewind"; filesRestored?: boolean }
+  | { kind: "rewind"; filesRestored?: boolean; at?: number }
   | { kind: "turn-diff"; diff: TurnDiff }
   | {
       kind: "agent"
@@ -647,7 +647,9 @@ export async function loadHistory(cwd: string, id: string): Promise<HistoryItem[
       continue
     }
     if (entry.type === "system" && entry.rewindMetadata && !undoneRewinds.has(entry.uuid ?? "")) {
-      items.push({ kind: "rewind", filesRestored: entry.rewindMetadata.filesRestored === true })
+      // Rewinding to the same point again leaves its marker right after the earlier one; show the cut once.
+      if (items.at(-1)?.kind === "rewind") items.pop()
+      items.push({ kind: "rewind", filesRestored: entry.rewindMetadata.filesRestored === true, at: entryTime(entry) })
       continue
     }
     if (entry.type === "system" && entry.subtype === "turn_duration" && typeof entry.durationMs === "number") {

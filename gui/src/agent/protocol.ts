@@ -310,7 +310,7 @@ export type HistoryItem =
   | { kind: "user"; id?: string; text: string; images?: ImageBlock[]; sentAt?: number }
   | { kind: "turn-duration"; durationMs: number; interrupted?: boolean; error?: string }
   | { kind: "compaction"; trigger: "manual" | "auto" }
-  | { kind: "rewind"; filesRestored?: boolean }
+  | { kind: "rewind"; filesRestored?: boolean; at?: number }
   | { kind: "turn-diff"; diff: TurnDiff; updateOnly?: boolean }
   | {
       kind: "agent"
