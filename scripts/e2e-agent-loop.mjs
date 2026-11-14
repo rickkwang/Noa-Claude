@@ -1019,6 +1019,7 @@ try {
   const shaOf = file => existsSync(file) ? sha(readFileSync(file)) : 'missing';
   writeFileSync(join(artifacts, 'verification.manifest.json'), JSON.stringify({
     command: [process.execPath, ...process.argv.slice(1)], revision, runtime: process.version,
+    env: { NOA_CLAUDE_SIMPLE_SYSTEM_PROMPT: process.env.NOA_CLAUDE_SIMPLE_SYSTEM_PROMPT ?? null },
     transport: 'deterministic localhost Anthropic SSE (OpenAI-compatible chat completions for openai-*); no actual model-quality benchmark',
     entry, entry_sha256: shaOf(entry), comparison: compare ? { entry: resolve(compare), sha256: shaOf(resolve(compare)) } : undefined,
     script_sha256: sha(readFileSync(fileURLToPath(import.meta.url))),
