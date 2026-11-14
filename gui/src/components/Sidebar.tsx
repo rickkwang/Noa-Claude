@@ -842,26 +842,7 @@ function ProjectRow({
   onPointerUp: (event: PointerEvent<HTMLElement>) => void
   onPointerCancel: () => void
 }) {
-  const [menuOpen, setMenuOpen] = useState(false)
-  const menuRef = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    if (!menuOpen) return
-    const close = (event: MouseEvent) => {
-      if (!menuRef.current?.contains(event.target as Node)) setMenuOpen(false)
-    }
-    const escape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault()
-        setMenuOpen(false)
-      }
-    }
-    document.addEventListener("mousedown", close)
-    document.addEventListener("keydown", escape)
-    return () => {
-      document.removeEventListener("mousedown", close)
-      document.removeEventListener("keydown", escape)
-    }
-  }, [menuOpen])
+  const [menu, setMenu] = useState<{ anchor: PopupMenuAnchor; trigger: Element }>()
   return (
     <div className="noa-sidebar-tree-item mb-0.5">
       <div
@@ -884,7 +865,7 @@ function ProjectRow({
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerCancel}
-        className={`noa-sidebar-tree-row noa-agent-sidebar-row group flex h-[30px] items-center gap-[7px] pl-[6px] pr-2 mx-2 rounded-lg cursor-pointer select-none ${menuOpen ? "is-active" : ""} ${dragging ? "noa-session-row-dragging" : ""}`}
+        className={`noa-sidebar-tree-row noa-agent-sidebar-row group flex h-[30px] items-center gap-[7px] pl-[6px] pr-2 mx-2 rounded-lg cursor-pointer select-none ${menu ? "is-active" : ""} ${dragging ? "noa-session-row-dragging" : ""}`}
       >
         {/* A 16px folder icon in the row ink, centred on the New task icon's column so names line up
             with the search and New task labels. Open folders swap to the open shape. */}
@@ -901,82 +882,43 @@ function ProjectRow({
         {project.missing && <span className="shrink-0 text-caption text-[#C24444]">missing</span>}
         <span
           data-session-action
-          className={`flex shrink-0 items-center gap-0.5 group-hover:opacity-100 focus-within:opacity-100 ${menuOpen ? "opacity-100" : "opacity-0"}`}
+          className={`flex shrink-0 items-center gap-0.5 group-hover:opacity-100 focus-within:opacity-100 ${menu ? "opacity-100" : "opacity-0"}`}
           style={noDragRegion}
         >
-          <div className="relative" ref={menuRef}>
-            <button
-              type="button"
-              aria-label={`Project actions for ${project.name}`}
-              aria-haspopup="menu"
-              aria-expanded={menuOpen}
-              title="Project actions"
-              onClick={(event) => {
-                event.stopPropagation()
-                setMenuOpen((open) => !open)
-              }}
-              className="flex size-6 items-center justify-center rounded-md text-[var(--sidebar-text-muted)] hover:text-[var(--sidebar-text)]"
-            >
-              <MoreHorizontal size={14} />
-            </button>
-            {menuOpen && (
-              <div
-                role="menu"
-                className="noa-floating-panel absolute right-0 top-full z-50 mt-1 w-44 rounded-[var(--menu-popover-radius)] bg-[var(--bg-card)] p-1 shadow-[var(--menu-shadow)]"
-                onClick={(event) => event.stopPropagation()}
-              >
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={() => {
-                    setMenuOpen(false)
-                    onEdit()
-                  }}
-                  className="w-full rounded-md px-2.5 py-1.5 text-left text-body hover:bg-[var(--fill-hover)]"
-                >
-                  Edit project
-                </button>
-                {!project.missing && (
-                  <>
-                    <button
-                      type="button"
-                      role="menuitem"
-                      onClick={() => {
-                        setMenuOpen(false)
-                        onOpenCoordinator()
-                      }}
-                      className="w-full rounded-md px-2.5 py-1.5 text-left text-body hover:bg-[var(--fill-hover)]"
-                    >
-                      Coordinator
-                    </button>
-                    <button
-                      type="button"
-                      role="menuitem"
-                      onClick={() => {
-                        setMenuOpen(false)
-                        onReveal()
-                      }}
-                      className="w-full rounded-md px-2.5 py-1.5 text-left text-body hover:bg-[var(--fill-hover)]"
-                    >
-                      Reveal in Finder
-                    </button>
-                    <div className="my-1 h-px bg-[var(--divider-subtle)]" />
-                  </>
-                )}
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={() => {
-                    setMenuOpen(false)
-                    onRemove()
-                  }}
-                  className="w-full rounded-md px-2.5 py-1.5 text-left text-body hover:bg-[var(--fill-hover)]"
-                >
-                  Remove project
-                </button>
-              </div>
-            )}
-          </div>
+          <button
+            type="button"
+            aria-label={`Project actions for ${project.name}`}
+            aria-haspopup="menu"
+            aria-expanded={!!menu}
+            title="Project actions"
+            onClick={(event) => {
+              event.stopPropagation()
+              const trigger = event.currentTarget
+              setMenu((current) => (current ? undefined : { anchor: anchorBelow(trigger), trigger }))
+            }}
+            className="flex size-6 items-center justify-center rounded-md text-[var(--sidebar-text-muted)] hover:text-[var(--sidebar-text)]"
+          >
+            <MoreHorizontal size={14} />
+          </button>
+          {menu && (
+            <PopupMenu
+              label={`Project actions for ${project.name}`}
+              anchor={menu.anchor}
+              trigger={menu.trigger}
+              onClose={() => setMenu(undefined)}
+              entries={[
+                { label: "Edit project", onSelect: onEdit },
+                ...(!project.missing
+                  ? [
+                      { label: "Coordinator", onSelect: onOpenCoordinator },
+                      { label: "Reveal in Finder", onSelect: onReveal },
+                      { kind: "separator" as const },
+                    ]
+                  : []),
+                { label: "Remove project", onSelect: onRemove },
+              ]}
+            />
+          )}
           {!project.missing && (
             <button
               type="button"
