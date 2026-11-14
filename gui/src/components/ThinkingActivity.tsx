@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import type { ThinkingBlock } from "../agent/toolActivity"
+import { WorkingOrb } from "./WorkingOrb"
 import { ChevronRight } from "../lib/icons"
 import { Collapsible } from "./Collapsible"
 import { Markdown } from "./Markdown"
@@ -14,7 +15,8 @@ export function ThinkingActivity({ block, verbose = false }: { block: ThinkingBl
     setOpen(verbose)
   }, [verbose])
   return <div data-thinking-activity className="not-prose text-[length:var(--font-text-md-size)] text-[var(--text-tertiary)]">
-    <button type="button" aria-expanded={open} onClick={() => setOpen(value => !value)} className="group/thinking flex items-center gap-1 text-left hover:text-[var(--text-primary)]">
+    <button type="button" aria-expanded={open} onClick={() => setOpen(value => !value)} className="group/thinking flex items-center gap-1.5 text-left hover:text-[var(--text-primary)]">
+      {!block.done && <WorkingOrb size={16} />}
       <span className={!block.done ? "noa-shimmer" : ""}>{block.done ? "Thought" : "Thinking"}</span>
       <ChevronRight size={12} className={`opacity-0 group-hover/thinking:opacity-100 group-focus-visible/thinking:opacity-100 ${open ? "rotate-90" : ""}`} />
     </button>

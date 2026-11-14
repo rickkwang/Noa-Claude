@@ -1,3 +1,4 @@
+import { WorkingOrb } from "./WorkingOrb"
 import { useUserBubbleWidth } from "./useUserBubbleWidth"
 import { flushSync } from "react-dom"
 import { createContext, memo, use, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react"
@@ -1030,7 +1031,9 @@ function ActivityGroup({ blocks, pending, tasks, onStopTask, onOpenTask, verbose
         className="group/activity relative inline-flex max-w-full min-w-0 cursor-pointer items-center gap-1 p-0 text-left text-[length:var(--font-text-md-size)] font-normal leading-5 text-[color-mix(in_srgb,var(--text-primary)_60%,transparent)] select-none hover:text-[var(--text-primary,#2D2D2B)]"
       >
         <span className="inline-flex min-w-0 items-center gap-1.5">
-          <SummaryIcon size={16} className="shrink-0" aria-hidden="true" />
+          {live && liveLabel === "Thinking"
+            ? <WorkingOrb size={16} />
+            : <SummaryIcon size={16} className="shrink-0" aria-hidden="true" />}
           <span className={`min-w-0 truncate ${live ? "noa-shimmer" : ""}`}>{live ? liveLabel : completedLabel}</span>
         </span>
         <ChevronRight size={14} className={`shrink-0 opacity-0 transition-[transform,opacity] duration-300 group-hover/activity:opacity-100 group-focus-visible/activity:opacity-100 ${open ? "rotate-90" : ""}`} />
@@ -1201,9 +1204,11 @@ function formatDuration(ms: number): string {
 }
 
 function Working() {
-  // Sits outside the turn items, so it carries the conversation typeface itself to match the rows above, and is
-  // inset by the activity icon's own side bearing (1.8px of 16) so its first letter lines up with the icon's outline.
-  return <div className="noa-shimmer text-[length:var(--font-text-md-size)] leading-5" style={{ fontFamily: "var(--font-content, var(--font-ui))", paddingInlineStart: "1.8px" }}>Thinking</div>
+  // Sits outside the turn items, so it carries the conversation typeface itself to match the rows above.
+  return <div className="flex items-center gap-1.5 text-[length:var(--font-text-md-size)] leading-5 text-[var(--text-tertiary)]" style={{ fontFamily: "var(--font-content, var(--font-ui))" }}>
+    <WorkingOrb size={16} />
+    <span className="noa-shimmer">Thinking</span>
+  </div>
 }
 
 // Today shows the time, the past week the weekday and time, anything older the date and time.
