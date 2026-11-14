@@ -150,7 +150,7 @@ export function ThreadsPanel({ sessions, activeId, onSelect }: {
         />
       </label>
     </div>
-    <div ref={listRef} className="scrollbar-on-scroll min-h-0 flex-1 overflow-y-auto ps-3 pe-1 pt-3 pb-5 [scrollbar-gutter:stable]">
+    <div ref={listRef} className="scrollbar-on-scroll noa-scroll-fade [--edge-fade-distance:24px] min-h-0 flex-1 overflow-y-auto ps-3 pe-1 pt-3 pb-5 [scrollbar-gutter:stable]">
       {!shown.length && <p className="m-0 px-2 py-1 text-[var(--text-tertiary)]">{threads.length ? "No matching threads" : "No threads yet"}</p>}
       {GROUPS.map(({ id, title }) => {
         const items = shown.filter(session => groupOf(session) === id)

@@ -269,7 +269,7 @@ export function SettingsDialog({
             className="min-w-0 flex-1 bg-transparent text-[var(--text-primary)] outline-none placeholder:text-[var(--sidebar-text-muted)]"
           />
         </label>
-        <div className="scrollbar-on-scroll mt-2 min-h-0 flex-1 overflow-y-auto">
+        <div className="scrollbar-on-scroll noa-scroll-fade [--edge-fade-distance:24px] mt-2 min-h-0 flex-1 overflow-y-auto">
           {query.trim() ? (
             <>
               <button
@@ -328,7 +328,7 @@ export function SettingsDialog({
       {navResizeHandle}
       {/* The content card has no titlebar of its own, so this strip keeps the top of the window draggable. */}
       <div aria-hidden className="absolute inset-x-0 top-0 z-10 h-11" style={{ ...dragRegion, left: navWidth }} />
-      <main className="noa-settings-main scrollbar-on-scroll min-w-0 flex-1 overflow-y-auto bg-[var(--bg-primary,#FCFCFB)] px-5 pt-16 pb-16">
+      <main className="noa-settings-main scrollbar-on-scroll noa-scroll-fade min-w-0 flex-1 overflow-y-auto bg-[var(--bg-primary,#FCFCFB)] px-5 pt-16 pb-16">
         <div className="mx-auto flex max-w-3xl flex-col gap-8">
           {page !== "skills" && <h1 className="text-[26px] leading-8 font-normal">{current?.label}</h1>}
 

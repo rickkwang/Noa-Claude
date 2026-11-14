@@ -16,11 +16,11 @@ export function SubagentsPanel({ tasks, selectedId, onSelect, onStopTask }: {
       <SubagentAvatar id={selected.id} />
       <span className="min-w-0 truncate">{selected.description}</span>
     </div>
-    <div className="scrollbar-on-scroll min-h-0 flex-1 overflow-y-auto px-3 py-3"><TaskDetail task={selected} tasks={tasks} onStopTask={onStopTask} /></div>
+    <div className="scrollbar-on-scroll noa-scroll-fade [--edge-fade-distance:24px] min-h-0 flex-1 overflow-y-auto px-3 py-3"><TaskDetail task={selected} tasks={tasks} onStopTask={onStopTask} /></div>
   </div>
   const active = tasks.filter(task => task.status === "running" || task.status === "unknown")
   const done = tasks.filter(task => task.status !== "running" && task.status !== "unknown")
-  return <div className="scrollbar-on-scroll min-h-0 flex-1 overflow-y-auto px-3 py-5 text-chat-sm">
+  return <div className="scrollbar-on-scroll noa-scroll-fade [--edge-fade-distance:24px] min-h-0 flex-1 overflow-y-auto px-3 py-5 text-chat-sm">
     {[{ title: "Active", items: active }, { title: "Done", items: done }].map(({ title, items }) => <section key={title} className={title === "Done" ? "mt-6" : ""}>
       <h2 className="mb-2 flex items-center gap-1 px-2 text-chat-sm font-normal text-[var(--text-tertiary)]">{title} · {items.length}</h2>
       {!items.length && title === "Active" && <p className="m-0 px-2 py-1 text-[var(--text-tertiary)]">No active subagents</p>}

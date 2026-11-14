@@ -847,7 +847,7 @@ export const Composer = memo(function Composer({
             ))}
           </div>
         )}
-        <div className="relative flex items-end py-1.5">
+        <div className="relative flex items-end">
           <div className="absolute bottom-1.5 left-2 z-10">
             <Picker
             align="left"
@@ -931,7 +931,7 @@ export const Composer = memo(function Composer({
               aria-label="Task instruction"
               disabled={!!readOnly && disabled}
               rows={1}
-              className={`w-full min-h-[28px] max-h-[min(25dvh,var(--composer-editor-max-height,25dvh))] resize-none border-none bg-transparent pl-[42px] pr-[42px] py-1 text-[13.5px] leading-5 outline-none placeholder:text-[color-mix(in_srgb,var(--text-primary)_50%,transparent)] ${systemCaret ? "" : "caret-transparent"}`}
+              className={`noa-scroll-fade w-full min-h-[40px] max-h-[min(25dvh,var(--composer-editor-max-height,25dvh))] resize-none border-none bg-transparent pl-[42px] pr-[42px] py-2.5 text-[length:var(--transcript-text-size,var(--text-body))] leading-[1.45] outline-none placeholder:text-[color-mix(in_srgb,var(--text-primary)_50%,transparent)] ${systemCaret ? "" : "caret-transparent"}`}
             />
             {!systemCaret && <ComposerCaret textareaRef={textareaRef} value={text} disabled={!!readOnly && disabled} />}
           </div>

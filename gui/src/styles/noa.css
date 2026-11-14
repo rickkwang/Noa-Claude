@@ -1616,11 +1616,12 @@ kbd.noa-review-menu-hint { font-family: inherit; }
 
 /* Top scroll fade: the top edge fades over 40px once scrolled (scroll-driven); the bottom is covered by the floating composer. */
 @property --top-fade { syntax: "<length>"; inherits: false; initial-value: 0px; }
-@keyframes noa-edge-fade { 0%, 1% { --top-fade: 0px; } 99%, 100% { --top-fade: var(--edge-fade-distance); } }
+@keyframes noa-edge-fade { from { --top-fade: 0px; } to { --top-fade: var(--edge-fade-distance); } }
 .noa-scroll-fade { --edge-fade-distance: 40px; }
+.noa-agent-input textarea.noa-scroll-fade { --edge-fade-distance: 20px; }
 @supports (animation-timeline: scroll()) {
   /* Keep the overlay scrollbar out of the fade. */
-  .noa-scroll-fade { mask: linear-gradient(to bottom, transparent, #000 var(--top-fade)), linear-gradient(#000, #000) right / var(--noa-scrollbar-strip) 100% no-repeat; animation: noa-edge-fade linear both; animation-timeline: scroll(self y); }
+  .noa-scroll-fade { mask: linear-gradient(to bottom, transparent, #000 var(--top-fade)), linear-gradient(#000, #000) right / var(--noa-scrollbar-strip) 100% no-repeat; animation: noa-edge-fade linear both; animation-timeline: scroll(self y); animation-range: 0px var(--edge-fade-distance, 40px); }
 }
 /* Scroll-to-bottom: a 32px round bordered button, 24px above the composer card (the overlay includes its 32px gradient), no shadow. */
 .noa-scroll-bottom { position: absolute; bottom: calc(var(--composer-overlay, 0px) - 8px); left: 50%; z-index: 30; display: flex; width: 32px; height: 32px; translate: -50% 0; align-items: center; justify-content: center; border: 1px solid var(--border-default); border-radius: 999px; background: var(--surface-page, #F9F9F7) padding-box; color: var(--sidebar-text-muted); transition: opacity 200ms ease, color 120ms; }

@@ -89,7 +89,7 @@ export function QueuedMessages({
         <span className="min-w-0 flex-1">Queue paused</span>
         <button type="button" disabled={editing} onClick={() => { onPaused(false); if (!busy) onRun() }} className="rounded-md px-2 py-1 hover:bg-[var(--fill-hover)] disabled:opacity-40">Resume</button>
       </div>}
-      <div className="scrollbar-on-scroll min-h-0 flex-1 overflow-y-auto px-2.5 py-1">
+      <div className="scrollbar-on-scroll noa-scroll-fade [--edge-fade-distance:24px] min-h-0 flex-1 overflow-y-auto px-2.5 py-1">
         {visible.map((message, index) => {
           const content = parts(message)
           const images = content.images.map((image, imageIndex) => ({
