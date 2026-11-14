@@ -6,7 +6,7 @@ const CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
 const MAX_DROPS = 24;
 const MAX_ACTIVE_DROPS = 24;
 const MAX_OBSTACLES = 8;
-const DROP_LIFETIME = 2.4;
+const DROP_LIFETIME = 3.2;
 const DROP_COOLDOWN_MS = 50;
 
 const VERT_SRC = `
@@ -45,6 +45,7 @@ uniform float time;
 uniform float scale;
 uniform float seed;
 uniform vec4 drops[24];
+uniform float dropSeeds[24];
 uniform int count;
 uniform vec4 obsBox[8];
 uniform float obsRadius[8];
@@ -86,23 +87,28 @@ void main() {
   for (int i = 0; i < 24; i++) {
     if (i < count) {
       float age = time - drops[i].z;
-      if (age > 0.0 && age < 2.4) {
+      if (age > 0.0 && age < 3.2) {
+        float dSeed = dropSeeds[i];
+        float speedMul = 0.88 + 0.24 * fract(dSeed * 0.37);
+        float widthMul = 0.85 + 0.30 * fract(dSeed * 0.71);
+        vec2 seedOff = vec2(dSeed * 7.31, dSeed * 3.17);
         vec2 delta = (p - drops[i].xy) / max(scale, 0.4);
         float distance = length(delta);
-        float radius = 475.0 * (1.0 - exp(-age * 1.45));
-        float bend = fbm(q * 0.007 + drops[i].xy * 0.017 + vec2(drops[i].z * 11.3) + drift * 0.55) - 0.5;
-        float wrinkle = noise(q * 0.027 + warp * 2.7 + drift) - 0.5;
+        float radius = (760.0 * speedMul) * (1.0 - exp(-age * 1.05));
+        float bend = fbm(q * 0.007 + seedOff + drift * 0.55) - 0.5;
+        float wrinkle = noise(q * 0.027 + warp * 2.7 + seedOff * 0.4 + drift) - 0.5;
         float refractRamp = smoothstep(0.06, 0.45, age);
-        float distortion = (bend * (60.0 + min(age, 2.0) * 90.0) + wrinkle * 16.0) * refractRamp;
+        float distortion = (bend * (65.0 + min(age, 2.0) * 90.0) + wrinkle * 18.0) * refractRamp;
         float edge = distance + distortion + edgeDrag - radius;
-        float width = 18.0 + 24.0 * (1.0 - exp(-age * 1.4));
+        float width = (16.0 + 20.0 * (1.0 - exp(-age * 1.4))) * widthMul;
         float ring = exp(-pow(edge / width, 2.0));
-        float breakup = mix(1.0, smoothstep(0.28 + age * 0.09, 0.56 + age * 0.07, water + fine * 0.16), refractRamp);
-        float fade = 1.0 - smoothstep(0.45, 1.75, age);
+        float localWater = fbm(q * 0.014 + warp * 3.0 + seedOff * 0.25 + drift);
+        float breakup = mix(1.0, smoothstep(0.27 + age * 0.09, 0.55 + age * 0.07, localWater + fine * 0.18), refractRamp);
+        float fade = pow(1.0 - smoothstep(0.45, 2.75, age), 1.35);
         float crest = ring * breakup * fade;
 
-        float wakeBand = smoothstep(-140.0 - 55.0 * (1.0 - exp(-age * 1.3)), -16.0, edge) * (1.0 - smoothstep(-8.0, 30.0, edge));
-        float tail = wakeBand * (1.0 - smoothstep(0.8, 2.1, age));
+        float wakeBand = smoothstep(-140.0 - 50.0 * (1.0 - exp(-age * 1.3)), -16.0, edge) * (1.0 - smoothstep(-8.0, 28.0, edge));
+        float tail = wakeBand * pow(1.0 - smoothstep(0.7, 2.95, age), 1.3);
         float eddies = pow(smoothstep(0.43, 0.69, water * 0.85 + fine * 0.22), 1.5);
         float filaments = exp(-abs(water - 0.51) * 20.0);
         eddies = mix(eddies, filaments * 0.55, 0.35);
@@ -119,36 +125,9 @@ void main() {
 
         float dropBlue = (crest * 0.68 + tail * eddies * 0.45) * drops[i].w * onset * transmit;
 
-        if (obsCount > 0) {
-          float refl = 0.0;
-          for (int j = 0; j < 8; j++) {
-            if (j < obsCount) {
-              vec2 C = obsBox[j].xy;
-              vec2 B = obsBox[j].zw;
-              vec2 v = drops[i].xy - C;
-              vec2 nv = abs(v) / max(B, vec2(1.0));
-              vec2 n = nv.x > nv.y ? vec2(sign(v.x), 0.0) : vec2(0.0, sign(v.y));
-              if (n.x == 0.0 && n.y == 0.0) n = vec2(0.0, -1.0);
-              vec2 wallPt = C + n * B;
-              float dWall = dot(drops[i].xy - wallPt, n);
-              if (dWall > 0.0 && radius > dWall && dWall < 380.0) {
-                vec2 sRef = drops[i].xy - 2.0 * dWall * n;
-                float sideMask = smoothstep(0.0, 16.0, dot(p - wallPt, n));
-                float tangentSpan = nv.x > nv.y ? B.y : B.x;
-                float tangentPos = nv.x > nv.y ? abs(p.y - C.y) : abs(p.x - C.x);
-                float spanMask = smoothstep(0.0, 32.0, tangentSpan + 24.0 - tangentPos);
-                float refEdge = length(p - sRef) + distortion * 0.7 - radius;
-                float refRing = exp(-pow(refEdge / (width * 1.15), 2.0));
-                refl = max(refl, refRing * sideMask * spanMask);
-              }
-            }
-          }
-          dropBlue = max(dropBlue, refl * breakup * fade * 0.34 * drops[i].w * onset);
-        }
-
         blue = max(blue, dropBlue);
-        float grayBand = smoothstep(-145.0 - 50.0 * (1.0 - exp(-age * 1.2)), -15.0, edge) * (1.0 - smoothstep(-6.0, 24.0, edge));
-        float grayTail = grayBand * (1.0 - smoothstep(1.0, 2.4, age));
+        float grayBand = smoothstep(-170.0 - 60.0 * (1.0 - exp(-age * 1.2)), -18.0, edge) * (1.0 - smoothstep(-8.0, 28.0, edge));
+        float grayTail = grayBand * pow(1.0 - smoothstep(0.9, 3.2, age), 1.3);
         float dropWake = grayTail * (0.05 + 0.72 * pow(smoothstep(0.40, 0.70, water), 1.5)) * transmit;
         wake = max(wake, dropWake);
       }
@@ -200,7 +179,7 @@ void main() {
 }
 `;
 
-type DropEntry = [number, number, number, number];
+type DropEntry = [number, number, number, number, number];
 
 function readAccentRgb(isDark: boolean): [number, number, number] {
   const fallback: [number, number, number] = isDark ? [0.26, 0.58, 0.86] : [0.40, 0.44, 0.70];
@@ -479,11 +458,13 @@ export function DigitalWavesBackground({
 
       const active = manual.slice(-MAX_ACTIVE_DROPS);
       const data = new Float32Array(MAX_DROPS * 4);
+      const seeds = new Float32Array(MAX_DROPS);
       active.forEach((d, i) => {
         data[i * 4] = d[0] * width;
         data[i * 4 + 1] = d[1] * height;
         data[i * 4 + 2] = d[2];
         data[i * 4 + 3] = d[3];
+        seeds[i] = d[4];
       });
 
       const p = resources.field;
@@ -498,6 +479,7 @@ export function DigitalWavesBackground({
       gl!.uniform1f(loc(p, "scale"), 1.0);
       gl!.uniform1i(loc(p, "count"), active.length);
       gl!.uniform4fv(loc(p, "drops[0]"), data);
+      gl!.uniform1fv(loc(p, "dropSeeds[0]"), seeds);
       gl!.uniform1i(loc(p, "obsCount"), obsCount);
       gl!.uniform4fv(loc(p, "obsBox[0]"), obsBoxes);
       gl!.uniform1fv(loc(p, "obsRadius[0]"), obsRadii);
@@ -535,7 +517,8 @@ export function DigitalWavesBackground({
       const now = performance.now();
       if (now - lastDropMs < DROP_COOLDOWN_MS) return;
       lastDropMs = now;
-      manual.push([x / width, y / height, time - 0.016, Math.max(0, Math.min(2, strength))]);
+      const variedStrength = Math.max(0, Math.min(2, strength * (0.82 + Math.random() * 0.36)));
+      manual.push([x / width, y / height, time - 0.016, variedStrength, Math.random() * 100]);
       if (manual.length > MAX_ACTIVE_DROPS) {
         manual.shift();
       }
