@@ -1978,14 +1978,16 @@ body.noa-session-dragging * { cursor: grabbing !important; }
   }
 }
 
-.noa-activity-scroll > [data-tool-activity] > button {
+.noa-activity-list > [data-tool-activity] > button {
+  width: 100%;
   min-height: 20px;
+  margin-inline: 0;
   padding: 0;
   font-size: var(--font-text-md-size);
   color: color-mix(in srgb, var(--text-primary) 60%, transparent);
 }
-.noa-activity-scroll > [data-tool-activity] > button:hover { color: var(--text-primary); }
-.noa-activity-scroll > [data-tool-activity] > button > svg:first-child { width: 16px; height: 16px; }
+.noa-activity-list > [data-tool-activity] > button:hover { color: var(--text-primary); }
+.noa-activity-list > [data-tool-activity] > button > svg:first-child { width: 16px; height: 16px; }
 
 /* Themeable code syntax tokens, defaulting to Absolutely Light/Dark. */
 :is(.noa-code-block, .noa-code-view) :is(.hljs-keyword, .hljs-selector-tag) { color: var(--hljs-keyword, #FF5F38) !important; }

@@ -33,7 +33,7 @@ export function SubagentActivity({ blocks, tasks = [], onOpenTask, details, trac
       <ChevronRight size={12} className={`shrink-0 opacity-0 group-hover/agents:opacity-100 group-focus-visible/agents:opacity-100 ${open ? "rotate-90" : ""}`} />
     </button>
     <Collapsible open={open}>
-      <div data-agent-instructions className="flex flex-col gap-1 border-l border-[var(--divider-subtle)] ps-5 text-[var(--text-secondary)]">
+      <div data-agent-instructions className="ms-2 flex flex-col gap-1 border-l border-[var(--divider-subtle)] ps-3 text-[var(--text-secondary)]">
         {entries.map(({ block, task }) => <div key={block.id}>
           <div className="flex min-w-0 gap-1">
           <span className="shrink-0">{block.status === "running" ? "Creating" : block.status === "error" ? "Failed to create" : "Created"}</span>
