@@ -17,10 +17,8 @@ import {
   ComposerShieldCodeIcon,
   ComposerShieldWarningIcon,
   ComposerChevronIcon,
-  ComposerComputerIcon,
   ComposerFolderIcon,
   ComposerPlusIcon,
-  ComposerSendIcon,
 } from "./ComposerIcons"
 import type { ReactNode } from "react"
 import type { ProjectInfo } from "../api"
@@ -700,36 +698,6 @@ export const Composer = memo(function Composer({
 
   return (
     <div ref={composerRef} data-new-task={newTask || undefined} className="noa-agent-composer relative">
-      {newTask && (
-        <div className="noa-agent-environment flex items-center gap-2 text-chat-sm">
-          {rateLimit && onDismissRateLimit ? <RateLimitNotice info={rateLimit} inline onDismiss={onDismissRateLimit} /> : <>
-          <Picker
-            align="left"
-            hideChevron
-            label={
-              <>
-                <ComposerFolderIcon />
-                <span className="min-w-0 truncate">{(worktreeOf ?? cwd).split("/").pop()}</span>
-              </>
-            }
-            items={projects
-              .filter((p) => !p.missing)
-              .map((p) => ({
-                key: p.path,
-                title: p.name,
-                description: p.path,
-                active: p.path === (worktreeOf ?? cwd),
-                onSelect: () => onProject(p.path),
-              }))}
-          />
-          {/* Cloud execution is unsupported, so there is nothing to choose: a static label instead of a one-item menu. */}
-          <span className="flex h-7 items-center gap-1 px-2 text-[12px] leading-[18px] text-[var(--sidebar-text,#52514E)]">
-            <ComposerComputerIcon />This computer
-          </span>
-          <EnvironmentMenu cwd={cwd} branch={branch} onBranchChange={onBranchChange} worktree={!!worktreeOf} canToggleWorktree={newTask} onWorktree={onWorktree} />
-          </>}
-        </div>
-      )}
       {!newTask && rateLimit && onDismissRateLimit && (
         <div className="mb-2">
           <RateLimitNotice info={rateLimit} onDismiss={onDismissRateLimit} />
@@ -858,7 +826,6 @@ export const Composer = memo(function Composer({
         )}
         {sendWhenReady && <p className="m-0 px-3 pt-2 text-caption text-[var(--sidebar-text-muted)]">Sends when Noa is ready…</p>}
         {attachmentError && <p role="alert" className="m-0 px-3 pt-2 text-caption text-[#C24444]">{attachmentError}</p>}
-        {references.length === 0 && <div aria-hidden="true" className="h-3 shrink-0" />}
         {references.length > 0 && (
           <div className="flex flex-wrap gap-1 px-2 pb-1.5 pt-2">
             {references.map((path) => (
@@ -880,236 +847,272 @@ export const Composer = memo(function Composer({
             ))}
           </div>
         )}
-        <div className="relative flex flex-col overflow-hidden">
-          <textarea
-            ref={textareaRef}
-            value={text}
-            onChange={(e) => { setText(e.target.value); setCaret(e.target.selectionStart ?? e.target.value.length) }}
-            onSelect={(e) => setCaret(e.currentTarget.selectionStart ?? 0)}
-            onPaste={(event) => {
-              const files = Array.from(event.clipboardData.items).filter((item) => item.kind === "file").map((item) => item.getAsFile()).filter((file): file is File => file !== null)
-              if (files.length) { event.preventDefault(); void addImages(files) }
-            }}
-            onKeyDown={onKeyDown}
-            onFocus={() => setInputFocused(true)}
-            onBlur={(event) => {
-              if (event.relatedTarget instanceof Node && composerRef.current?.contains(event.relatedTarget)) return
-              setInputFocused(false)
-              setBrowserOpen(false)
-              setBrowserAction(undefined)
-              setBrowserSearch("")
-            }}
-            aria-autocomplete="list"
-            aria-controls={mentionOpen ? "noa-file-mentions" : menuOpen ? "noa-slash-commands" : undefined}
-            aria-activedescendant={mentionOpen && mentionItems[mentionIndex] ? `noa-file-option-${mentionIndex}` : menuOpen && menuItems[menuIndex] ? `noa-slash-option-${menuIndex}` : undefined}
-            onCompositionStart={() => setComposing(true)}
-            onCompositionEnd={() => { setComposing(false); compositionEndAt.current = performance.now() }}
-            placeholder={readOnly ? "Running in a terminal" : connection === "closed" ? "Noa disconnected" : disabled ? "Starting Noa…" : busy ? followUpMode === "steer" ? "Add a follow-up…" : "Add a follow-up to the queue…" : newTask ? "Do anything" : "Work with Noa"}
-            aria-label="Task instruction"
-            disabled={!!readOnly && disabled}
-            rows={1}
-            className={`w-full min-h-[34px] max-h-[min(25dvh,var(--composer-editor-max-height,25dvh))] resize-none border-none bg-transparent pl-[15px] pr-3 py-0 text-[13px] leading-5 outline-none placeholder:text-[color-mix(in_srgb,var(--text-primary)_50%,transparent)] ${systemCaret ? "" : "caret-transparent"}`}
+        <div className="relative flex items-end py-1.5">
+          <div className="absolute bottom-1.5 left-2 z-10">
+            <Picker
+            align="left"
+            hideChevron
+            iconOnly
+            label={<ComposerPlusIcon width={17} height={17} />}
+            ariaLabel="Add task context"
+            items={[
+              { key: "images", title: "Add photos", icon: <Photo size={16} />, active: false, onSelect: () => fileRef.current?.click() },
+              {
+                key: "files",
+                title: "Files and folders",
+                icon: <FileText size={16} />,
+                active: false,
+                onSelect: () => {
+                  const el = textareaRef.current
+                  const at = el?.selectionStart ?? text.length
+                  const lead = at > 0 && !/\s/.test(text[at - 1]!) ? " " : ""
+                  setText(text.slice(0, at) + lead + "@" + text.slice(at))
+                  const next = at + lead.length + 1
+                  setCaret(next)
+                  setMentionDismissed(false)
+                  requestAnimationFrame(() => { el?.focus(); el?.setSelectionRange(next, next) })
+                },
+              },
+              {
+                key: "skills",
+                title: "Skills",
+                icon: <List size={16} />,
+                active: false,
+                onSelect: () => {
+                  setBrowserSearch("")
+                  setBrowserOpen(true)
+                  setBrowserFilter("Skills")
+                  setMenuDismissed(false)
+                  textareaRef.current?.focus()
+                },
+              },
+              {
+                key: "commands",
+                title: "Commands",
+                icon: <Terminal size={16} />,
+                active: false,
+                onSelect: () => {
+                  setBrowserSearch("")
+                  setBrowserOpen(true)
+                  setBrowserFilter(undefined)
+                  setMenuDismissed(false)
+                  textareaRef.current?.focus()
+                },
+              },
+            ]}
+            menuTitle="Add"
           />
-          {!systemCaret && <ComposerCaret textareaRef={textareaRef} value={text} disabled={!!readOnly && disabled} />}
-        </div>
-        {argumentCommand?.argumentHint && !submenu && <p className="m-0 px-3 pb-1 text-caption text-[var(--sidebar-text-muted)]">/{argumentCommand.name} {argumentCommand.argumentHint}</p>}
-        <div className="noa-agent-footer mb-1.5 mt-0.5 flex min-h-7 items-center justify-between gap-1 px-2">
-          <div className="flex min-w-0 items-center gap-1">
-            <Picker
-              align="left"
-              hideChevron
-              iconOnly
-              label={<ComposerPlusIcon />}
-              ariaLabel="Add task context"
-              items={[
-                { key: "images", title: "Add photos", icon: <Photo size={16} />, active: false, onSelect: () => fileRef.current?.click() },
-                {
-                  key: "files",
-                  title: "Files and folders",
-                  icon: <FileText size={16} />,
-                  active: false,
-                  onSelect: () => {
-                    const el = textareaRef.current
-                    const at = el?.selectionStart ?? text.length
-                    const lead = at > 0 && !/\s/.test(text[at - 1]!) ? " " : ""
-                    setText(text.slice(0, at) + lead + "@" + text.slice(at))
-                    const next = at + lead.length + 1
-                    setCaret(next)
-                    setMentionDismissed(false)
-                    requestAnimationFrame(() => { el?.focus(); el?.setSelectionRange(next, next) })
-                  },
-                },
-                {
-                  key: "skills",
-                  title: "Skills",
-                  icon: <List size={16} />,
-                  active: false,
-                  onSelect: () => {
-                    setBrowserSearch("")
-                    setBrowserOpen(true)
-                    setBrowserFilter("Skills")
-                    setMenuDismissed(false)
-                    textareaRef.current?.focus()
-                  },
-                },
-                {
-                  key: "commands",
-                  title: "Commands",
-                  icon: <Terminal size={16} />,
-                  active: false,
-                  onSelect: () => {
-                    setBrowserSearch("")
-                    setBrowserOpen(true)
-                    setBrowserFilter(undefined)
-                    setMenuDismissed(false)
-                    textareaRef.current?.focus()
-                  },
-                },
-              ]}
-              menuTitle="Add"
-            />
-            <Picker
-              align="left"
-              hideChevron
-              label={
-                <>
-                  {MODE_ICONS[mode ?? "default"]}
-                  <span className="noa-agent-mode-label">{currentMode?.label ?? "Permissions"}</span>
-                </>
-              }
-              ariaLabel={currentMode?.label ?? "Permissions"}
-              compactPadding
-              disabled={modelDisabled}
-              tone={mode === "bypassPermissions" ? "danger" : undefined}
-              items={permissionModes.map((m) => ({
-                key: m.value,
-                title: m.label,
-                description: modeUnavailable(m.value) ? "Not available for the selected model" : m.description,
-                active: m.value === mode,
-                disabled: modeUnavailable(m.value),
-                icon: MODE_ICONS[m.value],
-                danger: m.value === "bypassPermissions",
-                onSelect: () => void selectMode(m.value),
-              }))}
-              menuTitle="Permissions · this session"
-            />
           </div>
-          <div className="ml-auto flex min-w-0 items-center gap-1">
-            {/* A new task has only the baseline prompt, whose sliver reads as a loading spinner. */}
-            {contextUsage && !newTask && (
-              <span
-                ref={contextRef}
-                className="relative inline-flex shrink-0 items-center text-[var(--sidebar-text-muted)]"
-              >
-                <button
-                  type="button"
-                  aria-label={`Context usage ${Math.round(contextUsage.percentage)}%`}
-                  aria-expanded={contextOpen}
-                  onClick={() => setContextOpen(open => !open)}
-                  className="inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-full transition-colors hover:bg-[var(--fill-hover)] aria-expanded:bg-[var(--fill-hover)] focus-visible:outline focus-visible:outline-1"
-                >
-                <svg
-                  width={12}
-                  height={12}
-                  viewBox="0 0 12 12"
-                  className="shrink-0"
-                  aria-hidden="true"
-                >
-                  <circle cx={6} cy={6} r={5} stroke="currentColor" strokeWidth={2} fill="none" opacity={0.16} />
-                  <circle
-                    cx={6}
-                    cy={6}
-                    r={5}
-                    stroke="currentColor"
-                    strokeWidth={2}
-                    strokeLinecap="round"
-                    fill="none"
-                    pathLength={100}
-                    strokeDasharray={100}
-                    strokeDashoffset={100 - Math.min(100, Math.max(0, contextUsage.percentage))}
-                    opacity={contextUsage.percentage > 0 ? 1 : 0}
-                    transform="rotate(-90 6 6)"
-                  />
+          <div className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
+            <textarea
+              ref={textareaRef}
+              value={text}
+              onChange={(e) => { setText(e.target.value); setCaret(e.target.selectionStart ?? e.target.value.length) }}
+              onSelect={(e) => setCaret(e.currentTarget.selectionStart ?? 0)}
+              onPaste={(event) => {
+                const files = Array.from(event.clipboardData.items).filter((item) => item.kind === "file").map((item) => item.getAsFile()).filter((file): file is File => file !== null)
+                if (files.length) { event.preventDefault(); void addImages(files) }
+              }}
+              onKeyDown={onKeyDown}
+              onFocus={() => setInputFocused(true)}
+              onBlur={(event) => {
+                if (event.relatedTarget instanceof Node && composerRef.current?.contains(event.relatedTarget)) return
+                setInputFocused(false)
+                setBrowserOpen(false)
+                setBrowserAction(undefined)
+                setBrowserSearch("")
+              }}
+              aria-autocomplete="list"
+              aria-controls={mentionOpen ? "noa-file-mentions" : menuOpen ? "noa-slash-commands" : undefined}
+              aria-activedescendant={mentionOpen && mentionItems[mentionIndex] ? `noa-file-option-${mentionIndex}` : menuOpen && menuItems[menuIndex] ? `noa-slash-option-${menuIndex}` : undefined}
+              onCompositionStart={() => setComposing(true)}
+              onCompositionEnd={() => { setComposing(false); compositionEndAt.current = performance.now() }}
+              placeholder={readOnly ? "Running in a terminal" : connection === "closed" ? "Noa disconnected" : disabled ? "Starting Noa…" : busy ? followUpMode === "steer" ? "Add a follow-up…" : "Add a follow-up to the queue…" : newTask ? "Do anything" : "Work with Noa"}
+              aria-label="Task instruction"
+              disabled={!!readOnly && disabled}
+              rows={1}
+              className={`w-full min-h-[28px] max-h-[min(25dvh,var(--composer-editor-max-height,25dvh))] resize-none border-none bg-transparent pl-[42px] pr-[42px] py-1 text-[13.5px] leading-5 outline-none placeholder:text-[color-mix(in_srgb,var(--text-primary)_50%,transparent)] ${systemCaret ? "" : "caret-transparent"}`}
+            />
+            {!systemCaret && <ComposerCaret textareaRef={textareaRef} value={text} disabled={!!readOnly && disabled} />}
+          </div>
+          <button
+            type="button"
+            onClick={busy && !editDraft?.queued && empty ? onInterrupt : submit}
+            disabled={(!busy || editDraft?.queued) && (connection === "closed" || forking || !!readOnly && disabled || sendWhenReady || loadingImages || !imagesLoaded || empty)}
+            aria-label={editDraft?.queued ? "Save queued message" : busy && empty ? "Stop (Esc)" : busy ? followUpMode === "steer" ? "Steer" : "Queue message" : "Run task"}
+            title={editDraft?.queued ? "Save queued message; queue stays paused" : busy && empty ? "Stop (Esc)" : busy ? followUpMode === "steer" ? "Submit without interrupting the model" : "Queue after the current turn" : "Run task"}
+            data-action={busy && empty ? "stop" : busy ? followUpMode : "send"}
+            className={`noa-primary-action absolute bottom-1.5 right-2 z-10 flex size-7 shrink-0 items-center justify-center rounded-[7px] transition-[background-color,color,opacity,transform] noa-press ${
+              busy && !editDraft?.queued
+                ? "bg-[var(--text-primary,#2D2D2B)] text-[var(--surface-page,#FFFFFF)] hover:opacity-90 disabled:opacity-50"
+                : "bg-transparent text-[var(--sidebar-text,#52514E)] hover:bg-[var(--fill-hover)] disabled:opacity-60"
+            }`}
+          >
+            {busy && !editDraft?.queued && empty
+              ? <span aria-hidden="true" className="block size-[11px] rounded-[1.25px] bg-current" />
+              : busy && !editDraft?.queued ? followUpMode === "steer" ? <Steer size={16} /> : <Queue size={16} /> : (
+                <svg width={16} height={16} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <polyline points="6 7 3 10 6 13" />
+                  <path d="M13 4v4a2 2 0 0 1-2 2H3" />
                 </svg>
-                </button>
-                <span
-                  role="tooltip"
-                  className={`absolute bottom-full left-1/2 z-40 mb-2.5 w-[280px] -translate-x-1/2 flex-col gap-2 whitespace-nowrap rounded-[var(--menu-popover-radius)] bg-[var(--bg-card)] px-4 py-3 text-caption tabular-nums text-[var(--text-primary)] shadow-[var(--menu-shadow)] ${contextOpen ? "noa-floating-panel flex" : "hidden"}`}
-                >
-                  <span className="flex items-baseline justify-between gap-3">
-                    <span>Context window</span>
-                    <span className="text-[var(--sidebar-text-muted)]">
-                      {compactTokens(contextUsage.totalTokens)} / {compactTokens(contextUsage.maxTokens)}
-                      <span className="ms-2">{Math.round(contextUsage.percentage)}%</span>
-                    </span>
-                  </span>
-                  <UsageBar percentage={contextUsage.percentage} />
-                  {([
-                    ["five_hour", "5-hour limit"],
-                    ["seven_day", "Weekly limit"],
-                  ] as const).map(([key, label]) => {
-                    const window = contextUsage.rateLimits?.[key]
-                    if (!window) return null
-                    const pct = window.utilization * 100
-                    return (
-                      <span key={key} className="mt-1 flex flex-col gap-2">
-                        <span className="flex items-baseline justify-between gap-3">
-                          <span>{label}</span>
-                          <span className="text-[var(--sidebar-text-muted)]">
-                            Resets {formatReset(window.resets_at, key === "seven_day")}
-                            <span className="ms-2">{Math.round(pct)}%</span>
-                          </span>
-                        </span>
-                        <UsageBar percentage={pct} />
-                      </span>
-                    )
-                  })}
-                  {contextUsage.rateLimitsError && (
-                    <span className="max-w-full whitespace-normal text-[var(--sidebar-text-muted)]">{contextUsage.rateLimitsError}</span>
-                  )}
-                </span>
-              </span>
-            )}
+              )}
+          </button>
+        </div>
+        {argumentCommand?.argumentHint && !submenu && <p className="m-0 px-3 pb-1.5 text-caption text-[var(--sidebar-text-muted)]">/{argumentCommand.name} {argumentCommand.argumentHint}</p>}
+      </div>
+      <div className="noa-agent-footer mt-1.5 flex min-h-6 items-center justify-between gap-2 pl-1.5 pr-2">
+        <div className="flex min-w-0 items-center gap-1">
+          {newTask && (
+            rateLimit && onDismissRateLimit ? <RateLimitNotice info={rateLimit} inline onDismiss={onDismissRateLimit} /> : <>
             <Picker
-              ariaLabel="Model and reasoning effort"
-              modelPicker
+              align="left"
               label={
                 <>
-                  <span className="noa-agent-model-name max-w-[112px] truncate text-[var(--text-primary)]">
-                    {currentModel?.displayName ?? model ?? (disabled ? savedModelLabel : undefined) ?? "Model"}
-                  </span>
-                  {currentModel?.supportsEffort && effort && currentModel.supportedEffortLevels?.includes(effort) && (
-                    <span className="noa-agent-effort-label capitalize text-[var(--text-tertiary)]">{effort}</span>
-                  )}
+                  <ComposerFolderIcon />
+                  <span className="min-w-0 truncate">{(worktreeOf ?? cwd).split("/").pop()}</span>
                 </>
               }
-              disabled={modelDisabled || models.length === 0}
-              items={modelItems}
-              header={effortLevels.length > 0 ? (toggleModels, active) => (
-                <EffortSlider
-                  levels={effortLevels}
-                  effort={effort ?? null}
-                  modelName={currentModel?.displayName ?? ""}
-                  active={active}
-                  onEffort={onEffort}
-                  onToggleModels={toggleModels}
-                />
-              ) : undefined}
+              items={projects
+                .filter((p) => !p.missing)
+                .map((p) => ({
+                  key: p.path,
+                  title: p.name,
+                  description: p.path,
+                  active: p.path === (worktreeOf ?? cwd),
+                  onSelect: () => onProject(p.path),
+                }))}
             />
-            <button
-              type="button"
-              onClick={busy && !editDraft?.queued && empty ? onInterrupt : submit}
-              disabled={(!busy || editDraft?.queued) && (connection === "closed" || forking || !!readOnly && disabled || sendWhenReady || loadingImages || !imagesLoaded || empty)}
-              aria-label={editDraft?.queued ? "Save queued message" : busy && empty ? "Stop (Esc)" : busy ? followUpMode === "steer" ? "Steer" : "Queue message" : "Run task"}
-              title={editDraft?.queued ? "Save queued message; queue stays paused" : busy && empty ? "Stop (Esc)" : busy ? followUpMode === "steer" ? "Submit without interrupting the model" : "Queue after the current turn" : "Run task"}
-              data-action={busy && empty ? "stop" : busy ? followUpMode : "send"}
-              className="noa-primary-action ml-1 flex size-7 shrink-0 items-center justify-center rounded-full bg-[var(--text-primary,#2D2D2B)] text-[var(--surface-page,#FFFFFF)] transition-[opacity,transform] hover:opacity-90 disabled:opacity-50 noa-press"
+            <EnvironmentMenu cwd={cwd} branch={branch} onBranchChange={onBranchChange} worktree={!!worktreeOf} canToggleWorktree={newTask} onWorktree={onWorktree} />
+            </>
+          )}
+        </div>
+        <div className="ml-auto flex min-w-0 items-center gap-1">
+          <Picker
+            ariaLabel="Model and reasoning effort"
+            modelPicker
+            hideChevron
+            label={
+              <>
+                <span className="noa-agent-model-name max-w-[112px] truncate text-[var(--text-primary)]">
+                  {currentModel?.displayName ?? model ?? (disabled ? savedModelLabel : undefined) ?? "Model"}
+                </span>
+                {currentModel?.supportsEffort && effort && currentModel.supportedEffortLevels?.includes(effort) && (
+                  <span className="noa-agent-effort-label capitalize text-[var(--text-tertiary)]">{effort}</span>
+                )}
+              </>
+            }
+            disabled={modelDisabled || models.length === 0}
+            items={modelItems}
+            header={effortLevels.length > 0 ? (toggleModels, active) => (
+              <EffortSlider
+                levels={effortLevels}
+                effort={effort ?? null}
+                modelName={currentModel?.displayName ?? ""}
+                active={active}
+                onEffort={onEffort}
+                onToggleModels={toggleModels}
+              />
+            ) : undefined}
+          />
+          <Picker
+            hideChevron
+            label={
+              <>
+                {MODE_ICONS[mode ?? "default"]}
+                <span className="noa-agent-mode-label">{currentMode?.label ?? "Permissions"}</span>
+              </>
+            }
+            ariaLabel={currentMode?.label ?? "Permissions"}
+            compactPadding
+            disabled={modelDisabled}
+            tone={mode === "bypassPermissions" ? "danger" : undefined}
+            items={permissionModes.map((m) => ({
+              key: m.value,
+              title: m.label,
+              description: modeUnavailable(m.value) ? "Not available for the selected model" : m.description,
+              active: m.value === mode,
+              disabled: modeUnavailable(m.value),
+              icon: MODE_ICONS[m.value],
+              danger: m.value === "bypassPermissions",
+              onSelect: () => void selectMode(m.value),
+            }))}
+            menuTitle="Permissions · this session"
+          />
+          {/* A new task has only the baseline prompt, whose sliver reads as a loading spinner. */}
+          {contextUsage && !newTask && (
+            <span
+              ref={contextRef}
+              className="relative inline-flex shrink-0 items-center text-[var(--sidebar-text-muted)]"
             >
-              {busy && !editDraft?.queued && empty
-                ? <span aria-hidden="true" className="block size-[11px] rounded-[1.25px] bg-current" />
-                : busy && !editDraft?.queued ? followUpMode === "steer" ? <Steer size={16} /> : <Queue size={16} /> : <ComposerSendIcon width={16} height={16} />}
-            </button>
-          </div>
+              <button
+                type="button"
+                aria-label={`Context usage ${Math.round(contextUsage.percentage)}%`}
+                aria-expanded={contextOpen}
+                onClick={() => setContextOpen(open => !open)}
+                className="inline-flex h-6 w-7 cursor-pointer items-center justify-center rounded-[7px] transition-colors hover:bg-[var(--fill-hover)] aria-expanded:bg-[var(--fill-hover)] focus-visible:outline focus-visible:outline-1"
+              >
+              <svg
+                width={14}
+                height={14}
+                viewBox="0 0 14 14"
+                className="shrink-0"
+                aria-hidden="true"
+              >
+                <circle cx={7} cy={7} r={5.5} stroke="currentColor" strokeWidth={1.75} fill="none" opacity={0.18} />
+                <circle
+                  cx={7}
+                  cy={7}
+                  r={5.5}
+                  stroke={contextUsage.percentage >= 80 ? "#C24444" : contextUsage.percentage >= 50 ? "#D97757" : "currentColor"}
+                  strokeWidth={1.75}
+                  strokeLinecap="round"
+                  fill="none"
+                  pathLength={100}
+                  strokeDasharray={100}
+                  strokeDashoffset={100 - Math.min(100, Math.max(0, contextUsage.percentage))}
+                  opacity={contextUsage.percentage > 0 ? 1 : 0}
+                  transform="rotate(-90 7 7)"
+                />
+              </svg>
+              </button>
+              <span
+                role="tooltip"
+                className={`absolute bottom-full right-0 z-40 mb-2.5 w-[280px] flex-col gap-2 whitespace-nowrap rounded-[var(--menu-popover-radius)] bg-[var(--bg-card)] px-4 py-3 text-caption tabular-nums text-[var(--text-primary)] shadow-[var(--menu-shadow)] ${contextOpen ? "noa-floating-panel flex" : "hidden"}`}
+              >
+                <span className="flex items-baseline justify-between gap-3">
+                  <span>Context window</span>
+                  <span className="text-[var(--sidebar-text-muted)]">
+                    {compactTokens(contextUsage.totalTokens)} / {compactTokens(contextUsage.maxTokens)}
+                    <span className="ms-2">{Math.round(contextUsage.percentage)}%</span>
+                  </span>
+                </span>
+                <UsageBar percentage={contextUsage.percentage} />
+                {([
+                  ["five_hour", "5-hour limit"],
+                  ["seven_day", "Weekly limit"],
+                ] as const).map(([key, label]) => {
+                  const window = contextUsage.rateLimits?.[key]
+                  if (!window) return null
+                  const pct = window.utilization * 100
+                  return (
+                    <span key={key} className="mt-1 flex flex-col gap-2">
+                      <span className="flex items-baseline justify-between gap-3">
+                        <span>{label}</span>
+                        <span className="text-[var(--sidebar-text-muted)]">
+                          Resets {formatReset(window.resets_at, key === "seven_day")}
+                          <span className="ms-2">{Math.round(pct)}%</span>
+                        </span>
+                      </span>
+                      <UsageBar percentage={pct} />
+                    </span>
+                  )
+                })}
+                {contextUsage.rateLimitsError && (
+                  <span className="max-w-full whitespace-normal text-[var(--sidebar-text-muted)]">{contextUsage.rateLimitsError}</span>
+                )}
+              </span>
+            </span>
+          )}
         </div>
       </div>
       {imagePreview !== undefined && images.length > 0 && (
@@ -1517,7 +1520,7 @@ function Picker({
           setShowingModels(false)
           setOpen((o) => !o)
         }}
-        className={`flex h-7 min-w-0 items-center gap-1 whitespace-nowrap rounded-full ${iconOnly ? "w-7 justify-center p-0" : compactPadding ? "px-2" : hideChevron ? "px-2.5" : "pl-2.5 pr-1.5"} text-[12px] font-normal leading-[18px] transition-colors hover:bg-[var(--fill-hover)] aria-expanded:bg-[var(--fill-hover)] disabled:opacity-40 ${
+        className={`flex min-w-0 items-center gap-1 whitespace-nowrap ${iconOnly ? "size-7 justify-center rounded-[7px] p-0" : `h-6 rounded-[7px] ${compactPadding ? "px-2" : hideChevron ? "px-2" : "pl-2 pr-1.5"}`} text-[12px] font-normal leading-[16px] transition-colors hover:bg-[var(--fill-hover)] aria-expanded:bg-[var(--fill-hover)] disabled:opacity-40 ${
           tone === "danger" ? "text-[#C24444]" : "text-[var(--sidebar-text,#52514E)]"
         }`}
       >

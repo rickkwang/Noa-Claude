@@ -697,7 +697,7 @@ function Workspace({ cwd }: { cwd: string }) {
   return (
     <div
       data-sidebar-dock-motion={dockMotion ? "true" : undefined}
-      className="noa-app-shell h-screen w-screen flex flex-col isolate bg-[var(--bg-sidebar,#FBFBF9)] text-[var(--text-primary,#2D2D2B)] font-ui overflow-hidden relative selection:bg-[var(--accent-color,#CC7D5E)] selection:text-white"
+      className="noa-app-shell h-screen w-screen flex flex-col isolate bg-[var(--bg-sidebar,#FBFBF9)] text-[var(--text-primary,#2D2D2B)] font-ui overflow-hidden relative selection:bg-[color-mix(in_srgb,var(--text-primary)_14%,transparent)]"
       style={
         {
           "--noa-sidebar-width": `${sidebar.width}px`,

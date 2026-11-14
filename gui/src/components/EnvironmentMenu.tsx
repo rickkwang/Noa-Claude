@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { query } from "../api"
 import { Check, ChevronRight, GitBranch, Plus, Search, Settings, Worktree } from "../lib/icons"
-import { ComposerBranchIcon, ComposerSettingsIcon } from "./ComposerIcons"
+import { ComposerBranchIcon } from "./ComposerIcons"
 
 type BranchState =
   | { isGit: false }
@@ -123,15 +123,15 @@ export function EnvironmentMenu({ cwd, branch, onBranchChange, worktree, canTogg
   })()
 
   return (
-    <div ref={ref} className="relative -mr-0.5 ml-auto">
+    <div ref={ref} className="relative">
       <button
         type="button"
         onClick={() => (open ? close() : setOpen(true))}
         aria-label="Configure local environment"
         aria-expanded={open}
-        className={`flex h-7 items-center justify-center rounded-full noa-sidebar-hover-surface-subtle ${branch ? "px-2" : "w-7"} ${open ? "bg-[var(--fill-hover)]" : ""}`}
+        className={`flex h-6 items-center justify-center gap-1 rounded-[7px] text-[12px] leading-[16px] text-[var(--sidebar-text,#52514E)] transition-colors hover:bg-[var(--fill-hover)] ${branch ? "px-2" : "w-6"} ${open ? "bg-[var(--fill-hover)]" : ""}`}
       >
-        {branch ? <><ComposerBranchIcon /><span className="min-w-0 truncate">{branch}</span></> : <ComposerSettingsIcon />}
+        {branch ? <><ComposerBranchIcon className="size-3.5 shrink-0" /><span className="min-w-0 truncate">{branch}</span></> : <ComposerBranchIcon className="size-3.5 shrink-0" />}
       </button>
       {open && (
         <div
