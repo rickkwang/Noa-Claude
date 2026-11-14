@@ -200,7 +200,7 @@ export const WHAT_NOT_TO_SAVE_SECTION: readonly string[] = [
  * Proactive: verify memory against current state before answering.
  */
 export const MEMORY_DRIFT_CAVEAT =
-  '- Memory records are historical context, not current facts. Before answering the user or building assumptions based solely on memory, verify that the memory is still correct by reading current files or resources. If a recalled memory conflicts with current information, trust what you observe now — and update or remove the stale memory rather than acting on it.'
+  '- Memory records can become stale over time. Use memory as context for what was true at a given point in time. Before answering the user or building assumptions based solely on information in memory records, verify that the memory is still correct and up-to-date by reading the current state of the files or resources. If a recalled memory conflicts with current information, trust what you observe now — and update or remove the stale memory rather than acting on it.'
 
 /**
  * `## When to access memories` section. Includes MEMORY_DRIFT_CAVEAT.
@@ -218,7 +218,7 @@ export const WHEN_TO_ACCESS_SECTION: readonly string[] = [
   '## When to access memories',
   '- When memories seem relevant, or the user references prior-conversation work.',
   '- You MUST access memory when the user explicitly asks you to check, recall, or remember.',
-  '- If the user says to *ignore* or *not use* memory: proceed as if MEMORY.md were empty. Do not apply remembered facts, cite, compare against, or mention memory content.',
+  '- If the user says to *ignore* or *not use* memory: Do not apply remembered facts, cite, compare against, or mention memory content.',
   MEMORY_DRIFT_CAVEAT,
 ]
 
@@ -245,10 +245,10 @@ export const TRUSTING_RECALL_SECTION: readonly string[] = [
   // went 0/3 in-place. Same body text — only the header differed.
   '## Before recommending from memory',
   '',
-  'A memory that names a specific function, file, flag, command, or configuration is a claim that it existed *when the memory was written*. It may have been renamed, removed, or never merged. Before recommending it:',
+  'A memory that names a specific function, file, or flag is a claim that it existed *when the memory was written*. It may have been renamed, removed, or never merged. Before recommending it:',
   '',
   '- If the memory names a file path: check the file exists.',
-  '- If the memory names a function, flag, command, or config key: grep for it.',
+  '- If the memory names a function or flag: grep for it.',
   '- If the user is about to act on your recommendation (not just asking about history), verify first.',
   '',
   '"The memory says X exists" is not the same as "X exists now."',
@@ -257,44 +257,27 @@ export const TRUSTING_RECALL_SECTION: readonly string[] = [
 ]
 
 /**
- * Compact stand-in for TYPES_SECTION_INDIVIDUAL in the always-on system
- * prompt. The long version spends ~7k characters on four `<description>`
- * essays and eight worked dialogues; upstream states each type in one line and
- * moves scope/structure/examples into an on-demand skill. This keeps that shape.
- *
- * Unlike TRUSTING_RECALL_SECTION and the explicit-save gate above, nothing in
- * the long types section carries an eval result — the shortening is a size
- * decision, not a reversal of a measured one. The Why/How-to-apply cue is not
- * lost: MEMORY_FRONTMATTER_EXAMPLE states it in the body placeholder.
- *
- * TYPES_SECTION_INDIVIDUAL stays exported and unchanged for
- * services/extractMemories, a one-shot classifier with no conversation context
- * that has to carry its own examples.
- */
-export const TYPES_SECTION_COMPACT: readonly string[] = [
-  '## Types of memory',
-  '',
-  'Save a memory when you learn one of the following — set `type:` to match:',
-  '',
-  '- **user** — who the user is: role, expertise, working preferences.',
-  '- **feedback** — how the user wants you to work. Save corrections *and* approaches they confirmed ("yes, exactly", accepting an unusual choice without pushback) — confirmations are quieter than corrections but just as load-bearing. Include the why, so you can judge edge cases later.',
-  '- **project** — ongoing work, goals, deadlines, incidents, or decisions not derivable from the code or git history. Convert relative dates to absolute ("Thursday" → "2026-03-05").',
-  '- **reference** — where to find things in external systems (issue trackers, dashboards, channels).',
-  '',
-  // The long version carried a per-type <how_to_use>; this is their shared
-  // point, kept because nothing else in the prompt says what a recalled memory
-  // is *for* — "When to access" covers when to look and "Before recommending"
-  // covers how far to trust it, neither covers what to do with it.
-  'Let what you have saved shape how you work: the user should not have to give the same guidance twice, and your suggestions should reflect what you already know about them and the project.',
-]
-
-/**
  * Per-file size bullet for `## How to save memories`. Without it a topic file
  * grows into a dated activity log, which is what WHAT_NOT_TO_SAVE_SECTION
  * excludes. 4KB matches the recall cap (MAX_MEMORY_BYTES in attachments.ts).
  */
 export const MEMORY_FILE_SIZE_GUIDANCE =
-  '- Keep each memory file under 4KB including frontmatter, and the description to one specific line; when a file outgrows that, split or summarize it rather than continuing it in a second file.'
+  '- Keep each memory file under 4KB including frontmatter (recall shows only the first 4KB) and the description to one specific line; when a file outgrows that, split or summarize it rather than continuing it in a second file.'
+
+/** Trailing bullets shared by both `## How to save memories` variants. */
+export const MEMORY_SAVE_RULES: readonly string[] = [
+  '- Keep the name, description, and type fields in memory files up-to-date with the content',
+  '- Organize memory semantically by topic, not chronologically',
+  '- Update or remove memories that turn out to be wrong or outdated',
+  '- Do not write duplicate memories. First check if there is an existing memory you can update before writing a new one.',
+]
+
+/** Body of `## Memory and other forms of persistence` (heading added by callers). */
+export const MEMORY_PERSISTENCE_SECTION_BODY: readonly string[] = [
+  'Memory is one of several persistence mechanisms available to you as you assist the user in a given conversation. The distinction is often that memory can be recalled in future conversations and should not be used for persisting information that is only useful within the scope of the current conversation.',
+  '- When to use or update a plan instead of memory: If you are about to start a non-trivial implementation task and would like to reach alignment with the user on your approach you should use a Plan rather than saving this information to memory. Similarly, if you already have a plan within the conversation and you have changed your approach persist that change by updating the plan rather than saving a memory.',
+  '- When to use or update tasks instead of memory: When you need to break your work in current conversation into discrete steps or keep track of your progress use tasks instead of saving to memory. Tasks are great for persisting information about the work that needs to be done in the current conversation, but memory should be reserved for information that will be useful in future conversations.',
+]
 
 /**
  * Frontmatter format example. The type nests under `metadata:` and the body

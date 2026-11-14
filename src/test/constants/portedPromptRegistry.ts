@@ -46,6 +46,10 @@ import {
   SECURITY_POLICY,
   HAIKU_55_EARLY_STOPPING_SECTION,
   TURN_UPDATES_SECTION,
+  FABLE_52_IDENTITY_SECTION,
+  FABLE_51_IDENTITY_SECTION,
+  FABLE_5_IDENTITY_SECTION,
+  LLM_RND_CAPABILITIES_SECTION,
 } from '../../constants/systemPromptCompact.js'
 import { OUTPUT_STYLE_CONFIG } from '../../constants/outputStyles.js'
 import {
@@ -148,6 +152,10 @@ export function buildPortedSubjects(): Record<string, string> {
     CORRECTIONS_SECTION,
     AUTONOMY_SECTION,
     HAIKU_55_EARLY_STOPPING_SECTION,
+    FABLE_52_IDENTITY_SECTION,
+    FABLE_51_IDENTITY_SECTION,
+    FABLE_5_IDENTITY_SECTION,
+    LLM_RND_CAPABILITIES_SECTION,
     SECURITY_POLICY,
     'WebFetch.LEAN_DESCRIPTION': WEB_FETCH_LEAN_DESCRIPTION,
     'TodoWrite lean': getTodoWritePrompt(LEAN_MODEL),
@@ -235,6 +243,11 @@ export const PORTED_DIGESTS: Record<string, string> = {
   AUTONOMY_SECTION: '07f554da420e0445',
   // Haiku 5.5 early-stopping guidance.
   HAIKU_55_EARLY_STOPPING_SECTION: 'c16ef3a0e06b3d97',
+  // Fable 5 line identity paragraphs and the Fable 5.2 / Mythos 5.2 research note.
+  FABLE_52_IDENTITY_SECTION: 'f0c3c92d83b7699a',
+  FABLE_51_IDENTITY_SECTION: '3e00d60696cdb89a',
+  FABLE_5_IDENTITY_SECTION: '7e9a82786262846a',
+  LLM_RND_CAPABILITIES_SECTION: '523a5ff9573c734f',
   // Registered late: this port shipped pinned by neither the digests here nor
   // the substring assertions in leanPromptPortIntegrity, which is the exact
   // "never registered at all" gap described at the top of this file. The digest

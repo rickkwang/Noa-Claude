@@ -28,8 +28,6 @@ export function isProactivePromptActive(): boolean {
   return proactiveModule?.isProactiveActive() ?? false
 }
 
-export const SUMMARIZE_TOOL_RESULTS_SECTION = `When working with tool results, write down any important information you might need later in your response, as the original tool result may be cleared later.`
-
 export function getBriefSection(): string | null {
   if (!(feature('KAIROS') || feature('KAIROS_BRIEF'))) return null
   if (!BRIEF_PROACTIVE_SECTION) return null

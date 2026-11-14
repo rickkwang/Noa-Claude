@@ -290,15 +290,15 @@ describe('prompt behavior contracts', () => {
     )
   })
 
-  test('memory prompt builds memory over time but excludes transient or speculative context', () => {
+  test('memory prompt builds memory over time and keeps the two-step save flow', () => {
     const prompt = buildMemoryLines('Memory', '/tmp/noa-memory').join('\n')
 
     expect(prompt).toContain('build up this memory system over time')
-    expect(prompt).toContain('Keep each memory file under 4KB')
-    expect(prompt).toContain('likely to matter in future conversations')
-    expect(prompt).toContain(
-      'Do not save transient tasks, speculative inferences, or details that are likely to change soon',
-    )
+    expect(prompt).toContain('## Memory and other forms of persistence')
+    expect(prompt).not.toContain('likely to matter in future conversations')
+    expect(
+      buildMemoryLines('Memory', '/tmp/noa-memory', undefined, true).join('\n'),
+    ).toContain('Keep each memory file under 4KB')
   })
 
   test('combined team memory prompt uses the same save guidance', () => {
@@ -306,10 +306,8 @@ describe('prompt behavior contracts', () => {
 
     expect(prompt).toContain('build up this memory system over time')
     expect(prompt).toContain('Keep each memory file under 4KB')
-    expect(prompt).toContain('likely to matter in future conversations')
-    expect(prompt).toContain(
-      'Do not save transient tasks, speculative inferences, or details that are likely to change soon',
-    )
+    expect(prompt).toContain('## Memory and other forms of persistence')
+    expect(prompt).not.toContain('likely to matter in future conversations')
   })
 
   test('verification agent contract prevents substituting implementer confidence', () => {

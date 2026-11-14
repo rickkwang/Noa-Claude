@@ -52,11 +52,12 @@ const SUBJECTS: Record<string, string> = buildPortedSubjects()
 // in buildPortedSubjects(): the integrity test pins that key list, and these
 // renders are async (the Agent prompt awaits its permission context). The
 // models match the registry's LEAN_MODEL and VERBOSE_MODEL.
-await import('../src/tools.ts')
+const { getTools } = await import('../src/tools.ts')
 const { getEmptyToolPermissionContext } = await import('../src/Tool.ts')
 const { FileReadTool } = await import('../src/tools/FileReadTool/FileReadTool.ts')
 const { BashTool } = await import('../src/tools/BashTool/BashTool.tsx')
 const { AgentTool } = await import('../src/tools/AgentTool/AgentTool.tsx')
+const tools = getTools(getEmptyToolPermissionContext())
 for (const [tier, model] of [
   ['lean', 'claude-opus-5'],
   ['verbose', 'claude-sonnet-4-5'],
@@ -66,6 +67,7 @@ for (const [tier, model] of [
     text
       .replace(/Noa Claude/g, 'Claude Code')
       .replace(/\.noa\/agents/g, '.claude/agents')
+      .replace(/\.noa\/settings\.local\.json/g, '.claude/settings.local.json')
       .replace('https://github.com/rickkwang/Noa-Claude', 'https://claude.com/claude-code')
   const args = {
     agents: [],
@@ -77,7 +79,27 @@ for (const [tier, model] of [
   SUBJECTS[`Read ${tier}`] = brand(String(await FileReadTool.prompt(args)))
   SUBJECTS[`Bash ${tier}`] = brand(String(await BashTool.prompt(args)))
   SUBJECTS[`Agent ${tier}`] = brand(String(await AgentTool.prompt(args)))
+
+  // Every other tool description, so an unregistered one cannot drift unseen.
+  // Noa's own tools are skipped: SendMessage (continues subagents without
+  // agent teams), EnterWorktree (`path`) and ExitWorktree have no upstream text.
+  const skip = new Set(['Read', 'Bash', 'Agent', 'SendMessage', 'EnterWorktree', 'ExitWorktree'])
+  for (const tool of tools) {
+    if (skip.has(tool.name)) continue
+    const key = `Tool ${tool.name} ${tier}`
+    // Deliberate deviation, documented in src/constants/CLAUDE.md: the verbose
+    // WebSearch text softens the mandatory Sources rule and drops the US-only
+    // claim for non-Anthropic search backends.
+    if (key === 'Tool WebSearch verbose') continue
+    if (key.replace(/ (lean|verbose)$/, '') in SUBJECTS) continue
+    SUBJECTS[key] = brand(String(await tool.prompt({ ...args, tools })))
+  }
 }
+
+// The long memory prompt is assembled from shared constants plus the memory
+// directory and index name, so it is checked here rather than digest-pinned.
+const { buildMemoryLines } = await import('../src/memdir/memdir.ts')
+SUBJECTS['Memory verbose'] = buildMemoryLines('auto memory', '/tmp/noa-memory/').join('\n')
 
 // A port that is digest-pinned but not verified here is the exact gap that let
 // six transcription errors through. The shared registry makes it structurally
@@ -192,6 +214,20 @@ function findWhitespaceTolerant(
  * contiguous in the binary, so it is checked line by line, splitting a line
  * further at these tokens when the whole line does not appear.
  */
+/**
+ * Interpolations that only the memory prompt has: directory, index file name,
+ * default file example, type list and truncation limit. Kept out of the global
+ * list so they cannot mask a transcription error in any other subject.
+ */
+const MEMORY_INTERPOLATED = [
+  'memory to its own file \\(e\\.g\\., `user_role\\.md`, `feedback_testing\\.md`\\)',
+  'type: \\{\\{user, feedback, project, reference\\}\\}',
+  '`/tmp/noa-memory/`',
+  '`MEMORY\\.md`',
+  'MEMORY\\.md',
+  'lines after \\d+',
+]
+
 const INTERPOLATED = [
   // Command lists are a shared constant upstream, joined in at runtime.
   '`find`, `grep`, `cat`, `head`, `tail`, `sed`, `awk`, or `echo`',
@@ -208,6 +244,15 @@ const INTERPOLATED = [
   'AskUserQuestion',
   // The config directory is per product: `.claude/agents` upstream, `.noa/agents` here.
   '\\.(?:claude|noa)/agents/\\*\\.md',
+  // PowerShell's background-task note picks "when it completes" or "if it
+  // completes while you are still working" at runtime; we ship the first.
+  'when it completes(?= — do not poll)',
+  // WebSearch interpolates the current month and year.
+  '(?:January|February|March|April|May|June|July|August|September|October|November|December) \\d{4}',
+  // Skill's closing sentence is stored upstream as single-character fragments
+  // (a bytecode constant table), so no contiguous copy exists to match. It was
+  // checked by hand against the live tool description.
+  'If a `<command-name>` block is already present this turn, the skill is loaded — follow it directly rather than calling again\\.',
   // The product link is a constant upstream (`${rot}`).
   'https://claude\\.com/claude-code',
   'PowerShell',
@@ -241,8 +286,15 @@ const INTERPOLATED = [
 const MIN_RUN = 14
 
 /** Every non-blank line, verified whole or in interpolation-split runs. */
-function checkLines(haystack: string, text: string): { miss: string[] } {
-  const splitter = new RegExp(`(?:${INTERPOLATED.join('|')}|\\. )`, 'g')
+function checkLines(
+  haystack: string,
+  text: string,
+  extra: readonly string[] = [],
+): { miss: string[] } {
+  const splitter = new RegExp(
+    `(?:${[...extra, ...INTERPOLATED].join('|')}|\\. )`,
+    'g',
+  )
   const miss: string[] = []
   for (const line of text.split('\n')) {
     if (line.trim() === '' || present(haystack, line)) continue
@@ -450,7 +502,11 @@ for (const [name, ours] of Object.entries(SUBJECTS)) {
 
   // Upstream assembles this one from parts. Verify the parts instead, and say
   // exactly how much of it the run actually covered.
-  const { miss: rawMiss } = checkLines(haystack, ours)
+  const { miss: rawMiss } = checkLines(
+    haystack,
+    ours,
+    name === 'Memory verbose' ? MEMORY_INTERPOLATED : [],
+  )
   const miss = rawMiss.filter(run => !isAdaptation(name, run))
   const breaks = checkBreaks(haystack, ours)
   if (miss.length === 0 && breaks.wrong.length === 0) {

@@ -26,6 +26,8 @@ import {
   getCompactHeadSection,
   hasFable51PromptBundle,
   hasFable52PromptBundle,
+  getFableIdentitySection,
+  LLM_RND_CAPABILITIES_SECTION,
   allowsWriteWithoutPriorRead,
   hasFableMitigations,
   hasHaiku55EarlyStoppingGuidance,
@@ -69,7 +71,6 @@ import {
 import {
   getBriefSection,
   getProactiveSection,
-  SUMMARIZE_TOOL_RESULTS_SECTION,
 } from './systemPromptFeatureSections.js'
 import { getSubagentSteer } from '../utils/subagentSteer.js'
 
@@ -188,6 +189,15 @@ export function buildDynamicSystemPromptSections(params: {
     systemPromptSection(actionCautionName, () =>
       getActionCautionSection(model),
     ),
+    // Upstream order: identity, then the research-limit note, both ahead of
+    // session guidance. Deterministic by model name, so the key carries the
+    // model rather than a bit.
+    systemPromptSection(`fable_identity:${model}`, () =>
+      getFableIdentitySection(model),
+    ),
+    systemPromptSection(`llm_rnd_capabilities${fable52 ? ':on' : ''}`, () =>
+      fable52 ? LLM_RND_CAPABILITIES_SECTION : null,
+    ),
     systemPromptSection(
       `session_guidance:${autoCompactEnabled ? 'ac' : 'noac'}${lean ? ':L' : ''}:${subagentSteer}`,
       () => getSessionSpecificGuidanceSection(
@@ -242,10 +252,6 @@ export function buildDynamicSystemPromptSections(params: {
     systemPromptSection(
       'context_management',
       () => CONTEXT_MANAGEMENT_SECTION,
-    ),
-    systemPromptSection(
-      lean ? 'summarize_tool_results:L' : 'summarize_tool_results',
-      () => (lean ? null : SUMMARIZE_TOOL_RESULTS_SECTION),
     ),
     ...(feature('TOKEN_BUDGET')
       ? [
