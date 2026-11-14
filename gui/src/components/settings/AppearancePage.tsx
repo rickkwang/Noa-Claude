@@ -405,6 +405,16 @@ export function AppearancePage({
             onChange={(transcriptTextSize) => change({ transcriptTextSize: transcriptTextSize as AppSettings["appearance"]["transcriptTextSize"] })}
           />
         </Row>
+        <Row label="Transcript view" description="Normal collapses intermediate work and reasoning. Verbose expands them inline.">
+          <Segmented
+            value={appearance.transcriptView}
+            options={[
+              ["normal", "Normal"],
+              ["verbose", "Verbose"],
+            ]}
+            onChange={(transcriptView) => change({ transcriptView: transcriptView as AppSettings["appearance"]["transcriptView"] })}
+          />
+        </Row>
         <Row label="Output width" description="Three reading widths for messages and input. Fits smaller windows automatically.">
           <Segmented
             value={String(appearance.maxWidth)}

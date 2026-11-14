@@ -1,19 +1,27 @@
-import { useState, type ReactNode } from "react"
+import { useEffect, useRef, useState, type ReactNode } from "react"
 import type { AgentTask, ToolBlock } from "../agent/reducer"
 import { ChevronRight, Users } from "../lib/icons"
 import { Collapsible } from "./Collapsible"
 import { SubagentAvatar } from "./SubagentAvatar"
 import { Markdown } from "./Markdown"
 
-export function SubagentActivity({ blocks, tasks = [], onOpenTask, details, trackedTaskIds }: {
+export function SubagentActivity({ blocks, tasks = [], onOpenTask, details, trackedTaskIds, verbose = false }: {
   blocks: ToolBlock[]
   tasks?: AgentTask[]
   onOpenTask?: (id?: string) => void
   details?: ReactNode
   trackedTaskIds?: ReadonlySet<string>
+  verbose?: boolean
 }) {
-  const [open, setOpen] = useState(false)
-  const [detailsOpen, setDetailsOpen] = useState(false)
+  const [open, setOpen] = useState(verbose)
+  const [detailsOpen, setDetailsOpen] = useState(verbose)
+  const prevVerbose = useRef(verbose)
+  useEffect(() => {
+    if (prevVerbose.current === verbose) return
+    prevVerbose.current = verbose
+    setOpen(verbose)
+    setDetailsOpen(verbose)
+  }, [verbose])
   const entries = blocks.map(block => ({ block, task: tasks.find(task => task.id === block.id || task.toolUseId === block.id) }))
   const agents = [...new Map(entries.filter(entry => entry.task && !trackedTaskIds?.has(entry.task.id)).map(entry => [entry.task!.id, entry.task!])).values()]
   const action = entries.some(({ block, task }) => block.status === "running" && (!task || task.status === "running")) ? "Creating" : blocks.some(block => block.status === "error") ? "Failed to create" : blocks.some(block => block.status === "stopped") ? "Stopped creating" : "Created"

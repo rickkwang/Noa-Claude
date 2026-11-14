@@ -19,6 +19,7 @@ export const defaultSettings: AppSettings = {
     motion: 'system',
     uiFontSize: 14,
     transcriptTextSize: 'medium',
+    transcriptView: 'normal',
     codeFontSize: 12,
     fontSmoothing: true,
   },

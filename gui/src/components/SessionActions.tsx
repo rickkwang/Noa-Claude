@@ -1,21 +1,36 @@
 import { useEffect, useRef, useState } from "react"
 import type { ControlRequest } from "../agent/protocol"
-import { GitBranch, MoreHorizontal, RotateCcw } from "../lib/icons"
+import type { AppSettings } from "../types"
+import { GitBranch, ListDetails, MoreHorizontal, RotateCcw } from "../lib/icons"
 import { anchorBelow, PopupMenu, type PopupMenuAnchor } from "./PopupMenu"
 
-export function SessionActions({ disabled, onFork }: { disabled: boolean; onFork: () => Promise<void> }) {
+type TranscriptView = AppSettings["appearance"]["transcriptView"]
+
+export function SessionActions({ disabled, transcriptView, onTranscriptViewChange, onFork }: {
+  disabled: boolean
+  transcriptView: TranscriptView
+  onTranscriptViewChange: (view: TranscriptView) => void
+  onFork: () => Promise<void>
+}) {
   const [anchor, setAnchor] = useState<PopupMenuAnchor>()
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string>()
   const trigger = useRef<HTMLButtonElement>(null)
   return <>
-    <button ref={trigger} type="button" aria-label="Task actions" aria-haspopup="menu" aria-expanded={!!anchor} title="Task actions" disabled={disabled || pending} className="flex size-7 items-center justify-center rounded-md hover:bg-[var(--fill-hover)] disabled:opacity-40" onClick={event => setAnchor(anchor ? undefined : anchorBelow(event.currentTarget))}>{pending ? <span className="size-3 animate-spin rounded-full border border-current border-t-transparent" /> : <MoreHorizontal size={16} />}</button>
-    {anchor && <PopupMenu anchor={anchor} trigger={trigger.current} label="Task actions" onClose={() => setAnchor(undefined)} entries={[{ label: "Fork conversation", icon: GitBranch, onSelect: () => {
-      setAnchor(undefined)
-      setPending(true)
-      setError(undefined)
-      void onFork().catch(error => setError(error.message)).finally(() => setPending(false))
-    } }]} />}
+    <button ref={trigger} type="button" aria-label="Task actions" aria-haspopup="menu" aria-expanded={!!anchor} title="Task actions" disabled={pending} className="flex size-7 items-center justify-center rounded-md hover:bg-[var(--fill-hover)] disabled:opacity-40" onClick={event => setAnchor(anchor ? undefined : anchorBelow(event.currentTarget))}>{pending ? <span className="size-3 animate-spin rounded-full border border-current border-t-transparent" /> : <MoreHorizontal size={16} />}</button>
+    {anchor && <PopupMenu anchor={anchor} trigger={trigger.current} label="Task actions" onClose={() => setAnchor(undefined)} entries={[
+      { label: "Fork conversation", icon: GitBranch, disabled, onSelect: () => {
+        setAnchor(undefined)
+        setPending(true)
+        setError(undefined)
+        void onFork().catch(error => setError(error.message)).finally(() => setPending(false))
+      } },
+      { kind: "separator" },
+      { label: "Transcript view", icon: ListDetails, submenu: [
+        { label: "Normal", checked: transcriptView === "normal", onSelect: () => onTranscriptViewChange("normal") },
+        { label: "Verbose", checked: transcriptView === "verbose", onSelect: () => onTranscriptViewChange("verbose") },
+      ] },
+    ]} />}
     {error && <span role="alert" className="text-caption text-[var(--text-danger)]">{error}</span>}
   </>
 }

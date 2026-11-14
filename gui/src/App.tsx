@@ -844,7 +844,11 @@ function Workspace({ cwd }: { cwd: string }) {
           <SessionTitle
             key={activeId ?? session.key}
             title={title}
-            actions={activeId && <SessionActions disabled={state.connection !== "ready" || state.busy || !!state.queue.length || state.tasks.some(task => task.status === "running")} onFork={async () => {
+            actions={activeId && <SessionActions
+              disabled={state.connection !== "ready" || state.busy || !!state.queue.length || state.tasks.some(task => task.status === "running")}
+              transcriptView={settings.appearance.transcriptView}
+              onTranscriptViewChange={(transcriptView) => setSettings((prev) => ({ ...prev, appearance: { ...prev.appearance, transcriptView } }))}
+              onFork={async () => {
               setForkPending(true)
               try {
                 const result = await request({ subtype: "session_action", action: "fork" })
@@ -951,6 +955,7 @@ function Workspace({ cwd }: { cwd: string }) {
                 tasks={state.tasks}
                 onStopTask={stopTask}
                 onOpenTask={openTask}
+                verbose={settings.appearance.transcriptView === "verbose"}
               />
             ) : (
               <EmptyState
