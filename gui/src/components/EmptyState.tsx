@@ -17,8 +17,8 @@ export function EmptyState({
   const [pickerOpen, setPickerOpen] = useState(false)
   const name = cwd.split("/").filter(Boolean).pop() ?? cwd
   return (
-    <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 px-6 text-center font-ui">
-      <h1 className="relative m-0 text-balance text-[length:var(--text-title)] font-normal leading-[1.2] tracking-normal">
+    <div className="flex min-h-0 flex-1 flex-col items-center gap-4 overflow-y-auto px-6 py-4 text-center font-ui">
+      <h1 className="relative mx-0 mb-0 mt-auto shrink-0 text-balance text-[length:var(--text-title)] font-normal leading-[1.2] tracking-normal">
         What should we build in{" "}
         <button
           onClick={() => setPickerOpen(true)}
@@ -45,7 +45,7 @@ export function EmptyState({
           />
         )}
       </h1>
-      <div className="-mt-1.5 flex w-full justify-center">
+      <div className="-mt-1.5 mb-auto flex w-full shrink-0 justify-center">
         <StatsPanel />
       </div>
     </div>

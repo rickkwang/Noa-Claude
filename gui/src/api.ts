@@ -174,6 +174,7 @@ export type StatsRange = "7d" | "30d" | "all"
 export interface StatsSummary {
   range: StatsRange
   days: { date: string; messages: number }[]
+  heatmapDays: { date: string; messages: number }[]
   allTimeMessages: string
   totalSessions: string
   totalTokens: string
@@ -181,6 +182,20 @@ export interface StatsSummary {
   currentStreak: number
   longestStreak: number
   activeDays: number
+  rangeDays: number
+  longestSessionMs: number | null
+  totalMessages: string
+  peakActivityHour: number | null
+  usage: ModelUsage
+  models: { name: string; tokens: number; usage: ModelUsage }[]
+  chartDays: { date: string; tokensByModel: Record<string, number> }[]
+}
+
+export interface ModelUsage {
+  input: number
+  output: number
+  cacheRead: number
+  cacheWrite: number
 }
 
 export async function fetchStats(range: StatsRange): Promise<StatsSummary> {
