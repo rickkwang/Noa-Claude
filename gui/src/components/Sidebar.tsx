@@ -500,7 +500,7 @@ export function Sidebar({
               </Collapsible>
             </section>
           )}
-          <div className="group/projects noa-sidebar-toolbar-mask h-[30px] flex items-center pl-[10px] pr-2 gap-0.5 shrink-0 z-10 mb-1 overflow-visible">
+          <div className="group/projects noa-sidebar-toolbar-mask h-[30px] flex items-center pl-[10px] pr-4 gap-0.5 shrink-0 z-10 mb-1 overflow-visible">
             <button
               type="button"
               aria-expanded={projectsOpen}
@@ -608,7 +608,7 @@ export function Sidebar({
           </Collapsible>
           {projects.length > 0 && (
             <section aria-label="Recents" className="mt-2">
-              <div className="group/recents h-[30px] flex items-center pl-[10px] pr-2 gap-0.5">
+              <div className="group/recents h-[30px] flex items-center pl-[10px] pr-4 gap-0.5">
                 <button
                   type="button"
                   aria-expanded={!recentsPrefs.collapsed}
@@ -699,7 +699,7 @@ export function Sidebar({
                 </span>
               </div>
               <Collapsible open={!recentsPrefs.collapsed} duration={300} fade>
-                <div className="flex flex-col gap-px pt-1 font-ui">
+                <div className="flex flex-col gap-px pt-2 font-ui">
                   {(recentsUnfolded ? recents : recents.slice(0, RECENTS_PREVIEW)).map(({ project, session }) => (
                     <SessionRow
                       key={`${project.path}\0${session.id}`}
@@ -901,7 +901,7 @@ function ProjectRow({
         {project.missing && <span className="shrink-0 text-caption text-[#C24444]">missing</span>}
         <span
           data-session-action
-          className={`flex shrink-0 items-center gap-2 group-hover:opacity-100 focus-within:opacity-100 ${menuOpen ? "opacity-100" : "opacity-0"}`}
+          className={`flex shrink-0 items-center gap-0.5 group-hover:opacity-100 focus-within:opacity-100 ${menuOpen ? "opacity-100" : "opacity-0"}`}
           style={noDragRegion}
         >
           <div className="relative" ref={menuRef}>

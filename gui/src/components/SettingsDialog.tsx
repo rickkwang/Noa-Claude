@@ -328,7 +328,8 @@ export function SettingsDialog({
       {navResizeHandle}
       {/* The content card has no titlebar of its own, so this strip keeps the top of the window draggable. */}
       <div aria-hidden className="absolute inset-x-0 top-0 z-10 h-11" style={{ ...dragRegion, left: navWidth }} />
-      <main className="noa-settings-main scrollbar-on-scroll noa-scroll-fade min-w-0 flex-1 overflow-y-auto bg-[var(--bg-primary,#FCFCFB)] px-5 pt-16 pb-16">
+      <div className="noa-settings-main flex min-w-0 flex-1 flex-col overflow-hidden bg-[var(--bg-primary,#FCFCFB)]">
+        <main className="noa-settings-scroll scrollbar-on-scroll noa-scroll-fade min-h-0 flex-1 overflow-y-auto px-5 pt-16 pb-16">
         <div className="mx-auto flex max-w-3xl flex-col gap-8">
           {page !== "skills" && <h1 className="text-[26px] leading-8 font-normal">{current?.label}</h1>}
 
@@ -371,7 +372,8 @@ export function SettingsDialog({
           {page === "skills" && <PluginsPage skills={allSkills} onReloadCommands={onReloadCommands} onOpenMcp={() => setPage("mcp")} onTrySkill={(name) => { onClose(); onTrySkill(name) }} />}
           {page === "shortcuts" && <ShortcutsPage settings={settings} onChange={onChange} />}
         </div>
-      </main>
+        </main>
+      </div>
       {closeDialog}
       {authOpen && auth && (
         <AuthDialog
