@@ -50,7 +50,7 @@ export default function TopBar({
       <div aria-hidden="true" className="absolute inset-y-0 left-0 z-0" style={{ ...dragRegion, right: rightWidth }} />
       <div className="flex min-w-0 items-center justify-start pl-[var(--noa-titlebar-inset)] pr-4">
         <div
-          className="relative z-50 flex min-w-0 items-center gap-0.5"
+          className="relative z-50 flex min-w-0 items-center gap-1"
           style={{ ...noDragRegion, transform: "translateY(var(--noa-titlebar-lift, 0px))" }}
         >
           <button
@@ -87,7 +87,7 @@ export default function TopBar({
       {/* Only the title itself opts out of dragging; the empty titlebar around it still moves the window. */}
       <div
         className={`absolute inset-y-0 flex min-w-0 items-center justify-start px-2 ${resizing ? "" : "transition-[left,right] duration-500 ease-in-out"}`}
-        style={{ left: sidebarOpen ? sidebarWidth + 12 : 184, right: rightWidth + 52 }}
+        style={{ left: sidebarOpen ? sidebarWidth + 12 : 164, right: rightWidth + 52 }}
       >
         <div className="flex min-w-0 items-center" style={noDragRegion}>
           {center}

@@ -57,7 +57,9 @@ export default function ThemeInjector({ settings }: ThemeInjectorProps) {
     root.style.setProperty('--bg-sidebar', isDark ? surfaces.surfaceUnder : surfaces.sidebarMaterial);
     root.style.setProperty('--sidebar-material-color', surfaces.sidebarMaterial);
     // In dark the card shares the sidebar floor; the palette's lighter card read too pale on it.
-    root.style.setProperty('--bg-card', isDark ? surfaces.surfaceUnder : surfaces.card);
+    // Claude Desktop's fizzy-lake dark mode elevates cards (--cds-surface-2: #1F1F1F) above #191919.
+    const darkCard = resolved.presetId === 'claude' ? '#1F1F1F' : surfaces.surfaceUnder;
+    root.style.setProperty('--bg-card', isDark ? darkCard : surfaces.card);
 
     if (isDark) {
       root.setAttribute('data-theme', 'dark');

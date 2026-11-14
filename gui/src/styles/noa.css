@@ -548,6 +548,7 @@ html[data-translucent-sidebar="enabled"] .noa-app-shell::before {
   inset: 0;
   z-index: -1;
   pointer-events: none;
+  border-left: 0.5px solid transparent;
   background-color: var(--bg-primary, #FCFCFB);
   transform: translateX(var(--noa-sidebar-material-width));
   /* Parked; only the dock-motion rule below arms a transition. */
@@ -555,6 +556,7 @@ html[data-translucent-sidebar="enabled"] .noa-app-shell::before {
 }
 /* Docked: the radius matches .noa-content-surface; collapsed it unwinds to flush with the window edge. */
 html[data-translucent-sidebar="enabled"] .noa-app-shell:has([data-sidebar-expanded="true"])::before {
+  border-left-color: var(--border-default, rgba(45,45,43,0.078));
   border-radius: var(--noa-surface-radius) 0 0 var(--noa-surface-radius);
 }
 
@@ -562,7 +564,13 @@ html[data-translucent-sidebar="enabled"] .noa-app-shell:has([data-sidebar-expand
    preview, resize drag, or settle frames. The flag is off at first paint, so a restart has no entry animation.
    Same duration and curve as the column width and content surface, so the three edges move as one. */
 html[data-translucent-sidebar="enabled"] .noa-app-shell[data-sidebar-dock-motion="true"]::before {
-  transition: transform 500ms cubic-bezier(0.4, 0, 0.2, 1), border-radius 500ms cubic-bezier(0.4, 0, 0.2, 1);
+  transition: transform 500ms cubic-bezier(0.4, 0, 0.2, 1), border-radius 500ms cubic-bezier(0.4, 0, 0.2, 1), border-left-color 500ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* The veil above already paints the opaque rounded content plane when translucency is enabled; hiding
+   .noa-content-surface prevents a second layout-animated rounded edge from desyncing during dock motion. */
+html[data-translucent-sidebar="enabled"] .noa-content-surface {
+  display: none;
 }
 
 /* The settings page is a full-window overlay with its own floor and card, so the app beneath is hidden rather than
@@ -1703,7 +1711,7 @@ kbd.noa-review-menu-hint { font-family: inherit; }
 /* Transcript padding is 20px; the composer adds 12px inside its 8px inset. */
 .noa-conversation-column { width: calc(100% - 32px); margin-inline: auto; }
 .noa-composer-column { padding-inline: 8px; }
-.noa-conversation-footer { position: absolute; inset-inline: 0 calc(var(--noa-scrollbar-strip) + var(--noa-overview-dock, 0px)); bottom: 0; z-index: 20; display: flex; max-height: 100%; flex-direction: column; margin-left: 0.5px; padding: 32px 0 12px; border-bottom-left-radius: var(--noa-surface-radius); background: linear-gradient(to bottom, color-mix(in srgb, var(--surface-page, #F9F9F7) 0%, transparent), var(--surface-page, #F9F9F7) 32px); pointer-events: none; }
+.noa-conversation-footer { position: absolute; inset-inline: 0 calc(var(--noa-scrollbar-strip) + var(--noa-overview-dock, 0px)); bottom: 0; z-index: 20; display: flex; max-height: 100%; flex-direction: column; margin-left: 0.5px; padding: 32px 0 8px; border-bottom-left-radius: var(--noa-surface-radius); background: linear-gradient(to bottom, color-mix(in srgb, var(--surface-page, #F9F9F7) 0%, transparent), var(--surface-page, #F9F9F7) 32px); pointer-events: none; }
 .noa-conversation-footer > * { min-height: 0; pointer-events: auto; }
 /* Loading shimmer: a stable base with a narrow highlight band that sweeps on a cadence. */
 .noa-shimmer {

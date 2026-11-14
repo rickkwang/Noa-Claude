@@ -32,7 +32,7 @@ export function SessionTitle({
   }
 
   return (
-    <div className="relative flex min-w-0 items-center gap-1 font-normal">
+    <div className="relative flex min-w-0 items-center gap-1.5 font-normal">
       {editing ? (
         <form
           className="flex min-w-0 items-center gap-1"
@@ -79,9 +79,9 @@ export function SessionTitle({
             setError(undefined)
             setEditing(true)
           }}
-          className="h-7 max-w-[min(28vw,320px)] truncate rounded-md px-1 text-[length:var(--text-chat-sm)] text-[var(--sidebar-text)] enabled:hover:bg-[var(--fill-hover)]"
+          className="inline-flex h-7 max-w-[min(28vw,320px)] items-center rounded-md px-1 text-[length:var(--text-chat-sm)] leading-none text-[var(--sidebar-text)] enabled:hover:bg-[var(--fill-hover)]"
         >
-          {name}
+          <span className="truncate">{name}</span>
         </button>
       )}
       {actions}

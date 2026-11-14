@@ -986,7 +986,7 @@ export const Composer = memo(function Composer({
         </div>
         {argumentCommand?.argumentHint && !submenu && <p className="m-0 px-3 pb-1.5 text-caption text-[var(--sidebar-text-muted)]">/{argumentCommand.name} {argumentCommand.argumentHint}</p>}
       </div>
-      <div className="noa-agent-footer mt-1.5 flex min-h-6 items-center justify-between gap-2 pl-1.5 pr-2">
+      <div className="noa-agent-footer mt-2 flex min-h-6 items-center justify-between gap-2 px-1.5">
         <div className="flex min-w-0 items-center gap-1">
           {newTask && (
             rateLimit && onDismissRateLimit ? <RateLimitNotice info={rateLimit} inline onDismiss={onDismissRateLimit} /> : <>

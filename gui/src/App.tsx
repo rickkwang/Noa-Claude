@@ -99,22 +99,24 @@ function Workspace({ cwd }: { cwd: string }) {
   const [projects, setProjects] = useState<ProjectInfo[]>([])
   const [refreshTick, setRefreshTick] = useState(0)
   const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [rightOpen, setRightOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
-  // The translucent veil animates only for the sidebar's own dock motion (never on first paint, when the flag is still off). The flag is derived
+  // The translucent veil animates only for dock motion (never on first paint, when the flag is still off). The flag is derived
   // while rendering, so it lands in the same commit as the new material width; set from an effect it would arrive a
   // frame late and the veil would snap to its destination instead of transitioning.
   const [dockMotion, setDockMotion] = useState(false)
   const [dockedOpen, setDockedOpen] = useState(sidebarOpen)
-  if (dockedOpen !== sidebarOpen) {
+  const [dockedRightOpen, setDockedRightOpen] = useState(rightOpen)
+  if (dockedOpen !== sidebarOpen || dockedRightOpen !== rightOpen) {
     setDockedOpen(sidebarOpen)
+    setDockedRightOpen(rightOpen)
     setDockMotion(true)
   }
   useEffect(() => {
     if (!dockMotion) return
     const timer = setTimeout(() => setDockMotion(false), 520)
     return () => clearTimeout(timer)
-  }, [dockMotion, sidebarOpen])
-  const [rightOpen, setRightOpen] = useState(false)
+  }, [dockMotion, sidebarOpen, rightOpen])
   // The bottom terminal panel: hiding it keeps its shells running.
   const [terminalOpen, setTerminalOpen] = useState(false)
   const [terminalFocus, setTerminalFocus] = useState(0)
@@ -972,7 +974,7 @@ function Workspace({ cwd }: { cwd: string }) {
             )}
             {/* With a conversation the composer floats over the list:
                 messages scroll beneath it and a gradient fades them out above the card. */}
-            <div ref={footerRef} className={hasTurns ? "noa-conversation-footer" : "shrink-0 pr-[var(--noa-scrollbar-strip)] pb-3 pt-2"}>
+            <div ref={footerRef} className={hasTurns ? "noa-conversation-footer" : "shrink-0 pb-2 pt-2"}>
               <div data-wave-obstacle="18" className="noa-conversation-column noa-composer-column flex flex-col gap-2" style={{ maxWidth: readingWidth }}>
                 {state.external && (
                   <p role="status" className="m-0 px-2 text-caption text-[var(--text-tertiary)]">

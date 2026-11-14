@@ -42,11 +42,11 @@ describe('themePalette', () => {
   test('dark-only presets are excluded from light options and fall back safely', () => {
     const lightIds = presetsForVariant('light').map((p) => p.id);
     const darkIds = presetsForVariant('dark').map((p) => p.id);
-    expect(lightIds).not.toContain('dracula');
-    expect(darkIds).toContain('dracula');
+    expect(lightIds).not.toContain('nord');
+    expect(darkIds).toContain('nord');
 
     const resolvedLight = resolveChromeTheme(
-      { ...defaultSettings.appearance, lightChromeTheme: { presetId: 'dracula' } },
+      { ...defaultSettings.appearance, lightChromeTheme: { presetId: 'nord' } },
       false,
     );
     expect(resolvedLight.presetId).toBe('noa');
@@ -135,30 +135,27 @@ describe('themePalette', () => {
     expect(parsed?.chromeTheme.fonts).toEqual({ code: 'JetBrains Mono' });
   });
 
-  test('includes Codex light/dark presets and pairs them with matching code themes', () => {
+  test('includes curated light/dark presets and pairs them with matching code themes', () => {
     const lightIds = presetsForVariant('light').map((p) => p.id);
     const darkIds = presetsForVariant('dark').map((p) => p.id);
 
-    for (const id of ['proof', 'raycast', 'rose-pine', 'solarized', 'vercel', 'vscode-plus', 'xcode']) {
-      expect(lightIds).toContain(id);
-    }
-    expect(lightIds).not.toContain('lobster');
-    expect(lightIds).not.toContain('sentry');
-    expect(lightIds).not.toContain('temple');
-    expect(lightIds).not.toContain('tokyo-night');
+    expect(lightIds).toEqual(['noa', 'claude', 'codex', 'catppuccin', 'github', 'gruvbox', 'one', 'rose-pine']);
+    expect(darkIds).toEqual(['noa', 'claude', 'codex', 'catppuccin', 'github', 'gruvbox', 'nord', 'one', 'rose-pine', 'tokyo-night', 'vercel']);
 
-    for (const id of ['lobster', 'raycast', 'rose-pine', 'sentry', 'solarized', 'temple', 'tokyo-night', 'vercel', 'vscode-plus', 'xcode']) {
-      expect(darkIds).toContain(id);
-    }
-    expect(darkIds).not.toContain('proof');
-
-    expect(getPresetDefaultCodeThemeId('solarized', 'light')).toBe('solarized-light');
-    expect(getPresetDefaultCodeThemeId('solarized', 'dark')).toBe('solarized-dark');
+    expect(getPresetDefaultCodeThemeId('claude', 'light')).toBe('claude-light');
+    expect(getPresetDefaultCodeThemeId('claude', 'dark')).toBe('claude-dark');
+    expect(getPresetDefaultCodeThemeId('catppuccin', 'light')).toBe('catppuccin-latte');
+    expect(getPresetDefaultCodeThemeId('catppuccin', 'dark')).toBe('catppuccin-mocha');
+    expect(getPresetDefaultCodeThemeId('github', 'light')).toBe('github-light');
+    expect(getPresetDefaultCodeThemeId('github', 'dark')).toBe('github-dark');
+    expect(getPresetDefaultCodeThemeId('gruvbox', 'light')).toBe('gruvbox-light');
+    expect(getPresetDefaultCodeThemeId('gruvbox', 'dark')).toBe('gruvbox-dark');
+    expect(getPresetDefaultCodeThemeId('nord', 'dark')).toBe('nord');
+    expect(getPresetDefaultCodeThemeId('one', 'light')).toBe('one-light');
+    expect(getPresetDefaultCodeThemeId('one', 'dark')).toBe('one-dark');
     expect(getPresetDefaultCodeThemeId('rose-pine', 'light')).toBe('rose-pine-dawn');
     expect(getPresetDefaultCodeThemeId('rose-pine', 'dark')).toBe('rose-pine');
     expect(getPresetDefaultCodeThemeId('tokyo-night', 'dark')).toBe('tokyo-night');
-    expect(getPresetDefaultCodeThemeId('everforest', 'dark')).toBe('everforest-dark');
-    expect(getPresetDefaultCodeThemeId('night-owl', 'dark')).toBe('night-owl');
     expect(getPresetDefaultCodeThemeId('noa', 'dark')).toBe('codex');
   });
 
