@@ -289,6 +289,14 @@ export const TYPES_SECTION_COMPACT: readonly string[] = [
 ]
 
 /**
+ * Per-file size bullet for `## How to save memories`. Without it a topic file
+ * grows into a dated activity log, which is what WHAT_NOT_TO_SAVE_SECTION
+ * excludes. 4KB matches the recall cap (MAX_MEMORY_BYTES in attachments.ts).
+ */
+export const MEMORY_FILE_SIZE_GUIDANCE =
+  '- Keep each memory file under 4KB including frontmatter, and the description to one specific line; when a file outgrows that, split or summarize it rather than continuing it in a second file.'
+
+/**
  * Frontmatter format example. The type nests under `metadata:` and the body
  * links related memories with `[[name]]`, matching upstream's current format
  * and the lean variant in buildCompactMemoryLines, so both prompt tiers and the

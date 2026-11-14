@@ -7,6 +7,7 @@ import {
 } from './memdir.js'
 import {
   MEMORY_DRIFT_CAVEAT,
+  MEMORY_FILE_SIZE_GUIDANCE,
   MEMORY_FRONTMATTER_EXAMPLE,
   TRUSTING_RECALL_SECTION,
   TYPES_SECTION_COMBINED,
@@ -35,6 +36,7 @@ export function buildCombinedMemoryPrompt(
         '',
         ...MEMORY_FRONTMATTER_EXAMPLE,
         '',
+        MEMORY_FILE_SIZE_GUIDANCE,
         '- Keep the name, description, and type fields in memory files up-to-date with the content',
         '- Organize memory semantically by topic, not chronologically',
         '- Update or remove memories that turn out to be wrong or outdated',
@@ -52,6 +54,7 @@ export function buildCombinedMemoryPrompt(
         `**Step 2** — add a pointer to that file in the same directory's \`${ENTRYPOINT_NAME}\`. Each directory (private and team) has its own \`${ENTRYPOINT_NAME}\` index — each entry should be one line, under ~150 characters: \`- [Title](file.md) — one-line hook\`. They have no frontmatter. Never write memory content directly into a \`${ENTRYPOINT_NAME}\`.`,
         '',
         `- Both \`${ENTRYPOINT_NAME}\` indexes are loaded into your conversation context — lines after ${MAX_ENTRYPOINT_LINES} will be truncated, so keep them concise`,
+        MEMORY_FILE_SIZE_GUIDANCE,
         '- Keep the name, description, and type fields in memory files up-to-date with the content',
         '- Organize memory semantically by topic, not chronologically',
         '- Update or remove memories that turn out to be wrong or outdated',
@@ -63,7 +66,7 @@ export function buildCombinedMemoryPrompt(
     '',
     `You have a persistent, file-based memory system with two directories: a private directory at \`${autoDir}\` and a shared team directory at \`${teamDir}\`. ${DIRS_EXIST_GUIDANCE}`,
     '',
-    'Default to not saving memory. Add or update memories only when the information is likely to matter in future conversations and is not better preserved in the codebase, the current thread, or a plan/task.',
+    "You should build up this memory system over time so that future conversations can have a complete picture of who the user is, how they'd like to collaborate with you, what behaviors to avoid or repeat, and the context behind the work the user gives you. Save what is likely to matter in future conversations and is not better preserved in the codebase, the current thread, or a plan/task.",
     '',
     'If the user explicitly asks you to remember something, save it immediately as whichever type fits best. If they ask you to forget something, find and remove the relevant entry. Do not save transient tasks, speculative inferences, or details that are likely to change soon.',
     '',

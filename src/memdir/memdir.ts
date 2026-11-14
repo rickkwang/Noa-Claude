@@ -27,6 +27,7 @@ import { truncate } from '../utils/truncate.js'
 import { getProjectDir } from '../utils/sessionStorage.js'
 import { getInitialSettings } from '../utils/settings/settings.js'
 import {
+  MEMORY_FILE_SIZE_GUIDANCE,
   MEMORY_FRONTMATTER_EXAMPLE,
   TRUSTING_RECALL_SECTION,
   TYPES_SECTION_COMPACT,
@@ -226,6 +227,7 @@ export function buildMemoryLines(
         '',
         ...MEMORY_FRONTMATTER_EXAMPLE,
         '',
+        MEMORY_FILE_SIZE_GUIDANCE,
         '- Keep the name, description, and type fields in memory files up-to-date with the content',
         '- Organize memory semantically by topic, not chronologically',
         '- Update or remove memories that turn out to be wrong or outdated',
@@ -240,6 +242,7 @@ export function buildMemoryLines(
         '',
         `Then add a one-line pointer in \`${ENTRYPOINT_NAME}\` (\`- [Title](file.md) — one-line hook\`, under ~150 characters). \`${ENTRYPOINT_NAME}\` is the index loaded into context each session — no frontmatter, never put memory content there, and lines after ${MAX_ENTRYPOINT_LINES} are truncated, so keep it concise.`,
         '',
+        MEMORY_FILE_SIZE_GUIDANCE,
         '- Before writing a new memory, check whether an existing one covers it and update that instead of duplicating.',
         '- Keep the name, description, and type fields in step with the content; update or delete memories that turn out to be wrong or outdated.',
       ]
@@ -249,16 +252,17 @@ export function buildMemoryLines(
     '',
     `You have a persistent, file-based memory system at \`${memoryDir}\`. ${DIR_EXISTS_GUIDANCE}`,
     '',
-    // Wording here is pinned by prompts.test.ts. The trailing clause replaces
+    // Wording here is pinned by prompts.test.ts. The first sentence is the
+    // long variant's; it replaced a "Default to not saving memory" opener,
+    // under which the model rarely wrote anything. The trailing clause replaces
     // the old "## Memory and other forms of persistence" section (~1150
     // characters) with its routing rule alone: plans hold approaches, tasks
     // hold in-conversation progress.
     //
     // Not everything there survived — "if your approach changes, update the
     // plan rather than saving a memory" has no counterpart here. Upstream's
-    // compact variant (the one this section mirrors) drops that guidance too;
-    // restoring it would be a deviation, not a fix.
-    'Default to not saving memory. Add or update memories only when the information is likely to matter in future conversations and is not better preserved in the codebase, the current thread, or a plan/task — a plan is where an approach you are about to implement belongs, and tasks are where in-conversation progress belongs.',
+    // compact variant drops that guidance too.
+    "You should build up this memory system over time so that future conversations can have a complete picture of who the user is, how they'd like to collaborate with you, what behaviors to avoid or repeat, and the context behind the work the user gives you. Save what is likely to matter in future conversations and is not better preserved in the codebase, the current thread, or a plan/task — a plan is where an approach you are about to implement belongs, and tasks are where in-conversation progress belongs.",
     '',
     'If the user explicitly asks you to remember something, save it immediately as whichever type fits best. If they ask you to forget something, find and remove the relevant entry. Do not save transient tasks, speculative inferences, or details that are likely to change soon.',
     '',
