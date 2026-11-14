@@ -253,8 +253,8 @@ export function buildMemoryLines(
     `You have a persistent, file-based memory system at \`${memoryDir}\`. ${DIR_EXISTS_GUIDANCE}`,
     '',
     // Wording here is pinned by prompts.test.ts. The first sentence is the
-    // long variant's; it replaced a "Default to not saving memory" opener,
-    // under which the model rarely wrote anything. The trailing clause replaces
+    // long variant's; it replaced a "Default to not saving memory" opener.
+    // The trailing clause replaces
     // the old "## Memory and other forms of persistence" section (~1150
     // characters) with its routing rule alone: plans hold approaches, tasks
     // hold in-conversation progress.

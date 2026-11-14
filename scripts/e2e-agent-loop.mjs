@@ -834,7 +834,7 @@ try {
             const followUp = JSON.stringify(main[1].body.messages.at(-1).content);
             if (scenario === 'mode-auto') {
               // NOA_CLAUDE_SIMPLE_SYSTEM_PROMPT=1 runs the suite on the lean prompt, which sends the steer-only form with the relaxed Bash steer.
-              if (process.env.NOA_CLAUDE_SIMPLE_SYSTEM_PROMPT === '1') {
+              if (['1', 'true', 'yes', 'on'].includes((process.env.NOA_CLAUDE_SIMPLE_SYSTEM_PROMPT || '').toLowerCase().trim())) {
                 assert.ok(firstTurn.includes('While auto mode is active:'));
                 assert.ok(!firstTurn.includes('## Auto Mode Active'));
                 assert.ok(firstTurn.includes('You can do much of your work through the Bash tool'));
