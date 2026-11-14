@@ -1,6 +1,6 @@
 import type { ServerWebSocket, Subprocess } from "bun"
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs"
-import { join } from "node:path"
+import { join, relative } from "node:path"
 import { SESSION_ID, configHome, appendTimelineEvent, appendTurnResult, appendTurnDiff, canonicalCwd, countUserTurns, findTurnDiff, findTurnUserMessage, historyPage, loadHistory, readTurnDiffs, setTurnDiffReverted, transcriptPath } from "./sessions"
 import { projectAdditionalDirectories } from "./projects"
 import {
@@ -299,8 +299,8 @@ export async function computeLiveDiff(run: AgentRun) {
   const turn = run.turn
   if (!turn || turn.finalizing) return
   turn.liveAt = Date.now()
-  // Tool-result patches are the live source; the completed card
-  // still uses the full tree, which also catches shell-made edits.
+  // Tool-result patches are the live source; the completed card diffs
+  // the same files between worktree snapshots.
   const diff = await collectDiff(run.cwd, turn.changes).catch(() => undefined)
   if (diff !== undefined && run.turn === turn && !turn.finalizing)
     emit(run, { kind: "turn-diff-live", diff: { ...(diff ?? { files: [], additions: 0, deletions: 0 }), turnIndex: turn.index } })
@@ -343,10 +343,14 @@ export function finalizeTurnDiff(run: AgentRun): Promise<void> {
     try {
       const after = await captureTree(run.cwd).catch(() => null)
       try {
+        // Only files this turn's edit tools touched: other sessions and agents
+        // may be changing the same worktree concurrently.
+        const paths = [...turn.changes.files.keys()].map((path) => relative(run.cwd, path))
         // Keep the full patch for Undo; only the client view is capped.
-        let diff = turn.before && after
-          ? await diffTrees(run.cwd, turn.before, after, Number.POSITIVE_INFINITY).catch(() => null)
-          : null
+        const scoped = turn.before && after
+          ? paths.length ? await diffTrees(run.cwd, turn.before, after, Number.POSITIVE_INFINITY, paths).catch(() => undefined) : null
+          : undefined
+        let diff = scoped ?? null
         const fallback = run.additionalDirectories.length
           ? await collectDiff(run.cwd, turn.changes).catch(() => null)
           : null
@@ -358,7 +362,7 @@ export function finalizeTurnDiff(run: AgentRun): Promise<void> {
           if (result !== undefined) { diff = result; collected = true }
         }
         if (!diff || diff.files.length === 0) {
-          if ((turn.before && after && turn.before.tree === after.tree && !fallback) || (!turn.before && collected))
+          if ((scoped === null && !fallback) || (!turn.before && collected))
             emit(run, { kind: "turn-diff-live", diff: { files: [], additions: 0, deletions: 0, turnIndex: turn.index } })
           return
         }

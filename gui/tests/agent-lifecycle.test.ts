@@ -1,9 +1,9 @@
 import { expect, test } from "bun:test"
-import { mkdtemp, rm, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { agentMessage, computeLiveDiff, detachAgent, emit, finalizeTurnDiff } from "../server/agents"
-import { createChangeCollector } from "../server/turnDiff"
+import { captureTree, createChangeCollector } from "../server/turnDiff"
 
 test("queue moves use visible indexes while a message is starting", async () => {
   const run: any = { queue: ["a", "b", "c"].map(id => ({ id, content: id })), startingMessageId: "a", historyReady: Promise.resolve(), clients: new Set(), journal: [] }
@@ -55,6 +55,41 @@ test("non-git turn clears its live diff when a shell restores the file", async (
     await finalizeTurnDiff(run)
     expect(run.journal.at(-1).diff.files).toEqual([])
   } finally { await rm(cwd, { recursive: true, force: true }) }
+})
+
+test("a git turn's diff leaves out files another session changed meanwhile", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "noa-turn-scope-"))
+  try {
+    Bun.spawnSync(["git", "init", "-q", cwd])
+    const ours = join(cwd, "ours.txt"), theirs = join(cwd, "theirs.txt"), changes = createChangeCollector()
+    await writeFile(ours, "original\n")
+    await writeFile(theirs, "original\n")
+    const run: any = { cwd, additionalDirectories: [], clients: new Set(), journal: [], turn: { index: 1, changes, before: await captureTree(cwd) } }
+    changes.files.set(ours, "original\n")
+    await writeFile(ours, "changed\n")
+    await writeFile(theirs, "changed elsewhere\n")
+    await finalizeTurnDiff(run)
+    const diff = run.journal.at(-1).diff
+    expect(diff.files.map((file: any) => file.path)).toEqual(["ours.txt"])
+    expect(diff.patch).not.toContain("theirs.txt")
+  } finally { await rm(cwd, { recursive: true, force: true }) }
+})
+
+test("a git turn that also edits a file outside the repository keeps an undoable git patch", async () => {
+  const root = await mkdtemp(join(tmpdir(), "noa-turn-outside-"))
+  try {
+    const cwd = join(root, "repo", "pkg"), outside = join(root, "notes.md"), ours = join(cwd, "ours.txt"), changes = createChangeCollector()
+    await mkdir(cwd, { recursive: true })
+    Bun.spawnSync(["git", "init", "-q", join(root, "repo")])
+    await writeFile(ours, "original\n")
+    await writeFile(outside, "original\n")
+    const run: any = { cwd, additionalDirectories: [], clients: new Set(), journal: [], turn: { index: 1, changes, before: await captureTree(cwd) } }
+    for (const path of [ours, outside]) { changes.files.set(path, "original\n"); await writeFile(path, "changed\n") }
+    await finalizeTurnDiff(run)
+    const diff = run.journal.at(-1).diff
+    expect(diff.files.map((file: any) => file.path)).toEqual(["ours.txt"])
+    expect(diff.patch).toStartWith("diff --git")
+  } finally { await rm(root, { recursive: true, force: true }) }
 })
 
 test("a failed session action write releases its workspace and replies with an error", async () => {

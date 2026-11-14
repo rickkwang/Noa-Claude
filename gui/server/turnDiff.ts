@@ -180,23 +180,27 @@ export function mergeTurnDiffs(primary: TurnDiff | null, fallback: TurnDiff): Tu
   }
 }
 
-/** Diff two captured trees. Paths are reported relative to `cwd`. */
-export async function diffTrees(cwd: string, before: TreeSnapshot, after: TreeSnapshot, maxPatch = MAX_PATCH): Promise<TurnDiff | null> {
+/** Diff two captured trees, optionally limited to `paths` (relative to `cwd`). Paths are reported relative to `cwd`. */
+export async function diffTrees(cwd: string, before: TreeSnapshot, after: TreeSnapshot, maxPatch = MAX_PATCH, paths?: string[]): Promise<TurnDiff | null> {
   if (before.tree === after.tree) return null
+  // diff-tree paths are repo-relative; report them relative to cwd. Using
+  // --show-prefix avoids symlinked temp paths breaking relative().
+  const root = (await git(cwd, ["rev-parse", "--show-prefix"]).catch(() => "")).trim()
+  const depth = root.split("/").filter(Boolean).length
+  // A pathspec that climbs above the repository root makes diff-tree fail;
+  // files outside the repository are left to the tool-result fallback.
+  const inside = paths?.filter((path) => path.split("/").findIndex((part) => part !== "..") <= depth)
+  if (inside?.length === 0) return null
+  const pathspec = inside ? ["--", ...inside] : []
   const env = {
     ...ENV,
     GIT_OBJECT_DIRECTORY: after.objects,
     GIT_ALTERNATE_OBJECT_DIRECTORIES: [before.objects, after.objects, before.repoObjects].join(delimiter),
   }
-  const [numstat, patch, prefix] = await Promise.all([
-    git(cwd, ["diff-tree", "--no-commit-id", "-r", "--numstat", "-z", "--no-renames", before.tree, after.tree], env),
-    git(cwd, ["diff-tree", "--no-commit-id", "-r", "-p", "--binary", "--no-renames", before.tree, after.tree], env),
-    git(cwd, ["rev-parse", "--show-prefix"]).catch(() => ""),
+  const [numstat, patch] = await Promise.all([
+    git(cwd, ["diff-tree", "--no-commit-id", "-r", "--numstat", "-z", "--no-renames", before.tree, after.tree, ...pathspec], env),
+    git(cwd, ["diff-tree", "--no-commit-id", "-r", "-p", "--binary", "--no-renames", before.tree, after.tree, ...pathspec], env),
   ])
-  // diff-tree paths are repo-relative; report them relative to cwd. Using
-  // --show-prefix avoids symlinked temp paths breaking relative().
-  const root = prefix.trim()
-  const depth = root.split("/").filter(Boolean).length
   const display = (path: string) =>
     root && path.startsWith(root) ? path.slice(root.length) : `${"../".repeat(depth)}${path}`
   const files = parseNumstat(numstat, display)
