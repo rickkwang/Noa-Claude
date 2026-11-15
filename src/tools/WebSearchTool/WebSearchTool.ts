@@ -201,6 +201,38 @@ function makeOutputFromSearchResponse(
   }
 }
 
+function isSearchAvailable(): boolean {
+  const provider = getAPIProvider()
+
+  // A search API the user configured serves every provider.
+  if (getConfiguredSearchBackend()) {
+    return true
+  }
+
+  // Enable for direct firstParty only. A custom ANTHROPIC_BASE_URL also reports
+  // firstParty, but Anthropic-compatible 3P endpoints may not support the
+  // server-side web_search tool.
+  if (isDirectFirstParty()) {
+    return true
+  }
+
+  // Enable for Vertex AI with supported models (Claude 4.0+). Bedrock does
+  // not serve the server-side web search tool at all.
+  if (provider === 'vertex') {
+    return vertexModelSupportsWebSearch(getMainLoopModel())
+  }
+
+  // Foundry only ships models that already support Web Search
+  if (provider === 'foundry') {
+    return true
+  }
+
+  // The ChatGPT Responses route has OpenAI's hosted web_search tool, which
+  // the shim maps from the Anthropic server tool; Gemini searches through
+  // native grounding (see backends.ts).
+  return isChatGPTResponsesRoute() || isGeminiRoute()
+}
+
 export const WebSearchTool = buildTool({
   name: WEB_SEARCH_TOOL_NAME,
   searchHint: 'search the web for current information',
@@ -216,37 +248,6 @@ export const WebSearchTool = buildTool({
   getActivityDescription(input) {
     const summary = getToolUseSummary(input)
     return summary ? `Searching for ${summary}` : 'Searching the web'
-  },
-  isEnabled() {
-    const provider = getAPIProvider()
-
-    // A search API the user configured serves every provider.
-    if (getConfiguredSearchBackend()) {
-      return true
-    }
-
-    // Enable for direct firstParty only. A custom ANTHROPIC_BASE_URL also reports
-    // firstParty, but Anthropic-compatible 3P endpoints may not support the
-    // server-side web_search tool.
-    if (isDirectFirstParty()) {
-      return true
-    }
-
-    // Enable for Vertex AI with supported models (Claude 4.0+). Bedrock does
-    // not serve the server-side web search tool at all.
-    if (provider === 'vertex') {
-      return vertexModelSupportsWebSearch(getMainLoopModel())
-    }
-
-    // Foundry only ships models that already support Web Search
-    if (provider === 'foundry') {
-      return true
-    }
-
-    // The ChatGPT Responses route has OpenAI's hosted web_search tool, which
-    // the shim maps from the Anthropic server tool; Gemini searches through
-    // native grounding (see backends.ts).
-    return isChatGPTResponsesRoute() || isGeminiRoute()
   },
   get inputSchema(): InputSchema {
     return inputSchema()
@@ -295,6 +296,16 @@ export const WebSearchTool = buildTool({
     return ''
   },
   async validateInput(input) {
+    // The tool stays registered where no search path exists, so a search
+    // attempt can tell the user how to enable one.
+    if (!isSearchAvailable()) {
+      return {
+        result: false,
+        message:
+          'Web search is not available with this provider. Tell the user they can enable it by setting NOA_CLAUDE_WEB_SEARCH_BACKEND to `searxng` (with NOA_CLAUDE_WEB_SEARCH_URL), `brave` or `tavily` (with NOA_CLAUDE_WEB_SEARCH_API_KEY); searches then go to that service. Do not call WebSearch again unless the user configures it.',
+        errorCode: 3,
+      }
+    }
     const { query, allowed_domains, blocked_domains } = input
     if (!query.length) {
       return {

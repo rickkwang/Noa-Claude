@@ -7,7 +7,9 @@ afterEach(() => {
   else process.env.ANTHROPIC_BASE_URL = originalBaseUrl
 })
 
-test('WebSearch is disabled for a custom Anthropic-compatible endpoint', () => {
+test('WebSearch on a custom Anthropic-compatible endpoint rejects the call with setup steps', async () => {
   process.env.ANTHROPIC_BASE_URL = 'https://api.minimaxi.com/anthropic'
-  expect(WebSearchTool.isEnabled()).toBe(false)
+  const result = await WebSearchTool.validateInput!({ query: 'bun release notes' })
+  expect(result.result).toBe(false)
+  expect(result.result === false && result.message).toContain('NOA_CLAUDE_WEB_SEARCH_BACKEND')
 })
