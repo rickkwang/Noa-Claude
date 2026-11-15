@@ -2,7 +2,7 @@ import { useContext, useEffect, useRef, useState, type KeyboardEvent as ReactKey
 import { createPortal } from "react-dom"
 import type { AgentTask, Block, ToolBlock } from "../agent/reducer"
 import { formatElapsed, shellStepLabel, toolActivityLabel, toolDiffStats, toolElapsedMs, toolRowSteps, toolShellSteps, type ShellStep } from "../agent/toolActivity"
-import { BookOpen, Check, ChevronRight, ChevronUp, Copy, Edit2, List, Photo, Search, Stop, Terminal, Tool, Users, X } from "../lib/icons"
+import { BookOpen, Check, ChevronRight, ChevronUp, Copy, Edit2, FileText, Globe, List, Photo, Search, Stop, Terminal, Tool, Users, X } from "../lib/icons"
 import { diffLines } from "diff"
 import { Collapsible } from "./Collapsible"
 import { Lightbox, type LightboxItem } from "./Lightbox"
@@ -87,7 +87,7 @@ export function ToolCard({ block, step: stepProp, defaultOpen = false, active = 
         <ChevronRight size={12} className={`shrink-0 opacity-0 transition-[transform,opacity] duration-300 group-hover/tool:opacity-100 group-focus-visible/tool:opacity-100 ${open ? "rotate-90" : ""}`} />
       </button>
       <Collapsible open={open}>
-        <div className={`mt-1 mb-2 flex flex-col gap-2 ${block.name === "Bash" && !task ? "" : "ps-1"}`}>
+        <div className={`mt-1 mb-2 flex flex-col gap-2 [&>.noa-code-block]:my-0 ${block.name === "Bash" && !task ? "" : "ps-1"}`}>
           {task ? <TaskDetail task={task} tasks={tasks} onStopTask={onStopTask} onOpenTask={onOpenTask} /> : <ToolBody block={block} active={active} onRaw={() => setRawOpen(true)} onCollapse={() => setOpen(false)} />}
           {!!block.images?.length && (
             <ToolImages
@@ -194,10 +194,12 @@ function toolIcon(block: ToolBlock, step?: ShellStep) {
   // Commands that only read, search or list files take the matching tool's icon.
   if (step) return step.kind === "read" ? BookOpen : step.kind === "search" ? Search : List
   if (block.name === "Bash") return Terminal
-  if (block.name === "Grep" || block.name === "Glob" || block.name === "WebSearch" || block.name === "WebFetch") return Search
+  if (block.name === "Grep" || block.name === "Glob" || block.name === "WebSearch") return Search
+  if (block.name === "WebFetch") return Globe
   if (block.name === "Agent" || block.name === "Task") return Users
   if (/\.(?:avif|gif|jpe?g|png|webp)$/i.test(file)) return Photo
-  if (block.name === "Edit" || block.name === "MultiEdit" || block.name === "Write") return Edit2
+  if (block.name === "Write") return FileText
+  if (block.name === "Edit" || block.name === "MultiEdit") return Edit2
   if (block.name === "Read") return BookOpen
   if (block.name === "List") return List
   return Tool
@@ -539,10 +541,11 @@ function DiffView({ oldText, newText }: { oldText: string; newText: string }) {
     return text.split("\n").map((line) => ({ kind, line }))
   })
   return (
-    <pre className="noa-selectable m-0 overflow-auto rounded-panel bg-[var(--bg-secondary,#F9F9F7)] py-1 font-mono text-[length:var(--code-font-size)] leading-[1.55] max-h-80">
+    <pre className="noa-selectable m-0 overflow-auto noa-code-block rounded-[20px] border-0 font-mono text-[length:var(--code-font-size)] leading-[1.625] max-h-80">
       {lines.map(({ kind, line }, i) => (
-        <div key={i} className={`whitespace-pre-wrap px-3 ${kind === "-" ? "bg-[rgba(212,85,85,0.12)]" : kind === "+" ? "bg-[rgba(16,185,129,0.12)]" : "text-[var(--sidebar-text-muted)]"}`}>
-          {kind}{line}
+        <div key={i} className={`flex gap-2 whitespace-pre-wrap px-3 ${kind === "-" ? "bg-[color-mix(in_srgb,var(--diff-removed,#C24444)_20%,transparent)]" : kind === "+" ? "bg-[color-mix(in_srgb,var(--diff-added,#168447)_20%,transparent)]" : "text-[var(--sidebar-text-muted)]"}`}>
+          <span className={`w-[1ch] shrink-0 select-none ${kind === "-" ? "text-[var(--diff-removed,#C24444)]" : kind === "+" ? "text-[var(--diff-added,#168447)]" : ""}`}>{kind === " " ? "" : kind === "-" ? "−" : "+"}</span>
+          <span className="min-w-0 flex-1">{line}</span>
         </div>
       ))}
     </pre>

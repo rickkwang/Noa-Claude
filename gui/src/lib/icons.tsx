@@ -57,6 +57,7 @@ export const Worktree = glyph("arrow-branch");
 export const ArrowDown = glyph("arrow-down-md");
 export const ArrowLeft = glyph("arrow-left-md");
 export const ArrowRight = glyph("arrow-right-md");
+export const Brain = codex("brain");
 export const Queue = codex("queue");
 export const Steer = codex("steer");
 export const BookOpen = glyph("book-open");
