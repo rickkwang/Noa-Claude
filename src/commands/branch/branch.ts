@@ -13,6 +13,7 @@ import type {
 } from '../../types/logs.js'
 import { getPreferredCliCommandName } from '../../utils/commandName.js'
 import {
+  getFirstMeaningfulUserMessageTextContent,
   getProjectDir,
   getTranscriptPath,
   getTranscriptPathForSession,
@@ -32,25 +33,15 @@ type TranscriptEntry = TranscriptMessage & {
 }
 
 /**
- * Derive a single-line title base from the first user message.
+ * Derive a single-line title base from the first prompt the user wrote,
+ * skipping injected caveats and built-in command breadcrumbs.
  * Collapses whitespace — multiline first messages (pasted stacks, code)
  * otherwise flow into the saved title and break the resume hint.
  */
-export function deriveFirstPrompt(
-  firstUserMessage: Extract<SerializedMessage, { type: 'user' }> | undefined,
-): string {
-  const content = firstUserMessage?.message?.content
-  if (!content) return 'Branched conversation'
-  const raw =
-    typeof content === 'string'
-      ? content
-      : content.find(
-          (block): block is { type: 'text'; text: string } =>
-            block.type === 'text',
-        )?.text
-  if (!raw) return 'Branched conversation'
+export function deriveFirstPrompt(messages: SerializedMessage[]): string {
+  const raw = getFirstMeaningfulUserMessageTextContent(messages)
   return (
-    raw.replace(/\s+/g, ' ').trim().slice(0, 100) || 'Branched conversation'
+    raw?.replace(/\s+/g, ' ').trim().slice(0, 100) || 'Branched conversation'
   )
 }
 
@@ -192,9 +183,7 @@ export async function createConversationFork(
   } = await createFork(customTitle)
 
   const now = new Date()
-  const firstPrompt = deriveFirstPrompt(
-    serializedMessages.find(m => m.type === 'user'),
-  )
+  const firstPrompt = deriveFirstPrompt(serializedMessages)
   const baseName = title ?? firstPrompt
   const effectiveTitle = await getUniqueForkName(baseName)
   await saveCustomTitle(sessionId, effectiveTitle, forkPath)

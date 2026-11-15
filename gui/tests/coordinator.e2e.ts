@@ -71,6 +71,7 @@ const provider = Bun.serve({
       if (lastText.includes("COORD_START_B")) return reply(tool("start_session", { prompt: "THREAD_TASK_B run a command" }))
       if (lastText.includes("COORD_START")) return reply(tool("start_session", { prompt: "THREAD_TASK_A do the work" }))
       if (lastText.includes("COORD_STATUS")) return reply(tool("list_sessions", {}))
+      if (lastText.includes("COORD_SLASH")) return reply(tool("start_session", { prompt: "/goal THREAD_SLASH" }))
       const follow = lastText.match(/COORD_FOLLOW ([0-9a-f-]{36})/)
       if (follow) return reply(tool("send_message", { session_id: follow[1], message: "THREAD_FOLLOW add tests" }))
       return reply({ type: "text", text: "COORD_REPLY" })
@@ -158,6 +159,11 @@ try {
   say("COORD_STATUS")
   await wait(() => coordinatorTurns.some((t) => t.includes("tool_result") && t.includes("Fixture thread") && t.includes("done")), "list_sessions result")
   console.log("PASS asked for status, the coordinator reads the thread list")
+
+  say("COORD_SLASH")
+  await wait(() => coordinatorTurns.some((t) => t.includes("tool_result") && t.includes("cannot start with a slash")), "slash prompt refused")
+  assert.ok(!(await api("/api/sessions")).some((s: any) => String(s.title).includes("THREAD_SLASH")))
+  console.log("PASS start_session refuses a prompt that would run as a slash command")
 
   say(`COORD_FOLLOW ${thread.id}`)
   await wait(() => threadTurns.some((t) => t.includes("THREAD_FOLLOW")), "follow-up delivered")

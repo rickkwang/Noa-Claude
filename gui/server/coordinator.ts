@@ -136,6 +136,8 @@ async function callTool(project: string, coordinator: string, name: string, args
     case "start_session": {
       const prompt = typeof args.prompt === "string" ? args.prompt.trim() : ""
       if (!prompt) throw new Error("The prompt is empty.")
+      // A leading slash would run as a CLI command in the thread, without a permission prompt.
+      if (prompt.startsWith("/")) throw new Error("The prompt cannot start with a slash. Describe the task in a sentence.")
       const cwd = args.worktree === true ? (await worktreeRequest(project, { action: "create" }) as { path: string }).path : project
       const thread = { id: crypto.randomUUID(), cwd }
       addThread(project, thread)

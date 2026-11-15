@@ -220,6 +220,14 @@ function isGuiCommandEntry(entry: Entry): boolean {
   return command !== undefined && isGuiCommand(command.trim())
 }
 
+// The command a breadcrumb records, as the user typed it. Skills record <command-message> ahead of <command-name>.
+function commandLine(text: string): string | undefined {
+  const command = text.trimStart().match(/^(?:<command-message>[^<]*<\/command-message>\s*)?<command-name>(\/[^<]+)<\/command-name>/)?.[1]?.trim()
+  if (!command) return undefined
+  const args = text.match(/<command-args>([\s\S]*?)<\/command-args>/)?.[1]?.trim()
+  return `${command}${args ? ` ${args}` : ""}`
+}
+
 function userText(entry: Entry): string | null {
   if (entry.type !== "user" || entry.isMeta || entry.isCompactSummary || entry.isSidechain) return null
   const content = entry.message?.content
@@ -233,12 +241,8 @@ function userText(entry: Entry): string | null {
             .join("\n")
         : ""
   if (!text.trim()) return Array.isArray(content) && content.some((b: any) => b?.type === "image") ? "[Image]" : null
-  const command = text.trimStart().match(/^<command-name>(\/[^<]+)<\/command-name>/)?.[1]
-  if (command) {
-    if (isGuiCommand(command.slice(1).trim())) return null
-    const args = text.match(/<command-args>([\s\S]*?)<\/command-args>/)?.[1]?.trim()
-    return `${command}${args ? ` ${args}` : ""}`
-  }
+  const command = commandLine(text)
+  if (command) return isGuiCommand(command.slice(1).split(/\s/, 1)[0]!) ? null : command
   if (SYSTEM_WRAPPER.test(text.trimStart())) return null
   if (INTERRUPT_MARKER.test(text.trim())) return null
   return text
@@ -572,7 +576,8 @@ export async function loadHistory(cwd: string, id: string): Promise<HistoryItem[
   const owner = entries.find((entry) => typeof entry.cwd === "string")?.cwd
   if (owner && canonicalCwd(owner) !== canonicalCwd(cwd)) return null
 
-  const guiCommandIds = new Set(entries.flatMap(entry => entry.uuid && isGuiCommandEntry(entry) ? [entry.uuid] : []))
+  // Commands whose output stays out of the history: the GUI's own, and /compact, which shows as a boundary.
+  const guiCommandIds = new Set(entries.flatMap(entry => entry.uuid && (isGuiCommandEntry(entry) || /^\/compact(?:\s|$)/.test(userText(entry) ?? "")) ? [entry.uuid] : []))
   const items: HistoryItem[] = []
   const restoredAgents = new Set<string>()
   const byUser = new Map<string, TurnDiff>()
@@ -667,6 +672,8 @@ export async function loadHistory(cwd: string, id: string): Promise<HistoryItem[
         currentUserMessageId = entry.uuid ?? currentUserMessageId
         items.push({ kind: "user", id: userId, text: entry.content, sentAt: entryTime(entry) })
       }
+      // The terminal records some commands as a breadcrumb here rather than as a user entry.
+      else if (!output && commandLine(entry.content) && !isGuiCommandEntry(entry)) items.push({ kind: "user", id: userId, text: commandLine(entry.content)!, sentAt: entryTime(entry) })
       continue
     }
 
@@ -693,6 +700,15 @@ export async function loadHistory(cwd: string, id: string): Promise<HistoryItem[
     const content = entry.message?.content
     if (entry.type === "user" && typeof content === "string" && INTERRUPT_MARKER.test(content.trim())) {
       interrupted = true
+      continue
+    }
+
+    // The terminal also records command output as a user entry; show it like the system form above.
+    const commandOutput = entry.type === "user" && typeof content === "string" && !(entry.parentUuid && guiCommandIds.has(entry.parentUuid))
+      ? content.match(/^<local-command-(?:stdout|stderr)>([\s\S]*?)<\/local-command-(?:stdout|stderr)>$/)?.[1]
+      : undefined
+    if (commandOutput) {
+      items.push({ kind: "agent", message: { type: "assistant", message: { content: [{ type: "text", text: commandOutput }] }, parent_tool_use_id: null } })
       continue
     }
 

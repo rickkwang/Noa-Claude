@@ -111,6 +111,7 @@ export function composerCommands(commands: SlashCommand[]): ComposerCommand[] {
         (command) =>
           !guiNames.has(command.name) &&
           command.name !== "provider" &&
+          command.name !== "fork" &&
           !command.hidden &&
           command.type !== "local-jsx" &&
           !command.description.startsWith("(removed)"),
