@@ -17,6 +17,7 @@ import copy from './commands/copy/index.js'
 import commitPushPr from './commands/commit-push-pr.js'
 import compact from './commands/compact/index.js'
 import config from './commands/config/index.js'
+import { advisor, advisorNonInteractive } from './commands/advisor/index.js'
 import { context, contextNonInteractive } from './commands/context/index.js'
 import diff from './commands/diff/index.js'
 import doctor from './commands/doctor/index.js'
@@ -185,6 +186,8 @@ const COMMANDS = memoize((): Command[] => [
   copy,
   context,
   contextNonInteractive,
+  advisor,
+  advisorNonInteractive,
   diff,
   doctor,
   effort,

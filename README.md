@@ -122,6 +122,7 @@ The session-fork workflow (`/fork`) is smoke-checked. Other listed commands are 
 **Provider routing**
 - `/provider` — Switch between saved provider profiles (JSON-based, stored in `~/.noa/provider-profiles.json`)
 - `/model` — Switch model or list available models
+- `/advisor` — Let the model consult a stronger advisor model at key moments (direct Anthropic API only)
 - `/login` / `/logout` — Authenticate with your Anthropic account via OAuth (Anthropic-specific)
 
 **Agent execution**

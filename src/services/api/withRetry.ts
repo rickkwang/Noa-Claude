@@ -11,6 +11,7 @@ import type { QuerySource } from 'src/constants/querySource.js'
 import type { SystemAPIErrorMessage } from 'src/types/message.js'
 import { isAwsCredentialsProviderError } from 'src/utils/aws.js'
 import { healRejectedRequest } from './requestLatches.js'
+import { healAdvisorRefusal } from '../../utils/advisor.js'
 import { logForDebugging } from 'src/utils/debug.js'
 import { logError } from 'src/utils/log.js'
 import { createSystemAPIErrorMessage } from 'src/utils/messages.js'
@@ -335,6 +336,10 @@ export async function* withRetry<T>(
       if (wasFastModeActive && isFastModeNotEnabledError(error)) {
         handleFastModeRejectedByAPI()
         retryContext.fastMode = false
+        continue
+      }
+
+      if (healAdvisorRefusal(error)) {
         continue
       }
 

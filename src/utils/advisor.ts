@@ -1,9 +1,13 @@
 // @ts-nocheck
+import { APIError } from '@anthropic-ai/sdk'
 import type { BetaUsage } from '@anthropic-ai/sdk/resources/beta/messages/messages.mjs'
-import { getFeatureValue_CACHED_MAY_BE_STALE } from '../services/analytics/growthbook.js'
+import { getSessionId } from '../bootstrap/state.js'
+import { ADVISOR_BETA_HEADER } from '../constants/betas.js'
 import { shouldIncludeFirstPartyOnlyBetas } from './betas.js'
+import { logForDebugging } from './debug.js'
 import { isEnvTruthy } from './envUtils.js'
 import { getCanonicalName } from './model/model.js'
+import { isDirectFirstParty } from './model/providers.js'
 import { getInitialSettings } from './settings/settings.js'
 
 // The SDK does not yet have types for advisor blocks.
@@ -45,45 +49,73 @@ export function isAdvisorBlock(param: {
   )
 }
 
-type AdvisorConfig = {
-  enabled?: boolean
-  canUserConfigure?: boolean
-  baseModel?: string
-  advisorModel?: string
+function isExperimentalAdvisorEnabled(): boolean {
+  return isEnvTruthy(process.env.CLAUDE_CODE_ENABLE_EXPERIMENTAL_ADVISOR_TOOL)
 }
 
-function getAdvisorConfig(): AdvisorConfig {
-  return getFeatureValue_CACHED_MAY_BE_STALE<AdvisorConfig>(
-    'tengu_sage_compass',
-    {},
+// Set when the API refuses the advisor: for the whole process when the
+// organization lacks it or the beta header itself is refused, otherwise for
+// the conversation (session ID) until /clear or compaction.
+let advisorRefusedForProcess = false
+const advisorRefusedSessions = new Set<string>()
+
+function isAdvisorRefused(): boolean {
+  return (
+    advisorRefusedForProcess || advisorRefusedSessions.has(getSessionId())
   )
 }
 
 export function isAdvisorEnabled(): boolean {
-  if (isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_ADVISOR_TOOL)) {
+  if (
+    isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_ADVISOR_TOOL) ||
+    isAdvisorRefused()
+  ) {
     return false
   }
-  // The advisor beta header is first-party only (Bedrock/Vertex 400 on it).
-  if (!shouldIncludeFirstPartyOnlyBetas()) {
-    return false
-  }
-  return getAdvisorConfig().enabled ?? false
+  // The advisor beta header is direct first-party only: Bedrock, Vertex,
+  // Foundry and custom base URLs reject it.
+  return isDirectFirstParty() && shouldIncludeFirstPartyOnlyBetas()
 }
 
-export function canUserConfigureAdvisor(): boolean {
-  return isAdvisorEnabled() && (getAdvisorConfig().canUserConfigure ?? false)
+function isAdvisorRefusal(error: APIError): boolean {
+  const { message } = error
+  const namesHeader = message.includes(ADVISOR_BETA_HEADER)
+  if (error.status === 422) return namesHeader
+  return (
+    error.status === 400 &&
+    (message.includes('the advisor tool is not available') ||
+      message.includes('cannot be used as an advisor') ||
+      /tools\.\d+\.model: /.test(message) ||
+      namesHeader)
+  )
 }
 
-export function getExperimentAdvisorModels():
-  | { baseModel: string; advisorModel: string }
-  | undefined {
-  const config = getAdvisorConfig()
-  return isAdvisorEnabled() &&
-    !canUserConfigureAdvisor() &&
-    config.baseModel &&
-    config.advisorModel
-    ? { baseModel: config.baseModel, advisorModel: config.advisorModel }
-    : undefined
+/**
+ * When `error` is the API refusing the advisor, stops attaching it (see
+ * isAdvisorRefused for the scope) and returns true so the request is retried
+ * once without it. The retry drops the advisor tool, its beta header and the
+ * advisor blocks in the history.
+ */
+export function healAdvisorRefusal(error: unknown): boolean {
+  if (!(error instanceof APIError) || !isAdvisorRefusal(error)) return false
+  if (isAdvisorRefused()) return false
+  const scope =
+    error.message.includes('not available for this organization') ||
+    error.message.includes(ADVISOR_BETA_HEADER)
+      ? 'process'
+      : 'conversation'
+  if (scope === 'process') advisorRefusedForProcess = true
+  else advisorRefusedSessions.add(getSessionId())
+  logForDebugging(
+    `[advisor] the server refused the advisor (scope: ${scope}); retrying once without the advisor`,
+    { level: 'warn' },
+  )
+  return true
+}
+
+/** Compaction starts a fresh prompt, so a conversation-scoped refusal ends. */
+export function clearAdvisorConversationRefusal(): void {
+  advisorRefusedSessions.delete(getSessionId())
 }
 
 /**
@@ -127,14 +159,13 @@ const ADVISOR_RANKS: Record<string, number> = {
 const MIN_ADVISOR_RANK = 2
 
 /**
- * Ant builds skip the rank checks entirely, so unreleased models can be driven
- * from either side of the pair. Upstream has the same escape hatch behind
- * CLAUDE_CODE_ENABLE_EXPERIMENTAL_ADVISOR_TOOL, as an early `true` out of each
- * predicate — not as a synthetic rank, which would still reject a low-ranked
- * model like Haiku 4.5 as an advisor.
+ * Ant builds and CLAUDE_CODE_ENABLE_EXPERIMENTAL_ADVISOR_TOOL skip the rank
+ * checks entirely, so unreleased models can be driven from either side of the
+ * pair. It is an early `true` out of each predicate — not a synthetic rank,
+ * which would still reject a low-ranked model like Haiku 4.5 as an advisor.
  */
 function advisorRankChecksBypassed(): boolean {
-  return process.env.USER_TYPE === 'ant'
+  return process.env.USER_TYPE === 'ant' || isExperimentalAdvisorEnabled()
 }
 
 function getAdvisorRank(model: string): number | undefined {
@@ -181,9 +212,6 @@ export function isValidAdvisorPairing(
 }
 
 export function getInitialAdvisorSetting(): string | undefined {
-  if (!isAdvisorEnabled()) {
-    return undefined
-  }
   return getInitialSettings().advisorModel
 }
 

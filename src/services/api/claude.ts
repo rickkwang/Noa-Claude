@@ -154,7 +154,7 @@ import { getFeatureValue_CACHED_MAY_BE_STALE } from 'src/services/analytics/grow
 import type { AgentId } from 'src/types/ids.js'
 import {
   ADVISOR_TOOL_INSTRUCTIONS,
-  getExperimentAdvisorModels,
+  isAdvisorBlock,
   isAdvisorEnabled,
   isValidAdvisorModel,
   isValidAdvisorPairing,
@@ -1163,29 +1163,25 @@ async function* queryModel(
     options.querySource === 'verification_agent'
   const betas = getMergedBetas(apiModel, { isAgenticQuery })
 
-  // Always send the advisor beta header when advisor is enabled, so
-  // non-agentic queries (compact, side_question, extract_memories, etc.)
-  // can parse advisor server_tool_use blocks already in the conversation history.
-  if (isAdvisorEnabled()) {
+  // Send the advisor beta header when an advisor is configured, and whenever
+  // the history already holds advisor blocks, so non-agentic queries (compact,
+  // side_question, extract_memories, etc.) can parse them instead of stripping.
+  if (
+    isAdvisorEnabled() &&
+    (options.advisorModel ||
+      messages.some(
+        m =>
+          m.type === 'assistant' &&
+          Array.isArray(m.message.content) &&
+          m.message.content.some(isAdvisorBlock),
+      ))
+  ) {
     betas.push(ADVISOR_BETA_HEADER)
   }
 
   let advisorModel: string | undefined
   if (isAgenticQuery && isAdvisorEnabled()) {
-    let advisorOption = options.advisorModel
-
-    const advisorExperiment = getExperimentAdvisorModels()
-    if (advisorExperiment !== undefined) {
-      if (
-        normalizeModelStringForAPI(advisorExperiment.baseModel) ===
-        normalizeModelStringForAPI(options.model)
-      ) {
-        // Override the advisor model if the base model matches. We
-        // should only have experiment models if the user cannot
-        // configure it themselves.
-        advisorOption = advisorExperiment.advisorModel
-      }
-    }
+    const advisorOption = options.advisorModel
 
     if (advisorOption) {
       const normalizedAdvisorModel = normalizeModelStringForAPI(
@@ -1565,7 +1561,13 @@ async function* queryModel(
   const messageThreadRequest = createMessageThreadRequest(options.querySource, options.agentId, options.model)
 
   const paramsFromContext = (retryContext: RetryContext) => {
-    const betasParams = [...betas]
+    // healAdvisorRefusal turned the advisor off after the API refused it:
+    // retry without its tool, beta header and history blocks.
+    const dropAdvisor =
+      betas.includes(ADVISOR_BETA_HEADER) && !isAdvisorEnabled()
+    const betasParams = dropAdvisor
+      ? betas.filter(beta => beta !== ADVISOR_BETA_HEADER)
+      : [...betas]
 
     // Append 1M beta dynamically for the Sonnet 1M experiment.
     if (
@@ -1780,7 +1782,7 @@ async function* queryModel(
       }
     }
     const cachedMessages = addCacheBreakpoints(
-      messagesForAPI,
+      dropAdvisor ? stripAdvisorBlocks(messagesForAPI) : messagesForAPI,
       enablePromptCaching,
       options.querySource,
       options.skipCacheWrite,
@@ -1791,7 +1793,9 @@ async function* queryModel(
         ? insertPerTurnEffort(cachedMessages, perTurn.insertions)
         : cachedMessages,
       system,
-      tools: allTools,
+      tools: dropAdvisor
+        ? allTools.filter(tool => 'input_schema' in tool || tool.name !== 'advisor')
+        : allTools,
       tool_choice: options.toolChoice,
       ...(betasParams.length > 0 && { betas: betasParams }),
       metadata: getAPIMetadata(),

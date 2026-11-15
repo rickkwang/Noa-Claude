@@ -60,7 +60,7 @@ import { loadRemoteManagedSettings, refreshRemoteManagedSettings } from './servi
 import type { ToolInputJSONSchema } from './Tool.js';
 import { createSyntheticOutputTool, isSyntheticOutputToolEnabled } from './tools/SyntheticOutputTool/SyntheticOutputTool.js';
 import { getTools } from './tools.js';
-import { canUserConfigureAdvisor, getInitialAdvisorSetting, isAdvisorEnabled, isValidAdvisorModel, isValidAdvisorPairing, modelSupportsAdvisor } from './utils/advisor.js';
+import { getInitialAdvisorSetting, isAdvisorEnabled, isValidAdvisorModel, isValidAdvisorPairing, modelSupportsAdvisor } from './utils/advisor.js';
 import { isAgentSwarmsEnabled } from './utils/agentSwarmsEnabled.js';
 import { count, uniq } from './utils/array.js';
 import { installAsciicastRecorder } from './utils/asciicast.js';
@@ -1898,11 +1898,14 @@ async function run(): Promise<CommanderCommand> {
     setInitialMainLoopModel(getUserSpecifiedModelSetting() || null);
     const initialMainLoopModel = getInitialMainLoopModel();
     const resolvedInitialModel = parseUserSpecifiedModel(initialMainLoopModel ?? getDefaultMainLoopModel());
-    let advisorModel: string | undefined;
+    // The saved setting loads even when the advisor is unavailable at startup:
+    // a /provider switch to the direct API later makes it apply, since each
+    // request checks isAdvisorEnabled() again.
+    let advisorModel = getInitialAdvisorSetting();
     if (isAdvisorEnabled()) {
-      const advisorOption = canUserConfigureAdvisor() ? (options as {
+      const advisorOption = (options as {
         advisor?: string;
-      }).advisor : undefined;
+      }).advisor;
       if (advisorOption) {
         logForDebugging(`[AdvisorTool] --advisor ${advisorOption}`);
         if (!modelSupportsAdvisor(resolvedInitialModel)) {
@@ -1921,7 +1924,7 @@ async function run(): Promise<CommanderCommand> {
           process.exit(1);
         }
       }
-      advisorModel = canUserConfigureAdvisor() ? advisorOption ?? getInitialAdvisorSetting() : advisorOption;
+      advisorModel = advisorOption ?? advisorModel;
       if (advisorModel) {
         logForDebugging(`[AdvisorTool] Advisor model: ${advisorModel}`);
       }
@@ -2448,7 +2451,7 @@ async function run(): Promise<CommanderCommand> {
         ...(isFastModeEnabled() && {
           fastMode: getInitialFastModeSetting(effectiveModel ?? null)
         }),
-        ...(isAdvisorEnabled() && advisorModel && {
+        ...(advisorModel && {
           advisorModel
         }),
         // kairosEnabled gated the async fire-and-forget path in
@@ -2910,7 +2913,7 @@ async function run(): Promise<CommanderCommand> {
       effortValue: options.effort === 'auto' ? null : parseEffortValue(options.effort),
       activeOverlays: new Set<string>(),
       fastMode: getInitialFastModeSetting(resolvedInitialModel),
-      ...(isAdvisorEnabled() && advisorModel && {
+      ...(advisorModel && {
         advisorModel
       }),
       // Compute teamContext synchronously to avoid useEffect setState during render.

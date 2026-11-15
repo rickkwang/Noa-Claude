@@ -60,6 +60,7 @@ The `/skills` picker combines sources in one list with aligned name/details colu
 | `/goal` | Available | Long-running objective with evaluator loop, auto-continue limits, token budget, and optional verify command. |
 | `/code-review` | Available | Review the local diff (default), a PR number, branch, or path with effort tiers `low`–`max`, optional `--fix`, `--comment` (PR only), and `--max-findings`; alias `/review`. Runs as a forked agent; the last effort and cap typed are reused. `ultra` (cloud review) is not supported. `scripts/e2e-code-review.mjs` covers argument handling and prompt construction with a scripted model. |
 | `/background` | Available | Alias `/bg`. Forks the conversation into a background session and exits (bare `/bg` mid-turn stops the turn and the background session finishes it; `/bg <prompt>` waits for the turn). ← on an empty prompt moves it and opens the agents view instead. `/exit` in a background session detaches; `/stop` ends it. |
+| `/advisor` | Available | Server-side advisor tool: the main model consults a stronger model (`fable`/`opus`/`sonnet`) mid-turn. Picker or `/advisor <model|off>`, saved as `advisorModel`; direct first-party Anthropic API only. |
 
 ## Slash Commands: Product-Available
 | Command | Status | Notes |

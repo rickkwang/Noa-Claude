@@ -3,7 +3,6 @@ import { InvalidArgumentError, Option } from '@commander-js/extra-typings';
 import { feature } from 'bun:bundle';
 import type { Command as CommanderCommand } from '@commander-js/extra-typings';
 import { API_TASK_BUDGET_MIN_TOTAL } from '../constants/apiLimits.js';
-import { canUserConfigureAdvisor } from '../utils/advisor.js';
 import { EFFORT_LEVELS } from '../utils/effort.js';
 import { PERMISSION_MODES } from '../utils/permissions/PermissionMode.js';
 
@@ -258,11 +257,9 @@ export function configureProgramOptions(program: CommanderCommand): void {
       '--tmux',
       'Create a tmux session for the worktree (requires --worktree). Uses iTerm2 native panes when available; use --tmux=classic for traditional tmux.'
     );
-  if (canUserConfigureAdvisor()) {
-    program.addOption(
-      new Option('--advisor <model>', 'Enable the server-side advisor tool with the specified model (alias or full ID).').hideHelp()
-    );
-  }
+  program.addOption(
+    new Option('--advisor <model>', 'Enable the server-side advisor tool with the specified model (alias or full ID).').hideHelp()
+  );
   if ("external" === 'ant') {
     program.addOption(
       new Option('--delegate-permissions', '[ANT-ONLY] Alias for --permission-mode auto.').implies({

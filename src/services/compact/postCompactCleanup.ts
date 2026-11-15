@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { feature } from 'bun:bundle'
+import { clearAdvisorConversationRefusal } from '../../utils/advisor.js'
 import type { QuerySource } from '../../constants/querySource.js'
 import { clearSystemPromptSections } from '../../constants/systemPromptSections.js'
 import { getUserContext } from '../../context.js'
@@ -54,6 +55,7 @@ export function runPostCompactCleanup(querySource?: QuerySource): void {
     // clear so all compaction paths behave consistently.
     getUserContext.cache.clear?.()
     resetGetMemoryFilesCache('compact')
+    clearAdvisorConversationRefusal()
   }
   clearSystemPromptSections()
   clearClassifierApprovals()
