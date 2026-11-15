@@ -576,8 +576,7 @@ export async function loadHistory(cwd: string, id: string): Promise<HistoryItem[
   const owner = entries.find((entry) => typeof entry.cwd === "string")?.cwd
   if (owner && canonicalCwd(owner) !== canonicalCwd(cwd)) return null
 
-  // Commands whose output stays out of the history: the GUI's own, and /compact, which shows as a boundary.
-  const guiCommandIds = new Set(entries.flatMap(entry => entry.uuid && (isGuiCommandEntry(entry) || /^\/compact(?:\s|$)/.test(userText(entry) ?? "")) ? [entry.uuid] : []))
+  const guiCommandIds = new Set(entries.flatMap(entry => entry.uuid && isGuiCommandEntry(entry) ? [entry.uuid] : []))
   const items: HistoryItem[] = []
   const restoredAgents = new Set<string>()
   const byUser = new Map<string, TurnDiff>()
@@ -705,10 +704,13 @@ export async function loadHistory(cwd: string, id: string): Promise<HistoryItem[
 
     // The terminal also records command output as a user entry; show it like the system form above.
     const commandOutput = entry.type === "user" && typeof content === "string" && !(entry.parentUuid && guiCommandIds.has(entry.parentUuid))
-      ? content.match(/^<local-command-(?:stdout|stderr)>([\s\S]*?)<\/local-command-(?:stdout|stderr)>$/)?.[1]
+      ? content.match(/^<local-command-(stdout|stderr)>([\s\S]*?)<\/local-command-(?:stdout|stderr)>$/)
       : undefined
-    if (commandOutput) {
-      items.push({ kind: "agent", message: { type: "assistant", message: { content: [{ type: "text", text: commandOutput }] }, parent_tool_use_id: null } })
+    if (commandOutput?.[2]) {
+      // A finished /compact already shows as its boundary.
+      const last = items.at(-1)
+      if (commandOutput[1] === "stdout" && last?.kind === "user" && /^\/compact(?:\s|$)/.test(last.text)) continue
+      items.push({ kind: "agent", message: { type: "assistant", message: { content: [{ type: "text", text: commandOutput[2] }] }, parent_tool_use_id: null } })
       continue
     }
 
