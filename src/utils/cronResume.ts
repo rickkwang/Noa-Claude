@@ -15,6 +15,12 @@ import {
   restoreLoopWakeup,
 } from './cronTasks.js'
 import { logForDebugging } from './debug.js'
+import { formatDuration } from './format.js'
+import {
+  createSystemMessage,
+  createUserMessage,
+  wrapMessagesInSystemReminder,
+} from './messages.js'
 
 type Call = { name: string; input: Record<string, unknown>; at: number; index: number }
 type Carry = Extract<Attachment, { type: 'session_cron_carry' }>
@@ -41,19 +47,36 @@ export function createSessionCronCarry(): Carry | null {
   return { type: 'session_cron_carry', tasks, ...(wakeup && { wakeup }) }
 }
 
+export type MissedLoopWakeup = { prompt: string; scheduledFor: number }
+
+/**
+ * Returns the /loop wakeup that fell due while the session was closed; it is
+ * not restored, and the caller tells the user and the model it will not fire.
+ */
 export function restoreScheduledTasksFromMessages(
   messages: Message[],
   nowMs = Date.now(),
-): void {
+): MissedLoopWakeup | undefined {
   const calls = new Map<string, Call>()
   const results = new Map<string, Record<string, unknown>>()
   let lastInterruptIndex = -1
+  // Last time a /loop wakeup re-entered the loop, so a fired wakeup is not
+  // mistaken for a missed one.
+  let lastLoopEntryIndex = -1
   let carry: { attachment: Carry; at: number; index: number } | undefined
   messages.forEach((m, index) => {
     if (m.type === 'attachment' && m.attachment?.type === 'session_cron_carry') {
       carry = { attachment: m.attachment, at: new Date(m.timestamp).getTime(), index }
       return
     }
+    if (m.type === 'system' && m.subtype === 'scheduled_task_fire')
+      lastLoopEntryIndex = index
+    if (
+      m.type === 'user' &&
+      typeof m.message?.content === 'string' &&
+      m.message.content.includes('<command-name>/loop</command-name>')
+    )
+      lastLoopEntryIndex = index
     const content = Array.isArray(m.message?.content) ? m.message.content : []
     if (m.type === 'assistant') {
       for (const b of content) {
@@ -172,17 +195,40 @@ export function restoreScheduledTasksFromMessages(
   } else if (carry?.attachment.wakeup) {
     pending = { ...carry.attachment.wakeup, index: carry.index, chainStart: carry.at }
   }
-  if (
-    pending &&
-    pending.scheduledFor > nowMs &&
-    pending.index > lastInterruptIndex
-  ) {
-    restoreLoopWakeup(pending.scheduledFor, pending.prompt, pending.chainStart, nowMs)
-    restored++
+  let missed: MissedLoopWakeup | undefined
+  if (pending && pending.index > lastInterruptIndex) {
+    if (pending.scheduledFor > nowMs) {
+      restoreLoopWakeup(pending.scheduledFor, pending.prompt, pending.chainStart, nowMs)
+      restored++
+    } else if (pending.index > lastLoopEntryIndex) {
+      missed = { prompt: pending.prompt, scheduledFor: pending.scheduledFor }
+    }
   }
 
   if (restored > 0) {
     setScheduledTasksEnabled(true)
     logForDebugging(`[ScheduledTasks] restored ${restored} task(s) on resume`)
   }
+  return missed
+}
+
+/** A notice for the user and a reminder for the model's next turn. */
+export function createMissedLoopWakeupMessages(
+  missed: MissedLoopWakeup,
+  nowMs = Date.now(),
+): Message[] {
+  const late = nowMs - missed.scheduledFor
+  const ago = late < 60_000 ? 'less than a minute' : formatDuration(late)
+  return [
+    createSystemMessage(
+      `This session resumed ${ago} after its next /loop wakeup was due, so that wakeup will not fire. The loop stays stopped until Claude schedules it again: reply to continue it.`,
+      'warning',
+    ),
+    ...wrapMessagesInSystemReminder([
+      createUserMessage({
+        content: `The dynamic /loop wakeup for \`${missed.prompt}\` was still pending when this session's previous process ended, and its fire time passed before the session resumed. It will not fire, and nothing wakes this session for the loop: call ScheduleWakeup again only if the loop is still wanted, and when the conversation does not make that clear, ask the user first.`,
+        isMeta: true,
+      }),
+    ]),
+  ]
 }

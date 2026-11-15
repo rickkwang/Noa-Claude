@@ -20,7 +20,7 @@ const model = 'claude-sonnet-4-6';
 // A 200k-window model, so a gateway naming a 1M model in its responses offers a "larger window".
 const modelFor = scenario => option('--model') || (scenario === 'gateway-model-name' ? 'claude-haiku-4-5' : scenario === 'preserved-thinking' ? 'claude-opus-5-5' : scenario === 'opus-1m-cache-off' ? 'claude-opus-4-6[1m]' : scenario === 'mandatory-thinking' ? 'kimi/k3.1-pro' : scenario === 'agent-effort-plan' ? 'opusplan' : scenario.startsWith('openai-responses') ? 'gpt-6.1-sol' : model);
 const sentinel = 'KEEP_IDENTIFIER=loop-sentinel-42';
-const cases = ['agent-nested', 'agent-budget', 'agent-budget-resume', 'agent-stop-pending', 'agent-owned-results', 'agent-owned-auto', 'auto-plan-race', 'auto-stage2-error', 'agent-cascade-stop', 'agent-schema', 'agent-schema-bg', 'hook-output', 'hook-output-null', 'blocking-limit', 'image-error', 'small-window-overflow', 'read', 'read-repeat', 'large-output', 'max-turns', 'malformed', 'empty', 'alternating', 'fallback', 'provider-quota', 'refusal', 'refusal-repeat', 'truncated', 'tool-input-streaming', 'tool-input-nonstream', 'stale-signature', 'budget-streaming', 'budget-nonstream', 'permission-deny', 'deny-rule', 'mode-auto', 'mode-bypass', 'mode-bypass-off', 'hook-block', 'compact-resume', 'task-crud', 'task-metadata-race', 'task-dependency-race', 'goal-child-usage', 'agent-custom-fork', 'agent-effort', 'agent-effort-plan', 'hook-composition', 'tombstone-resume', 'concurrency-streaming', 'concurrency-nonstream', 'background-deadline', 'monitor', 'monitor-timeout', 'monitor-persistent', 'cron', 'cron-disabled', 'cron-durable', 'cron-wakeup', 'cron-resume', 'cron-resume-compact', 'cron-wrapper', 'openai-overflow', 'openai-usage', 'openai-usage-nonstream', 'openai-tools', 'openai-max-tokens-cap', 'openai-max-tokens-vllm', 'openai-responses', 'openai-responses-effort', 'bedrock-overflow', 'bedrock-bare-overflow', 'bedrock-media-overflow', 'opus-1m-cache-off', 'field-reject', 'gateway-model-name', 'preserved-thinking', 'mandatory-thinking'].filter(name => !option('--case') || name === option('--case')).filter((_, i) => {
+const cases = ['agent-nested', 'agent-budget', 'agent-budget-resume', 'agent-stop-pending', 'agent-owned-results', 'agent-owned-auto', 'auto-plan-race', 'auto-stage2-error', 'agent-cascade-stop', 'agent-schema', 'agent-schema-bg', 'hook-output', 'hook-output-null', 'blocking-limit', 'image-error', 'small-window-overflow', 'read', 'read-repeat', 'large-output', 'max-turns', 'malformed', 'empty', 'alternating', 'fallback', 'provider-quota', 'refusal', 'refusal-repeat', 'truncated', 'tool-input-streaming', 'tool-input-nonstream', 'stale-signature', 'budget-streaming', 'budget-nonstream', 'permission-deny', 'deny-rule', 'mode-auto', 'mode-bypass', 'mode-bypass-off', 'hook-block', 'compact-resume', 'task-crud', 'task-metadata-race', 'task-dependency-race', 'goal-child-usage', 'agent-custom-fork', 'agent-effort', 'agent-effort-plan', 'hook-composition', 'tombstone-resume', 'concurrency-streaming', 'concurrency-nonstream', 'background-deadline', 'monitor', 'monitor-timeout', 'monitor-persistent', 'cron', 'cron-disabled', 'cron-durable', 'cron-wakeup', 'cron-resume', 'cron-resume-compact', 'cron-resume-missed', 'cron-wrapper', 'openai-overflow', 'openai-usage', 'openai-usage-nonstream', 'openai-tools', 'openai-max-tokens-cap', 'openai-max-tokens-vllm', 'openai-responses', 'openai-responses-effort', 'bedrock-overflow', 'bedrock-bare-overflow', 'bedrock-media-overflow', 'opus-1m-cache-off', 'field-reject', 'gateway-model-name', 'preserved-thinking', 'mandatory-thinking'].filter(name => !option('--case') || name === option('--case')).filter((_, i) => {
   // --shard K/N runs every Nth case starting at K, so CI can split the suite across runners.
   const shard = option('--shard')?.match(/^(\d+)\/(\d+)$/);
   return !shard || i % Number(shard[2]) === Number(shard[1]) - 1;
@@ -371,7 +371,7 @@ const server = createServer(async (req, res) => {
       if (done('resume_list')) content = [{ type: 'text', text: 'RESUME_DONE' }];
       else if (lastText.includes('RESUME_CHECK')) step('resume_list', 'CronList', {});
       else if (done('resume_wake')) content = [{ type: 'text', text: 'SEEDED' }];
-      else if (done('resume_delete')) step('resume_wake', 'ScheduleWakeup', { delaySeconds: 3600, reason: 'e2e resume', prompt: '/loop RESUME_WAKE_MARKER' });
+      else if (done('resume_delete')) step('resume_wake', 'ScheduleWakeup', { delaySeconds: active.case === 'cron-resume-missed' ? 60 : 3600, reason: 'e2e resume', prompt: '/loop RESUME_WAKE_MARKER' });
       else if (done('resume_create2')) step('resume_delete', 'CronDelete', { id: [...all.matchAll(/Scheduled recurring job (\w+) /g)].at(-1)?.[1] ?? 'missing' });
       else if (done('resume_create')) step('resume_create2', 'CronCreate', { cron: '*/30 * * * *', prompt: 'RESUME_DELETED_MARKER', recurring: true });
       else step('resume_create', 'CronCreate', { cron: '*/30 * * * *', prompt: 'RESUME_CRON_MARKER', recurring: true });
@@ -671,11 +671,16 @@ try {
             assert.ok(active.summaries > 0, 'compaction never executed');
             sessionId = compacted.result.session_id;
           }
+          // Let the 60s wakeup fall due while the session is closed.
+          if (scenario === 'cron-resume-missed') await new Promise(r => setTimeout(r, 130_000));
           runResult = await run(executable, scenario, ['--resume', sessionId], 'RESUME_CHECK');
           assert.equal(runResult.code, 0); assert.equal(runResult.result.result, 'RESUME_DONE');
           const list = JSON.stringify(active.requests.at(-1).body.messages.flatMap(m => Array.isArray(m.content) ? m.content : []).find(b => b.type === 'tool_result' && b.tool_use_id === 'resume_list') ?? null);
           assert.ok(list.includes('RESUME_CRON_MARKER'), `session cron not restored on resume: ${list}`);
-          assert.ok(list.includes('RESUME_WAKE_MARKER'), `pending /loop wakeup not restored on resume: ${list}`);
+          if (scenario === 'cron-resume-missed') {
+            assert.ok(!list.includes('RESUME_WAKE_MARKER'), `a past-due wakeup was re-armed on resume: ${list}`);
+            assert.ok(JSON.stringify(active.requests.at(-1).body.messages).includes('It will not fire'), 'the model was not told the /loop wakeup was missed');
+          } else assert.ok(list.includes('RESUME_WAKE_MARKER'), `pending /loop wakeup not restored on resume: ${list}`);
           assert.ok(!list.includes('RESUME_DELETED_MARKER'), `deleted cron came back on resume: ${list}`);
         } else if (scenario === 'goal-child-usage') {
           // /goal is a text command, so the goal is set in its own session and the

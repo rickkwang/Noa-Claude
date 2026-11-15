@@ -157,8 +157,12 @@ export const ScheduleWakeupTool = buildTool({
     }
     return { tool_use_id: toolUseID, type: 'tool_result', content }
   },
-  renderToolUseMessage(input) {
-    if (input.stop === true) return 'stop loop'
-    return input.reason ? `${input.delaySeconds}s: ${input.reason}` : `${input.delaySeconds ?? ''}s`
+  // Hidden in the transcript: every tick would otherwise add a row, and the
+  // model already tells the user the delay and why.
+  userFacingName() {
+    return ''
+  },
+  renderToolUseMessage() {
+    return null
   },
 } satisfies ToolDef<InputSchema, WakeupOutput>)

@@ -4,7 +4,7 @@ import { c as _c } from "react/compiler-runtime";
 import { feature } from 'bun:bundle';
 import { snapshotOutputTokensForTurn, getCurrentTurnTokenBudget, getTurnOutputTokens, getBudgetContinuationCount, getTotalInputTokens, getSessionCronTasks } from '../bootstrap/state.js';
 import { cancelLoopWakeups, hasCronTasksSync } from '../utils/cronTasks.js';
-import { restoreScheduledTasksFromMessages } from '../utils/cronResume.js';
+import { createMissedLoopWakeupMessages, restoreScheduledTasksFromMessages } from '../utils/cronResume.js';
 import { isKairosCronEnabled } from '../tools/ScheduleCronTool/prompt.js';
 import { parseTokenBudget } from '../utils/tokenBudget.js';
 import { count } from '../utils/array.js';
@@ -1873,11 +1873,12 @@ export function REPL({
       // Rehydrate invoked skills from transcript attachments for this target
       // session before deserialization/compaction can reference session state.
       restoreSkillStateFromMessages(log.messages);
-      if (isKairosCronEnabled()) restoreScheduledTasksFromMessages(log.messages);
+      const missedWakeup = isKairosCronEnabled() ? restoreScheduledTasksFromMessages(log.messages) : undefined;
 
       // Deserialize messages to properly clean up the conversation
       // This filters unresolved tool uses and adds a synthetic assistant message if needed
       const messages = deserializeMessages(log.messages);
+      if (missedWakeup) messages.push(...createMissedLoopWakeupMessages(missedWakeup));
 
       // Match coordinator/normal mode to the resumed session
       {

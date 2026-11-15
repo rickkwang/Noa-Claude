@@ -1,6 +1,9 @@
 // @ts-nocheck
 import { isKairosCronEnabled } from '../tools/ScheduleCronTool/prompt.js'
-import { restoreScheduledTasksFromMessages } from './cronResume.js'
+import {
+  createMissedLoopWakeupMessages,
+  restoreScheduledTasksFromMessages,
+} from './cronResume.js'
 import { feature } from 'bun:bundle'
 import type { UUID } from 'crypto'
 import { relative } from 'path'
@@ -709,7 +712,9 @@ export async function loadConversationForResume(
     // Restore skill state from invoked_skills attachments before deserialization.
     // This ensures skills survive multiple compaction cycles after resume.
     restoreSkillStateFromMessages(messages!)
-    if (isKairosCronEnabled()) restoreScheduledTasksFromMessages(messages!)
+    const missedWakeup = isKairosCronEnabled()
+      ? restoreScheduledTasksFromMessages(messages!)
+      : undefined
 
     // Deserialize messages to handle unresolved tool uses and ensure proper format
     const deserialized = deserializeMessagesWithInterruptDetection(messages!)
@@ -720,6 +725,7 @@ export async function loadConversationForResume(
 
     // Append hook messages to the conversation
     messages.push(...dropRepeatedSessionStartContext(messages, hookMessages))
+    if (missedWakeup) messages.push(...createMissedLoopWakeupMessages(missedWakeup))
 
     return {
       messages,
