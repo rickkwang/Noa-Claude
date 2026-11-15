@@ -577,7 +577,7 @@ html[data-settings-open="true"] .noa-app-shell {
 }
 /* Settings reads as the app's sidebar plus a content card: the nav sits on the sidebar floor (the tint over the native
    material when translucent) and the page is a rounded card with the same ring as the conversation surface. */
-html[data-translucent-sidebar="enabled"] [data-settings-surface="true"] {
+html[data-translucent-sidebar="enabled"] [data-settings-surface="true"]:not([data-customize-page]) {
   background-color: color-mix(in srgb, var(--sidebar-material-color, #FAFAF8) var(--sidebar-material-tint, 70%), transparent) !important;
 }
 .noa-settings-main {

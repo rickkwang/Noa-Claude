@@ -39,6 +39,7 @@ import { Sidebar } from "./components/Sidebar"
 import TopBar from "./components/TopBar"
 import ThemeInjector from "./theme/ThemeInjector"
 import { SettingsDialog } from "./components/SettingsDialog"
+import { CustomizePage } from "./components/CustomizePage"
 import { SessionActions, RewindDialog, type RewindPreview } from "./components/SessionActions"
 import { SessionTitle } from "./components/SessionTitle"
 import { SearchDialog } from "./components/SearchDialog"
@@ -80,6 +81,8 @@ function Workspace({ cwd }: { cwd: string }) {
   const [settings, setSettings] = useAppSettings()
   const [sessionTranscriptViews, setSessionTranscriptViews] = useState<Record<string, AppSettings["appearance"]["transcriptView"]>>({})
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [settingsPage, setSettingsPage] = useState<"mcp">()
+  const [customizeOpen, setCustomizeOpen] = useState(false)
   const [settingsSignIn, setSettingsSignIn] = useState(false)
   // The settings page overlays the whole window, so CSS hides the app shell while it is open.
   // The attribute hides the shell, so it is cleared on unmount too: a stuck flag would leave a blank window.
@@ -217,6 +220,15 @@ function Workspace({ cwd }: { cwd: string }) {
   useEffect(() => {
     if (sideChatReady) pumpSideChat(sideChatKey, request)
   }, [sideChatReady, sideChatKey])
+  useEffect(() => {
+    if (!customizeOpen) return
+    const close = (event: KeyboardEvent) => { if (event.key === "Escape" && !event.defaultPrevented && !document.querySelector("[role=dialog]")) setCustomizeOpen(false) }
+    window.addEventListener("keydown", close)
+    return () => window.removeEventListener("keydown", close)
+  }, [customizeOpen])
+  useEffect(() => {
+    if (customizeOpen && state.connection === "ready") refreshMcp()
+  }, [customizeOpen, state.connection, refreshMcp])
   const transcriptView = (activeId ? sessionTranscriptViews[activeId] : undefined) ?? settings.appearance.transcriptView
   useEffect(() => {
     fetchProjects().then(setProjects)
@@ -755,9 +767,9 @@ function Workspace({ cwd }: { cwd: string }) {
             projects={projects}
             sessions={sessionsByProject}
             loadedProjects={loadedProjects}
-            active={{ cwd: session.cwd, id: activeId }}
-            onNewSession={newSession}
-            onSelect={selectSession}
+            active={{ cwd: session.cwd, id: customizeOpen ? undefined : activeId }}
+            onNewSession={(dir) => { setCustomizeOpen(false); newSession(dir) }}
+            onSelect={(dir, id) => { setCustomizeOpen(false); selectSession(dir, id) }}
             onAddProject={() => {
               setEditingProject(undefined)
               setAddingProject(true)
@@ -768,10 +780,12 @@ function Workspace({ cwd }: { cwd: string }) {
             }}
             onRemoveProject={removeProjectPath}
             onRevealProject={revealProject}
-            onOpenCoordinator={(path) => openCoordinator(path).then((id) => selectSession(path, id), (error) => confirm({ title: "Could not open the coordinator", description: (error as Error).message, confirmLabel: "OK", cancelLabel: "Close" }))}
+            onOpenCoordinator={(path) => { setCustomizeOpen(false); openCoordinator(path).then((id) => selectSession(path, id), (error) => confirm({ title: "Could not open the coordinator", description: (error as Error).message, confirmLabel: "OK", cancelLabel: "Close" })) }}
             onDeleteSession={removeSession}
             onSearch={() => setSearchOpen(true)}
             onSettings={() => setSettingsOpen(true)}
+            onCustomize={() => setCustomizeOpen(true)}
+            customizeOpen={customizeOpen}
           />
         </div>
       </div>
@@ -785,13 +799,15 @@ function Workspace({ cwd }: { cwd: string }) {
         style={{ left: sidebarWidth }}
       />
       {/* One titlebar rule across both columns; above the right panel so it is not hidden behind it. */}
-      <div
-        aria-hidden="true"
-        data-titlebar-divider
-        className={`pointer-events-none absolute z-40 h-[0.5px] bg-[var(--divider-subtle,#E6E2DA)] ${moving ? "" : "transition-[left] duration-500 ease-in-out"}`}
-        style={{ top: 43.5, left: sidebarWidth, right: 0 }}
-      />
-      {rightOpen && (
+      {!customizeOpen && (
+        <div
+          aria-hidden="true"
+          data-titlebar-divider
+          className={`pointer-events-none absolute z-40 h-[0.5px] bg-[var(--divider-subtle,#E6E2DA)] ${moving ? "" : "transition-[left] duration-500 ease-in-out"}`}
+          style={{ top: 43.5, left: sidebarWidth, right: 0 }}
+        />
+      )}
+      {rightOpen && !customizeOpen && (
         <ResizeHandle
           label="Resize right panel"
           grow={-1}
@@ -817,8 +833,8 @@ function Workspace({ cwd }: { cwd: string }) {
       <div
         data-right-panel-container
         data-flush={rightOpen ? undefined : true}
-        inert={!rightOpen ? true : undefined}
-        className={`noa-right-surface absolute inset-y-0 right-0 z-30 overflow-hidden bg-[var(--surface-page,#F9F9F7)] ${animate}`}
+        inert={!rightOpen || customizeOpen ? true : undefined}
+        className={`noa-right-surface absolute inset-y-0 right-0 z-30 overflow-hidden bg-[var(--surface-page,#F9F9F7)] ${customizeOpen ? "hidden" : ""} ${animate}`}
         // No-drag and above the titlebar, so the tab row can sit level with the panel toggle.
         style={
           {
@@ -865,13 +881,13 @@ function Workspace({ cwd }: { cwd: string }) {
         resizing={moving}
         sidebarOpen={sidebarOpen}
         sidebarWidth={sidebarWidth}
-        rightWidth={rightWidth}
+        rightWidth={customizeOpen ? 0 : rightWidth}
         onToggleSidebar={() => setSidebarOpen((o) => !o)}
         canBack={!!history && history.index > 0}
         canForward={!!history && history.index < history.entries.length - 1}
         onBack={() => goHistory(-1)}
         onForward={() => goHistory(1)}
-        center={
+        center={customizeOpen ? undefined : (
           <SessionTitle
             key={activeId ?? session.key}
             title={title}
@@ -897,33 +913,36 @@ function Workspace({ cwd }: { cwd: string }) {
                 : undefined
             }
           />
-        }
+        )}
       />
       {/* The column toggle is fixed to the window's top-right corner, above the column in either state. */}
-      <div
-        className="absolute right-[15px] top-[10px] z-40"
-        style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
-      >
-        <div className="flex items-center gap-0.5">
-          <button
-            type="button"
-            onClick={toggleOverview}
-            className="flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-[var(--icon-ink,#52514E)] transition-colors hover:bg-[var(--fill-hover)] hover:text-[var(--text-primary,#2D2D2B)] aria-pressed:bg-[var(--fill-active)]"
-            title="Overview"
-            aria-label="Overview"
-            data-overview-toggle=""
-            aria-pressed={overviewVisible}
-          >
-            <ListDetails size={16} />
-          </button>
-          {panelToggle}
+      {!customizeOpen && (
+        <div
+          className="absolute right-[15px] top-[10px] z-40"
+          style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
+        >
+          <div className="flex items-center gap-0.5">
+            <button
+              type="button"
+              onClick={toggleOverview}
+              className="flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-[var(--icon-ink,#52514E)] transition-colors hover:bg-[var(--fill-hover)] hover:text-[var(--text-primary,#2D2D2B)] aria-pressed:bg-[var(--fill-active)]"
+              title="Overview"
+              aria-label="Overview"
+              data-overview-toggle=""
+              aria-pressed={overviewVisible}
+            >
+              <ListDetails size={16} />
+            </button>
+            {panelToggle}
+          </div>
         </div>
-      </div>
+      )}
 
       <div className="flex-1 flex min-h-0 overflow-visible relative">
         <div
           ref={chatColumnRef}
-          className={`relative flex min-w-0 flex-1 flex-col ${moving ? "" : "transition-[margin-left,margin-right] duration-500 ease-in-out"}`}
+          inert={customizeOpen ? true : undefined}
+          className={`relative flex min-w-0 flex-1 flex-col ${customizeOpen ? "invisible" : ""} ${moving ? "" : "transition-[margin-left,margin-right] duration-500 ease-in-out"}`}
           style={{ marginLeft: sidebarWidth, marginRight: rightWidth }}
         >
           {/* The conversation and its floating composer sit above the terminal panel. */}
@@ -1143,7 +1162,7 @@ function Workspace({ cwd }: { cwd: string }) {
         finishRewind(mode, rewindMessage.text, rewindMessage.images)
         setRewindMessage(undefined)
       }} />}
-      {searchOpen && <SearchDialog cwd={session.cwd} projects={projects} sessions={sessionsByProject} onNewSession={() => newSession()} onOpenFolder={() => { setEditingProject(undefined); setAddingProject(true) }} onSelectSession={selectSession} onOpenFile={openFile} onClose={() => setSearchOpen(false)} newTaskShortcut={settings.shortcuts.newTask} />}
+      {searchOpen && <SearchDialog cwd={session.cwd} projects={projects} sessions={sessionsByProject} onNewSession={() => { setCustomizeOpen(false); newSession() }} onOpenFolder={() => { setEditingProject(undefined); setAddingProject(true) }} onSelectSession={(dir, id) => { setCustomizeOpen(false); selectSession(dir, id) }} onOpenFile={openFile} onClose={() => setSearchOpen(false)} newTaskShortcut={settings.shortcuts.newTask} />}
       {confirmDialog}
       {editingProject && (
         <AddProjectDialog
@@ -1158,6 +1177,32 @@ function Workspace({ cwd }: { cwd: string }) {
           result={state.diffAction.result}
           onClose={clearDiffAction}
         />
+      )}
+      {customizeOpen && (
+        <div
+          data-customize-page
+          data-settings-surface="true"
+          className={`absolute inset-y-0 right-0 z-[15] overflow-hidden border-l-[0.5px] bg-[var(--surface-page,#F9F9F7)] ${moving ? "" : "transition-[left,border-radius,border-left-color] duration-500 ease-in-out"}`}
+          style={{
+            left: sidebarWidth,
+            borderLeftColor: sidebarOpen ? "var(--border-default, rgba(45,45,43,0.078))" : "transparent",
+            borderRadius: sidebarOpen ? "var(--noa-surface-radius) 0 0 var(--noa-surface-radius)" : 0,
+          }}
+        >
+          <div className="h-full overflow-y-auto pt-11">
+            <div className="mx-auto flex max-w-[960px] flex-col gap-5 px-8 pb-12 pt-8">
+              <CustomizePage
+                skills={state.commands.filter((command) => command.type === "prompt")}
+                mcpServers={state.mcpServers}
+                mcpLocked={state.connection !== "ready" || state.busy || !!state.mcpPending}
+                onChangeMcp={changeMcp}
+                onReloadCommands={() => reloadCommands(true)}
+                onOpenMcp={() => { setCustomizeOpen(false); setSettingsPage("mcp"); setSettingsOpen(true) }}
+                onTrySkill={(name) => { setCustomizeOpen(false); setPrefill({ text: `/${name} `, key: Date.now() }) }}
+              />
+            </div>
+          </div>
+        </div>
       )}
       {settingsOpen && (
         <SettingsDialog
@@ -1188,7 +1233,6 @@ function Workspace({ cwd }: { cwd: string }) {
           onRefreshSettings={refreshSettings}
           onRefreshMcp={refreshMcp}
           onChangeMcp={changeMcp}
-          onReloadCommands={() => reloadCommands(true)}
           onModel={setModel}
           onProvider={setProvider}
           onSaveProvider={saveProvider}
@@ -1198,9 +1242,9 @@ function Workspace({ cwd }: { cwd: string }) {
           onOutputStyle={setOutputStyle}
           onMode={setPermissionMode}
           onChange={setSettings}
-          onClose={() => { setSettingsOpen(false); setSettingsSignIn(false) }}
+          onClose={() => { setSettingsOpen(false); setSettingsSignIn(false); setSettingsPage(undefined) }}
           signIn={settingsSignIn}
-          onTrySkill={(name) => setPrefill({ text: `/${name} `, key: Date.now() })}
+          initialPage={settingsPage}
           account={state.account}
           auth={state.auth}
           onStartAuthentication={startAuthentication}

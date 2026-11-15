@@ -1,21 +1,22 @@
-import { useEffect, useRef, useState, type ReactNode } from "react"
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react"
 import { createPortal } from "react-dom"
-import type { AgentState } from "../../agent/reducer"
-import { fetchPlugins, fetchSkillsState, runPluginAction, runSkillAction, type SkillsState, type PluginAction, type PluginCatalog } from "../../api"
-import { ChevronDown, ChevronLeft, ChevronRight, Download, Search, Trash2, X } from "../../lib/icons"
-import { useConfirm } from "../ConfirmDialog"
-import { Markdown } from "../Markdown"
-import { Row, Section, Toggle } from "./controls"
-import { sourceLabels } from "./ConfigurationPages"
+import type { AgentState } from "../agent/reducer"
+import { fetchPlugins, fetchSkillsState, runPluginAction, runSkillAction, type SkillsState, type PluginAction, type PluginCatalog } from "../api"
+import { ArrowUpDown, Check, ChevronDown, ChevronLeft, Download, Plug, Plus, Search, Trash2, X } from "../lib/icons"
+import { useConfirm } from "./ConfirmDialog"
+import { Markdown } from "./Markdown"
+import { Row, Section, Toggle } from "./settings/controls"
+import { sourceLabels } from "./settings/ConfigurationPages"
 
-type PluginsTab = "plugins" | "skills" | "marketplace"
+type PluginsTab = "plugins" | "skills" | "connectors" | "marketplace"
 type SkillCommand = AgentState["commands"][number]
 
-const outlineButton = "inline-flex h-8 shrink-0 items-center gap-1.5 rounded-[10px] border border-[var(--border-default)] bg-[var(--bg-card)] px-3.5 text-body hover:bg-[var(--settings-fill-hover)] disabled:opacity-40"
-const primaryButton = "inline-flex h-8 shrink-0 items-center gap-1.5 rounded-[10px] bg-[var(--text-primary)] px-3.5 text-body text-[var(--surface-page,#FFFFFF)] hover:opacity-90 disabled:opacity-40"
-const iconButton = "rounded-md p-1.5 text-[var(--sidebar-text-muted)] hover:bg-[var(--settings-fill-hover)] hover:text-[var(--text-primary)] disabled:opacity-40"
-const tileClass = "flex size-10 shrink-0 items-center justify-center border border-[var(--border-default)] bg-[var(--bg-card)] text-[var(--text-secondary)]"
+const outlineButton = "inline-flex h-7 shrink-0 items-center gap-1.5 rounded-lg border border-[var(--border-default)] bg-[var(--bg-card)] px-2.5 text-chat-sm hover:bg-[var(--settings-fill-hover)] disabled:opacity-40"
+const primaryButton = "inline-flex h-7 shrink-0 items-center gap-1.5 rounded-lg bg-[var(--text-primary)] px-2.5 text-chat-sm font-medium text-[var(--surface-page,#FFFFFF)] hover:opacity-90 disabled:opacity-40"
+const iconButton = "inline-flex size-7 shrink-0 items-center justify-center rounded-lg text-[var(--sidebar-text-muted)] hover:bg-[var(--settings-fill-hover)] hover:text-[var(--text-primary)] disabled:opacity-40"
+const tileClass = "flex size-10 shrink-0 items-center justify-center rounded-xl bg-[color-mix(in_srgb,var(--text-primary)_5%,transparent)] text-[var(--text-secondary)]"
 const PAGE_SIZE = 40
+const cardClass = "rounded-2xl bg-[color-mix(in_srgb,var(--text-primary)_4%,transparent)] transition-colors hover:bg-[color-mix(in_srgb,var(--text-primary)_7%,transparent)]"
 
 function CubeIcon({ size = 18 }: { size?: number }) {
   return (
@@ -38,13 +39,14 @@ function skillBody(markdown: string): string {
   return markdown.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, "").trim()
 }
 
-export function PluginsPage({ skills: promptCommands, onReloadCommands, onOpenMcp, onTrySkill }: { skills: SkillCommand[]; onReloadCommands: () => void; onOpenMcp: () => void; onTrySkill: (name: string) => void }) {
+export function CustomizePage({ skills: promptCommands, mcpServers, mcpLocked, onChangeMcp, onReloadCommands, onOpenMcp, onTrySkill }: { skills: SkillCommand[]; mcpServers?: AgentState["mcpServers"]; mcpLocked: boolean; onChangeMcp: (name: string, enabled?: boolean) => void; onReloadCommands: () => void; onOpenMcp: () => void; onTrySkill: (name: string) => void }) {
   const { confirm, dialog } = useConfirm()
   const [catalog, setCatalog] = useState<PluginCatalog>()
   const [loadError, setLoadError] = useState<string>()
   const [busy, setBusy] = useState<string>()
   const [error, setError] = useState<string>()
-  const [tab, setTab] = useState<PluginsTab>("plugins")
+  const [tab, setTab] = useState<PluginsTab>("skills")
+  const [descending, setDescending] = useState(false)
   const [browsing, setBrowsing] = useState(false)
   const [detail, setDetail] = useState<string>()
   const [filter, setFilter] = useState("")
@@ -60,6 +62,21 @@ export function PluginsPage({ skills: promptCommands, onReloadCommands, onOpenMc
   const [rowMenu, setRowMenu] = useState<string>()
   const [source, setSource] = useState("")
   const [sparse, setSparse] = useState("")
+  const sourceRef = useRef<HTMLDivElement>(null)
+  const [sourceThumb, setSourceThumb] = useState<{ left: number; width: number } | null>(null)
+
+  useLayoutEffect(() => {
+    const root = sourceRef.current
+    if (!root || detail !== undefined || tab !== "plugins") return
+    const measure = () => {
+      const active = root.querySelector<HTMLElement>("[aria-selected=true]")
+      setSourceThumb(active ? { left: active.offsetLeft, width: active.offsetWidth } : null)
+    }
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(root)
+    return () => observer.disconnect()
+  }, [tab, browsing, detail])
 
   const load = () => fetchPlugins().then((next) => { setCatalog(next); setLoadError(undefined) }, (e: Error) => setLoadError(e.message))
   useEffect(() => { void load() }, [])
@@ -91,6 +108,21 @@ export function PluginsPage({ skills: promptCommands, onReloadCommands, onOpenMc
     runSkillAction("read", skillName).then((result) => { if (!stale) setSkillText(result.content) }, () => {})
     return () => { stale = true }
   }, [skillName, ownsSkill])
+
+  // Close inner overlays/views on Escape before App.tsx closes the whole Customize page.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return
+      if (skillMenu) { setSkillMenu(false); event.stopPropagation(); event.preventDefault(); return }
+      if (skillName !== undefined) { setSkillName(undefined); event.stopPropagation(); event.preventDefault(); return }
+      if (rowMenu !== undefined) { setRowMenu(undefined); event.stopPropagation(); event.preventDefault(); return }
+      if (menuOpen) { setMenuOpen(false); event.stopPropagation(); event.preventDefault(); return }
+      if (adding) { setAdding(false); setError(undefined); event.stopPropagation(); event.preventDefault(); return }
+      if (detail !== undefined) { setDetail(undefined); setError(undefined); event.stopPropagation(); event.preventDefault() }
+    }
+    window.addEventListener("keydown", onKeyDown, true)
+    return () => window.removeEventListener("keydown", onKeyDown, true)
+  }, [skillMenu, skillName, rowMenu, menuOpen, adding, detail])
 
   // The switch moves at once; the file write and the command reload catch up behind it.
   const setSkillMode = async (name: string, enabled: boolean) => {
@@ -156,8 +188,8 @@ export function PluginsPage({ skills: promptCommands, onReloadCommands, onOpenMc
   const needle = filter.trim().toLowerCase()
   const match = (text: string) => !needle || text.toLowerCase().includes(needle)
   const marketplaces = (catalog?.marketplaces ?? []).filter((market) => match(market.name))
-  const counts = { plugins: installed.length, skills: skills.length, marketplace: catalog?.marketplaces.length ?? 0 }
-  const tabs: [PluginsTab, string][] = [["plugins", "Plugins"], ["skills", "Skills"], ["marketplace", "Marketplace"]]
+  const order = <T,>(items: T[], name: (item: T) => string) => [...items].sort((a, b) => name(a).localeCompare(name(b)) * (descending ? -1 : 1))
+  const tabs: [PluginsTab, string][] = [["skills", "Skills"], ["connectors", "Connectors"], ["plugins", "Plugins"]]
   const busyAny = busy !== undefined
 
   // Plugins installed for a session only cannot be changed from here.
@@ -199,17 +231,15 @@ export function PluginsPage({ skills: promptCommands, onReloadCommands, onOpenMc
     }
   }
 
-  // One list row: 40px tile, 14px name over a one-line 14px description, then the trailing control.
+  // One card: 40px tile, name over a two-line description and a muted meta line, control at the top right.
   const row = (id: string, name: string, muted: string | undefined, description: string | undefined, control: ReactNode, opts: { onOpen?: () => void; round?: boolean; tile?: ReactNode } = {}) => (
-    <div key={id} data-plugin={id} className="flex items-center gap-3.5 rounded-2xl px-2 py-3.5 transition-colors hover:bg-[var(--settings-fill-hover)]">
-      <button type="button" disabled={!opts.onOpen} onClick={opts.onOpen} className="flex min-w-0 flex-1 items-center gap-3.5 pr-8 text-left disabled:cursor-default">
-        <span className={`${tileClass} ${opts.round ? "rounded-full" : "rounded-xl"}`}>{opts.tile ?? <CubeIcon />}</span>
+    <div key={id} data-plugin={id} className={`flex items-start gap-3 p-3.5 ${cardClass}`}>
+      <button type="button" disabled={!opts.onOpen} onClick={opts.onOpen} className="flex min-w-0 flex-1 items-start gap-3 text-left disabled:cursor-default">
+        <span className={tileClass}>{opts.tile ?? <CubeIcon />}</span>
         <span className="min-w-0 flex-1">
-          <span className="flex items-baseline gap-2">
-            <span className="truncate text-body leading-[22px] text-[var(--text-primary)]">{name}</span>
-            {muted && <span className="truncate text-body text-[var(--sidebar-text-muted)]">{muted}</span>}
-          </span>
-          {description && <span className="line-clamp-1 text-body leading-[22px] text-[var(--sidebar-text-muted)]">{description}</span>}
+          <span className="block truncate text-chat-sm font-medium leading-[18px] text-[var(--text-primary)]">{name}</span>
+          {description && <span className="mt-0.5 line-clamp-2 text-caption leading-[17px] text-[var(--sidebar-text-muted)]">{description}</span>}
+          {muted && <span className="mt-1 block truncate text-caption leading-4 text-[var(--sidebar-text-muted)]">{muted}</span>}
         </span>
       </button>
       {control}
@@ -217,9 +247,9 @@ export function PluginsPage({ skills: promptCommands, onReloadCommands, onOpenMc
   )
 
   const installControl = (id: string, name: string) => installedById.has(id)
-    ? <span className="shrink-0 text-body text-[var(--sidebar-text-muted)]">Installed</span>
-    : <button type="button" className={outlineButton} disabled={busyAny} onClick={() => run(`install:${id}`, "install", id, undefined, `Unable to install ${name}.`)}>
-        {busy === `install:${id}` ? "Installing…" : "Install"}
+    ? <span aria-label="Installed" className="flex size-8 shrink-0 items-center justify-center text-[var(--sidebar-text-muted)]"><Check size={16} /></span>
+    : <button type="button" aria-label={`Install ${name}`} title="Install" className="flex size-8 shrink-0 items-center justify-center rounded-lg text-[var(--sidebar-text-muted)] hover:bg-[var(--settings-fill-hover)] hover:text-[var(--text-primary)] disabled:opacity-40" disabled={busyAny} onClick={() => run(`install:${id}`, "install", id, undefined, `Unable to install ${name}.`)}>
+        {busy === `install:${id}` ? <span className="text-caption">…</span> : <Plus size={16} />}
       </button>
 
   const open = (id: string) => { setDetail(id); setError(undefined) }
@@ -230,6 +260,7 @@ export function PluginsPage({ skills: promptCommands, onReloadCommands, onOpenMc
     </div>
   )
   const flat = (rows: ReactNode[]) => <div className="mt-2 flex flex-col">{rows}</div>
+  const grid = (rows: ReactNode[]) => <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">{rows}</div>
 
   let body: ReactNode
   if (detail) {
@@ -272,60 +303,57 @@ export function PluginsPage({ skills: promptCommands, onReloadCommands, onOpenMc
         )}
       </>
     )
-  } else if (!catalog && tab !== "skills" && !browsing) {
+  } else if (!catalog && (tab === "plugins" || tab === "marketplace")) {
     body = loadError
       ? <div className="flex flex-col items-center gap-3 py-16 text-center"><span className="text-body">Failed to load plugins</span><span className="text-body text-[var(--sidebar-text-muted)]">{loadError}</span><button type="button" className={outlineButton} onClick={() => { setLoadError(undefined); void load() }}>Retry</button></div>
       : empty("Loading plugins…")
-  } else if (browsing) {
+  } else if (browsing && tab === "plugins") {
     // The CLI's available list leaves out what is installed, so fold those back in.
     const directory = [
       ...installed.map((plugin) => ({ pluginId: plugin.id, name: plugin.name, description: plugin.description })),
       ...available,
     ].sort((a, b) => a.name.localeCompare(b.name))
-    const matches = directory.filter((plugin) => match(`${plugin.name} ${plugin.description ?? ""}`))
+    const matches = order(directory.filter((plugin) => match(`${plugin.name} ${plugin.description ?? ""}`)), (plugin) => plugin.name)
     body = (
       <>
         {matches.length
-          ? flat(matches.slice(0, limit).map((plugin) => row(plugin.pluginId, plugin.name, undefined, plugin.description, installControl(plugin.pluginId, plugin.name), { onOpen: () => open(plugin.pluginId) })))
+          ? grid(matches.slice(0, limit).map((plugin) => row(plugin.pluginId, plugin.name, undefined, plugin.description, installControl(plugin.pluginId, plugin.name), { onOpen: () => open(plugin.pluginId) })))
           : empty(directory.length ? "No matching plugins" : "No plugins available", directory.length ? undefined : "Add a marketplace to browse plugins.")}
-        {matches.length > limit && <button type="button" className={`${outlineButton} self-center`} onClick={() => setLimit((value) => value + PAGE_SIZE)}>Load more</button>}
+        {matches.length > limit && <button type="button" className={`${outlineButton} mt-3 self-center`} onClick={() => setLimit((value) => value + PAGE_SIZE)}>Load more</button>}
       </>
     )
   } else if (tab === "plugins") {
-    const list = installed.filter((plugin) => match(`${plugin.name} ${plugin.description ?? ""}`))
-    body = list.length ? (
-      <Section>
-        {list.map((plugin) => row(
-          plugin.id, plugin.name, plugin.marketplace, plugin.description,
-          <span className="flex shrink-0 items-center gap-1">
-            {manageable(plugin) && <Toggle checked={plugin.enabled} label={plugin.enabled ? "Disable plugin" : "Enable plugin"} onChange={(enabled) => void setPluginEnabled(plugin.id, enabled, plugin.scope)} />}
-            <button type="button" aria-label={`Open ${plugin.name}`} className={iconButton} onClick={() => open(plugin.id)}><ChevronRight size={16} /></button>
-          </span>,
-          { onOpen: () => open(plugin.id) },
-        ))}
-      </Section>
-    ) : empty(installed.length ? "No matching plugins" : "No installed plugins", installed.length ? undefined : "Use Browse directory to install one.")
+    const list = order(installed.filter((plugin) => match(`${plugin.name} ${plugin.description ?? ""}`)), (plugin) => plugin.name)
+    body = list.length ? grid(list.map((plugin) => row(
+      plugin.id, plugin.name, plugin.marketplace, plugin.description,
+      manageable(plugin) ? <Toggle checked={plugin.enabled} label={plugin.enabled ? "Disable plugin" : "Enable plugin"} onChange={(enabled) => void setPluginEnabled(plugin.id, enabled, plugin.scope)} /> : null,
+      { onOpen: () => open(plugin.id) },
+    ))) : empty(installed.length ? "No matching plugins" : "No installed plugins", installed.length ? undefined : "Switch to Discover to install one.")
   } else if (tab === "skills") {
-    const list = skills.filter((command) => match(`${command.name} ${command.description ?? ""}`))
-    body = list.length ? flat(list.map((command) => {
+    const list = order(skills.filter((command) => match(`${command.name} ${command.description ?? ""}`)), (command) => titleCase(command.name))
+    body = list.length ? grid(list.map((command) => {
       const description = command.rawDescription ?? command.description
       const off = skillOff(command.name)
       const own = removable.includes(command.name)
       const menuOpen = rowMenu === command.name
+      const sourceLabel = command.source ? (SKILL_SOURCE_LABELS[command.source] ?? sourceLabels[command.source] ?? command.source) : ""
       return (
-        <div key={command.name} data-skill={command.name} className={`group relative flex items-center gap-3.5 rounded-2xl px-2 py-3.5 transition-colors hover:bg-[var(--settings-fill-hover)] ${menuOpen ? "bg-[var(--settings-fill-hover)]" : ""}`}>
-          <button type="button" onClick={() => setSkillName(command.name)} className={`flex min-w-0 flex-1 items-center gap-3.5 pr-8 text-left ${off ? "opacity-60" : ""}`}>
-            <span className={`${tileClass} rounded-full`}><CubeIcon /></span>
+        <div key={command.name} data-skill={command.name} className={`group relative flex items-start gap-3 p-3.5 ${cardClass}`}>
+          <button type="button" onClick={() => setSkillName(command.name)} className={`flex min-w-0 flex-1 items-start gap-3 text-left ${off ? "opacity-60" : ""}`}>
+            <span className={tileClass}><CubeIcon /></span>
             <span className="min-w-0 flex-1">
-              <span className="block truncate text-body leading-[22px] text-[var(--text-primary)]">{titleCase(command.name)}</span>
-              <span className="block truncate text-body leading-[22px] text-[var(--sidebar-text-muted)]">{description}</span>
+              <span className="block truncate text-chat-sm font-medium leading-[18px] text-[var(--text-primary)]">{titleCase(command.name)}</span>
+              <span className="mt-0.5 line-clamp-2 text-caption leading-[17px] text-[var(--sidebar-text-muted)]">{description}</span>
+              {sourceLabel && <span className="mt-1 block truncate text-caption leading-4 text-[var(--sidebar-text-muted)]">{sourceLabel}</span>}
             </span>
           </button>
-          <span className={`w-20 shrink-0 text-body text-[var(--sidebar-text-muted)] ${off ? "opacity-60" : ""}`}>{command.source ? (SKILL_SOURCE_LABELS[command.source] ?? sourceLabels[command.source] ?? command.source) : ""}</span>
-          <span className={`relative flex w-6 shrink-0 justify-center transition-opacity focus-within:visible focus-within:opacity-100 group-hover:visible group-hover:opacity-100 ${menuOpen ? "visible opacity-100" : "invisible opacity-0"}`}>
-            <button type="button" aria-label="Skill actions" aria-haspopup="menu" aria-expanded={menuOpen} className={iconButton} onClick={() => setRowMenu(menuOpen ? undefined : command.name)}>
-              <span aria-hidden="true" className="px-0.5 text-body leading-none">•••</span>
-            </button>
+          <span className="relative flex shrink-0 items-center gap-1">
+            <span className={`transition-opacity focus-within:opacity-100 group-hover:opacity-100 ${menuOpen ? "opacity-100" : "opacity-0"}`}>
+              <button type="button" aria-label="Skill actions" aria-haspopup="menu" aria-expanded={menuOpen} className={iconButton} onClick={() => setRowMenu(menuOpen ? undefined : command.name)}>
+                <span aria-hidden="true" className="px-0.5 text-body leading-none">•••</span>
+              </button>
+            </span>
+            {switchable(command) && <Toggle checked={!off} label={off ? "Enable skill" : "Disable skill"} onChange={(enabled) => void setSkillMode(command.name, enabled)} />}
             {menuOpen && (
               <>
                 <button type="button" aria-label="Close menu" className="fixed inset-0 z-10 cursor-default" onClick={() => setRowMenu(undefined)} />
@@ -342,12 +370,23 @@ export function PluginsPage({ skills: promptCommands, onReloadCommands, onOpenMc
               </>
             )}
           </span>
-          <span className="flex w-8 shrink-0 justify-end">
-            {switchable(command) && <Toggle checked={!off} label={off ? "Enable skill" : "Disable skill"} onChange={(enabled) => void setSkillMode(command.name, enabled)} />}
-          </span>
         </div>
       )
     })) : empty(skills.length ? "No matching skills" : "No skills available")
+  } else if (tab === "connectors") {
+    const list = order((mcpServers ?? []).filter((server) => match(server.name)), (server) => server.name)
+    const statusLabel: Record<string, string> = { connected: "Connected", failed: "Failed to connect", "needs-auth": "Needs authentication", pending: "Connecting…", disabled: "Disabled" }
+    body = list.length ? grid(list.map((server) => (
+      <div key={server.name} data-connector={server.name} className={`flex items-start gap-3 p-3.5 ${cardClass}`}>
+        <span className={tileClass}><Plug size={18} /></span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-chat-sm font-medium leading-[18px] text-[var(--text-primary)]">{server.name}</span>
+          <span className="mt-0.5 block truncate text-caption leading-[17px] text-[var(--sidebar-text-muted)]">{statusLabel[server.status] ?? server.status}</span>
+        </span>
+        {server.status !== "disabled" && server.status !== "pending" && <button type="button" className={outlineButton} disabled={mcpLocked} onClick={() => onChangeMcp(server.name)}>Reconnect</button>}
+        <Toggle checked={server.status !== "disabled"} label={server.status === "disabled" ? "Enable connector" : "Disable connector"} onChange={(enabled) => onChangeMcp(server.name, enabled)} />
+      </div>
+    ))) : empty(mcpServers ? (needle ? "No matching connectors" : "No connectors") : "Loading connectors…", mcpServers && !needle ? "Use Add → MCP server to connect one." : undefined)
   } else {
     body = marketplaces.length ? flat(marketplaces.map((market) => {
       const local = LOCAL_SOURCES.has(market.source)
@@ -377,24 +416,75 @@ export function PluginsPage({ skills: promptCommands, onReloadCommands, onOpenMc
   }
 
   const inDetail = detail !== undefined
+  const marketView = tab === "marketplace"
+  const menuItem = "h-8 rounded-lg px-2.5 text-left text-body hover:bg-[var(--settings-fill-hover)]"
   return (
     <>
-      <div className="flex items-start justify-between gap-4">
-        <div className="min-w-0">
-          <h1 className="text-[26px] leading-8 font-normal">Plugins</h1>
-          {inDetail ? (
-            <button type="button" className="mt-1.5 inline-flex items-center gap-1 text-body text-[var(--sidebar-text-muted)] hover:text-[var(--text-primary)]" onClick={() => setDetail(undefined)}>
-              <ChevronLeft size={14} />
-              {browsing ? "Directory" : "Plugins"}
-            </button>
-          ) : (
-            <p className="m-0 mt-1.5 text-body text-[var(--sidebar-text-muted)]">Manage plugins, skills, and marketplaces</p>
+      <h1 className="m-0 font-serif text-[26px] font-normal leading-8 text-[var(--text-primary)]">Customize</h1>
+      {(inDetail || marketView) && (
+        <button type="button" className="-mt-2 inline-flex items-center gap-1 self-start text-chat-sm text-[var(--sidebar-text-muted)] hover:text-[var(--text-primary)]" onClick={() => { if (inDetail) setDetail(undefined); else { setTab("plugins"); setBrowsing(true); setFilter("") } }}>
+          <ChevronLeft size={14} />
+          {inDetail ? (marketView ? "Marketplaces" : browsing ? "Discover" : "Plugins") : "Plugins"}
+        </button>
+      )}
+      {!inDetail && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          {!marketView && (
+            <>
+              <div className="flex items-center gap-0.5" role="tablist">
+                {tabs.map(([key, label]) => (
+                  <button key={key} type="button" role="tab" aria-selected={tab === key} onClick={() => { setTab(key); setBrowsing(false); setFilter(""); setAdding(false); setError(undefined); setRowMenu(undefined) }} className={`h-7 rounded-lg px-2.5 text-chat-sm font-medium transition-colors ${tab === key ? "bg-[color-mix(in_srgb,var(--text-primary)_7%,transparent)] text-[var(--text-primary)]" : "text-[var(--sidebar-text-muted)] hover:bg-[color-mix(in_srgb,var(--text-primary)_6%,transparent)] hover:text-[var(--text-primary)]"}`}>{label}</button>
+                ))}
+              </div>
+              {tab === "plugins" && (
+                <>
+                  <span aria-hidden="true" className="mx-1 h-4 w-px bg-[var(--border-default)]" />
+                  <div ref={sourceRef} className="relative inline-flex h-7 shrink-0 items-stretch rounded-lg bg-[color-mix(in_srgb,var(--text-primary)_5%,transparent)] p-0.5" role="tablist" aria-label="Plugin source">
+                    {sourceThumb && (
+                      <span
+                        aria-hidden="true"
+                        className="pointer-events-none absolute bottom-0.5 left-0 top-0.5 rounded-[6px] bg-[var(--bg-card,#fff)] shadow-[inset_0_0_0_1px_var(--border-default),0_1px_2px_rgb(0_0_0/0.04)] transition-[transform,width] duration-150 ease-out"
+                        style={{ width: sourceThumb.width, transform: `translateX(${sourceThumb.left}px)` }}
+                      />
+                    )}
+                    {([["Yours", false], ["Discover", true]] as const).map(([label, discover]) => (
+                      <button
+                        key={label}
+                        type="button"
+                        role="tab"
+                        aria-selected={browsing === discover}
+                        onClick={() => { setBrowsing(discover); setFilter(""); setLimit(PAGE_SIZE) }}
+                        className={`relative z-[1] inline-flex items-center justify-center rounded-[6px] px-2.5 text-chat-sm transition-colors ${browsing === discover ? "text-[var(--text-primary)]" : "text-[var(--text-primary)]/70 hover:text-[var(--text-primary)]"}`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </>
           )}
-        </div>
-        {!inDetail && (
-          <div className="relative flex shrink-0 gap-2 pt-1">
-            <button type="button" className={outlineButton} onClick={() => { setBrowsing((value) => !value); setFilter(""); setLimit(PAGE_SIZE) }}>{browsing ? "Back" : "Browse directory"}</button>
+          {marketView && <span className="text-chat-sm font-medium text-[var(--text-primary)]">Marketplaces</span>}
+          <span className="flex-1" />
+          <label className="flex h-7 w-52 items-center gap-1.5 rounded-lg bg-[color-mix(in_srgb,var(--text-primary)_5%,transparent)] px-2.5 text-[var(--sidebar-text-muted)] focus-within:bg-[color-mix(in_srgb,var(--text-primary)_7%,transparent)]">
+            <Search size={13} className="shrink-0" />
+            <input
+              value={filter}
+              onChange={(e) => { setFilter(e.target.value); setLimit(PAGE_SIZE) }}
+              placeholder="Search"
+              aria-label="Search"
+              className="min-w-0 flex-1 bg-transparent text-chat-sm text-[var(--text-primary)] outline-none placeholder:text-[var(--sidebar-text-muted)]"
+            />
+            {filter && (
+              <button type="button" aria-label="Clear search" onClick={() => { setFilter(""); setLimit(PAGE_SIZE) }} className="rounded p-0.5 text-[var(--sidebar-text-muted)] hover:text-[var(--text-primary)]">
+                <X size={12} />
+              </button>
+            )}
+          </label>
+          <button type="button" aria-label={descending ? "Sort A to Z" : "Sort Z to A"} title={descending ? "Sort A to Z" : "Sort Z to A"} className={iconButton} onClick={() => setDescending((value) => !value)}><ArrowUpDown size={14} /></button>
+          <div className="relative">
             <button type="button" aria-haspopup="menu" aria-expanded={menuOpen} className={primaryButton} onClick={() => setMenuOpen((value) => !value)}>
+              <Plus size={14} />
               Add
               <ChevronDown size={14} />
             </button>
@@ -402,40 +492,13 @@ export function PluginsPage({ skills: promptCommands, onReloadCommands, onOpenMc
               <>
                 <button type="button" aria-label="Close menu" className="fixed inset-0 z-10 cursor-default" onClick={() => setMenuOpen(false)} />
                 <div role="menu" className="noa-floating-panel absolute right-0 top-full z-20 mt-1.5 flex min-w-48 flex-col rounded-[var(--menu-popover-radius)] bg-[var(--bg-card)] p-1 shadow-[var(--menu-shadow)]">
-                  <button type="button" role="menuitem" className="h-8 rounded-lg px-2.5 text-left text-body hover:bg-[var(--settings-fill-hover)]" onClick={() => { setMenuOpen(false); setAdding(true); setTab("marketplace"); setBrowsing(false) }}>Add marketplace</button>
-                  <button type="button" role="menuitem" className="h-8 rounded-lg px-2.5 text-left text-body hover:bg-[var(--settings-fill-hover)]" onClick={() => { setMenuOpen(false); onOpenMcp() }}>Add MCP server</button>
+                  <button type="button" role="menuitem" className={menuItem} onClick={() => { setMenuOpen(false); setAdding(true); setTab("marketplace"); setBrowsing(false) }}>Add marketplace</button>
+                  <button type="button" role="menuitem" className={menuItem} onClick={() => { setMenuOpen(false); setTab("marketplace"); setBrowsing(false); setFilter("") }}>Manage marketplaces</button>
+                  <button type="button" role="menuitem" className={menuItem} onClick={() => { setMenuOpen(false); onOpenMcp() }}>Add MCP server</button>
                 </div>
               </>
             )}
           </div>
-        )}
-      </div>
-      {!inDetail && (
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex gap-1" role="tablist">
-            {tabs.map(([key, label]) => (
-              <button
-                key={key}
-                type="button"
-                role="tab"
-                aria-selected={!browsing && tab === key}
-                onClick={() => { setTab(key); setBrowsing(false); setFilter("") }}
-                className={`h-7 rounded-[10px] px-2.5 text-body ${!browsing && tab === key ? "bg-[var(--settings-fill-hover)] text-[var(--text-primary)]" : "text-[var(--sidebar-text-muted)] hover:text-[var(--text-primary)]"}`}
-              >
-                {label} <span className="ms-0.5">{counts[key]}</span>
-              </button>
-            ))}
-          </div>
-          <label className="flex h-8 w-60 items-center gap-2 rounded-xl border border-[var(--border-default)] bg-[var(--bg-card)] px-3 text-[var(--sidebar-text-muted)]">
-            <Search size={15} />
-            <input
-              value={filter}
-              onChange={(e) => { setFilter(e.target.value); setLimit(PAGE_SIZE) }}
-              placeholder={browsing ? "Search directory" : tab === "marketplace" ? "Search marketplaces" : tab === "skills" ? "Search skills" : "Search plugins"}
-              aria-label="Search"
-              className="min-w-0 flex-1 bg-transparent text-body text-[var(--text-primary)] outline-none placeholder:text-[var(--sidebar-text-muted)]"
-            />
-          </label>
         </div>
       )}
       {adding && !inDetail && (

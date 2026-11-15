@@ -24,6 +24,7 @@ import {
   MoreHorizontal,
   Pin,
   Search,
+  SlidersHorizontal,
   Settings,
   SquarePen,
   Trash2,
@@ -122,6 +123,8 @@ interface SidebarProps {
   onDeleteSession: (cwd: string, id: string, title: string) => void
   onSearch: () => void
   onSettings: () => void
+  onCustomize: () => void
+  customizeOpen?: boolean
 }
 
 // Noa's sidebar: search, a Projects toolbar, then one collapsible group per project folder.
@@ -142,6 +145,8 @@ export function Sidebar({
   onDeleteSession,
   onSearch,
   onSettings,
+  onCustomize,
+  customizeOpen = false,
 }: SidebarProps) {
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set())
   const [unfolded, setUnfolded] = useState<ReadonlySet<string>>(new Set())
@@ -453,6 +458,17 @@ export function Sidebar({
       >
         <SquarePen size={14} className="shrink-0" />
         New task
+      </button>
+
+      <button
+        type="button"
+        data-customize-nav
+        aria-current={customizeOpen ? "page" : undefined}
+        onClick={onCustomize}
+        className={`noa-sidebar-tree-item noa-sidebar-tree-row noa-agent-sidebar-row ${customizeOpen ? "is-active" : "noa-sidebar-hover-surface-subtle"} mx-2 mb-1 flex h-[30px] shrink-0 items-center gap-2 rounded-lg pl-[7px] pr-2 text-body`}
+      >
+        <SlidersHorizontal size={14} className="shrink-0" />
+        Customize
       </button>
 
       <div className="noa-sidebar-scroll scrollbar-on-scroll noa-sidebar-scroll-fade group/tree flex-1 min-h-0 overflow-y-auto overflow-x-hidden">

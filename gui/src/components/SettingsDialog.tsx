@@ -3,7 +3,7 @@ import { createPortal } from "react-dom"
 import type { AppSettings } from "../types"
 import type { AgentState } from "../agent/reducer"
 import type { PermissionMode, AccountInfo, ControlRequest } from "../agent/protocol"
-import { ArrowLeft, Download, Keyboard, Palette, Search, Settings, Plug, SlidersHorizontal, List } from "../lib/icons"
+import { ArrowLeft, Keyboard, Palette, Search, Settings, Plug, SlidersHorizontal, List } from "../lib/icons"
 import { findModel } from "../lib/models"
 import type { ProviderDraft } from "../lib/providerCatalog"
 import { useConfirm } from "./ConfirmDialog"
@@ -12,14 +12,13 @@ import { AppearancePage } from "./settings/AppearancePage"
 import { ConfigurationEditor } from "./settings/ConfigurationEditor"
 import { ConfigurationPage, HooksPage, McpPage, RefreshBar } from "./settings/ConfigurationPages"
 import { GeneralPage } from "./settings/GeneralPage"
-import { PluginsPage } from "./settings/PluginsPage"
 import { ProvidersPage } from "./settings/ProvidersPage"
 import { ShortcutsPage } from "./settings/ShortcutsPage"
 
 const dragRegion = { WebkitAppRegion: "drag" } as CSSProperties
 const noDragRegion = { WebkitAppRegion: "no-drag" } as CSSProperties
 
-type Page = "general" | "appearance" | "shortcuts" | "configuration" | "providers" | "mcp" | "hooks" | "skills"
+type Page = "general" | "appearance" | "shortcuts" | "configuration" | "providers" | "mcp" | "hooks"
 
 const pages: { key: Page; label: string; group: string; icon: ReactNode; rows: string[] }[] = [
   {
@@ -74,13 +73,6 @@ const pages: { key: Page; label: string; group: string; icon: ReactNode; rows: s
   { key: "providers", label: "Providers", group: "Coding", icon: <Plug size={16} />, rows: ["Providers", "API key", "Base URL"] },
   { key: "hooks", label: "Hooks", group: "Coding", icon: <List size={16} />, rows: ["Configured hooks"] },
   { key: "mcp", label: "MCP servers", group: "Integrations", icon: <Plug size={16} />, rows: ["Connected servers", "Manage server configurations"] },
-  {
-    key: "skills",
-    label: "Plugins",
-    group: "Integrations",
-    icon: <Download size={16} />,
-    rows: ["Plugins", "Skills", "Marketplace", "Browse directory", "Add marketplace"],
-  },
 ]
 
 export function SettingsDialog({
@@ -93,7 +85,6 @@ export function SettingsDialog({
   onReconnect,
   onRefreshMcp,
   onChangeMcp,
-  onReloadCommands,
   onModel,
   onProvider,
   onSaveProvider,
@@ -104,13 +95,13 @@ export function SettingsDialog({
   onMode,
   onChange,
   onClose,
-  onTrySkill,
   account,
   auth,
   onStartAuthentication,
   onSubmitAuthenticationCode,
   onCloseAuthentication,
   signIn,
+  initialPage,
 }: {
   // The main sidebar's width: the settings nav takes the sidebar's place.
   navWidth: number
@@ -123,7 +114,6 @@ export function SettingsDialog({
   onRefreshSettings: () => void
   onRefreshMcp: () => void
   onChangeMcp: (name: string, enabled?: boolean) => void
-  onReloadCommands: () => void
   onModel: (model: string) => void
   onProvider: (providerId: string) => void
   onSaveProvider: (draft: ProviderDraft) => void
@@ -134,7 +124,7 @@ export function SettingsDialog({
   onMode: (mode: PermissionMode) => void
   onChange: (settings: AppSettings) => void
   onClose: () => void
-  onTrySkill: (name: string) => void
+  initialPage?: Page
   account?: AccountInfo
   auth?: AgentState["auth"]
   onStartAuthentication: () => void
@@ -143,7 +133,7 @@ export function SettingsDialog({
   // Opened from /login: start sign-in right away.
   signIn?: boolean
 }) {
-  const [page, setPage] = useState<Page>("general")
+  const [page, setPage] = useState<Page>(initialPage ?? "general")
   const [query, setQuery] = useState("")
   const [authOpen, setAuthOpen] = useState(false)
   useEffect(() => {
@@ -172,13 +162,11 @@ export function SettingsDialog({
     .filter(({ page, label }) => searchTerms.every((term) => `${page.label} ${label}`.toLowerCase().includes(term)))
   const disconnected = agent.connection !== "ready"
   const activeModel = findModel(agent.models, agent.model)
-  // Turned-off skills are hidden from the CLI's command list, so the Plugins page filters them itself.
-  const allSkills = agent.commands.filter((command) => command.type === "prompt")
 
   useEffect(() => {
     if (disconnected) return
     if (page === "mcp") onRefreshMcp()
-    if (["configuration", "hooks", "skills"].includes(page)) onRefreshSettings()
+    if (["configuration", "hooks"].includes(page)) onRefreshSettings()
   }, [page, disconnected, onRefreshMcp, onRefreshSettings])
 
   useEffect(() => {
@@ -331,7 +319,7 @@ export function SettingsDialog({
       <div className="noa-settings-main flex min-w-0 flex-1 flex-col overflow-hidden bg-[var(--bg-primary,#FCFCFB)]">
         <main className="noa-settings-scroll scrollbar-on-scroll noa-scroll-fade min-h-0 flex-1 overflow-y-auto px-5 pt-16 pb-16">
         <div className="mx-auto flex max-w-3xl flex-col gap-8">
-          {page !== "skills" && <h1 className="text-[26px] leading-8 font-normal">{current?.label}</h1>}
+          <h1 className="text-[26px] leading-8 font-normal">{current?.label}</h1>
 
           {page === "general" && (
             <GeneralPage
@@ -369,7 +357,6 @@ export function SettingsDialog({
           )}
           <div style={{ display: page === "mcp" ? "contents" : "none" }}><McpPage agent={agent} onChangeMcp={onChangeMcp} /><ConfigurationEditor kind="mcp" disabled={disconnected || agent.busy || !!agent.queue.length || agent.tasks.some(task => task.status === "running")} request={request} onDirtyChange={setMcpDirty} onSaved={restart => restart ? onReconnect() : onRefreshMcp()} /></div>
           {page === "hooks" && <HooksPage agent={agent} />}
-          {page === "skills" && <PluginsPage skills={allSkills} onReloadCommands={onReloadCommands} onOpenMcp={() => setPage("mcp")} onTrySkill={(name) => { onClose(); onTrySkill(name) }} />}
           {page === "shortcuts" && <ShortcutsPage settings={settings} onChange={onChange} />}
         </div>
         </main>
