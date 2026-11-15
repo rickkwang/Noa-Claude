@@ -281,7 +281,8 @@ export const WebSearchTool = buildTool({
   async prompt({ model }) {
     return getWebSearchPrompt(
       model,
-      !getConfiguredSearchBackend() &&
+      isSearchAvailable() &&
+        !getConfiguredSearchBackend() &&
         !isChatGPTResponsesRoute() &&
         !isGeminiRoute(),
     )
