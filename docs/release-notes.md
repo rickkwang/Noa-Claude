@@ -2,7 +2,42 @@
 
 ## Unreleased
 
+## 1.25.0
+
+- New: changing effort mid-conversation no longer invalidates the prompt cache on models that support per-message effort (direct Claude API only). The spinner and the reply's effort line show the level each reply actually ran at. If an endpoint rejects the effort messages, the CLI falls back to changing top-level effort for the rest of the process.
 - Changed: output style instructions are now delivered as a conversation message instead of a system prompt section. Switching styles mid-session sends only the change, resetting to default tells the model so, and the instructions are restored after compaction. Explanatory, Learning and custom styles no longer get an appended "these rules win" precedence statement.
+- Changed: compaction summaries are computed in the background once context enters the warning band, so the compacting turn no longer waits for the summary call (measured compaction block 6.7–7.8s → 0.2–0.3s on claude-opus-5-5). Large single tool results can still fall back to synchronous compaction. Disable with `NOA_CLAUDE_PRECOMPUTE_COMPACT=0` or `precomputeCompactEnabled: false`.
+- Changed: the memory prompt encourages building memory up over time and caps each topic file at 4KB.
+- Changed: Fable 5.1 moves to the More models list in `/model`.
+- Fixed: `/commit` and `/commit-push-pr` name the local settings file among files not to commit.
+- Fixed: model capability refresh sends the OAuth beta for subscribers on SDK 1.x.
+- Fixed: confirming the Default row in `/model` keeps the saved model, for example after changing effort.
+- Fixed: `/plugin` loads the official marketplace again. The default source points back to `anthropics/claude-plugins-official`, saved installs of the former default are migrated, and marketplace entries with unknown source types are skipped instead of failing the whole list. `CLAUDE_AGENT_OFFICIAL_MARKETPLACE_REPO` still overrides it.
+- Fixed: WebFetch caps list nesting depth, removes style, script, noscript and iframe content, and returns raw HTML when conversion fails.
+
+### Desktop app (gui-v1.25.0)
+
+- New: a Threads tab in the right panel groups a project's tasks, including worktree tasks, as Needs input, Working, Ready for review and Recent, with the current step, latest result or failure reason, and any linked pull request. Each project also has a Coordinator chat from the project menu that starts, follows up on, inspects and stops threads. Threads run without a window open. The coordinator is local only.
+- New: thinking transcript view, and a Normal/Verbose transcript toggle with session overrides.
+- New: optional synthesized sound while replies stream, off by default. Settings › General › Chat has Classic and Ethereal presets with a preview and a volume slider.
+- New: interactive water-ripple background on the empty state, which respects reduced motion.
+- New: theme presets including a Claude theme, an accent picker, per-variant code themes, and theme import/export.
+- New: animated composer caret, with a toggle to use the system caret.
+- New: a 3D light-wave spinner for thinking states, and a dot-matrix field on the top effort level.
+- Changed: the stats panel has Overview and Models views. Overview shows metric tiles and an all-time heatmap; Models shows per-model token share and a daily token chart.
+- Changed: a turn's diff card lists only files that this turn's Edit and Write results changed. Edits made by other sessions or agents no longer appear, and Undo no longer reverts them. Shell-only edits are not listed.
+- Changed: `/fork` is removed from the composer; the task menu's Fork action covers it.
+- Changed: streamed text is revealed at an even pace.
+- Fixed: the packaged app loads task history and resumes tasks again; the transcript recovery module is bundled into the desktop runtime.
+- Fixed: a reopened task keeps one CLI, including while background tasks are still running, and keeps its permission mode.
+- Fixed: the queue keeps moving while background subagents run.
+- Fixed: a failed `/compact` keeps its error when a task is reopened. Reopened tasks restore skill invocations, and forks are titled from the first prompt the user wrote.
+- Fixed: rewinding shows one marker per cut and keeps the draft.
+- Fixed: slash commands no longer leak into or drop out of sessions, and terminal-run commands pair with their output. A coordinator prompt that begins with a slash is refused.
+- Fixed: sidebar project actions use the shared popup menu, and the sidebar drag indicator is stable.
+- Fixed: settings writes use a cross-process lock, and the bridge canonicalizes the working directory.
+- Improved: visual polish across the composer, sidebar, settings, popovers, menus and the local provider icon.
+- Faster: the background ripple adapts its frame rate, and large transcript blocks no longer re-render on every resize pixel.
 
 ## 1.24.0
 
