@@ -495,6 +495,7 @@ export class StructuredIO {
       if (
         message.type !== 'user' &&
         message.type !== 'control_request' &&
+        message.type !== 'control_cancel_request' &&
         message.type !== 'assistant' &&
         message.type !== 'system'
       ) {
@@ -509,7 +510,11 @@ export class StructuredIO {
         }
         return message
       }
-      if (message.type === 'assistant' || message.type === 'system') {
+      if (
+        message.type === 'assistant' ||
+        message.type === 'system' ||
+        message.type === 'control_cancel_request'
+      ) {
         return message
       }
       if (message.message.role !== 'user') {

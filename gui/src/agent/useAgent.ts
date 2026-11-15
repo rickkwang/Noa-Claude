@@ -128,13 +128,19 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
     [write],
   )
 
-  const request = useCallback((request: ControlRequest): Promise<any> => new Promise((resolve, reject) => {
+  // A timeout or an aborted signal also tells the CLI to cancel, so it stops working on the request.
+  const request = useCallback((request: ControlRequest, { timeoutMs = 60000, signal }: { timeoutMs?: number; signal?: AbortSignal } = {}): Promise<any> => new Promise((resolve, reject) => {
     const requestId = crypto.randomUUID()
-    const timer = setTimeout(() => {
+    const cancel = (error: Error) => {
+      if (!requestsRef.current.has(requestId)) return
+      clearTimeout(timer)
       requestsRef.current.delete(requestId)
-      reject(new Error("Request timed out. Reconnect before trying again."))
-    }, 60000)
+      write({ type: "control_cancel_request", request_id: requestId })
+      reject(error)
+    }
+    const timer = setTimeout(() => cancel(new Error("Request timed out. Reconnect before trying again.")), timeoutMs)
     requestsRef.current.set(requestId, { resolve, reject, timer })
+    signal?.addEventListener("abort", () => cancel(new DOMException("Cancelled", "AbortError")), { once: true })
     if (!write({ type: "control_request", request_id: requestId, request })) {
       clearTimeout(timer)
       requestsRef.current.delete(requestId)
@@ -454,7 +460,9 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
     }
 
     return () => {
-      for (const pending of requestsRef.current.values()) {
+      for (const [requestId, pending] of requestsRef.current) {
+        // The runtime outlives this socket, so tell it to stop work nobody is waiting for.
+        if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: "control_cancel_request", request_id: requestId }))
         clearTimeout(pending.timer)
         pending.reject(new Error("Noa disconnected before the request completed."))
       }

@@ -116,3 +116,84 @@ describe('extractSideQuestionResponse', () => {
     expect(result).toEqual({ response: 'hi', synthetic: false })
   })
 })
+
+describe('answers cut off by an API error', () => {
+  const apiError = {
+    type: 'assistant',
+    isApiErrorMessage: true,
+    message: { content: [{ type: 'text', text: 'API Error: overloaded' }] },
+  }
+
+  test('keep the partial text, marked as cut off', async () => {
+    const { extractSideQuestionResponse } = await import(
+      '../../utils/sideQuestion.js'
+    )
+    const result = extractSideQuestionResponse([
+      { type: 'assistant', message: { content: [{ type: 'text', text: 'The build' }] } },
+      apiError,
+    ] as never)
+    expect(result.synthetic).toBe(false)
+    expect(result.response).toStartWith('The build\n\n')
+    expect(result.response).toContain('cut off')
+    expect(result.response).not.toContain('overloaded')
+  })
+
+  test('without any text report the error as a notice', async () => {
+    const { extractSideQuestionResponse } = await import(
+      '../../utils/sideQuestion.js'
+    )
+    expect(extractSideQuestionResponse([apiError] as never)).toEqual({
+      response: '(API error: overloaded)',
+      synthetic: true,
+    })
+  })
+
+  test('are not replayed as complete answers', async () => {
+    const { buildBtwHistoryMessages, extractSideQuestionResponse } =
+      await import('../../utils/sideQuestion.js')
+    const { response } = extractSideQuestionResponse([
+      { type: 'assistant', message: { content: [{ type: 'text', text: 'The build' }] } },
+      apiError,
+    ] as never)
+    const [, assistant] = buildBtwHistoryMessages([
+      { question: 'q', response: response! },
+    ])
+    expect(firstText(assistant)).toContain('omitted')
+  })
+})
+
+describe('buildInProgressToolResults', () => {
+  const call = (messageId: string, id: string) => ({
+    type: 'assistant',
+    message: { id: messageId, content: [{ type: 'tool_use', id, name: 'Bash', input: {} }] },
+  })
+  const result = (id: string) => ({
+    type: 'user',
+    message: { content: [{ type: 'tool_result', tool_use_id: id, content: 'ok' }] },
+  })
+
+  test('marks calls of the latest response that have no result as still running', async () => {
+    const { buildInProgressToolResults } = await import(
+      '../../utils/sideQuestion.js'
+    )
+    const message = buildInProgressToolResults([
+      call('m1', 'old'),
+      result('old'),
+      call('m2', 'done'),
+      call('m2', 'running'),
+      result('done'),
+    ] as never)
+    expect(message?.isMeta).toBe(true)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const blocks = (message as any).message.content
+    expect(blocks.map((b: { tool_use_id: string }) => b.tool_use_id)).toEqual(['running'])
+    expect(blocks[0].content).toContain('still in progress')
+  })
+
+  test('adds nothing when every call has a result', async () => {
+    const { buildInProgressToolResults } = await import(
+      '../../utils/sideQuestion.js'
+    )
+    expect(buildInProgressToolResults([call('m1', 'a'), result('a')] as never)).toBeUndefined()
+  })
+})

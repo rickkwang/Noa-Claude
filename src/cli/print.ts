@@ -987,7 +987,8 @@ export async function runHeadless(
           message.subtype === 'task_notification' ||
           message.subtype === 'task_started' ||
           message.subtype === 'task_progress' ||
-          message.subtype === 'post_turn_summary')
+          message.subtype === 'post_turn_summary' ||
+          message.subtype === 'control_request_progress')
       ) &&
       message.type !== 'stream_event' &&
       message.type !== 'keep_alive' &&
@@ -2959,6 +2960,8 @@ function runHeadlessStreaming(
   // processing and returning the result of the generation.
   // The process is complete when the input stream completes and
   // the last generation of the queue has complete.
+  // In-flight side questions by request id, so the client can cancel one.
+  const sideQuestionControllers = new Map<string, AbortController>()
   void (async () => {
     let initialized = false
     logForDiagnosticsNoPII('info', 'cli_message_loop_started')
@@ -4235,7 +4238,22 @@ function runHeadlessStreaming(
           // matches in the common case. May still miss the cache for
           // coordinator mode or memory-mechanics extras — acceptable, the
           // alternative is the side question failing entirely.
-          const { question } = message.request
+          const { question, history } = message.request as {
+            question: string
+            history?: { question: string; response: string }[]
+          }
+          const controller = createAbortController()
+          sideQuestionControllers.set(message.request_id, controller)
+          const turnInProgress = running
+          const progress = (update: Record<string, unknown>) =>
+            output.enqueue({
+              type: 'system',
+              subtype: 'control_request_progress',
+              request_id: message.request_id,
+              ...update,
+              uuid: randomUUID(),
+              session_id: getSessionId(),
+            })
           void (async () => {
             try {
               const saved = getLastCacheSafeParams()
@@ -4252,6 +4270,15 @@ function runHeadlessStreaming(
                       ...saved.toolUseContext,
                       abortController: createAbortController(),
                     },
+                    // The snapshot ends at the last finished turn; fork from the
+                    // live messages so a question asked mid-turn sees the turn in
+                    // progress (minus an assistant message still streaming).
+                    forkContextMessages:
+                      turnInProgress &&
+                      mutableMessages.at(-1)?.type === 'assistant' &&
+                      mutableMessages.at(-1).message.stop_reason === null
+                        ? mutableMessages.slice(0, -1)
+                        : [...mutableMessages],
                   }
                 : await buildSideQuestionFallbackParams({
                     tools: buildAllTools(getAppState()),
@@ -4270,16 +4297,42 @@ function runHeadlessStreaming(
                     thinkingConfig: options.thinkingConfig,
                     agents: currentAgents,
                   })
+              // The client owns the thread: only the exchanges it sends are
+              // replayed, and the process-wide /btw history is left alone.
+              progress({ status: 'started' })
               const result = await runSideQuestion({
                 question,
                 cacheSafeParams,
+                abortController: controller,
+                turnInProgress,
+                onRetry: retry =>
+                  progress({
+                    status: 'api_retry',
+                    attempt: retry.retryAttempt,
+                    max_retries: retry.maxRetries,
+                    retry_delay_ms: retry.retryInMs,
+                    error_status: retry.status ?? null,
+                  }),
+                threadHistory: false,
+                history: Array.isArray(history)
+                  ? history.map(({ question, response }) => ({
+                      question,
+                      response,
+                    }))
+                  : [],
               })
-              sendControlResponseSuccess(message, {
-                response: result.response,
-                synthetic: result.synthetic,
-              })
+              if (result.aborted || controller.signal.aborted) {
+                sendControlResponseError(message, 'Side question cancelled')
+              } else {
+                sendControlResponseSuccess(message, {
+                  response: result.response,
+                  synthetic: result.synthetic,
+                })
+              }
             } catch (e) {
               sendControlResponseError(message, errorMessage(e))
+            } finally {
+              sideQuestionControllers.delete(message.request_id)
             }
           })()
         } else if (
@@ -4442,6 +4495,9 @@ function runHeadlessStreaming(
         if (options.replayUserMessages) {
           output.enqueue(message)
         }
+        continue
+      } else if (message.type === 'control_cancel_request') {
+        sideQuestionControllers.get(message.request_id)?.abort()
         continue
       } else if (message.type === 'keep_alive') {
         // Silently ignore keep-alive messages

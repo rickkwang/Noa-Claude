@@ -1180,7 +1180,7 @@ function relayed(text: string): { kind: "activity"; lines: string[] } | { kind: 
   }
 }
 
-function UserBubble({ text }: { text: string }) {
+export function UserBubble({ text }: { text: string }) {
   const ref = useRef<HTMLDivElement>(null)
   const fontRef = useRef<HTMLSpanElement>(null)
   const [long, setLong] = useState(false)
@@ -1238,7 +1238,7 @@ function formatDuration(ms: number): string {
   return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`
 }
 
-function Working() {
+export function Working() {
   // Sits outside the turn items, so it carries the conversation typeface itself to match the rows above.
   return <div className="flex items-center gap-1.5 text-[length:var(--font-text-md-size)] leading-5 text-[var(--text-tertiary)]" style={{ fontFamily: "var(--font-content, var(--font-ui))" }}>
     <WorkingOrb size={16} />

@@ -270,6 +270,7 @@ export type Outgoing =
   | { type: "queue_run" }
   | { type: "turn_diff_action"; turnIndex: number; action: "undo" | "reapply" }
   | { type: "control_request"; request_id: string; request: ControlRequest }
+  | { type: "control_cancel_request"; request_id: string }
   | {
       type: "control_response"
       response: {
@@ -295,6 +296,7 @@ export type ControlRequest =
   | { subtype: "provider_delete"; providerId: string }
   | { subtype: "set_permission_mode"; mode: PermissionMode }
   | { subtype: "get_context_usage"; detail?: "summary" | "full" }
+  | { subtype: "side_question"; question: string; history: { question: string; response: string }[] }
   | { subtype: "mcp_status" }
   | { subtype: "mcp_reconnect"; serverName: string }
   | { subtype: "mcp_toggle"; serverName: string; enabled: boolean }

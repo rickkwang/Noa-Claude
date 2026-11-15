@@ -7,6 +7,7 @@
  * while keeping the side question response separate from main conversation.
  */
 
+import { API_ERROR_MESSAGE_PREFIX } from '../services/api/errors.js'
 import { formatAPIError } from '../services/api/errorUtils.js'
 import { EMPTY_USAGE, type NonNullableUsage } from '../services/api/logging.js'
 import type { Message, SystemAPIErrorMessage } from '../types/message.js'
@@ -34,6 +35,16 @@ const NOT_EXECUTED_NOTICE =
 // see fabricated tool output as established context.
 const LEAKED_TOOL_CALL_OMITTED =
   '(That answer wrote tool calls as text. Nothing was executed, so it is omitted here.)'
+// An API error ended the answer partway; the partial text is kept but marked,
+// and not replayed as if it were complete.
+const CUT_OFF_NOTICE =
+  '_(This answer was cut off before it finished. Ask again to retry.)_'
+const CUT_OFF_OMITTED =
+  '(That answer was cut off before it finished, so it is omitted here.)'
+// Given to tool calls of the running turn that have no result yet, so the
+// side question doesn't read them as failed.
+const TOOL_IN_PROGRESS =
+  '[No result yet \u2014 this call is still in progress in the main conversation (running, awaiting approval, or queued)]'
 
 export function containsLeakedToolCall(text: string): boolean {
   return LEAKED_TOOL_CALL_PATTERN.test(text)
@@ -106,9 +117,49 @@ export function buildBtwHistoryMessages(
     createAssistantMessage({
       content: containsLeakedToolCall(exchange.response)
         ? LEAKED_TOOL_CALL_OMITTED
-        : exchange.response,
+        : exchange.response.endsWith(CUT_OFF_NOTICE)
+          ? CUT_OFF_OMITTED
+          : exchange.response,
     }),
   ])
+}
+
+/**
+ * Placeholder results for the tool calls of the latest assistant response that
+ * have none yet. Without them the API request would pair those calls with a
+ * synthetic error result, and the answer would call a running command failed.
+ */
+export function buildInProgressToolResults(
+  messages: readonly Message[],
+): Message | undefined {
+  const last = messages.findLast(m => m.type === 'assistant')
+  if (!last) return undefined
+  const answered = new Set<string>()
+  const calls: string[] = []
+  for (const message of messages) {
+    if (message.type === 'user' && Array.isArray(message.message.content)) {
+      for (const block of message.message.content) {
+        if (block.type === 'tool_result') answered.add(block.tool_use_id)
+      }
+    } else if (
+      message.type === 'assistant' &&
+      message.message.id === last.message.id
+    ) {
+      for (const block of message.message.content) {
+        if (block.type === 'tool_use') calls.push(block.id)
+      }
+    }
+  }
+  const pending = calls.filter(id => !answered.has(id))
+  if (pending.length === 0) return undefined
+  return createUserMessage({
+    content: pending.map(id => ({
+      type: 'tool_result' as const,
+      tool_use_id: id,
+      content: TOOL_IN_PROGRESS,
+    })),
+    isMeta: true,
+  })
 }
 
 /**
@@ -117,7 +168,8 @@ export function buildBtwHistoryMessages(
  * All tools are blocked and we cap at 1 turn.
  *
  * Earlier /btw exchanges from this session are replayed before the question
- * (`threadHistory`), and a real answer is appended to that history.
+ * (`threadHistory`), and a real answer is appended to that history. A caller
+ * that keeps its own thread passes `history` instead.
  */
 export async function runSideQuestion({
   question,
@@ -125,19 +177,30 @@ export async function runSideQuestion({
   abortController,
   onRetry,
   threadHistory = true,
+  history: exchanges,
+  turnInProgress = false,
 }: {
   question: string
   cacheSafeParams: CacheSafeParams
   abortController?: AbortController
   onRetry?: (retry: SideQuestionRetry) => void
   threadHistory?: boolean
+  history?: readonly BtwExchange[]
+  /** The main turn is still running, so its last tool calls may have no result yet. */
+  turnInProgress?: boolean
 }): Promise<SideQuestionResult> {
   const history = threadHistory ? getBtwHistory() : null
-  const historyMessages = buildBtwHistoryMessages(history?.exchanges ?? [])
+  const historyMessages = buildBtwHistoryMessages(
+    exchanges ?? history?.exchanges ?? [],
+  )
+  const inProgress = turnInProgress
+    ? buildInProgressToolResults(cacheSafeParams.forkContextMessages)
+    : undefined
 
   try {
     const agentResult = await runForkedAgent({
       promptMessages: [
+        ...(inProgress ? [inProgress] : []),
         ...historyMessages,
         createUserMessage({
           content: `${SIDE_QUESTION_REMINDER}\n\n${question}`,
@@ -215,9 +278,13 @@ export function extractSideQuestionResponse(messages: Message[]): {
   response: string | null
   synthetic: boolean
 } {
-  // Flatten all assistant content blocks across the per-block messages.
+  // Flatten all assistant content blocks across the per-block messages. An
+  // API error arrives as an assistant message too; it is not part of the answer.
   const assistantBlocks = messages.flatMap(m =>
-    m.type === 'assistant' ? m.message.content : [],
+    m.type === 'assistant' && !m.isApiErrorMessage ? m.message.content : [],
+  )
+  const apiErrorMessage = messages.find(
+    m => m.type === 'assistant' && m.isApiErrorMessage === true,
   )
 
   if (assistantBlocks.length > 0) {
@@ -225,9 +292,11 @@ export function extractSideQuestionResponse(messages: Message[]): {
     const text = extractTextContent(assistantBlocks, '\n\n').trim()
     if (text) {
       return {
-        response: containsLeakedToolCall(text)
-          ? `${text}\n\n${NOT_EXECUTED_NOTICE}`
-          : text,
+        response: [
+          text,
+          ...(containsLeakedToolCall(text) ? [NOT_EXECUTED_NOTICE] : []),
+          ...(apiErrorMessage ? [CUT_OFF_NOTICE] : []),
+        ].join('\n\n'),
         synthetic: false,
       }
     }
@@ -240,6 +309,20 @@ export function extractSideQuestionResponse(messages: Message[]): {
         response: `(The model tried to call ${toolName} instead of answering directly. Try rephrasing or ask in the main conversation.)`,
         synthetic: true,
       }
+    }
+  }
+
+  const apiErrorText = apiErrorMessage
+    ? extractTextContent(apiErrorMessage.message.content, '\n\n').trim()
+    : ''
+  if (apiErrorText) {
+    return {
+      response: `(API error: ${
+        apiErrorText.startsWith(`${API_ERROR_MESSAGE_PREFIX}: `)
+          ? apiErrorText.slice(API_ERROR_MESSAGE_PREFIX.length + 2)
+          : apiErrorText
+      })`,
+      synthetic: true,
     }
   }
 

@@ -2,7 +2,7 @@ import { defaultShortcuts, shortcutHint, type ShortcutBindings } from "../lib/sh
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties } from "react"
 import { isSubagentTask, type AgentState } from "../agent/reducer"
 import type { TurnDiff } from "../agent/protocol"
-import { Folder, Globe, ListDetails, MoreHorizontal, PanelBottom, Plus, PlusMinus, Terminal, Users } from "../lib/icons"
+import { Folder, Globe, ListDetails, MessageCircle, MoreHorizontal, PanelBottom, Plus, PlusMinus, Terminal, Users } from "../lib/icons"
 import { browserVersion, closeBrowser, dismissWebUrl, localWebUrls, openBrowser, projectBrowser, selectBrowser, subscribeBrowser } from "../lib/browserTabs"
 import { BrowserPanel } from "./BrowserPanel"
 import { closeTerminal, moveTerminal, openTerminal, selectTerminal, snapshotTerminals, subscribeTerminals, terminalsVersion, terminalTabs } from "../lib/terminalSessions"
@@ -17,9 +17,11 @@ import type { SessionSummary } from "../api"
 import { NewTabPage } from "./NewTabPage"
 import { PanelTabStrip } from "./PanelTabStrip"
 import { TerminalView } from "./TerminalView"
+import { SideChat } from "./SideChat"
+import { clearSideChat, type SideChatRequest } from "../lib/sideChat"
 
 // Tools that open at most once; terminals open as many tabs as wanted.
-export type PanelTab = "files" | "changes" | "subagents" | "threads"
+export type PanelTab = "files" | "changes" | "subagents" | "threads" | "sidechat"
 // The shown pane: a tool, the New tab page, or the panel's active terminal/browser.
 export type RightTab = PanelTab | "new" | "terminal" | "browser"
 export const DEFAULT_RIGHT_TABS: PanelTab[] = ["files", "changes"]
@@ -35,6 +37,7 @@ const TOOLS = {
   changes: { title: "Changes", icon: PlusMinus },
   subagents: { title: "Subagents", icon: Users },
   threads: { title: "Threads", icon: ListDetails },
+  sidechat: { title: "Side chat", icon: MessageCircle },
 } as const
 // Subagents open from the Overview's Tasks card or the conversation, not from the New tab page.
 const NEW_TAB_TOOLS: PanelTab[] = ["files", "changes", "threads"]
@@ -67,10 +70,12 @@ interface RightPanelProps {
   sessions: SessionSummary[]
   activeSessionId?: string
   onSelectSession: (id: string) => void
+  // The current session's side chat; closing its tab clears it.
+  sideChat: { key: string; ready: boolean; draftKey: string; request: SideChatRequest; focusKey: number }
 }
 
 // Right column: one pane under a tab strip.
-export function RightPanel({ shortcuts = defaultShortcuts, state, onStopTask, cwd, open = true, tabs, onTabs, newTab, onNewTab, tab, onTab, terminalFocusKey, onBottomTerminal, onReference, onWorkspaceChange, workspaceRefreshKey, focusChange, focusFile, turnDiff, focusTask, sessions, activeSessionId, onSelectSession }: RightPanelProps) {
+export function RightPanel({ shortcuts = defaultShortcuts, state, onStopTask, cwd, open = true, tabs, onTabs, newTab, onNewTab, tab, onTab, terminalFocusKey, onBottomTerminal, onReference, onWorkspaceChange, workspaceRefreshKey, focusChange, focusFile, turnDiff, focusTask, sessions, activeSessionId, onSelectSession, sideChat }: RightPanelProps) {
   useSyncExternalStore(subscribeTerminals, terminalsVersion, terminalsVersion)
   useSyncExternalStore(subscribeBrowser, browserVersion, browserVersion)
   const browser = projectBrowser(cwd)
@@ -105,6 +110,7 @@ export function RightPanel({ shortcuts = defaultShortcuts, state, onStopTask, cw
     else if (key.startsWith(TERMINAL_KEY)) closeTerminal(cwd, key.slice(TERMINAL_KEY.length))
     else if (key.startsWith(BROWSER_KEY)) closeBrowser(cwd, key.slice(BROWSER_KEY.length))
     else onTabs(tabs.filter((other) => other !== key))
+    if (key === "sidechat") clearSideChat(sideChat.key)
     if (key === shownKey) {
       const next = rest[Math.min(index, rest.length - 1)]
       if (next) select(next)
@@ -327,6 +333,11 @@ export function RightPanel({ shortcuts = defaultShortcuts, state, onStopTask, cw
       <div id="panel-threads" role="tabpanel" aria-labelledby="panel-tab-threads" className="min-h-0 flex-1 flex-col overflow-hidden" style={{ display: shown === "threads" ? "flex" : "none" }}>
         <ThreadsPanel sessions={sessions} activeId={activeSessionId} onSelect={onSelectSession} />
       </div>
+      {shown === "sidechat" && (
+        <div id="panel-sidechat" role="tabpanel" aria-labelledby="panel-tab-sidechat" className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          <SideChat chatKey={sideChat.key} ready={sideChat.ready} draftKey={sideChat.draftKey} request={sideChat.request} focusKey={sideChat.focusKey} />
+        </div>
+      )}
     </div>
   )
 }

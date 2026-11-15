@@ -16,6 +16,7 @@ export type GuiCommandAction =
   | "stop"
   | "reload"
   | "login"
+  | "btw"
 export interface ComposerCommand extends SlashCommand {
   group: string
   action?: GuiCommandAction
@@ -101,6 +102,7 @@ const guiCommands: ComposerCommand[] = [
     group: "Commands",
   },
   { name: "login", description: "Sign in with your Claude account", argumentHint: "", action: "login", group: "Commands" },
+  { name: "btw", description: "Ask a quick side question without adding to the session", argumentHint: "[question]", action: "btw", group: "Commands" },
 ]
 export function composerCommands(commands: SlashCommand[]): ComposerCommand[] {
   const guiNames = new Set(guiCommands.flatMap((command) => [command.name, ...(command.aliases ?? [])]))

@@ -73,7 +73,7 @@ interface ComposerProps {
   mode?: PermissionMode
   commands: SlashCommand[]
   onSend: (content: UserContent) => boolean
-  onCommand: (action: GuiCommandAction) => void
+  onCommand: (action: GuiCommandAction, value?: string) => void
   onInterrupt: () => void
   onModel: (model: string) => void
   onMode: (mode: PermissionMode) => void
@@ -596,8 +596,8 @@ export const Composer = memo(function Composer({
       setBrowserFilter(action === "skills" ? "Skills" : undefined)
       setBrowserSearch(""); setBrowserOpen(true); setBrowserAction(undefined); setMenuDismissed(false); if (slash) replaceSlash(""); textareaRef.current?.focus(); return
     } else {
-      if (value) { setAttachmentError(`/${command.name} does not take arguments.`); return }
-      onCommand(action)
+      if (value && action !== "btw") { setAttachmentError(`/${command.name} does not take arguments.`); return }
+      onCommand(action, value)
     }
     if (slash) replaceSlash("")
     setBrowserOpen(false); setBrowserAction(undefined); setBrowserSearch(""); setMenuDismissed(true)

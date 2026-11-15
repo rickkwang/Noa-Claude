@@ -192,6 +192,17 @@ GUI actions route `/new` (`/clear`, `/reset`), `/resume`, `/model`, `/effort`,
 `/skills`, `/help` and `/stop` to their existing controls. Native local commands
 and prompt skills continue through the CLI. `/reload-plugins` uses the CLI's
 reload control and refreshes the command list, including on reconnect.
+`/btw [question]` opens the Side chat tab in the right panel and asks the
+question through the CLI's `side_question` control request, sending the chat's
+earlier exchanges as `history`. Answers arrive whole, never enter the session,
+and the chat clears on `/clear` inside it or when its tab closes. Questions
+asked while an answer is pending, or before the session has an id, queue and
+send in order; a queued question can go back to the composer for editing, or
+be sent now, which stops the pending answer and asks that question again
+after it. Stop (or Esc) cancels the pending answer through
+`control_cancel_request`; leaving the session puts it back at the front of the
+queue, and it is sent again on return. A side question times out after two
+minutes.
 
 The CLI's initialize/reload descriptors include optional type, source, aliases
 and hidden fields. Terminal-only and hidden/removed commands are excluded from

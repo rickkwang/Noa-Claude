@@ -32,6 +32,7 @@ import { ResizeHandle } from "./components/ResizeHandle"
 import { usePanelWidth } from "./hooks/usePanelWidth"
 import { TERMINAL_PANEL_DEFAULT_HEIGHT, TerminalPanel } from "./components/TerminalPanel"
 import { openTerminal, setTerminalFontFamily, terminalTabs } from "./lib/terminalSessions"
+import { abandonSideChat, askSideChat, clearSideChat, moveSideChat, pumpSideChat } from "./lib/sideChat"
 import { useAppSettings } from "./hooks/useAppSettings"
 import { removeSessionBrowserState, useSessionSync } from "./hooks/useSessionSync"
 import { Sidebar } from "./components/Sidebar"
@@ -199,6 +200,23 @@ function Workspace({ cwd }: { cwd: string }) {
   const [withdrawDraft, setWithdrawDraft] = useState<{ text: string; key: number }>()
   useEffect(() => setRewindMessage(undefined), [session.key])
   const activeId = state.sessionId ?? session.resume
+  const [sideChatFocus, setSideChatFocus] = useState(0)
+  // A side chat belongs to its session; until the session has an id, questions queue under its runtime.
+  const runtimeSideChatKey = `runtime:${session.runtimeId}`
+  const sideChatKey = activeId ?? runtimeSideChatKey
+  const sideChatReady = !!activeId && state.connection === "ready"
+  const sideChatSession = useRef(sideChatKey)
+  useEffect(() => {
+    const previous = sideChatSession.current
+    sideChatSession.current = sideChatKey
+    if (previous === sideChatKey) return
+    if (previous === runtimeSideChatKey) moveSideChat(previous, sideChatKey)
+    else if (previous.startsWith("runtime:")) clearSideChat(previous)
+    else abandonSideChat(previous)
+  }, [sideChatKey])
+  useEffect(() => {
+    if (sideChatReady) pumpSideChat(sideChatKey, request)
+  }, [sideChatReady, sideChatKey])
   const transcriptView = (activeId ? sessionTranscriptViews[activeId] : undefined) ?? settings.appearance.transcriptView
   useEffect(() => {
     fetchProjects().then(setProjects)
@@ -589,8 +607,14 @@ function Workspace({ cwd }: { cwd: string }) {
     onBranchChange: useEvent(() => setRefreshTick((n) => n + 1)),
     onWorktree: useEvent((on: boolean) => toggleWorktree(on)),
     onSend: useEvent((content: UserContent) => sendComposer(content)),
-    onCommand: useEvent((action: string) => {
-      if (action === "new") newSession()
+    onCommand: useEvent((action: string, value?: string) => {
+      if (action === "btw") {
+        setRightOpen(true)
+        setRightNewTab(false)
+        setRightTab("sidechat")
+        setSideChatFocus((n) => n + 1)
+        if (value) askSideChat(sideChatKey, value, sideChatReady ? request : undefined)
+      } else if (action === "new") newSession()
       else if (action === "resume") {
         setSearchOpen(true)
       } else if (action === "settings") setSettingsOpen(true)
@@ -831,6 +855,7 @@ function Workspace({ cwd }: { cwd: string }) {
             turnDiff={turnDiff}
             sessions={sessionsByProject[worktreeOf ?? session.cwd] ?? []}
             activeSessionId={activeId}
+            sideChat={{ key: sideChatKey, ready: sideChatReady, draftKey: session.runtimeId, request, focusKey: sideChatFocus }}
             onSelectSession={(id) => selectSession(sessionsByProject[worktreeOf ?? session.cwd]?.find((s) => s.id === id)?.cwd ?? worktreeOf ?? session.cwd, id)}
           />
         </div>
