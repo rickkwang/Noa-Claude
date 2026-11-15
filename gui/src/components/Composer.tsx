@@ -19,6 +19,8 @@ import {
   ComposerChevronIcon,
   ComposerFolderIcon,
   ComposerPlusIcon,
+  ComposerReturnIcon,
+  ComposerStopIcon,
 } from "./ComposerIcons"
 import type { ReactNode } from "react"
 import type { ProjectInfo } from "../api"
@@ -874,12 +876,12 @@ export const Composer = memo(function Composer({
           </div>
         )}
         <div className="relative flex items-end">
-          <div className={`absolute left-2 z-10 ${multiline ? "bottom-2" : "top-1/2 -translate-y-1/2"}`}>
+          <div className={`absolute left-[7.5px] z-10 ${multiline ? "bottom-2" : "top-1/2 -translate-y-1/2"}`}>
             <Picker
             align="left"
             hideChevron
             iconOnly
-            label={<ComposerPlusIcon width={17} height={17} />}
+            label={<ComposerPlusIcon />}
             ariaLabel="Add task context"
             items={[
               { key: "images", title: "Add photos", icon: <Photo size={16} />, active: false, onSelect: () => fileRef.current?.click() },
@@ -957,7 +959,7 @@ export const Composer = memo(function Composer({
               aria-label="Task instruction"
               disabled={!!readOnly && disabled}
               rows={1}
-              className={`noa-scroll-fade w-full min-h-[40px] max-h-[min(25dvh,var(--composer-editor-max-height,25dvh))] resize-none border-none bg-transparent pl-[42px] pr-[42px] pt-[12px] pb-[8px] text-[length:var(--transcript-text-size,var(--text-body))] leading-[1.45] outline-none placeholder:text-[color-mix(in_srgb,var(--text-primary)_50%,transparent)] ${systemCaret ? "" : "caret-transparent"}`}
+              className={`noa-scroll-fade w-full min-h-[38px] max-h-[min(25dvh,var(--composer-editor-max-height,25dvh))] resize-none border-none bg-transparent pl-[39px] pr-[39px] pt-[10px] pb-[6px] text-[length:var(--transcript-text-size,var(--text-body))] leading-[1.45] outline-none placeholder:text-[color-mix(in_srgb,var(--text-primary)_50%,transparent)] ${systemCaret ? "" : "caret-transparent"}`}
             />
             {!systemCaret && <ComposerCaret textareaRef={textareaRef} value={text} disabled={!!readOnly && disabled} />}
           </div>
@@ -968,26 +970,23 @@ export const Composer = memo(function Composer({
             aria-label={editDraft?.queued ? "Save queued message" : busy && empty ? "Stop (Esc)" : busy ? followUpMode === "steer" ? "Steer" : "Queue message" : "Run task"}
             title={editDraft?.queued ? "Save queued message; queue stays paused" : busy && empty ? "Stop (Esc)" : busy ? followUpMode === "steer" ? "Submit without interrupting the model" : "Queue after the current turn" : "Run task"}
             data-action={busy && empty ? "stop" : busy ? followUpMode : "send"}
-            className={`noa-primary-action absolute right-2 z-10 flex size-7 shrink-0 items-center justify-center rounded-[7px] transition-[background-color,color,opacity,transform] noa-press ${multiline ? "bottom-2" : "top-1/2 -translate-y-1/2"} ${
-              busy && !editDraft?.queued
+            className={`noa-primary-action absolute right-[7.5px] z-10 flex size-[23px] shrink-0 items-center justify-center rounded-[6px] transition-[background-color,color,opacity,transform] noa-press ${multiline ? "bottom-2" : "top-1/2 -translate-y-1/2"} ${
+              busy && !editDraft?.queued && !empty
                 ? "bg-[var(--text-primary,#2D2D2B)] text-[var(--surface-page,#FFFFFF)] hover:opacity-90 disabled:opacity-50"
-                : "bg-transparent text-[var(--sidebar-text,#52514E)] hover:bg-[var(--fill-hover)] disabled:opacity-60"
+                : "bg-transparent text-[var(--text-primary)] hover:bg-[var(--fill-hover)] disabled:opacity-60"
             }`}
           >
             {busy && !editDraft?.queued && empty
-              ? <span aria-hidden="true" className="block size-[11px] rounded-[1.25px] bg-current" />
+              ? <ComposerStopIcon />
               : busy && !editDraft?.queued ? followUpMode === "steer" ? <Steer size={16} /> : <Queue size={16} /> : (
-                <svg width={16} height={16} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <polyline points="6 7 3 10 6 13" />
-                  <path d="M13 4v4a2 2 0 0 1-2 2H3" />
-                </svg>
+                <ComposerReturnIcon />
               )}
           </button>
         </div>
         {argumentCommand?.argumentHint && !submenu && <p className="m-0 px-3 pb-1.5 text-caption text-[var(--sidebar-text-muted)]">/{argumentCommand.name} {argumentCommand.argumentHint}</p>}
       </div>
-      <div className="noa-agent-footer mt-2 flex min-h-6 items-center justify-between gap-2 px-1.5">
-        <div className="flex min-w-0 items-center gap-1">
+      <div className="noa-agent-footer mt-[5.6px] flex min-h-[23px] items-center justify-between gap-2 px-[7.5px]">
+        <div className="-ms-1 flex min-w-0 items-center">
           {newTask && (
             rateLimit && onDismissRateLimit ? <RateLimitNotice info={rateLimit} inline onDismiss={onDismissRateLimit} /> : <>
             <Picker
@@ -1012,7 +1011,7 @@ export const Composer = memo(function Composer({
             </>
           )}
         </div>
-        <div className="ml-auto flex min-w-0 items-center gap-1">
+        <div className="ml-auto flex min-w-0 items-center">
           <Picker
             ariaLabel="Model and reasoning effort"
             modelPicker
@@ -1023,7 +1022,7 @@ export const Composer = memo(function Composer({
                   {currentModel?.displayName ?? model ?? (disabled ? savedModelLabel : undefined) ?? "Model"}
                 </span>
                 {currentModel?.supportsEffort && effort && currentModel.supportedEffortLevels?.includes(effort) && (
-                  <span className="noa-agent-effort-label capitalize text-[var(--text-tertiary)]">{effort}</span>
+                  <span className="noa-agent-effort-label ms-1 capitalize text-[var(--text-tertiary)]">{effort}</span>
                 )}
               </>
             }
@@ -1075,7 +1074,7 @@ export const Composer = memo(function Composer({
                 aria-label={`Context usage ${Math.round(contextUsage.percentage)}%`}
                 aria-expanded={contextOpen}
                 onClick={() => setContextOpen(open => !open)}
-                className="inline-flex h-6 w-7 cursor-pointer items-center justify-center rounded-[7px] transition-colors hover:bg-[var(--fill-hover)] aria-expanded:bg-[var(--fill-hover)] focus-visible:outline focus-visible:outline-1"
+                className="inline-flex size-[23px] cursor-pointer items-center justify-center rounded-[6px] transition-colors hover:bg-[var(--fill-hover)] aria-expanded:bg-[var(--fill-hover)] focus-visible:outline focus-visible:outline-1"
               >
               <svg
                 width={14}
@@ -1546,8 +1545,8 @@ function Picker({
           setShowingModels(false)
           setOpen((o) => !o)
         }}
-        className={`flex min-w-0 items-center gap-1 whitespace-nowrap ${iconOnly ? "size-7 justify-center rounded-[7px] p-0" : `h-6 rounded-[7px] ${compactPadding ? "px-2" : hideChevron ? "px-2" : "pl-2 pr-1.5"}`} text-[12px] font-normal leading-[16px] transition-colors hover:bg-[var(--fill-hover)] aria-expanded:bg-[var(--fill-hover)] disabled:opacity-40 ${
-          tone === "danger" ? "text-[#C24444]" : "text-[var(--sidebar-text,#52514E)]"
+        className={`flex min-w-0 items-center gap-1 whitespace-nowrap ${iconOnly ? "size-[23px] justify-center rounded-[6px] p-0" : `h-[23px] rounded-[6px] ${compactPadding ? "px-[7.5px]" : hideChevron ? "px-[7.5px]" : "pl-[7.5px] pr-1.5"}`} text-[12px] font-normal leading-[16px] transition-colors hover:bg-[var(--fill-hover)] aria-expanded:bg-[var(--fill-hover)] disabled:opacity-40 ${
+          tone === "danger" ? "text-[#C24444]" : iconOnly ? "text-[var(--text-primary)]" : "text-[var(--sidebar-text,#52514E)]"
         }`}
       >
         {label}

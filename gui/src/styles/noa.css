@@ -54,21 +54,21 @@
 .noa-agent-input {
   border-radius: 12px;
   background: var(--bg-card, #FAFAF8);
-  box-shadow: 0 0 0 1px var(--border-default, rgba(45, 45, 43, 0.1)), 0 1px 2px rgba(0, 0, 0, 0.04);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.035), inset 0 0 0 1px rgba(0, 0, 0, 0.12);
   transition: box-shadow 150ms ease;
 }
 .noa-agent-input:focus-within {
-  box-shadow: 0 0 0 1px var(--border-strong, rgba(45, 45, 43, 0.18)), 0 1px 3px rgba(0, 0, 0, 0.06);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.075), inset 0 0 0 1px rgba(0, 0, 0, 0.12);
 }
 .noa-agent-input textarea::selection {
   background: color-mix(in srgb, var(--text-primary) 14%, transparent);
 }
 [data-theme="dark"] .noa-agent-input {
-  background: color-mix(in srgb, var(--bg-primary, #2D2D2B) 91%, var(--text-primary, #F9F9F7) 9%);
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.11), 0 1px 2px rgba(0, 0, 0, 0.2);
+  background: #303030;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.035), inset 0 0 0 1px rgba(255, 255, 255, 0.08);
 }
 [data-theme="dark"] .noa-agent-input:focus-within {
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.2), 0 1px 3px rgba(0, 0, 0, 0.28);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.075), inset 0 0 0 1px rgba(255, 255, 255, 0.08);
 }
 /* Animated composer caret: slides along a line, jumps between lines, holds solid while moving. */
 .noa-caret {
@@ -115,9 +115,6 @@
 .noa-agent-environment svg { width: 15px; height: 15px; transform: translateY(1px); }
 [data-theme="dark"] .noa-agent-environment {
   background: color-mix(in srgb, var(--bg-primary, #2D2D2B) 95%, var(--text-primary, #F9F9F7) 5%);
-}
-@media (width < 640px) {
-  .noa-agent-input { box-shadow: 0 0 0 1px var(--border-default, rgba(45, 45, 43, 0.1)), 0 1px 2px rgba(0, 0, 0, 0.04); }
 }
 .noa-agent-footer { container: noa-agent-footer / inline-size; }
 /* The sidebar follows the Appearance font settings (family, style, size); only its leading is its own, scaled with the size. */

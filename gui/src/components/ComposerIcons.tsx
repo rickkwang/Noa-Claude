@@ -25,12 +25,25 @@ export function ComposerSettingsIcon(props: SVGProps<SVGSVGElement>) {
   )
 }
 
-export function ComposerPlusIcon(props: SVGProps<SVGSVGElement>) {
+// Glyph outlines in a 1000-unit em, y axis up, hence the flip.
+function ComposerGlyph({ d, ...props }: SVGProps<SVGSVGElement> & { d: string }) {
   return (
-    <svg width={16} height={16} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.25} strokeLinecap="round" className="shrink-0" aria-hidden="true" {...props}>
-      <path d="M8 3.5v9M3.5 8h9" />
+    <svg width={18} height={18} viewBox="0 0 1000 1000" fill="currentColor" className="shrink-0" aria-hidden="true" {...props}>
+      <path transform="matrix(1 0 0 -1 0 1000)" d={d} />
     </svg>
   )
+}
+
+export function ComposerPlusIcon(props: SVGProps<SVGSVGElement>) {
+  return <ComposerGlyph d="M471 794Q471 806 479.5 814.5Q488 823 500 823Q512 823 520.5 814.5Q529 806 529 794V206Q529 194 520.5 185.5Q512 177 500 177Q488 177 479.5 185.5Q471 194 471 206ZM206 471Q194 471 185.5 479.5Q177 488 177 500Q177 512 185.5 520.5Q194 529 206 529H794Q806 529 814.5 520.5Q823 512 823 500Q823 488 814.5 479.5Q806 471 794 471Z" {...props} />
+}
+
+export function ComposerReturnIcon(props: SVGProps<SVGSVGElement>) {
+  return <ComposerGlyph d="M789 769Q789 781 798 789.5Q807 798 819 798Q831 798 839.5 789.5Q848 781 848 769V591L847 523L843 497L834 473Q815 435 777 416L753 407L727 403L659 402H181V461H659L722 462L740 464L751 468Q771 479 782 499L786 510L788 528L789 591ZM402 252Q411 243 411 231Q411 219 402 211Q393 202 381 202Q369 202 361 211L161 411Q152 419 152 431Q152 443 161 452L361 652Q369 661 381 661Q393 661 402 652Q411 643 411 631Q411 619 402 611L223 431Z" {...props} />
+}
+
+export function ComposerStopIcon(props: SVGProps<SVGSVGElement>) {
+  return <ComposerGlyph d="M231 609Q231 651 232.5 674.5Q234 698 242 714Q257 743 286 758Q302 766 325.5 767.5Q349 769 391 769H609Q651 769 674.5 767.5Q698 766 714 758Q743 743 758 714Q766 698 767.5 674.5Q769 651 769 609V391Q769 349 767.5 325.5Q766 302 758 286Q743 257 714 242Q698 234 674.5 232.5Q651 231 609 231H391Q349 231 325.5 232.5Q302 234 286 242Q257 257 242 286Q234 302 232.5 325.5Q231 349 231 391Z" {...props} />
 }
 
 export function ComposerApprovalIcon(props: SVGProps<SVGSVGElement>) {
