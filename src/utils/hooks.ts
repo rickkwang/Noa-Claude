@@ -258,8 +258,9 @@ function executeInBackground({
     return true
   }
 
-  // TaskOutput on the ShellCommand accumulates data — no stream listeners needed
-  if (!shellCommand.background(processId)) {
+  // Hook processes retain their timeout, cancellation listener, and protocol
+  // buffers. ShellCommand.background() is for Bash tasks and removes those.
+  if (shellCommand.status !== 'running') {
     return false
   }
 
@@ -981,6 +982,7 @@ async function execCommandHook(
     child = spawn(pwshPath, buildPowerShellArgs(finalCommand), {
       env: envVars,
       cwd: safeCwd,
+      detached: process.platform !== 'win32',
       // Prevent visible console window on Windows (no-op on other platforms)
       windowsHide: true,
     }) as ChildProcessWithoutNullStreams
@@ -992,6 +994,7 @@ async function execCommandHook(
       env: envVars,
       cwd: safeCwd,
       shell,
+      detached: process.platform !== 'win32',
       // Prevent visible console window on Windows (no-op on other platforms)
       windowsHide: true,
     }) as ChildProcessWithoutNullStreams
@@ -1001,6 +1004,17 @@ async function execCommandHook(
   // the first response line to detect async hooks ({"async": true}).
   const hookTaskOutput = new TaskOutput(`hook_${child.pid}`, null)
   const shellCommand = wrapSpawn(child, signal, hookTimeoutMs, hookTaskOutput)
+  // Keep inherited pipes open until the configured deadline or cancellation.
+  // A reaped shell cannot be tree-killed, so finish its group and pipes here.
+  void shellCommand.result.then(() => {
+    if (shellCommand.status !== 'killed') return
+    if (process.platform !== 'win32' && child.pid) {
+      try { process.kill(-child.pid, 'SIGKILL') } catch { /* group already gone */ }
+    }
+    child.stdin.destroy()
+    child.stdout.destroy()
+    child.stderr.destroy()
+  })
   // Track whether shellCommand ownership was transferred (e.g., to async hook registry)
   let shellCommandTransferred = false
   // Track whether stdin has already been written (to avoid "write after end" errors)
@@ -1017,6 +1031,10 @@ async function execCommandHook(
     // bash `read -r line` returns exit 1 (EOF before delimiter) — the
     // variable IS populated but `if read -r line; then ...` skips the
     // branch. See gh-30509 / CC-161.
+    child.stdin.on('error', err => {
+      logForDebugging(`Hooks: async stdin error: ${err}`)
+      shellCommand.kill()
+    })
     child.stdin.write(jsonInput + '\n', 'utf8')
     child.stdin.end()
     stdinWritten = true
@@ -1193,11 +1211,13 @@ async function execCommandHook(
   // Wait for stdout and stderr streams to finish before considering output complete
   // This prevents a race condition where 'close' fires before all 'data' events are processed
   const stdoutEndPromise = new Promise<void>(resolve => {
-    child.stdout.on('end', () => resolve())
+    child.stdout.once('end', resolve)
+    child.stdout.once('close', resolve)
   })
 
   const stderrEndPromise = new Promise<void>(resolve => {
-    child.stderr.on('end', () => resolve())
+    child.stderr.once('end', resolve)
+    child.stderr.once('close', resolve)
   })
 
   // Write to stdin, making sure to handle EPIPE errors that can happen when
@@ -1266,8 +1286,8 @@ async function execCommandHook(
           stdout: finalStdout,
           stderr,
           output,
-          status: exitCode!,
-          aborted: signal.aborted,
+          status: shellCommand.status === 'killed' ? 1 : exitCode!,
+          aborted: signal.aborted || shellCommand.status === 'killed',
         })
       })
     })
@@ -1582,7 +1602,7 @@ function getHookTypeCounts(hooks: MatchedHook[]): Record<string, number> {
   return counts
 }
 
-function getHooksConfig(
+export function getHooksConfig(
   appState: AppState | undefined,
   sessionId: string,
   hookEvent: HookEvent,

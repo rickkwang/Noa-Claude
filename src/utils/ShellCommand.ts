@@ -450,10 +450,12 @@ class ShellCommandImpl implements ShellCommand {
       once: true,
     })
 
-    // Use 'exit' not 'close': 'close' waits for stdio to close, which includes
-    // grandchild processes that inherit file descriptors (e.g. `sleep 30 &`).
-    // 'exit' fires when the shell itself exits, returning control immediately.
-    this.#childProcess.once('exit', this.#exitHandler.bind(this))
+    // Hook results include pipe output. Their executor bounds the drain after
+    // exit; Bash file output can resolve immediately without waiting for pipes.
+    this.#childProcess.once(
+      this.taskOutput.stdoutToFile ? 'exit' : 'close',
+      this.#exitHandler.bind(this),
+    )
     // ps is unavailable on Windows; the group kill is skipped there too
     if (process.platform !== 'win32' && this.taskOutput.stdoutToFile) {
       this.#sampler = setInterval(

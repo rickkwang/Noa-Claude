@@ -5,6 +5,7 @@ import type {
   SyncHookJSONOutput,
 } from 'src/entrypoints/agentSdkTypes.js'
 import { logForDebugging } from '../debug.js'
+import { registerCleanup } from '../cleanupRegistry.js'
 import type { ShellCommand } from '../ShellCommand.js'
 import { invalidateSessionEnvCache } from '../sessionEnvironment.js'
 import { jsonParse, jsonStringify } from '../slowOperations.js'
@@ -27,6 +28,7 @@ export type PendingAsyncHook = {
 
 // Global registry state
 const pendingHooks = new Map<string, PendingAsyncHook>()
+registerCleanup(finalizePendingAsyncHooks)
 
 export function registerPendingAsyncHook({
   processId,
@@ -66,6 +68,12 @@ export function registerPendingAsyncHook({
       const stderr = taskOutput.getStderr()
       return { stdout, stderr, output: stdout + stderr }
     },
+  })
+  const timeoutId = setTimeout(() => shellCommand.kill(), timeout)
+  timeoutId.unref()
+  void shellCommand.result.then(() => {
+    clearTimeout(timeoutId)
+    stopProgressInterval()
   })
   pendingHooks.set(processId, {
     processId,
@@ -158,8 +166,8 @@ export async function checkForAsyncHookResponses(): Promise<
         logForDebugging(
           `Hooks: Hook ${hook.processId} is ${hook.shellCommand.status}, removing from registry`,
         )
-        hook.stopProgressInterval()
-        hook.shellCommand.cleanup()
+        await hook.shellCommand.result
+        await finalizeHook(hook, 1, 'cancelled')
         return { type: 'remove' as const, processId: hook.processId }
       }
 
@@ -171,8 +179,13 @@ export async function checkForAsyncHookResponses(): Promise<
         logForDebugging(
           `Hooks: Skipping hook ${hook.processId} - already delivered/sent or no stdout`,
         )
-        hook.stopProgressInterval()
-        return { type: 'remove' as const, processId: hook.processId }
+        const { code } = await hook.shellCommand.result
+        await finalizeHook(hook, code, code === 0 ? 'success' : 'error')
+        return {
+          type: 'remove' as const,
+          processId: hook.processId,
+          isSessionStart: hook.hookEvent === 'SessionStart',
+        }
       }
 
       const lines = stdout.split('\n')
@@ -242,6 +255,7 @@ export async function checkForAsyncHookResponses(): Promise<
     const r = s.value
     if (r.type === 'remove') {
       pendingHooks.delete(r.processId)
+      if (r.isSessionStart) sessionStartCompleted = true
     } else if (r.type === 'response') {
       responses.push(r.payload)
       pendingHooks.delete(r.processId)
@@ -288,6 +302,7 @@ export async function finalizePendingAsyncHooks(): Promise<void> {
         if (hook.shellCommand && hook.shellCommand.status !== 'killed') {
           hook.shellCommand.kill()
         }
+        await hook.shellCommand?.result
         await finalizeHook(hook, 1, 'cancelled')
       }
     }),

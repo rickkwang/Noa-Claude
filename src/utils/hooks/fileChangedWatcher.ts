@@ -1,23 +1,23 @@
 // @ts-nocheck
 import chokidar, { type FSWatcher } from 'chokidar'
 import { isAbsolute, join } from 'path'
+import { getSessionId } from '../../bootstrap/state.js'
 import { registerCleanup } from '../cleanupRegistry.js'
 import { logForDebugging } from '../debug.js'
 import { errorMessage } from '../errors.js'
 import {
   executeCwdChangedHooks,
   executeFileChangedHooks,
+  getHooksConfig,
   type HookOutsideReplResult,
 } from '../hooks.js'
 import { clearCwdEnvFiles } from '../sessionEnvironment.js'
-import { getHooksConfigFromSnapshot } from './hooksConfigSnapshot.js'
 
 let watcher: FSWatcher | null = null
 let currentCwd: string
 let dynamicWatchPaths: string[] = []
 let dynamicWatchPathsSorted: string[] = []
 let initialized = false
-let hasEnvHooks = false
 let notifyCallback: ((text: string, isError: boolean) => void) | null = null
 
 export function setEnvHookNotifier(
@@ -31,25 +31,17 @@ export function initializeFileChangedWatcher(cwd: string): void {
   initialized = true
   currentCwd = cwd
 
-  const config = getHooksConfigFromSnapshot()
-  hasEnvHooks =
-    (config?.CwdChanged?.length ?? 0) > 0 ||
-    (config?.FileChanged?.length ?? 0) > 0
-
-  if (hasEnvHooks) {
-    registerCleanup(async () => dispose())
-  }
-
-  const paths = resolveWatchPaths(config)
-  if (paths.length === 0) return
-
-  startWatching(paths)
+  registerCleanup(dispose)
+  refreshFileChangedWatcher()
 }
 
-function resolveWatchPaths(
-  config?: ReturnType<typeof getHooksConfigFromSnapshot>,
-): string[] {
-  const matchers = (config ?? getHooksConfigFromSnapshot())?.FileChanged ?? []
+/** Rebuild paths after plugin registration or removal. */
+export function refreshFileChangedWatcher(): void {
+  if (initialized) restartWatching()
+}
+
+function resolveWatchPaths(): string[] {
+  const matchers = getHooksConfig(undefined, getSessionId(), 'FileChanged')
 
   // Matcher field: filenames to watch in cwd, pipe-separated (e.g. ".envrc|.env")
   const staticPaths: string[] = []
@@ -136,14 +128,13 @@ export async function onCwdChangedForHooks(
   newCwd: string,
 ): Promise<void> {
   if (oldCwd === newCwd) return
-
-  // Re-evaluate from the current snapshot so mid-session hook changes are picked up
-  const config = getHooksConfigFromSnapshot()
-  const currentHasEnvHooks =
-    (config?.CwdChanged?.length ?? 0) > 0 ||
-    (config?.FileChanged?.length ?? 0) > 0
-  if (!currentHasEnvHooks) return
   currentCwd = newCwd
+
+  // Use the same source and policy filtering as hook dispatch.
+  const currentHasEnvHooks =
+    getHooksConfig(undefined, getSessionId(), 'CwdChanged').length > 0 ||
+    getHooksConfig(undefined, getSessionId(), 'FileChanged').length > 0
+  if (!currentHasEnvHooks) return
 
   await clearCwdEnvFiles()
   const hookResult = await executeCwdChangedHooks(oldCwd, newCwd).catch(e => {
@@ -175,14 +166,12 @@ export async function onCwdChangedForHooks(
   }
 }
 
-function dispose(): void {
-  if (watcher) {
-    void watcher.close()
-    watcher = null
-  }
+async function dispose(): Promise<void> {
+  const closing = watcher?.close()
+  watcher = null
   dynamicWatchPaths = []
   dynamicWatchPathsSorted = []
   initialized = false
-  hasEnvHooks = false
   notifyCallback = null
+  await closing
 }

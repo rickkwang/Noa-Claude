@@ -8,6 +8,7 @@ import {
 } from '../../bootstrap/state.js'
 import type { LoadedPlugin } from '../../types/plugin.js'
 import { logForDebugging } from '../debug.js'
+import { refreshFileChangedWatcher } from '../hooks/fileChangedWatcher.js'
 import { settingsChangeDetector } from '../settings/changeDetector.js'
 import {
   getSettings_DEPRECATED,
@@ -147,6 +148,7 @@ export const loadPluginHooks = memoize(async (): Promise<void> => {
   // atomic — old hooks stay valid until this point, new hooks take over.
   clearRegisteredPluginHooks()
   registerHookCallbacks(allPluginHooks)
+  refreshFileChangedWatcher()
 
   const totalHooks = Object.values(allPluginHooks).reduce(
     (sum, matchers) => sum + matchers.reduce((s, m) => s + m.hooks.length, 0),
@@ -205,6 +207,7 @@ export async function pruneRemovedPluginHooks(): Promise<void> {
 
   clearRegisteredPluginHooks()
   registerHookCallbacks(survivors)
+  refreshFileChangedWatcher()
 }
 
 /**
