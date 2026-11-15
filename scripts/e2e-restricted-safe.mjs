@@ -199,6 +199,7 @@ function check(name, { dir, exit, stdout, stderr, workspace }) {
     const names = body.tools.map(t => t.name);
     assert.ok(!names.includes('Bash'), `Bash still offered under --restricted: ${names.join(', ')}`);
     assert.ok(!names.includes('WebFetch'), `WebFetch still offered under --restricted: ${names.join(', ')}`);
+    assert.ok(!names.includes('Monitor') && !JSON.stringify(body.messages).includes('\\nMonitor\\n'), `Monitor still offered under --restricted: ${names.join(', ')}`);
     assert.ok(names.includes('Read'), 'Read (a non-code tool) was removed under --restricted');
   }
   if (name === 'restricted-tools-equals-keeps-bash') {

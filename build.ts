@@ -129,6 +129,7 @@ const defaultFeatures = [
   'AUTO_THEME',
   'BUILTIN_EXPLORE_PLAN_AGENTS',
   'AUTO_MODE',
+  'MONITOR_TOOL',
 ]
 const featureSet = new Set<string>(defaultFeatures)
 

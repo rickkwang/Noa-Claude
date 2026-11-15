@@ -213,6 +213,7 @@ function dropRestrictedTools(tools: Tool[]): Tool[] {
 // Code-running built-ins and WebFetch removed by --restricted.
 const RESTRICTED_DENIED_TOOL_NAMES = new Set<string>([
   'Bash',
+  'Monitor',
   'PowerShell',
   'REPL',
   'WebFetch',
