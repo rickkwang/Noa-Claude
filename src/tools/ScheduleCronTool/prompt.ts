@@ -2,7 +2,11 @@
 import { feature } from 'bun:bundle'
 import { getFeatureValue_CACHED_WITH_REFRESH } from '../../services/analytics/growthbook.js'
 import { DEFAULT_CRON_JITTER_CONFIG } from '../../utils/cronTasks.js'
-import { isEnvTruthy } from '../../utils/envUtils.js'
+import {
+  isEnvTruthy,
+  isRestrictedMode,
+  isSafeMode,
+} from '../../utils/envUtils.js'
 
 const KAIROS_CRON_REFRESH_MS = 5 * 60 * 1000
 
@@ -33,10 +37,16 @@ export const DEFAULT_MAX_AGE_DAYS =
  * schedulers on their next isKilled poll tick, not just new ones.
  *
  * `CLAUDE_CODE_DISABLE_CRON` is a local override that wins over GB.
+ *
+ * Restricted and safe mode turn cron off entirely: a project's
+ * .noa/scheduled_tasks.json would otherwise fire prompts unattended in a
+ * session meant to distrust or ignore project configuration.
  */
 export function isKairosCronEnabled(): boolean {
   return feature('AGENT_TRIGGERS')
     ? !isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_CRON) &&
+        !isRestrictedMode() &&
+        !isSafeMode() &&
         getFeatureValue_CACHED_WITH_REFRESH(
           'tengu_kairos_cron',
           true,

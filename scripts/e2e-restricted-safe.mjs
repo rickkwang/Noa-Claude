@@ -182,6 +182,14 @@ async function run(name) {
   return { dir, exit, stdout, stderr, workspace, command };
 }
 
+// A project's .noa/scheduled_tasks.json would fire prompts unattended, so both modes turn cron off.
+function assertNoCron(body, mode) {
+  const offered = JSON.stringify(body.tools) + JSON.stringify(body.messages);
+  for (const tool of ['CronCreate', 'CronDelete', 'CronList', 'ScheduleWakeup']) {
+    assert.ok(!offered.includes(`"name":"${tool}"`) && !offered.includes(`\\n${tool}\\n`), `${tool} still offered under ${mode}`);
+  }
+}
+
 function check(name, { dir, exit, stdout, stderr, workspace }) {
   if (name === 'restricted-refuses-bypass') {
     assert.notEqual(exit.code, 0, 'restricted + bypass should exit non-zero');
@@ -201,6 +209,7 @@ function check(name, { dir, exit, stdout, stderr, workspace }) {
     assert.ok(!names.includes('WebFetch'), `WebFetch still offered under --restricted: ${names.join(', ')}`);
     assert.ok(!names.includes('Monitor') && !JSON.stringify(body.messages).includes('\\nMonitor\\n'), `Monitor still offered under --restricted: ${names.join(', ')}`);
     assert.ok(names.includes('Read'), 'Read (a non-code tool) was removed under --restricted');
+    assertNoCron(body, '--restricted');
   }
   if (name === 'restricted-tools-equals-keeps-bash') {
     const names = body.tools.map(t => t.name);
@@ -218,6 +227,7 @@ function check(name, { dir, exit, stdout, stderr, workspace }) {
     assert.equal(existsSync(join(dir, 'hook-ran.txt')), false, 'project SessionStart hook ran under --safe-mode');
   }
   if (name === 'safe-mode-auth-works') {
+    assertNoCron(body, '--safe-mode');
     // SDK 1.x sends the API key as a Bearer token; older versions used x-api-key.
     assert.ok(
       headers['x-api-key'] === 'local-e2e-dummy' || headers.authorization === 'Bearer local-e2e-dummy',

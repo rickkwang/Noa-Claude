@@ -1,4 +1,5 @@
 import { feature } from 'bun:bundle'
+import { createSessionCronCarry } from '../../utils/cronResume.js'
 import type { UUID } from 'crypto'
 import uniqBy from 'lodash-es/uniqBy.js'
 
@@ -2194,6 +2195,13 @@ export async function createPostCompactContextAttachments({
   const skillAttachment = createSkillAttachmentIfNeeded(context.agentId)
   if (skillAttachment) {
     attachments.push(skillAttachment)
+  }
+
+  // Resume reads only the transcript after the last compaction, so the jobs
+  // created before it are carried across.
+  const cronCarry = context.agentId ? null : createSessionCronCarry()
+  if (cronCarry) {
+    attachments.push(createAttachmentMessage(cronCarry))
   }
 
   if (!context.agentId || getAgentContext()?.agentType === 'teammate') {

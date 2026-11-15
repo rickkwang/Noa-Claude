@@ -4590,6 +4590,7 @@ You have exited plan mode. You can now make edits, run tools, and take actions.$
     case 'hook_system_message':
     case 'structured_output':
     case 'hook_permission_decision':
+    case 'session_cron_carry':
       return []
   }
 

@@ -13,6 +13,7 @@ Everything else in the lean and verbose prompts is meant to match the installed 
 
 - Environment section: no "most recent Claude models" / fast-mode lines, and "available as a CLI in the terminal" only. Third-party models must not be told they are Claude (`src/test/constants/prompts.test.ts` asserts this).
 - Not ported because upstream gates them on GrowthBook, which Noa does not fetch: the `<pasted_content>` Harness bullet and `user_privacy`. `task_continuity` is dead upstream (its predicate returns false) and `leanRewrite` is off for every catalog model.
+- `ScheduleWakeup` and the dynamic `/loop` prompt: no `noop` parameter (Noa does not collapse quiet ticks), no autonomous-loop sentinel (a bare `/loop` passes `/loop`), no cloud/brief/PR-label sections, and only the 5-minute and 1-hour cache-TTL variants.
 - Noa-only tools and parameters, so their descriptions have no upstream text: `SendMessage` (continues subagents without agent teams), `EnterWorktree` `path`, `ExitWorktree`.
 - Verbose `WebSearch`: softer Sources rule, and "US-only" only when Anthropic's search backs the call.
 - Fable identity is limited to the known `claude-fable-5` / `-5-1` / `-5-2`; upstream also skips models whose catalog status is "described", which Noa cannot read.

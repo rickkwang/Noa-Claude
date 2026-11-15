@@ -3,7 +3,9 @@ import { c as _c } from "react/compiler-runtime";
 // biome-ignore-all assist/source/organizeImports: ANT-ONLY import markers must not be reordered
 import { feature } from 'bun:bundle';
 import { snapshotOutputTokensForTurn, getCurrentTurnTokenBudget, getTurnOutputTokens, getBudgetContinuationCount, getTotalInputTokens, getSessionCronTasks } from '../bootstrap/state.js';
-import { hasCronTasksSync } from '../utils/cronTasks.js';
+import { cancelLoopWakeups, hasCronTasksSync } from '../utils/cronTasks.js';
+import { restoreScheduledTasksFromMessages } from '../utils/cronResume.js';
+import { isKairosCronEnabled } from '../tools/ScheduleCronTool/prompt.js';
 import { parseTokenBudget } from '../utils/tokenBudget.js';
 import { count } from '../utils/array.js';
 import { basename, dirname, join } from 'path';
@@ -1871,6 +1873,7 @@ export function REPL({
       // Rehydrate invoked skills from transcript attachments for this target
       // session before deserialization/compaction can reference session state.
       restoreSkillStateFromMessages(log.messages);
+      if (isKairosCronEnabled()) restoreScheduledTasksFromMessages(log.messages);
 
       // Deserialize messages to properly clean up the conversation
       // This filters unresolved tool uses and adds a synthetic assistant message if needed
@@ -2251,6 +2254,9 @@ export function REPL({
     if (proactiveModule?.isProactiveActive()) {
       proactiveModule?.pauseProactive();
     }
+    // Esc also ends a dynamic /loop: its pending wakeup would otherwise fire
+    // again right after the user took control back.
+    cancelLoopWakeups();
     queryGuard.forceEnd();
     skipIdleCheckRef.current = false;
 

@@ -2,7 +2,7 @@
 import { z } from 'zod/v4'
 import { buildTool, type ToolDef } from '../../Tool.js'
 import { cronToHuman } from '../../utils/cron.js'
-import { listAllCronTasks } from '../../utils/cronTasks.js'
+import { listAllCronTasks, nextCronRunMs } from '../../utils/cronTasks.js'
 import { truncate } from '../../utils/format.js'
 import { lazySchema } from '../../utils/lazySchema.js'
 import { getTeammateContext } from '../../utils/teammateContext.js'
@@ -71,7 +71,11 @@ export const CronListTool = buildTool({
     const jobs = tasks.map(t => ({
       id: t.id,
       cron: t.cron,
-      humanSchedule: cronToHuman(t.cron),
+      // A wakeup's cron only pins its minute; it fires once, at the next match.
+      humanSchedule:
+        t.kind === 'loop'
+          ? `dynamic /loop wakeup at ${new Date(nextCronRunMs(t.cron, t.createdAt)).toLocaleTimeString()}`
+          : cronToHuman(t.cron),
       prompt: t.prompt,
       ...(t.recurring ? { recurring: true } : {}),
       ...(t.durable === false ? { durable: false } : {}),

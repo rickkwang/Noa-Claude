@@ -1367,6 +1367,8 @@ export type SessionCronTask = {
   cron: string
   prompt: string
   createdAt: number
+  /** Epoch ms the next run is counted from (set on resume). */
+  lastFiredAt?: number
   recurring?: boolean
   /**
    * When set, the task was created by an in-process teammate (not the team lead).
@@ -1374,6 +1376,8 @@ export type SessionCronTask = {
    * instead of the main REPL command queue. Session-only — never written to disk.
    */
   agentId?: string
+  /** 'loop' marks the pending wakeup of a dynamic /loop (ScheduleWakeup). */
+  kind?: 'loop'
 }
 
 export function getSessionCronTasks(): SessionCronTask[] {

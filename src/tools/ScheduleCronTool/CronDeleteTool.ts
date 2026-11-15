@@ -80,9 +80,6 @@ export const CronDeleteTool = buildTool({
     }
     return { result: true }
   },
-  async checkPermissions() {
-    return { behavior: 'passthrough', message: 'Cancel a scheduled prompt?' }
-  },
   async call({ id }) {
     await removeCronTasks([id])
     return { data: { id } }

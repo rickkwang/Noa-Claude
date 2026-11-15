@@ -675,6 +675,19 @@ export type Attachment =
   | TeamContextAttachment
   | HookAttachment
   | {
+      // Written at compaction so a resumed session can rebuild its in-memory
+      // cron jobs and pending /loop wakeup; never sent to the model.
+      type: 'session_cron_carry'
+      tasks: Array<{
+        id: string
+        cron: string
+        prompt: string
+        createdAt: number
+        recurring: boolean
+      }>
+      wakeup?: { prompt: string; scheduledFor: number }
+    }
+  | {
       type: 'invoked_skills'
       skills: Array<{
         name: string

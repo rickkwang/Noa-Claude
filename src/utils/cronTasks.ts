@@ -16,6 +16,7 @@ import { mkdir, writeFile } from 'fs/promises'
 import { dirname } from 'path'
 import {
   addSessionCronTask,
+  getLastApiCompletionTimestamp,
   getProjectRoot,
   getSessionCronTasks,
   removeSessionCronTasks,
@@ -309,6 +310,126 @@ export async function listAllCronTasks(dir?: string): Promise<CronTask[]> {
     durable: false as const,
   }))
   return [...fileTasks, ...sessionTasks]
+}
+
+export const LOOP_WAKEUP_MIN_DELAY_S = 60
+export const LOOP_WAKEUP_MAX_DELAY_S = 3600
+const PROMPT_CACHE_5M_MS = 5 * 60_000
+const PROMPT_CACHE_1H_MS = 60 * 60_000
+// Wake this long before the cache entry would expire.
+const CACHE_LEAD_MS = 15_000
+// A request older than this no longer anchors the 1-hour cache window.
+const RECENT_REQUEST_MS = 10 * 60_000
+
+// Start time of each dynamic /loop, keyed by its prompt. A chain whose last
+// wakeup is more than the maximum delay in the past has ended, so the next
+// wakeup for that prompt starts a new one.
+const loopChains = new Map<
+  string,
+  { startedAt: number; lastScheduledFor: number }
+>()
+
+/**
+ * Arms the one pending dynamic /loop wakeup of this session, replacing any
+ * earlier one. The delay is clamped to [60, 3600] seconds and the fire time
+ * rounded up to the next minute; the task's createdAt is the requested wake
+ * time, so one-shot jitter cannot fire it early. Returns null once the loop
+ * has run for `maxAgeMs`.
+ */
+export function scheduleLoopWakeup(
+  delaySeconds: number,
+  prompt: string,
+  maxAgeMs: number,
+  nowMs = Date.now(),
+): {
+  scheduledFor: number
+  clampedDelaySeconds: number
+  wasClamped: boolean
+} | null {
+  const requested = Number.isNaN(delaySeconds)
+    ? LOOP_WAKEUP_MIN_DELAY_S
+    : Math.round(delaySeconds)
+  const clampedDelaySeconds = Math.max(
+    LOOP_WAKEUP_MIN_DELAY_S,
+    Math.min(LOOP_WAKEUP_MAX_DELAY_S, requested),
+  )
+  const chain = loopChains.get(prompt)
+  const startedAt =
+    chain && nowMs <= chain.lastScheduledFor + LOOP_WAKEUP_MAX_DELAY_S * 1000
+      ? chain.startedAt
+      : nowMs
+  if (nowMs - startedAt >= maxAgeMs) return null
+  cancelLoopWakeups()
+  const wakeAt = nowMs + clampedDelaySeconds * 1000
+  const minFireAt = nowMs + LOOP_WAKEUP_MIN_DELAY_S * 1000
+  let scheduledFor = Math.ceil(wakeAt / 60_000) * 60_000
+  // Rounding up to the minute must not push a short wakeup past the prompt
+  // cache entry it was sized to hit: pull it back whole minutes, never below
+  // the minimum delay.
+  if (clampedDelaySeconds * 1000 <= PROMPT_CACHE_5M_MS) {
+    while (
+      scheduledFor - nowMs > PROMPT_CACHE_5M_MS - CACHE_LEAD_MS &&
+      scheduledFor - 60_000 >= minFireAt
+    )
+      scheduledFor -= 60_000
+  }
+  const lastRequestAt = getLastApiCompletionTimestamp() ?? nowMs
+  const cacheExpiresAt =
+    (nowMs - lastRequestAt <= RECENT_REQUEST_MS
+      ? Math.min(nowMs, lastRequestAt)
+      : nowMs) +
+    PROMPT_CACHE_1H_MS -
+    CACHE_LEAD_MS
+  while (scheduledFor > cacheExpiresAt && scheduledFor - 60_000 >= minFireAt)
+    scheduledFor -= 60_000
+  const at = new Date(scheduledFor)
+  addSessionCronTask({
+    id: randomUUID().slice(0, 8),
+    cron: `${at.getMinutes()} ${at.getHours()} * * *`,
+    prompt,
+    createdAt: Math.min(wakeAt, scheduledFor - 1),
+    kind: 'loop',
+  })
+  loopChains.set(prompt, { startedAt, lastScheduledFor: scheduledFor })
+  return {
+    scheduledFor,
+    clampedDelaySeconds,
+    wasClamped: clampedDelaySeconds !== delaySeconds,
+  }
+}
+
+/**
+ * Re-arms a wakeup that was still pending when a resumed session's process
+ * ended. A wakeup armed since then wins.
+ */
+export function restoreLoopWakeup(
+  scheduledFor: number,
+  prompt: string,
+  chainStartedAt: number,
+  nowMs = Date.now(),
+): void {
+  if (getSessionCronTasks().some(t => t.kind === 'loop')) return
+  const at = new Date(scheduledFor)
+  addSessionCronTask({
+    id: randomUUID().slice(0, 8),
+    cron: `${at.getMinutes()} ${at.getHours()} * * *`,
+    prompt,
+    createdAt: Math.max(nowMs, scheduledFor - 60_000),
+    kind: 'loop',
+  })
+  loopChains.set(prompt, {
+    startedAt: Math.min(chainStartedAt, nowMs),
+    lastScheduledFor: scheduledFor,
+  })
+}
+
+/** Removes pending dynamic /loop wakeups; returns how many were pending. */
+export function cancelLoopWakeups(): number {
+  return removeSessionCronTasks(
+    getSessionCronTasks()
+      .filter(t => t.kind === 'loop')
+      .map(t => t.id),
+  )
 }
 
 /**

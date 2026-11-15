@@ -7,17 +7,15 @@ import { cronToHuman, parseCronExpression } from '../../utils/cron.js'
 import {
   addCronTask,
   getCronFilePath,
+  jitteredNextCronRunMs,
   listAllCronTasks,
   nextCronRunMs,
+  oneShotJitteredNextCronRunMs,
 } from '../../utils/cronTasks.js'
+import { getCronJitterConfig } from '../../utils/cronJitterConfig.js'
 import { lazySchema } from '../../utils/lazySchema.js'
 import { semanticBoolean } from '../../utils/semanticBoolean.js'
 import { getTeammateContext } from '../../utils/teammateContext.js'
-import {
-  releaseDynamicLoopScheduledPrompt,
-  reserveDynamicLoopScheduledPrompt,
-  validateDynamicLoopScheduledPrompt,
-} from '../../utils/dynamicLoopState.js'
 import {
   buildCronCreateDescription,
   buildCronCreatePrompt,
@@ -52,6 +50,7 @@ const outputSchema = lazySchema(() =>
   z.object({
     id: z.string(),
     humanSchedule: z.string(),
+    nextRunAt: z.number().nullable().describe("Epoch ms of the job's next run"),
     recurring: z.boolean(),
     durable: z.boolean().optional(),
   }),
@@ -118,49 +117,48 @@ export const CronCreateTool = buildTool({
         errorCode: 4,
       }
     }
-    // Judge durability the way call() will, not the way the model asked for it.
-    // The kill switch downgrades durable to session-only there, so validating
-    // the raw flag would reject a request that would have executed fine — and
-    // would put a validation error in front of the model on a gate flip, which
-    // is exactly what the stable-schema note in call() promises not to do.
-    const dynamicLoopError = validateDynamicLoopScheduledPrompt(
-      input.prompt,
-      input.recurring ?? true,
-      (input.durable ?? false) && isDurableCronEnabled(),
-    )
-    if (dynamicLoopError) {
-      return { result: false, message: dynamicLoopError, errorCode: 5 }
+    // Each fire of a cron'd /loop would schedule yet another job.
+    if (/^\/loop(?:\s|$)/.test(input.prompt.trim())) {
+      return {
+        result: false,
+        message:
+          'Do not schedule a "/loop ..." wrapper via cron. Invoke /loop through the Skill tool now, or schedule the effective prompt body directly.',
+        errorCode: 5,
+      }
     }
     return { result: true }
   },
-  // Schedules a prompt that later runs without the user present, so it needs
-  // the same confirmation as any other write.
-  async checkPermissions() {
-    return { behavior: 'passthrough', message: 'Schedule a recurring prompt?' }
+  // A session-only job only queues a prompt for this session, whose tool calls
+  // are checked as usual when it fires, so asking would add a prompt per
+  // dynamic /loop iteration without adding protection. A durable job outlives
+  // the session and fires later without anyone having approved it, so it still
+  // asks. Auto mode routes both through the classifier.
+  async checkPermissions(input, context) {
+    if (context.getAppState().toolPermissionContext.mode === 'auto') {
+      return {
+        behavior: 'passthrough',
+        message: 'Scheduling a cron prompt requires classifier review.',
+      }
+    }
+    if (input.durable && isDurableCronEnabled()) {
+      return {
+        behavior: 'passthrough',
+        message: 'Schedule a prompt that persists across sessions?',
+      }
+    }
+    return { behavior: 'allow', updatedInput: input }
   },
   async call({ cron, prompt, recurring = true, durable = false }) {
     // Kill switch forces session-only; schema stays stable so the model sees
     // no validation errors when the gate flips mid-session.
     const effectiveDurable = durable && isDurableCronEnabled()
-    const dynamicLoopError = reserveDynamicLoopScheduledPrompt(
+    const id = await addCronTask(
+      cron,
       prompt,
       recurring,
       effectiveDurable,
+      getTeammateContext()?.agentId,
     )
-    if (dynamicLoopError) throw new Error(dynamicLoopError)
-    let id: string
-    try {
-      id = await addCronTask(
-        cron,
-        prompt,
-        recurring,
-        effectiveDurable,
-        getTeammateContext()?.agentId,
-      )
-    } catch (error) {
-      releaseDynamicLoopScheduledPrompt(prompt)
-      throw error
-    }
     // Enable the scheduler so the task fires in this session. The
     // useScheduledTasks hook polls this flag and will start watching
     // on the next tick. For durable: false tasks the file never changes
@@ -171,6 +169,9 @@ export const CronCreateTool = buildTool({
       data: {
         id,
         humanSchedule: cronToHuman(cron),
+        nextRunAt: (recurring
+          ? jitteredNextCronRunMs
+          : oneShotJitteredNextCronRunMs)(cron, Date.now(), id, getCronJitterConfig()),
         recurring,
         durable: effectiveDurable,
       },
@@ -180,12 +181,17 @@ export const CronCreateTool = buildTool({
     const where = output.durable
       ? 'Persisted to .noa/scheduled_tasks.json'
       : 'Session-only (not written to disk, dies when Claude exits)'
+    // A pinned one-shot whose minute already passed matches next year; the
+    // date makes that visible instead of the job silently never firing.
+    const next = output.nextRunAt
+      ? ` Next run: ${new Date(output.nextRunAt).toLocaleString()}.`
+      : ''
     return {
       tool_use_id: toolUseID,
       type: 'tool_result',
       content: output.recurring
-        ? `Scheduled recurring job ${output.id} (${output.humanSchedule}). ${where}. Auto-expires after ${DEFAULT_MAX_AGE_DAYS} days. Use CronDelete to cancel sooner.`
-        : `Scheduled one-shot task ${output.id} (${output.humanSchedule}). ${where}. It will fire once then auto-delete.`,
+        ? `Scheduled recurring job ${output.id} (${output.humanSchedule}).${next} ${where}. Auto-expires after ${DEFAULT_MAX_AGE_DAYS} days. Use CronDelete to cancel sooner.`
+        : `Scheduled one-shot task ${output.id} (${output.humanSchedule}).${next} ${where}. It will fire once then auto-delete.`,
     }
   },
   renderToolUseMessage: renderCreateToolUseMessage,

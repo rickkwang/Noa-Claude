@@ -20,7 +20,7 @@ const model = 'claude-sonnet-4-6';
 // A 200k-window model, so a gateway naming a 1M model in its responses offers a "larger window".
 const modelFor = scenario => option('--model') || (scenario === 'gateway-model-name' ? 'claude-haiku-4-5' : scenario === 'preserved-thinking' ? 'claude-opus-5-5' : scenario === 'opus-1m-cache-off' ? 'claude-opus-4-6[1m]' : scenario === 'mandatory-thinking' ? 'kimi/k3.1-pro' : scenario === 'agent-effort-plan' ? 'opusplan' : scenario.startsWith('openai-responses') ? 'gpt-6.1-sol' : model);
 const sentinel = 'KEEP_IDENTIFIER=loop-sentinel-42';
-const cases = ['agent-nested', 'agent-budget', 'agent-budget-resume', 'agent-stop-pending', 'agent-owned-results', 'agent-owned-auto', 'auto-plan-race', 'auto-stage2-error', 'agent-cascade-stop', 'agent-schema', 'agent-schema-bg', 'hook-output', 'hook-output-null', 'blocking-limit', 'image-error', 'small-window-overflow', 'read', 'read-repeat', 'large-output', 'max-turns', 'malformed', 'empty', 'alternating', 'fallback', 'provider-quota', 'refusal', 'refusal-repeat', 'truncated', 'tool-input-streaming', 'tool-input-nonstream', 'stale-signature', 'budget-streaming', 'budget-nonstream', 'permission-deny', 'deny-rule', 'mode-auto', 'mode-bypass', 'mode-bypass-off', 'hook-block', 'compact-resume', 'task-crud', 'task-metadata-race', 'task-dependency-race', 'goal-child-usage', 'agent-custom-fork', 'agent-effort', 'agent-effort-plan', 'hook-composition', 'tombstone-resume', 'concurrency-streaming', 'concurrency-nonstream', 'background-deadline', 'monitor', 'monitor-timeout', 'monitor-persistent', 'openai-overflow', 'openai-usage', 'openai-usage-nonstream', 'openai-tools', 'openai-max-tokens-cap', 'openai-max-tokens-vllm', 'openai-responses', 'openai-responses-effort', 'bedrock-overflow', 'bedrock-bare-overflow', 'bedrock-media-overflow', 'opus-1m-cache-off', 'field-reject', 'gateway-model-name', 'preserved-thinking', 'mandatory-thinking'].filter(name => !option('--case') || name === option('--case')).filter((_, i) => {
+const cases = ['agent-nested', 'agent-budget', 'agent-budget-resume', 'agent-stop-pending', 'agent-owned-results', 'agent-owned-auto', 'auto-plan-race', 'auto-stage2-error', 'agent-cascade-stop', 'agent-schema', 'agent-schema-bg', 'hook-output', 'hook-output-null', 'blocking-limit', 'image-error', 'small-window-overflow', 'read', 'read-repeat', 'large-output', 'max-turns', 'malformed', 'empty', 'alternating', 'fallback', 'provider-quota', 'refusal', 'refusal-repeat', 'truncated', 'tool-input-streaming', 'tool-input-nonstream', 'stale-signature', 'budget-streaming', 'budget-nonstream', 'permission-deny', 'deny-rule', 'mode-auto', 'mode-bypass', 'mode-bypass-off', 'hook-block', 'compact-resume', 'task-crud', 'task-metadata-race', 'task-dependency-race', 'goal-child-usage', 'agent-custom-fork', 'agent-effort', 'agent-effort-plan', 'hook-composition', 'tombstone-resume', 'concurrency-streaming', 'concurrency-nonstream', 'background-deadline', 'monitor', 'monitor-timeout', 'monitor-persistent', 'cron', 'cron-disabled', 'cron-durable', 'cron-wakeup', 'cron-resume', 'cron-resume-compact', 'cron-wrapper', 'openai-overflow', 'openai-usage', 'openai-usage-nonstream', 'openai-tools', 'openai-max-tokens-cap', 'openai-max-tokens-vllm', 'openai-responses', 'openai-responses-effort', 'bedrock-overflow', 'bedrock-bare-overflow', 'bedrock-media-overflow', 'opus-1m-cache-off', 'field-reject', 'gateway-model-name', 'preserved-thinking', 'mandatory-thinking'].filter(name => !option('--case') || name === option('--case')).filter((_, i) => {
   // --shard K/N runs every Nth case starting at K, so CI can split the suite across runners.
   const shard = option('--shard')?.match(/^(\d+)\/(\d+)$/);
   return !shard || i % Number(shard[2]) === Number(shard[1]) - 1;
@@ -364,6 +364,39 @@ const server = createServer(async (req, res) => {
       content = [1, 2].map(i => ({ type: 'tool_use', id: 'write_' + i, name: 'Bash', input: { command: 'pwd' } })); stop = 'tool_use';
     } else if (active.case === 'auto-plan-race' && !body.messages.some(m => Array.isArray(m.content) && m.content.some(b => b.type === 'tool_result' && b.tool_use_id === 'race_write'))) {
       content = [{ type: 'tool_use', id: 'race_write', name: 'Write', input: { file_path: join(active.dir, '..', 'auto-plan-race-target.txt'), content: 'MUST_NOT_WRITE' } }]; stop = 'tool_use';
+    } else if (active.case.startsWith('cron-resume') && body.tools?.length && !summary) {
+      const all = JSON.stringify(body.messages);
+      const done = id => all.includes(`"tool_use_id":"${id}"`);
+      const step = (id, name, input) => { content = [{ type: 'tool_use', id, name, input }]; stop = 'tool_use'; };
+      if (done('resume_list')) content = [{ type: 'text', text: 'RESUME_DONE' }];
+      else if (lastText.includes('RESUME_CHECK')) step('resume_list', 'CronList', {});
+      else if (done('resume_wake')) content = [{ type: 'text', text: 'SEEDED' }];
+      else if (done('resume_delete')) step('resume_wake', 'ScheduleWakeup', { delaySeconds: 3600, reason: 'e2e resume', prompt: '/loop RESUME_WAKE_MARKER' });
+      else if (done('resume_create2')) step('resume_delete', 'CronDelete', { id: [...all.matchAll(/Scheduled recurring job (\w+) /g)].at(-1)?.[1] ?? 'missing' });
+      else if (done('resume_create')) step('resume_create2', 'CronCreate', { cron: '*/30 * * * *', prompt: 'RESUME_DELETED_MARKER', recurring: true });
+      else step('resume_create', 'CronCreate', { cron: '*/30 * * * *', prompt: 'RESUME_CRON_MARKER', recurring: true });
+    } else if (active.case === 'cron-wakeup' && body.tools?.length && !summary) {
+      const all = JSON.stringify(body.messages);
+      const done = id => all.includes(`"tool_use_id":"${id}"`);
+      const step = (id, name, input) => { content = [{ type: 'tool_use', id, name, input }]; stop = 'tool_use'; };
+      const wake = { delaySeconds: 60, reason: 'e2e wakeup', prompt: '/loop WAKE_MARKER_77' };
+      if (done('wake_stop')) content = [{ type: 'text', text: 'WAKE_DONE' }];
+      else if (lastText.includes('WAKE_MARKER_77') && lastText.includes('ScheduleWakeup')) step('wake_stop', 'ScheduleWakeup', { stop: true });
+      else if (done('wake_list')) content = [{ type: 'text', text: 'WAKE_ARMED' }];
+      else if (done('wake_2')) step('wake_list', 'CronList', {});
+      else if (done('wake_1')) step('wake_2', 'ScheduleWakeup', wake);
+      else step('wake_1', 'ScheduleWakeup', wake);
+    } else if (active.case.startsWith('cron') && body.tools?.length && !summary) {
+      // Create a job that fires every minute, list it, wait for the fire, then delete it and list again.
+      const all = JSON.stringify(body.messages);
+      const done = id => all.includes(`"tool_use_id":"${id}"`);
+      const step = (id, name, input) => { content = [{ type: 'tool_use', id, name, input }]; stop = 'tool_use'; };
+      if (done('cron_list_2')) content = [{ type: 'text', text: 'CRON_DONE' }];
+      else if (done('cron_delete')) step('cron_list_2', 'CronList', {});
+      else if (lastText.includes('CRON_FIRE_MARKER_42')) step('cron_delete', 'CronDelete', { id: all.match(/Scheduled recurring job (\S+) /)?.[1] ?? 'missing' });
+      else if (done('cron_list_1')) content = [{ type: 'text', text: 'AUDIT_OK' }];
+      else if (done('cron_create')) step('cron_list_1', 'CronList', {});
+      else step('cron_create', 'CronCreate', { cron: '* * * * *', prompt: active.case === 'cron-wrapper' ? '/loop 5m CRON_FIRE_MARKER_42' : 'CRON_FIRE_MARKER_42', recurring: true, ...(active.case === 'cron-durable' ? { durable: true } : {}) });
     } else if (active.case.startsWith('monitor') && n <= 2) {
       const start = active.case === 'monitor-timeout'
         ? { command: 'echo MONITOR_BEFORE_TIMEOUT; sleep 30', description: 'fixture timeout monitor', timeout_ms: 1000 }
@@ -475,6 +508,7 @@ async function run(executable, scenario, extra = [], input = 'Run the local loop
     // [1m] is a real opt-in on Opus 4.6 (inert, and stripped, on newer Opus).
     ...(scenario==='opus-1m-cache-off' && {DISABLE_PROMPT_CACHING_OPUS:'1', ANTHROPIC_DEFAULT_OPUS_MODEL:'claude-opus-4-6'}),
     ...(scenario === 'mode-bypass-off' && { NOA_CLAUDE_BASH_FIRST: '0' }),
+    ...(scenario === 'cron-disabled' && { CLAUDE_CODE_DISABLE_CRON: '1' }),
     ...(scenario === 'mode-bypass' && { NOA_CLAUDE_BASH_FIRST_VARIANT: 'relaxed' }),
     // Size-based microcompact fires on the second large tool result here.
     ...(scenario==='preserved-thinking' && {CLAUDE_CODE_SIZE_MICROCOMPACT_PCT:'1', CLAUDE_CODE_SIZE_MICROCOMPACT_KEEP:'1'}),
@@ -494,13 +528,14 @@ async function run(executable, scenario, extra = [], input = 'Run the local loop
     writeFileSync(join(env.CLAUDE_CONFIG_DIR, 'tasks', 'harness-probe', '1.json'), JSON.stringify({ id: '1', subject: 'Clear optional fields', description: 'before', owner: 'fixture-owner', status: 'pending', blocks: [], blockedBy: [] }));
     writeFileSync(join(env.CLAUDE_CONFIG_DIR, 'chatgpt-auth.json'), JSON.stringify({ hostId: 'urn:uuid:00000000-0000-4000-8000-000000000000', clientId: 'e2e-client', accessToken: 'e2e-chatgpt-access', refreshToken: 'e2e-chatgpt-refresh', expiresAt: Date.now() + 3_600_000 }));
   }
-  const streamingInput = scenario.startsWith('budget-') || scenario === 'auto-plan-race';
+  // Cron fires only while input stays open, so those cases stream their input.
+  const streamingInput = scenario.startsWith('budget-') || scenario === 'auto-plan-race' || scenario.startsWith('cron');
   const harness = scenario.startsWith('task-') || scenario === 'goal-child-usage' || scenario==='agent-custom-fork' || scenario.startsWith('agent-effort') || scenario==='agent-nested' || scenario.startsWith('agent-owned-') || scenario==='agent-cascade-stop' || scenario==='agent-stop-pending' || scenario.startsWith('agent-budget') || scenario.startsWith('agent-schema');
   // Hooks are off under --bare, so the hook scenario runs the full startup path.
   // --bare drops run_in_background, so the deadline scenario needs the full startup path too.
   // --bare also keeps only the simple tools, so openai-tools runs it to keep WebFetch and ToolSearch.
-  const command = [...(scenario.startsWith('hook-') || scenario.startsWith('mode-') || scenario === 'auto-plan-race' || scenario === 'auto-stage2-error' || scenario.startsWith('concurrency-') ||scenario.startsWith('tool-input-') || scenario === 'background-deadline' || scenario.startsWith('monitor') || scenario === 'openai-tools' || scenario.startsWith('openai-responses') || harness ? [] : ['--bare']), '--print', '--verbose', '--output-format', 'stream-json', '--model', modelFor(scenario), '--strict-mcp-config', '--setting-sources', '', '--permission-mode', 'dontAsk', '--tools', harness ? (scenario==='agent-custom-fork'?'Read,Bash,Task,SendMessage':scenario.startsWith('agent-effort')?'Task':scenario==='goal-child-usage'?'Read,Task,goal':scenario==='agent-nested'||scenario.startsWith('agent-owned-')||scenario.startsWith('agent-schema')?'Task':scenario==='agent-cascade-stop'||scenario==='agent-stop-pending'?'Task,Bash,TaskStop':scenario==='agent-budget'?'Task,Bash':scenario==='agent-budget-resume'?'Task,Bash,SendMessage':'TaskCreate,TaskUpdate,TaskGet,TaskList') : scenario.startsWith('tool-input-') ? 'Read,Bash,Write' : scenario.startsWith('monitor') ? 'Bash,Monitor' : scenario === 'openai-tools' ? 'Read,Bash,WebFetch,ToolSearch' : scenario.startsWith('openai-responses') ? 'Read,Bash,TaskUpdate' : scenario.startsWith('mode-') ? 'Read,Bash,Edit,Write,Glob,Grep' : scenario === 'auto-plan-race' ? 'Read,Bash,Write' : 'Read,Bash', '--max-turns', harness ? '8' : scenario === 'compact-resume' ? '6' : scenario === 'read-repeat' ? '3' : scenario === 'stale-signature' ? '3' : scenario === 'preserved-thinking' ? '5' : scenario === 'background-deadline' || scenario.startsWith('monitor') || scenario === 'small-window-overflow' ? '4' : scenario === 'auto-stage2-error' ? '6' : '2'];
-  if (!scenario.startsWith('tool-input-') && scenario !== 'compact-resume' && scenario !== 'tombstone-resume' && scenario !== 'stale-signature' && scenario!=='agent-custom-fork' && scenario!=='agent-budget-resume' && scenario!=='goal-child-usage') command.push('--no-session-persistence');
+  const command = [...(scenario.startsWith('hook-') || scenario.startsWith('mode-') || scenario === 'auto-plan-race' || scenario === 'auto-stage2-error' || scenario.startsWith('concurrency-') ||scenario.startsWith('tool-input-') || scenario === 'background-deadline' || scenario.startsWith('monitor') || scenario.startsWith('cron') || scenario === 'openai-tools' || scenario.startsWith('openai-responses') || harness ? [] : ['--bare']), '--print', '--verbose', '--output-format', 'stream-json', '--model', modelFor(scenario), '--strict-mcp-config', '--setting-sources', '', '--permission-mode', 'dontAsk', '--tools', harness ? (scenario==='agent-custom-fork'?'Read,Bash,Task,SendMessage':scenario.startsWith('agent-effort')?'Task':scenario==='goal-child-usage'?'Read,Task,goal':scenario==='agent-nested'||scenario.startsWith('agent-owned-')||scenario.startsWith('agent-schema')?'Task':scenario==='agent-cascade-stop'||scenario==='agent-stop-pending'?'Task,Bash,TaskStop':scenario==='agent-budget'?'Task,Bash':scenario==='agent-budget-resume'?'Task,Bash,SendMessage':'TaskCreate,TaskUpdate,TaskGet,TaskList') : scenario.startsWith('tool-input-') ? 'Read,Bash,Write' : scenario.startsWith('monitor') ? 'Bash,Monitor' : scenario.startsWith('cron') ? 'Read,CronCreate,CronDelete,CronList,ScheduleWakeup' : scenario === 'openai-tools' ? 'Read,Bash,WebFetch,ToolSearch' : scenario.startsWith('openai-responses') ? 'Read,Bash,TaskUpdate' : scenario.startsWith('mode-') ? 'Read,Bash,Edit,Write,Glob,Grep' : scenario === 'auto-plan-race' ? 'Read,Bash,Write' : 'Read,Bash', '--max-turns', harness ? '8' : scenario === 'compact-resume' ? '6' : scenario === 'read-repeat' ? '3' : scenario === 'stale-signature' ? '3' : scenario === 'preserved-thinking' ? '5' : scenario === 'background-deadline' || scenario.startsWith('monitor') || scenario === 'small-window-overflow' ? '4' : scenario === 'auto-stage2-error' || scenario.startsWith('cron') ? '6' : '2'];
+  if (!scenario.startsWith('tool-input-') && scenario !== 'compact-resume' && scenario !== 'tombstone-resume' && scenario !== 'stale-signature' && scenario!=='agent-custom-fork' && scenario!=='agent-budget-resume' && scenario!=='goal-child-usage' && !scenario.startsWith('cron-resume')) command.push('--no-session-persistence');
   if (scenario.startsWith('tool-input-')) command.push('--allowedTools', 'Write');
   if (scenario === 'fallback') command.push('--fallback-model', 'claude-haiku-4-5');
   // An allow rule that the narrower deny rule must still beat.
@@ -543,7 +578,8 @@ async function run(executable, scenario, extra = [], input = 'Run the local loop
   }
   let stdout = '', stderr = '', pending = '', result;
   let budgetObservation;
-  const timeout = setTimeout(() => process.kill(-child.pid, 'SIGKILL'), 20000);
+  // An every-minute cron fires at most ~66s after creation (6s recurring jitter).
+  const timeout = setTimeout(() => process.kill(-child.pid, 'SIGKILL'), scenario === 'cron' || scenario === 'cron-wakeup' ? 150000 : 20000);
   child.stdout.on('data', chunk => {
     const s = chunk.toString(); stdout += s; pending += s;
     const lines = pending.split('\n'); pending = lines.pop();
@@ -558,6 +594,8 @@ async function run(executable, scenario, extra = [], input = 'Run the local loop
       if (event.type === 'result') {
         result = event;
         if (scenario === 'auto-plan-race') child.stdin.end();
+        // The cron case waits for the fired turn's own result before closing input.
+        if (scenario.startsWith('cron') && (scenario === 'cron' ? event.result === 'CRON_DONE' : scenario === 'cron-wakeup' ? event.result === 'WAKE_DONE' : true)) child.stdin.end();
         if (scenario.startsWith('budget-') && !budgetObservation) {
           active.startedAtResult = existsSync(join(active.dir, 'started.txt'));
           active.finishedAtResult = existsSync(join(active.dir, 'finished.txt'));
@@ -620,6 +658,25 @@ try {
           assert.equal(runResult.result.result, 'AUDIT_OK');
           assert.ok(active.summaries > 0, 'compaction never executed');
           assert.equal(active.oversized, 1, 'only the pre-compaction request may overflow; an oversized tail reached the endpoint after compaction');
+        } else if (scenario.startsWith('cron-resume')) {
+          // Session-only jobs and the pending /loop wakeup live in memory, so a
+          // resumed session rebuilds them from the transcript, or after a
+          // compaction from the record it carries.
+          const seed = await run(executable, scenario, [], `PROJECT_CONSTRAINT: ${sentinel}. Seed the scheduled jobs.`);
+          assert.equal(seed.code, 0); assert.equal(seed.result.result, 'SEEDED');
+          let sessionId = seed.result.session_id;
+          if (scenario === 'cron-resume-compact') {
+            const compacted = await run(executable, scenario, ['--resume', sessionId], '/compact');
+            assert.equal(compacted.code, 0, `compaction failed: ${JSON.stringify(compacted.result)}`);
+            assert.ok(active.summaries > 0, 'compaction never executed');
+            sessionId = compacted.result.session_id;
+          }
+          runResult = await run(executable, scenario, ['--resume', sessionId], 'RESUME_CHECK');
+          assert.equal(runResult.code, 0); assert.equal(runResult.result.result, 'RESUME_DONE');
+          const list = JSON.stringify(active.requests.at(-1).body.messages.flatMap(m => Array.isArray(m.content) ? m.content : []).find(b => b.type === 'tool_result' && b.tool_use_id === 'resume_list') ?? null);
+          assert.ok(list.includes('RESUME_CRON_MARKER'), `session cron not restored on resume: ${list}`);
+          assert.ok(list.includes('RESUME_WAKE_MARKER'), `pending /loop wakeup not restored on resume: ${list}`);
+          assert.ok(!list.includes('RESUME_DELETED_MARKER'), `deleted cron came back on resume: ${list}`);
         } else if (scenario === 'goal-child-usage') {
           // /goal is a text command, so the goal is set in its own session and the
           // model turn resumes that session.
@@ -632,8 +689,43 @@ try {
           const count = active.requests.length;
           // Without --bare the CLI also makes side requests; the loop's own carry the tool list.
           const main = active.requests.filter(r => r.body.tools?.length);
+          const cronNames = ['CronCreate', 'CronDelete', 'CronList', 'ScheduleWakeup'];
+          const resultOf = (r, id) => JSON.stringify(r.body.messages.flatMap(m => Array.isArray(m.content) ? m.content : []).find(b => b.type === 'tool_result' && b.tool_use_id === id) ?? null);
           if (scenario.startsWith('monitor') && main.length > 0 && !main[0].body.tools.some(t => t.name === 'Monitor')) {
             assert.fail('Monitor was not offered; MONITOR_TOOL is in the default build');
+          } else if (scenario === 'cron') {
+            assert.equal(runResult.code, 0); assert.equal(runResult.result.result, 'CRON_DONE');
+            for (const name of cronNames) assert.ok(main[0].body.tools.some(t => t.name === name), `${name} not offered`);
+            const last = main.at(-1);
+            assert.ok(resultOf(last, 'cron_list_1').includes('CRON_FIRE_MARKER_42') && resultOf(last, 'cron_list_1').includes('(recurring)'), 'CronList did not show the created job');
+            assert.ok(resultOf(last, 'cron_create').includes('Next run:'), `CronCreate did not report the next run: ${resultOf(last, 'cron_create')}`);
+            assert.ok(main.some(r => textOf(r.body.messages.at(-1).content).includes('CRON_FIRE_MARKER_42')), 'scheduled prompt never fired');
+            assert.ok(!resultOf(last, 'cron_delete').includes('"is_error":true'), `CronDelete failed: ${resultOf(last, 'cron_delete')}`);
+            assert.ok(resultOf(last, 'cron_list_2').includes('No scheduled jobs.'), `job still listed after CronDelete: ${resultOf(last, 'cron_list_2')}`);
+          } else if (scenario === 'cron-wrapper') {
+            // Each fire of a cron'd /loop would schedule another job, so CronCreate refuses it.
+            assert.equal(runResult.code, 0);
+            const last = main.at(-1);
+            assert.ok(resultOf(last, 'cron_create').includes('Do not schedule a \\"/loop'), `CronCreate accepted a /loop wrapper: ${resultOf(last, 'cron_create')}`);
+            assert.ok(resultOf(last, 'cron_list_1').includes('No scheduled jobs.'), `a /loop wrapper was scheduled: ${resultOf(last, 'cron_list_1')}`);
+          } else if (scenario === 'cron-durable') {
+            // A durable job outlives the session, so it still needs approval; dontAsk refuses it.
+            assert.equal(runResult.code, 0);
+            const last = main.at(-1);
+            assert.ok(resultOf(last, 'cron_create').includes('"is_error":true'), `durable CronCreate ran without approval: ${resultOf(last, 'cron_create')}`);
+            assert.ok(resultOf(last, 'cron_list_1').includes('No scheduled jobs.'), `a durable job was scheduled without approval: ${resultOf(last, 'cron_list_1')}`);
+            assert.ok(!existsSync(join(active.dir, '.noa', 'scheduled_tasks.json')), 'scheduled_tasks.json was written without approval');
+          } else if (scenario === 'cron-wakeup') {
+            assert.equal(runResult.code, 0); assert.equal(runResult.result.result, 'WAKE_DONE');
+            const last = main.at(-1);
+            const list = resultOf(last, 'wake_list');
+            assert.equal((list.match(/WAKE_MARKER_77/g) || []).length, 1, `a second ScheduleWakeup did not replace the first: ${list}`);
+            const fired = main.filter(r => textOf(r.body.messages.at(-1).content).includes('WAKE_MARKER_77'));
+            assert.ok(fired.length >= 1 && textOf(fired[0].body.messages.at(-1).content).includes('ScheduleWakeup'), 'the wakeup never fired back into /loop dynamic mode');
+            assert.ok(!resultOf(last, 'wake_stop').includes('"is_error":true'), `stop failed: ${resultOf(last, 'wake_stop')}`);
+          } else if (scenario === 'cron-disabled') {
+            assert.equal(runResult.code, 0);
+            for (const name of cronNames) assert.ok(!main[0].body.tools.some(t => t.name === name), `${name} offered with CLAUDE_CODE_DISABLE_CRON=1`);
           } else if(scenario==='hook-output' || scenario==='hook-output-null') {
             assert.equal(runResult.code,0);const followUp=JSON.stringify(main[1]?.body.messages);assert.ok(followUp.includes(scenario==='hook-output-null'?'null':'HOOK_REDACTED'));assert.ok(!followUp.includes('LOCAL_FIXTURE_42'));assert.ok(!followUp.includes('LEGACY_MUST_NOT_WIN'));
           } else if(scenario==='blocking-limit' || scenario==='image-error') {

@@ -3,15 +3,7 @@ import {
   CRON_DELETE_TOOL_NAME,
   DEFAULT_MAX_AGE_DAYS,
 } from '../../tools/ScheduleCronTool/prompt.js';
-import {
-  consumeDynamicLoopState,
-  DYNAMIC_LOOP_MAX_ITERATIONS,
-  DYNAMIC_LOOP_MAX_WALL_CLOCK_MS,
-  DYNAMIC_LOOP_STATE_PREFIX,
-  issueDynamicLoopState,
-  newDynamicLoopChainId,
-  type DynamicLoopState,
-} from '../../utils/dynamicLoopState.js';
+import { SCHEDULE_WAKEUP_TOOL_NAME } from '../../tools/ScheduleWakeupTool/prompt.js';
 
 export type LoopMode =
   | 'dynamic-prompt'
@@ -23,20 +15,7 @@ export type ParsedLoopArgs = {
   mode: LoopMode;
   interval?: string;
   prompt?: string;
-  loopState?: DynamicLoopState;
-  invalidLoopState?: boolean;
 };
-
-type DynamicLoopBuildOptions = {
-  nowMs?: number;
-  /** Stable label reported to the user. Distinct from the scheduling token. */
-  createChainId?: () => string;
-  /** Single-use capability minted for the next iteration. Test seam only. */
-  createToken?: () => string;
-};
-
-const DYNAMIC_MIN_DELAY = '1 minute';
-const DYNAMIC_MAX_DELAY = '1 hour';
 
 const MAINTENANCE_PROMPT = `Scheduled maintenance loop iteration.
 
@@ -96,32 +75,8 @@ function isFixedMode(mode: LoopMode): boolean {
   return mode === 'fixed-prompt' || mode === 'fixed-maintenance';
 }
 
-/**
- * Consumes the chain state carried by the leading marker, so calling this twice
- * on the same args kills the chain: the second call finds the token already
- * spent and reports `invalidLoopState`. Exactly one call per /loop dispatch.
- */
-export function parseAndConsumeLoopArgs(args: string): ParsedLoopArgs {
-  let trimmed = args.trim();
-
-  // Chain state can only ride in on the leading marker, so it is resolved and
-  // attached here. Every path below this block is marker-free by construction.
-  if (trimmed.startsWith(DYNAMIC_LOOP_STATE_PREFIX)) {
-    const tokenEnd = trimmed.search(/\s/);
-    const markerToken = tokenEnd === -1 ? trimmed : trimmed.slice(0, tokenEnd);
-    const encodedState = markerToken.slice(DYNAMIC_LOOP_STATE_PREFIX.length);
-    const loopState = /^[A-Za-z0-9_-]+$/.test(encodedState)
-      ? consumeDynamicLoopState(encodedState)
-      : undefined;
-    trimmed = tokenEnd === -1 ? '' : trimmed.slice(tokenEnd).trim();
-    const parsed: ParsedLoopArgs = trimmed
-      ? { mode: 'dynamic-prompt', prompt: trimmed }
-      : { mode: 'dynamic-maintenance' };
-    return loopState
-      ? { ...parsed, loopState }
-      : { ...parsed, invalidLoopState: true };
-  }
-
+export function parseLoopArgs(args: string): ParsedLoopArgs {
+  const trimmed = args.trim();
   if (!trimmed) return { mode: 'dynamic-maintenance' };
 
   const bareInterval = parseIntervalToken(trimmed);
@@ -147,10 +102,7 @@ export function parseAndConsumeLoopArgs(args: string): ParsedLoopArgs {
   };
 }
 
-export function buildPromptForMode(
-  parsed: ParsedLoopArgs,
-  options: DynamicLoopBuildOptions = {},
-): string {
+export function buildPromptForMode(parsed: ParsedLoopArgs): string {
   if (parsed.prompt?.trim().match(/^\/loop(?:\s|$)/)) {
     return `# /loop - nested loop rejected
 
@@ -161,7 +113,7 @@ Do not execute the nested loop and do not schedule another run. Tell the user to
   }
   return isFixedMode(parsed.mode)
     ? buildFixedPrompt(parsed)
-    : buildDynamicPrompt(parsed, options);
+    : buildDynamicPrompt(parsed);
 }
 
 function buildFixedPrompt(parsed: ParsedLoopArgs): string {
@@ -206,53 +158,7 @@ ${targetInstructions}
 `;
 }
 
-function buildDynamicPrompt(
-  parsed: ParsedLoopArgs,
-  options: DynamicLoopBuildOptions,
-): string {
-  if (parsed.invalidLoopState) {
-    return `# /loop - invalid chain state
-
-Dynamic loop stopped because its chain state is invalid.
-
-Do not execute the effective prompt and do not schedule another run. Tell the user the scheduled loop state was malformed and that they can invoke /loop again to start a new chain.
-`;
-  }
-
-  const nowMs = options.nowMs ?? Date.now();
-  // Iteration 1 mints the chain's own id here. It is a label the model prints
-  // back to the user, so it must never be the scheduling token that grants
-  // re-entry into the chain.
-  const state = parsed.loopState ?? ({
-    chainId: (options.createChainId ?? newDynamicLoopChainId)(),
-    iteration: 1,
-    startedAtMs: nowMs,
-  } satisfies DynamicLoopState);
-
-  if (state.startedAtMs > nowMs) {
-    return `# /loop - invalid chain state
-
-Dynamic loop stopped because its chain state is invalid.
-
-Do not execute the effective prompt and do not schedule another run. The carried start time is in the future; tell the user that the session clock may have moved backwards and that they can invoke /loop again to start a new chain.
-`;
-  }
-  if (nowMs - state.startedAtMs >= DYNAMIC_LOOP_MAX_WALL_CLOCK_MS) {
-    return `# /loop - run budget exhausted
-
-Dynamic loop stopped before iteration ${state.iteration}. The chain reached its 24-hour wall-clock budget.
-
-Do not execute the effective prompt and do not schedule another run. Tell the user the loop stopped because its run budget was exhausted. The user can invoke /loop again to start a new chain.
-`;
-  }
-  if (state.iteration > DYNAMIC_LOOP_MAX_ITERATIONS) {
-    return `# /loop - run budget exhausted
-
-Dynamic loop stopped before iteration ${state.iteration}. The chain exceeded its ${DYNAMIC_LOOP_MAX_ITERATIONS}-iteration budget.
-
-Do not execute the effective prompt and do not schedule another run. Tell the user the loop stopped because its run budget was exhausted. The user can invoke /loop again to start a new chain.
-`;
-  }
+function buildDynamicPrompt(parsed: ParsedLoopArgs): string {
   const effectivePromptInstructions = parsed.prompt
     ? `Use this prompt verbatim as the effective prompt for this iteration:
 
@@ -271,58 +177,24 @@ Determine the effective prompt in this order:
 ${MAINTENANCE_PROMPT}
 --- END MAINTENANCE PROMPT ---
 `;
+  const wakeupPrompt = parsed.prompt ? `/loop ${parsed.prompt}` : '/loop';
 
-  if (state.iteration === DYNAMIC_LOOP_MAX_ITERATIONS) {
-    return `# /loop - final dynamic iteration
+  return `# /loop - dynamic self-pacing
 
-This is the final allowed iteration ${state.iteration} of ${DYNAMIC_LOOP_MAX_ITERATIONS} for dynamic loop chain ${state.chainId}.
-
-${effectivePromptInstructions}## Instructions
-
-1. Execute the effective prompt now.
-   - If it starts with a slash command, invoke it via the Skill tool.
-   - Otherwise, act on it directly.
-2. Tell the user that the dynamic loop reached its iteration budget.
-3. Do not schedule another run.
-`;
-  }
-
-  // The token is single-use and always freshly generated; the chain id carries
-  // forward unchanged so every iteration reports the same chain to the user.
-  const nextToken = issueDynamicLoopState({
-    chainId: state.chainId,
-    iteration: state.iteration + 1,
-    startedAtMs: state.startedAtMs,
-  }, options.createToken, nowMs);
-  const reschedulePrompt = `/loop ${DYNAMIC_LOOP_STATE_PREFIX}${nextToken}${parsed.prompt ? ` ${parsed.prompt}` : ''}`;
-
-  return `# /loop - dynamic rescheduling
-
-The user invoked /loop without a fixed interval.
-
-Run budget: iteration ${state.iteration} of ${DYNAMIC_LOOP_MAX_ITERATIONS}; chain ${state.chainId}; maximum wall-clock lifetime 24 hours.
+The user invoked /loop without a fixed interval and wants you to self-pace. Decide what makes the next iteration worth running — a passage of time, or an observable event.
 
 ${effectivePromptInstructions}
 ## Instructions
 
-1. Execute the effective prompt now.
-   - If it starts with a slash command, invoke it via the Skill tool.
-   - Otherwise, act on it directly.
-2. After the work finishes, choose the next delay dynamically between ${DYNAMIC_MIN_DELAY} and ${DYNAMIC_MAX_DELAY}.
-   - Use shorter delays while active work is progressing or likely to change soon.
-   - Use longer delays when the situation is quiet or stable.
-3. Briefly tell the user the chosen delay and the reason.
-4. Schedule exactly one session-only follow-up run with ${CRON_CREATE_TOOL_NAME}.
-   - Use recurring: false.
-   - Use durable: false.
-   - Pin the cron expression to a specific future local-time minute that matches the chosen delay.
-   - Set the scheduled prompt to this exact text so the next iteration stays in dynamic mode:
-
---- BEGIN SCHEDULED PROMPT ---
-${reschedulePrompt}
---- END SCHEDULED PROMPT ---
-
-5. Confirm the next run time and the returned job ID.
-6. Do not create a recurring cron for this mode.
+1. **Run the effective prompt now.** If it's a slash command, invoke it via the Skill tool; otherwise act on it directly.
+2. **If the next run is gated on an event** (CI finishing, a log line matching, a file changing, a PR comment) and you have not already armed a Monitor for it: arm one now with the Monitor tool and \`persistent: true\`. Its events arrive as \`<task-notification>\` messages and wake this loop immediately — you do not wait for the ${SCHEDULE_WAKEUP_TOOL_NAME} deadline. Arm it once, not on every iteration.
+3. **Decide whether the loop continues.** If the task needs another iteration, call ${SCHEDULE_WAKEUP_TOOL_NAME} with:
+   - \`delaySeconds\`: with a Monitor armed this is the **fallback heartbeat** — how long to wait if no event fires (lean 1200–1800s; idle ticks more frequent than the task needs are pure overhead). Without a Monitor this is the cadence — pick based on what you observed. Read the tool's own description for cache-aware delay guidance.
+   - \`reason\`: one short sentence on why you picked that delay.
+   - \`prompt\`: exactly \`${wakeupPrompt}\`, so the next firing re-enters this skill and continues the loop.
+   If it doesn't need another iteration, stop instead (step 6) — re-arming is a per-turn choice, not a default.
+4. **After the wakeup is armed, briefly confirm**: that you're self-pacing, whether a Monitor is the primary wake signal, that you ran the task now, and what delay you picked.
+5. **If you were woken by a \`<task-notification>\`** rather than this prompt: handle the event in the context of the loop task, then make the same decision. If the loop should continue, call ${SCHEDULE_WAKEUP_TOOL_NAME} again with the same \`prompt\` and a 1200–1800s \`delaySeconds\` (the Monitor remains the wake signal; the new wakeup is only the fallback heartbeat), then write a brief update. If the event means the work is finished, stop (step 6).
+6. **To stop the loop** — the task is complete, further iterations can't make progress, or the user asked you to stop — call ${SCHEDULE_WAKEUP_TOOL_NAME} with \`stop: true\` (no other fields) and stop any Monitor you armed with TaskStop. Then write the loop's outcome for the user as ordinary visible response text — a stopped loop has no next tick to surface it. Stopping is the loop's normal ending — the user can restart it anytime with /loop.
 `;
 }
