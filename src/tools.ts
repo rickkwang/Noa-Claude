@@ -1,5 +1,5 @@
 // biome-ignore-all assist/source/organizeImports: ANT-ONLY import markers must not be reordered
-import { toolMatchesName, type Tool, type Tools } from './Tool.js'
+import type { Tool, Tools } from './Tool.js'
 import { AgentTool } from './tools/AgentTool/AgentTool.js'
 import { SkillTool } from './tools/SkillTool/SkillTool.js'
 import { BashTool } from './tools/BashTool/BashTool.js'
@@ -11,17 +11,7 @@ import { NotebookEditTool } from './tools/NotebookEditTool/NotebookEditTool.js'
 import { WebFetchTool } from './tools/WebFetchTool/WebFetchTool.js'
 import { TaskStopTool } from './tools/TaskStopTool/TaskStopTool.js'
 import { BriefTool } from './tools/BriefTool/BriefTool.js'
-// Dead code elimination: conditional import for ant-only tools
 /* eslint-disable custom-rules/no-process-env-top-level, @typescript-eslint/no-require-imports */
-const REPLTool =
-  process.env.USER_TYPE === 'ant'
-    ? require('./tools/REPLTool/REPLTool.js').REPLTool
-    : null
-const SuggestBackgroundPRTool =
-  process.env.USER_TYPE === 'ant'
-    ? require('./tools/SuggestBackgroundPRTool/SuggestBackgroundPRTool.js')
-        .SuggestBackgroundPRTool
-    : null
 const SleepTool =
   feature('PROACTIVE') || feature('KAIROS')
     ? require('./tools/SleepTool/SleepTool.js').SleepTool
@@ -71,7 +61,6 @@ import { ToolSearchTool } from './tools/ToolSearchTool/ToolSearchTool.js'
 import { EnterPlanModeTool } from './tools/EnterPlanModeTool/EnterPlanModeTool.js'
 import { EnterWorktreeTool } from './tools/EnterWorktreeTool/EnterWorktreeTool.js'
 import { ExitWorktreeTool } from './tools/ExitWorktreeTool/ExitWorktreeTool.js'
-import { ConfigTool } from './tools/ConfigTool/ConfigTool.js'
 import { TaskCreateTool } from './tools/TaskCreateTool/TaskCreateTool.js'
 import { TaskGetTool } from './tools/TaskGetTool/TaskGetTool.js'
 import { TaskUpdateTool } from './tools/TaskUpdateTool/TaskUpdateTool.js'
@@ -87,12 +76,7 @@ export {
   COORDINATOR_MODE_ALLOWED_TOOLS,
 } from './constants/tools.js'
 import { feature } from 'bun:bundle'
-// Dead code elimination: conditional import for OVERFLOW_TEST_TOOL
 /* eslint-disable custom-rules/no-process-env-top-level, @typescript-eslint/no-require-imports */
-const OverflowTestTool = feature('OVERFLOW_TEST_TOOL')
-  ? require('./tools/OverflowTestTool/OverflowTestTool.js').OverflowTestTool
-  : null
-
 const TerminalCaptureTool = feature('TERMINAL_PANEL')
   ? require('./tools/TerminalCaptureTool/TerminalCaptureTool.js')
       .TerminalCaptureTool
@@ -119,12 +103,6 @@ import { isAgentSwarmsEnabled } from './utils/agentSwarmsEnabled.js'
 import { getMainLoopModel } from './utils/model/model.js'
 import { filterTodoToolsForModel } from './utils/todoTools.js'
 import { isWorktreeModeEnabled } from './utils/worktreeModeEnabled.js'
-import {
-  REPL_TOOL_NAME,
-  REPL_ONLY_TOOLS,
-  isReplModeEnabled,
-} from './tools/REPLTool/constants.js'
-export { REPL_ONLY_TOOLS }
 /* eslint-disable @typescript-eslint/no-require-imports */
 const getPowerShellTool = () => {
   if (!isPowerShellToolEnabled()) return null
@@ -188,14 +166,11 @@ export function getAllBaseTools(): Tools {
     AskUserQuestionTool,
     SkillTool,
     EnterPlanModeTool,
-    ...(process.env.USER_TYPE === 'ant' ? [ConfigTool] : []),
-    ...(SuggestBackgroundPRTool ? [SuggestBackgroundPRTool] : []),
     ...(WebBrowserTool ? [WebBrowserTool] : []),
     ...(MonitorTool ? [MonitorTool] : []),
     ...(isTodoV2Enabled()
       ? [TaskCreateTool, TaskGetTool, TaskUpdateTool, TaskListTool]
       : []),
-    ...(OverflowTestTool ? [OverflowTestTool] : []),
     ...(TerminalCaptureTool ? [TerminalCaptureTool] : []),
     ...(isEnvTruthy(process.env.ENABLE_LSP_TOOL) ? [LSPTool] : []),
     ...(isWorktreeModeEnabled() ? [EnterWorktreeTool, ExitWorktreeTool] : []),
@@ -203,7 +178,6 @@ export function getAllBaseTools(): Tools {
     ...(isAgentSwarmsEnabled()
       ? [getTeamCreateTool(), getTeamDeleteTool()]
       : []),
-    ...(process.env.USER_TYPE === 'ant' && REPLTool ? [REPLTool] : []),
     ...(SleepTool ? [SleepTool] : []),
     ...cronTools,
     ...(RemoteTriggerTool ? [RemoteTriggerTool] : []),
@@ -290,22 +264,6 @@ export function filterToolsByDenyRules<
 export const getTools = (permissionContext: ToolPermissionContext): Tools => {
   // Simple mode: only Bash, Read, and Edit tools
   if (isEnvTruthy(process.env.CLAUDE_CODE_SIMPLE)) {
-    // --bare + REPL mode: REPL wraps Bash/Read/Edit/etc inside the VM, so
-    // return REPL instead of the raw primitives. Matches the non-bare path
-    // below which also hides REPL_ONLY_TOOLS when REPL is enabled.
-    if (isReplModeEnabled() && REPLTool) {
-      const replSimple: Tool[] = [REPLTool]
-      if (
-        feature('COORDINATOR_MODE') &&
-        coordinatorModeModule?.isCoordinatorMode()
-      ) {
-        replSimple.push(TaskStopTool, getSendMessageTool())
-      }
-      return filterToolsByDenyRules(
-        dropRestrictedTools(replSimple),
-        permissionContext,
-      )
-    }
     const simpleTools: Tool[] = [BashTool, FileReadTool, FileEditTool]
     // When coordinator mode is also active, include AgentTool and TaskStopTool
     // so the coordinator gets Task+TaskStop (via useMergedTools filtering) and
@@ -333,20 +291,7 @@ export const getTools = (permissionContext: ToolPermissionContext): Tools => {
   const tools = getAllBaseTools().filter(tool => !specialTools.has(tool.name))
 
   // Filter out tools that are denied by the deny rules
-  let allowedTools = filterToolsByDenyRules(tools, permissionContext)
-
-  // When REPL mode is enabled, hide primitive tools from direct use.
-  // They're still accessible inside REPL via the VM context.
-  if (isReplModeEnabled()) {
-    const replEnabled = allowedTools.some(tool =>
-      toolMatchesName(tool, REPL_TOOL_NAME),
-    )
-    if (replEnabled) {
-      allowedTools = allowedTools.filter(
-        tool => !REPL_ONLY_TOOLS.has(tool.name),
-      )
-    }
-  }
+  const allowedTools = filterToolsByDenyRules(tools, permissionContext)
 
   const isEnabled = allowedTools.map(_ => _.isEnabled())
   return allowedTools.filter((_, i) => isEnabled[i])

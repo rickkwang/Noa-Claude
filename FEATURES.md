@@ -175,7 +175,6 @@ every name those call sites read (see `CLAUDE.md`, "Feature flags").
   name-constant stub with no implementation.
 - `HISTORY_SNIP` — `services/compact/snipCompact.ts` never snips
   (`isSnipRuntimeEnabled()` is `false`); the `Snip` tool is a null shell.
-- `OVERFLOW_TEST_TOOL` — the tool is a null shell and never registers.
 - `TERMINAL_PANEL` — the `TerminalCapture` tool is a null shell and never
   registers.
 - `WEB_BROWSER_TOOL` — the tool and its panel are null shells and never
@@ -185,14 +184,6 @@ every name those call sites read (see `CLAUDE.md`, "Feature flags").
 tool), but its `Sleep`, `SendUserFile` and `PushNotification` tools are class
 shells that the tool registry drops, and its session-transcript segment writer
 is a no-op.
-
-The remaining tool shells are gated outside `feature()` and are inert in every
-build profile. In each case only the tool's main file is a shell — sibling
-constant modules are real and referenced:
-
-- `REPLTool` and `SuggestBackgroundPRTool` — empty classes behind
-  `USER_TYPE === 'ant'`, which `build.ts` pins to `'external'`. `REPLTool/constants.ts`
-  (`REPL_TOOL_NAME`, repl-mode logic) and `primitiveTools.ts` are live code.
 
 ## Not Unlockable in This Build (by flag-only unlock)
 
