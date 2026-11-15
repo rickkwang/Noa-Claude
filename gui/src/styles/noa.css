@@ -876,6 +876,9 @@ html[data-translucent-sidebar="enabled"] [data-sidebar-container] .noa-sidebar-t
 
 /* ── List markers: typography's default grays wash out on cream; pin to body text colour per theme. */
 .prose li::marker { color: var(--text-primary, #2D2D2B); }
+/* Reasoning sits under a not-prose row, which strips the typography plugin's list markers. */
+[data-thinking-activity] .noa-output-markdown ul { list-style-type: disc; }
+[data-thinking-activity] .noa-output-markdown ol { list-style-type: decimal; }
 
 /* In-app "Reduce Motion" (Settings > Appearance) wins over the system setting: every animation and transition finishes instantly. */
 :root[data-reduce-motion="true"] *,
@@ -1977,7 +1980,7 @@ body.noa-session-dragging * { cursor: grabbing !important; }
 [data-approval-diff-preview] .noa-code-sign { display: block !important; }
 [data-approval-diff-preview] .noa-code-view.is-diff .noa-code-line code { padding-left: 0; }
 .noa-approval-button { height: 28px; padding: 0 8px; border-radius: 999px; font-size: var(--text-chat-sm); line-height: 18px; white-space: nowrap; }
-.noa-code-block { border-color: var(--border-light); background: color-mix(in srgb, var(--text-primary) 3%, var(--surface-page)); }
+.noa-code-block { border-color: var(--border-light); background: color-mix(in srgb, var(--text-primary) 5%, transparent); }
 @supports (corner-shape: superellipse(1.1)) {
   .noa-code-block { corner-shape: superellipse(1.1); }
 }

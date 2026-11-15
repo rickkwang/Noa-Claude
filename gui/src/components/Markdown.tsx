@@ -364,8 +364,8 @@ export function CodeBlock({ lang, code, complete = true, title }: { lang: string
   }
 
   return (
-    <div className="noa-code-block not-prose my-3 min-w-0 overflow-hidden rounded-[20px] border">
-      <div data-copy-exclude className="flex min-h-12 items-center gap-2 py-1.5 ps-5 pe-1.5 font-ui text-[length:var(--text-chat-sm)] font-medium text-[var(--text-primary)]">
+    <div className="noa-code-block not-prose my-3 min-w-0 overflow-hidden rounded-[20px] border-0">
+      <div data-copy-exclude className="flex min-h-9 items-center gap-2 ps-3 pe-2 font-ui text-[length:var(--text-chat-sm)] font-medium text-[var(--text-primary)]">
         <Code size={16} className="shrink-0" aria-hidden="true" />
         <span className="min-w-0 flex-1 truncate">{heading}</span>
         <button type="button" aria-label={wrap ? "Disable word wrap" : "Enable word wrap"} aria-pressed={wrap} title={wrap ? "Disable word wrap" : "Enable word wrap"} onClick={() => setCodeWrap(!wrap)} className="flex size-8 shrink-0 items-center justify-center rounded-lg text-[var(--text-secondary)] transition-colors hover:bg-[var(--fill-hover)] hover:text-[var(--text-primary)] active:bg-[var(--fill-active)]">
@@ -376,8 +376,8 @@ export function CodeBlock({ lang, code, complete = true, title }: { lang: string
           {copied ? <Check size={16} /> : <Copy size={16} />}
         </button>}
       </div>
-      {copyError && <span role="status" className="px-5 text-caption text-[#C24444]">Could not copy. Try again.</span>}
-      <pre className="noa-selectable m-0 overflow-auto px-5 pt-0 pb-3 font-mono font-normal text-[length:var(--code-font-size)] leading-[max(1.5em,20px)]" style={{ whiteSpace: wrap ? "pre-wrap" : "pre", overflowWrap: wrap ? "anywhere" : undefined }}><code className="hljs" style={{ fontSize: "inherit", fontFamily: "inherit", fontWeight: "inherit", background: "transparent", padding: 0 }} dangerouslySetInnerHTML={html} /></pre>
+      {copyError && <span role="status" className="px-3 text-caption text-[#C24444]">Could not copy. Try again.</span>}
+      <pre className="noa-selectable m-0 overflow-auto px-3 pt-0 pb-3 font-mono font-normal text-[length:var(--code-font-size)] leading-[max(1.5em,20px)]" style={{ whiteSpace: wrap ? "pre-wrap" : "pre", overflowWrap: wrap ? "anywhere" : undefined }}><code className="hljs" style={{ fontSize: "inherit", fontFamily: "inherit", fontWeight: "inherit", background: "transparent", padding: 0 }} dangerouslySetInnerHTML={html} /></pre>
       {preview && <PreviewDialog title="Code preview" onClose={() => setPreview(false)}><iframe title="Code preview" sandbox="" className="h-full w-full border-0 bg-white" srcDoc={"<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; style-src 'unsafe-inline'; img-src data: blob:; base-uri 'none'; form-action 'none'\">" + code} /></PreviewDialog>}
     </div>
   )

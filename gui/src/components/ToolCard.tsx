@@ -464,8 +464,8 @@ function ShellOutput({ block, onCollapse }: { block: ToolBlock; onCollapse: () =
   const corner = "absolute end-2 top-0 flex size-6 items-center justify-center rounded-md text-[var(--sidebar-text-muted,#898781)] opacity-0 transition-opacity hover:bg-[var(--fill-hover)] focus-visible:opacity-100"
 
   return (
-    <div className="noa-code-block overflow-hidden rounded-[20px] border pb-3">
-      <div className="flex h-10 items-center gap-2 px-5 font-ui text-caption text-[var(--text-secondary)]">
+    <div className="noa-code-block overflow-hidden rounded-[20px] border-0 pb-3">
+      <div className="flex h-9 items-center gap-2 px-3 font-ui text-caption text-[var(--text-secondary)]">
         <span className="flex-1">Shell</span>
         <div className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover/tool:opacity-100 focus-within:opacity-100">
           <button
@@ -494,7 +494,7 @@ function ShellOutput({ block, onCollapse }: { block: ToolBlock; onCollapse: () =
             event.preventDefault()
             setCommandExpanded((value) => !value)
           }}
-          className={`noa-selectable m-0 cursor-pointer whitespace-pre-wrap break-words pe-10 ps-5 font-mono text-[length:var(--code-font-size)] leading-[max(1.5em,20px)] text-[var(--text-primary)] ${commandExpanded ? "" : "line-clamp-2"}`}
+          className={`noa-selectable m-0 cursor-pointer whitespace-pre-wrap break-words pe-10 ps-3 font-mono text-[length:var(--code-font-size)] leading-[max(1.5em,20px)] text-[var(--text-primary)] ${commandExpanded ? "" : "line-clamp-2"}`}
         >
           <span className="select-none text-[var(--text-tertiary,#8F8F8F)]">$</span> {command}
         </pre>
@@ -511,7 +511,7 @@ function ShellOutput({ block, onCollapse }: { block: ToolBlock; onCollapse: () =
       {output ? (
         <div className="group/output relative mt-2">
           <div ref={outputRef} role="region" aria-label="Command output" tabIndex={0} onKeyDown={(event) => { if (event.key === "Home" || event.key === "End") { event.preventDefault(); event.currentTarget.scrollTop = event.key === "Home" ? 0 : event.currentTarget.scrollHeight } }} className="noa-shell-output" data-overflow={overflowing}>
-            <pre className="noa-selectable m-0 px-5 font-mono text-[length:var(--code-font-size)] leading-[max(1.5em,20px)] whitespace-pre">{output}</pre>
+            <pre className="noa-selectable m-0 px-3 font-mono text-[length:var(--code-font-size)] leading-[max(1.5em,20px)] whitespace-pre">{output}</pre>
           </div>
           <button
             type="button"
@@ -524,9 +524,9 @@ function ShellOutput({ block, onCollapse }: { block: ToolBlock; onCollapse: () =
           </button>
         </div>
       ) : block.status === "running" ? null : (
-        <div className="mt-2 px-5 text-caption text-[var(--sidebar-text-muted,#898781)]">No output</div>
+        <div className="mt-2 px-3 text-caption text-[var(--sidebar-text-muted,#898781)]">No output</div>
       )}
-      {copyError && <span role="status" className="mt-2 block px-5 text-caption text-[#C24444]">Could not copy. Try again.</span>}
+      {copyError && <span role="status" className="mt-2 block px-3 text-caption text-[#C24444]">Could not copy. Try again.</span>}
     </div>
   )
 }
