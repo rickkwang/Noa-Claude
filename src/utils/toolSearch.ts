@@ -213,7 +213,14 @@ export function getToolSearchMode(): ToolSearchMode {
  * Default patterns for models that do NOT support tool_reference.
  * New models are assumed to support tool_reference unless explicitly listed here.
  */
-const DEFAULT_UNSUPPORTED_MODEL_PATTERNS = ['haiku']
+const DEFAULT_UNSUPPORTED_MODEL_PATTERNS = [
+  'claude-3-opus',
+  'claude-3-sonnet',
+  'claude-3-haiku',
+  'claude-3-5-sonnet',
+  'claude-3-5-haiku',
+  'claude-3-7-sonnet',
+]
 
 /**
  * Get the list of model patterns that do NOT support tool_reference.
@@ -242,7 +249,7 @@ function getUnsupportedToolReferencePatterns(): string[] {
  * UNLESS they match a pattern in the unsupported list. This ensures new
  * models work by default without code changes.
  *
- * Currently, Haiku models do NOT support tool_reference. This can be
+ * Currently, only Claude 3.x models do NOT support tool_reference. This can be
  * updated via GrowthBook feature 'tengu_tool_search_unsupported_models'.
  *
  * @param model The model name to check
@@ -466,7 +473,7 @@ export async function isToolSearchEnabled(
   if (!modelSupportsToolReference(model)) {
     logForDebugging(
       `Tool search disabled for model '${model}': model does not support tool_reference blocks. ` +
-        `This feature is only available on Claude Sonnet 4+, Opus 4+, and newer models.`,
+        `This feature is only available on Claude 4+ models.`,
     )
     logModeDecision(false, 'standard', 'model_unsupported')
     return false
