@@ -1,11 +1,11 @@
 // @ts-nocheck
-import { isEnvDefinedFalsy, isEnvTruthy } from '../../utils/envUtils.js'
+import { isEnvDefinedFalsy } from '../../utils/envUtils.js'
 
 export const REPL_TOOL_NAME = 'REPL'
 
 /**
  * REPL mode is default-on for ants in the interactive CLI (opt out with
- * CLAUDE_CODE_REPL=0). The legacy CLAUDE_REPL_MODE=1 also forces it on.
+ * CLAUDE_CODE_REPL=0).
  *
  * SDK entrypoints (sdk-ts, sdk-py, sdk-cli) are NOT defaulted on — SDK
  * consumers script direct tool calls (Bash, Read, etc.) and REPL mode
@@ -15,7 +15,6 @@ export const REPL_TOOL_NAME = 'REPL'
  */
 export function isReplModeEnabled(): boolean {
   if (isEnvDefinedFalsy(process.env.CLAUDE_CODE_REPL)) return false
-  if (isEnvTruthy(process.env.CLAUDE_REPL_MODE)) return true
   return (
     process.env.USER_TYPE === 'ant' &&
     process.env.CLAUDE_CODE_ENTRYPOINT === 'cli'
