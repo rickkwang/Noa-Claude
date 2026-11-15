@@ -189,7 +189,6 @@ function MascotItem({ spec }: { spec: MascotSpec }) {
       onMouseDown={(e) => e.preventDefault()}
       onClick={handleClick}
       aria-label={`${spec.label} mascot — click to play animation`}
-      title={spec.label}
       style={{ width: Math.round(spec.visWidth * spec.scale), height: Math.round(spec.visHeight * spec.scale) }}
       className={`pointer-events-auto relative shrink-0 cursor-pointer border-0 bg-transparent p-0 transition-opacity duration-200 focus:outline-none ${ready ? "opacity-100" : "opacity-0"}`}
     >
