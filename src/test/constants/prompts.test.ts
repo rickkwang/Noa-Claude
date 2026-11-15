@@ -3,11 +3,6 @@ import {
   computeMainSessionEnvInfo,
   SYSTEM_PROMPT_DYNAMIC_BOUNDARY,
 } from '../../constants/prompts.js'
-import { buildDynamicSystemPromptSections } from '../../constants/systemPromptAssemblyHelpers.js'
-import {
-  clearSystemPromptSectionCache,
-  resolveSystemPromptSections,
-} from '../../constants/systemPromptSections.js'
 import { getCLISyspromptPrefix } from '../../constants/system.js'
 import { buildMemoryLines } from '../../memdir/memdir.js'
 import { buildCombinedMemoryPrompt } from '../../memdir/teamMemPrompts.js'
@@ -94,27 +89,6 @@ describe('CLI sysprompt prefix splitting', () => {
 })
 
 describe('prompt behavior contracts', () => {
-  test('output style is not overridden by target clarification', async () => {
-    clearSystemPromptSectionCache()
-    const sections = await resolveSystemPromptSections(
-      buildDynamicSystemPromptSections({
-        enabledTools: new Set(),
-        skillToolCommands: [],
-        // Verbose head: lean-prompt models no longer carry this section.
-        model: 'claude-sonnet-4-6',
-        outputStyleConfig: {
-          name: 'Test Proactive',
-          prompt: 'When in doubt, start coding.',
-        },
-      }),
-    )
-    const outputStyleIndex = sections.findIndex(section =>
-      section?.startsWith('# Output Style:'),
-    )
-    expect(outputStyleIndex).toBeGreaterThanOrEqual(0)
-    expect(sections.join('\n')).not.toContain('end the turn without calling tools')
-  })
-
   test('plan mode is reserved for material ambiguity instead of routine implementation', () => {
     const prompt = getEnterPlanModeToolPrompt()
 

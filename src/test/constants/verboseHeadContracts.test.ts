@@ -80,7 +80,7 @@ describe('both tiers defer to a configured output style', () => {
   // Upstream swaps the same clause in both head builders. Getting it right in
   // only one tier leaves verbose-tier users with a style configured and an
   // identity line that still claims the session is about software engineering.
-  const STYLE_CLAUSE = 'according to your "Output Style" below'
+  const STYLE_CLAUSE = 'according to your "Output Style"'
 
   test('compact head', () => {
     expect(getCompactHeadSection(true)).toContain(STYLE_CLAUSE)

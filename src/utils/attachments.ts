@@ -91,6 +91,7 @@ import { getSkillToolCommands, getMcpSkillCommands } from '../commands.js'
 import type { Command } from '../types/command.js'
 import uniqBy from 'lodash-es/uniqBy.js'
 import { getProjectRoot } from '../bootstrap/state.js'
+import { getAgentContext } from './agentContext.js'
 import { formatCommandsWithinBudget } from '../tools/SkillTool/prompt.js'
 import { getContextWindowForModel } from './context.js'
 import {
@@ -227,7 +228,11 @@ import {
 } from './hooks.js'
 import { jsonStringify } from './slowOperations.js'
 import { isPDFExtension } from './pdfUtils.js'
-import { getOutputStyleConfig } from '../constants/outputStyles.js'
+import {
+  DEFAULT_OUTPUT_STYLE_NAME,
+  getOutputStyleConfig,
+  MAX_OUTPUT_STYLE_NAME_LENGTH,
+} from '../constants/outputStyles.js'
 import { getLocalISODate } from '../constants/common.js'
 import { shouldUseCompactSystemPrompt } from '../constants/systemPromptCompact.js'
 import { getPDFPageCount } from './pdf.js'
@@ -555,6 +560,10 @@ export type Attachment =
       origin?: MessageOrigin
       /** Carried from QueuedCommand.isMeta — distinguishes human-typed from system-injected */
       isMeta?: boolean
+    }
+  | {
+      type: 'output_style_instructions'
+      style: { name: string; prompt: string } | null
     }
   | {
       type: 'output_style'
@@ -1257,6 +1266,13 @@ export async function getAttachments(
     // Must run for all threads or subagent notifications drain into the void
     // (removed from queue by removeFromQueue but never attached).
     maybe('queued_commands', () => getQueuedCommandAttachments(queuedCommands)),
+    ...(!isMainThread && getAgentContext()?.agentType !== 'teammate'
+      ? []
+      : [
+          maybe('output_style_instructions', () =>
+            getOutputStyleInstructionsAttachment(messages ?? []),
+          ),
+        ]),
     maybe('date_change', () =>
       Promise.resolve(getDateChangeAttachments(messages)),
     ),
@@ -1986,6 +2002,41 @@ function getCriticalSystemReminderAttachment(
     return []
   }
   return [{ type: 'critical_system_reminder', content: reminder }]
+}
+
+export async function getOutputStyleInstructionsAttachment(
+  messages: Message[] = [],
+): Promise<Attachment[]> {
+  const config = await getOutputStyleConfig()
+  if (config && config.name.length > MAX_OUTPUT_STYLE_NAME_LENGTH) return []
+
+  const configuredName =
+    getSettings_DEPRECATED()?.outputStyle || DEFAULT_OUTPUT_STYLE_NAME
+  if (!config && configuredName !== DEFAULT_OUTPUT_STYLE_NAME) return []
+
+  const current = config
+    ? { name: config.name, prompt: config.prompt }
+    : null
+  const previous = messages.findLast(
+    message =>
+      message.type === 'attachment' &&
+      message.attachment.type === 'output_style_instructions',
+  )?.attachment
+
+  if (!previous) {
+    return current
+      ? [{ type: 'output_style_instructions', style: current }]
+      : []
+  }
+  if (previous.style === null && current === null) return []
+  if (
+    current &&
+    previous.style?.name === current.name &&
+    previous.style.prompt === current.prompt
+  ) {
+    return []
+  }
+  return [{ type: 'output_style_instructions', style: current }]
 }
 
 async function getOutputStyleAttachment(

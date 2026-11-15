@@ -24,7 +24,6 @@ import type {
   ConnectedMCPServer,
   MCPServerConnection,
 } from '../services/mcp/types.js'
-import type { OutputStyleConfig } from './outputStyles.js'
 import { prependBullets } from './systemPromptCoreSections.js'
 import type { SubagentSteer } from '../utils/subagentSteer.js'
 
@@ -41,26 +40,6 @@ export function getLanguageSection(
 
   return `# Language
 Always respond in ${languagePreference}. Use ${languagePreference} for all explanations, comments, and communications with the user. Technical terms and code identifiers should remain in their original form.`
-}
-
-// Intentional deviation from upstream: the precedence clause ships only inside
-// the (digest-pinned, verbatim-ported) Concise style text, so Explanatory,
-// Learning, and custom styles had no arbiter when their rules conflict with
-// the main prompt's tone-and-style section. Append it here for any style that
-// doesn't carry its own, instead of editing the pinned ports.
-const OUTPUT_STYLE_PRECEDENCE_CLAUSE =
-  'Where these rules conflict with more general communication or formatting guidance elsewhere in your instructions, these rules win.'
-
-export function getOutputStyleSection(
-  outputStyleConfig: OutputStyleConfig | null,
-): string | null {
-  if (outputStyleConfig === null) return null
-
-  const prompt = outputStyleConfig.prompt.includes('these rules win')
-    ? outputStyleConfig.prompt
-    : `${outputStyleConfig.prompt}\n\n${OUTPUT_STYLE_PRECEDENCE_CLAUSE}`
-  return `# Output Style: ${outputStyleConfig.name}
-${prompt}`
 }
 
 export function getMcpInstructionsSection(
@@ -136,8 +115,8 @@ export function getDiscoverSkillsGuidance(
  * here is a runtime bit that would otherwise multiply the Blake2b prefix
  * hash variants (2^N). See PR #24490, #24171 for the same bug class.
  *
- * outputStyleConfig intentionally NOT moved here — identity framing lives
- * in the static intro pending eval.
+ * Output-style identity framing intentionally stays in the static intro;
+ * the full instructions travel as conversation attachments.
  */
 export function getSessionSpecificGuidanceSection(
   enabledTools: Set<string>,

@@ -10,6 +10,7 @@ const sessionTranscriptModule = feature('KAIROS')
 import { APIUserAbortError } from '@anthropic-ai/sdk'
 import { markPostCompaction } from 'src/bootstrap/state.js'
 import { getInvokedSkillsForAgent } from '../../bootstrap/state.js'
+import { getAgentContext } from '../../utils/agentContext.js'
 import type { QuerySource } from '../../constants/querySource.js'
 import type { CanUseToolFn } from '../../hooks/useCanUseTool.js'
 import type { Tool, ToolUseContext } from '../../Tool.js'
@@ -37,6 +38,7 @@ import {
   getAgentListingDeltaAttachment,
   getDeferredToolsDeltaAttachment,
   getMcpInstructionsDeltaAttachment,
+  getOutputStyleInstructionsAttachment,
   persistPlanFileReferenceAttachment,
 } from '../../utils/attachments.js'
 import { isMemoryFilePath } from '../../utils/claudemd.js'
@@ -2194,6 +2196,13 @@ export async function createPostCompactContextAttachments({
     attachments.push(skillAttachment)
   }
 
+  if (!context.agentId || getAgentContext()?.agentType === 'teammate') {
+    for (const att of await getOutputStyleInstructionsAttachment(
+      preservedMessages,
+    )) {
+      attachments.push(createAttachmentMessage(att))
+    }
+  }
   for (const att of getDeferredToolsDeltaAttachment(
     context.options.tools,
     context.options.mainLoopModel,

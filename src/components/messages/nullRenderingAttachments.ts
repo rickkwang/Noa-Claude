@@ -25,6 +25,7 @@ const NULL_RENDERING_TYPES = [
   'edited_text_file',
   'opened_file_in_ide',
   'output_style',
+  'output_style_instructions',
   'plan_mode',
   'plan_mode_exit',
   'plan_mode_reentry',

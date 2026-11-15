@@ -4066,6 +4066,15 @@ Read the team config to discover your teammates' names. Check the task list peri
         }),
       ])
     }
+    case 'output_style_instructions': {
+      const content = attachment.style === null
+        ? 'The output style was reset to the default. Respond in your usual style.'
+        : `# Output Style: ${escapeXml(attachment.style.name)}
+${attachment.style.prompt}`
+      return wrapMessagesInSystemReminder([
+        createUserMessage({ content, isMeta: true }),
+      ])
+    }
     case 'output_style': {
       if (typeof attachment.style !== 'string' || attachment.style === '') {
         return []

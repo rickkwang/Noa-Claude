@@ -714,7 +714,7 @@ export function getCompactHeadSection(
   midConversationNotice = false,
 ): string {
   const audience = hasOutputStyle
-    ? `according to your "Output Style" below, which describes how you should respond to user queries.`
+    ? `according to your "Output Style", which describes how you should respond to user queries.`
     : `with software engineering tasks.`
 
   // eslint-disable-next-line custom-rules/prompt-spacing

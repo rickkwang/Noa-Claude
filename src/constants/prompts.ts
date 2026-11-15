@@ -62,7 +62,6 @@ export async function getSystemPrompt(
     additionalWorkingDirectories,
     mcpClients,
     language: settings.language,
-    outputStyleConfig,
   })
 
   const resolvedDynamicSections =

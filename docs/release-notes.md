@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Changed: output style instructions are now delivered as a conversation message instead of a system prompt section. Switching styles mid-session sends only the change, resetting to default tells the model so, and the instructions are restored after compaction. Explanatory, Learning and custom styles no longer get an appended "these rules win" precedence statement.
+
 ## 1.24.0
 
 - New: Fable 5.2 and Mythos 5.2 support, including 1M context, up to 128K output, medium effort by default, fast mode and cost tracking. The `fable` alias now selects Fable 5.2; use `claude-fable-5-1` to stay on 5.1.

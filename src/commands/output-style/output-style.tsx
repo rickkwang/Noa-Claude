@@ -13,9 +13,8 @@ import {
  * Direct entry to the picker that until now was only reachable through
  * /config → Output style. Writes the same key to the same source as
  * Config.tsx does, so both entry points stay interchangeable: the style is
- * read back by getOutputStyleConfig(), and the system prompt section is keyed
- * on the style name (`output_style:<name>`), so the next turn picks it up
- * without a cache sweep.
+ * read back by getOutputStyleConfig(), so the next turn emits the changed
+ * instructions as an attachment.
  */
 export const call: LocalJSXCommandCall = async (onDone, _context) => {
   const currentStyle = (getSettings_DEPRECATED()?.outputStyle ??

@@ -31,11 +31,11 @@ export function prependBullets(items: Array<string | string[]>): string[] {
  * The output-style branch is the same one getCompactHeadSection() takes, and for
  * the same reason: when a style is configured it, not this sentence, describes
  * how to answer, so claiming "software engineering tasks" here would contradict
- * the section the model is about to read.
+ * the style instructions the model is about to read.
  */
 export function getSimpleIntroSection(hasOutputStyle = false): string {
   const audience = hasOutputStyle
-    ? `according to your "Output Style" below, which describes how you should respond to user queries.`
+    ? `according to your "Output Style", which describes how you should respond to user queries.`
     : `with software engineering tasks.`
 
   // eslint-disable-next-line custom-rules/prompt-spacing

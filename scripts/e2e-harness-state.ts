@@ -285,6 +285,73 @@ try {
       assert.ok(existsSync(wt)); assert.equal(git(['rev-parse', branch]), saved)
     } finally { setCwd(previous) }
   })
+  await maintenance('output-style-attachment-lifecycle', async () => {
+    delete process.env.CLAUDE_CODE_SIMPLE
+    const { getAttachments, createAttachmentMessage } = await import('../src/utils/attachments.js')
+    const { updateSettingsForSource } = await import('../src/utils/settings/settings.js')
+    const { normalizeMessagesForAPI } = await import('../src/utils/messages.js')
+    const { getSystemPrompt } = await import('../src/constants/prompts.js')
+    const { createPostCompactContextAttachments } = await import('../src/services/compact/compact.js')
+    const { getOriginalCwd, setOriginalCwd } = await import('../src/bootstrap/state.js')
+    const { resetSettingsCache } = await import('../src/utils/settings/settingsCache.js')
+    const { runWithAgentContext } = await import('../src/utils/agentContext.js')
+    const styleContext: any = { ...agentContext, agentId: undefined }
+    const history: any[] = []
+    const realCwd = getOriginalCwd(), styleCwd = join(artifacts, 'output-style-project')
+    mkdirSync(styleCwd, { recursive: true }); setOriginalCwd(styleCwd); resetSettingsCache()
+    const changes = async () => (await getAttachments(null, styleContext, null, [], history, 'repl_main_thread', { skipSkillDiscovery: true })).filter(a => a.type === 'output_style_instructions')
+    try {
+      assert.deepEqual(await changes(), [], 'default style emitted instructions without a prior style')
+      updateSettingsForSource('localSettings', { outputStyle: 'Concise' })
+      const concise = await changes()
+      assert.equal(concise.length, 1)
+      assert.equal(concise[0]?.style?.name, 'Concise')
+      history.push(createAttachmentMessage(concise[0]!))
+      assert.deepEqual(await changes(), [], 'unchanged style was resent')
+      const conciseWire = JSON.stringify(normalizeMessagesForAPI(history, []))
+      assert.ok(conciseWire.includes('# Output Style: Concise'))
+      assert.equal(conciseWire.split('these rules win').length - 1, 1)
+      const systemPrompt = (await getSystemPrompt([], 'claude-haiku-5-5')).join('\n')
+      assert.ok(!systemPrompt.includes('# Output Style: Concise'), 'full style remained in the system prompt')
+      assert.ok(systemPrompt.includes('according to your "Output Style", which describes'))
+      assert.ok(!systemPrompt.includes('"Output Style" below'))
+
+      updateSettingsForSource('localSettings', { outputStyle: 'Explanatory' })
+      const explanatory = await changes()
+      assert.equal(explanatory.length, 1)
+      assert.equal(explanatory[0]?.style?.name, 'Explanatory')
+      assert.ok(!JSON.stringify(explanatory[0]).includes('these rules win'), 'Noa added a precedence clause to the upstream style')
+      history.push(createAttachmentMessage(explanatory[0]!))
+
+      updateSettingsForSource('localSettings', { outputStyle: undefined })
+      const reset = await changes()
+      assert.equal(reset.length, 1)
+      assert.equal(reset[0]!.style, null)
+      const resetWire = JSON.stringify(normalizeMessagesForAPI([createAttachmentMessage(reset[0]!)], []))
+      assert.ok(resetWire.includes('The output style was reset to the default. Respond in your usual style.'))
+      history.push(createAttachmentMessage(reset[0]!))
+      assert.deepEqual(await changes(), [], 'default reset was repeated')
+
+      updateSettingsForSource('localSettings', { outputStyle: 'Learning' })
+      const compacted = await createPostCompactContextAttachments({ readFileState: {}, context: styleContext, callSite: 'compact_full' })
+      const restored = compacted.flatMap(m => m.attachment.type === 'output_style_instructions' ? [m.attachment] : [])
+      assert.equal(restored.length, 1)
+      assert.equal(restored[0]?.style?.name, 'Learning')
+      const teammateContext = { ...styleContext, agentId: 'style-teammate', agentType: 'researcher' }
+      const inTeammate = <T>(fn: () => T) => runWithAgentContext({ agentId: 'style-teammate', parentSessionId: 'style-lead', agentName: 'researcher', teamName: 'style-team', isTeamLead: false, agentType: 'teammate' } as any, fn)
+      const teammate = (await inTeammate(() => getAttachments(null, teammateContext, null, [], [], 'agent:teammate', { skipSkillDiscovery: true }))).filter(a => a.type === 'output_style_instructions')
+      const teammateCompacted = await inTeammate(() => createPostCompactContextAttachments({ readFileState: {}, context: teammateContext, callSite: 'compact_full' }))
+      assert.equal(teammateCompacted.filter(m => m.attachment.type === 'output_style_instructions').length, 1, 'teammate lost its style across compaction')
+      assert.equal(teammate.length, 1)
+      assert.equal(teammate[0]?.style?.name, 'Learning')
+      const subagentContext = { ...styleContext, agentId: 'style-subagent', agentType: 'general-purpose' }
+      const subagent = (await getAttachments(null, subagentContext, null, [], [], 'agent:general-purpose', { skipSkillDiscovery: true })).filter(a => a.type === 'output_style_instructions')
+      assert.deepEqual(subagent, [], 'ordinary subagent inherited the main-session style')
+    } finally {
+      setOriginalCwd(realCwd); resetSettingsCache()
+      process.env.CLAUDE_CODE_SIMPLE = '1'
+    }
+  })
   await maintenance('skill-reload-resume-and-compaction', async () => {
     delete process.env.CLAUDE_CODE_SIMPLE
     const { getAttachments, createAttachmentMessage } = await import('../src/utils/attachments.js')

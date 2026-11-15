@@ -60,7 +60,6 @@ function sectionNames(model: string): string[] {
     enabledTools: new Set(['Bash', 'Read']),
     skillToolCommands: [],
     model,
-    outputStyleConfig: null,
   }).map(s => s.name)
 }
 
@@ -69,7 +68,6 @@ function resolve(model: string, name: string): string | null {
     enabledTools: new Set(['Bash', 'Read']),
     skillToolCommands: [],
     model,
-    outputStyleConfig: null,
   }).find(s => s.name === name)
   return section ? (section.compute() as string | null) : null
 }
@@ -81,7 +79,6 @@ describe('sections that ship alongside the compact head', () => {
       enabledTools: new Set(['Bash', 'Read']),
       skillToolCommands: [],
       model: VERBOSE_MODEL,
-      outputStyleConfig: null,
     })
     const firstValues = await resolveSystemPromptSections(first)
     expect(firstValues[first.findIndex(s => s.name.startsWith('env_info_simple'))])
@@ -91,7 +88,6 @@ describe('sections that ship alongside the compact head', () => {
       enabledTools: new Set(['Bash', 'Read']),
       skillToolCommands: [],
       model: LEAN_MODEL,
-      outputStyleConfig: null,
     })
     const secondValues = await resolveSystemPromptSections(second)
     const environment = secondValues[
