@@ -6,6 +6,7 @@
 - Changed: on Vertex AI, Claude Opus 4, Opus 4.1 and Sonnet 4 keep their tools inline; on-demand tool loading there is limited to Claude 4.5 and newer.
 - Changed: on providers without a search path, WebSearch is still offered; a search attempt returns how to enable it with `NOA_CLAUDE_WEB_SEARCH_BACKEND`, so the model can tell you instead of silently lacking search.
 - New: the Monitor tool is in the default build. It runs a shell command in the background and delivers its output lines to the session, with Bash permissions and sandboxing; `--restricted` removes it like Bash.
+- Fixed: `/status` shows the Bedrock and Vertex base URL set with `ANTHROPIC_BEDROCK_BASE_URL` / `ANTHROPIC_VERTEX_BASE_URL`.
 
 ## 1.25.0
 

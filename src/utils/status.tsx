@@ -234,7 +234,7 @@ export function buildAPIProviderProperties(): Property[] {
       });
     }
   } else if (apiProvider === 'bedrock') {
-    const bedrockBaseUrl = process.env.BEDROCK_BASE_URL;
+    const bedrockBaseUrl = process.env.ANTHROPIC_BEDROCK_BASE_URL;
     if (bedrockBaseUrl) {
       properties.push({
         label: 'Bedrock base URL',
@@ -251,7 +251,7 @@ export function buildAPIProviderProperties(): Property[] {
       });
     }
   } else if (apiProvider === 'vertex') {
-    const vertexBaseUrl = process.env.VERTEX_BASE_URL;
+    const vertexBaseUrl = process.env.ANTHROPIC_VERTEX_BASE_URL;
     if (vertexBaseUrl) {
       properties.push({
         label: 'Vertex base URL',
