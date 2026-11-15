@@ -1,4 +1,4 @@
-import { Children, useEffect, useRef, useState, type ReactNode } from "react"
+import { Children, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react"
 import { ChevronDown } from "../../lib/icons"
 import { PopupMenu, anchorBelow, type PopupMenuAnchor } from "../PopupMenu"
 
@@ -186,19 +186,43 @@ export function Select({
   )
 }
 
-export function Segmented({ value, options, onChange }: { value: string; options: [string, string][]; onChange: (value: string) => void }) {
+// A track with one thumb that slides to the selected segment. Options with an icon render icon-only.
+export function Segmented({ value, options, onChange }: { value: string; options: [string, string, ReactNode?][]; onChange: (value: string) => void }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [thumb, setThumb] = useState<{ left: number; width: number } | null>(null)
+  useLayoutEffect(() => {
+    const root = ref.current
+    if (!root) return
+    const measure = () => {
+      const active = root.querySelector<HTMLElement>("[aria-pressed=true]")
+      setThumb(active ? { left: active.offsetLeft, width: active.offsetWidth } : null)
+    }
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(root)
+    return () => observer.disconnect()
+  }, [value, options])
   return (
-    <div className="flex shrink-0 gap-1">
-      {options.map(([v, label]) => (
+    <div ref={ref} className="relative inline-flex h-7 shrink-0 items-stretch rounded-[10px] bg-[color-mix(in_srgb,var(--text-primary)_6%,transparent)] p-px">
+      {thumb && (
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute bottom-px left-0 top-px rounded-[9px] bg-[var(--bg-card,#fff)] shadow-[inset_0_0_0_1px_var(--border-default),0_1px_2px_rgb(0_0_0/0.05)] transition-[transform,width] duration-150 ease-out"
+          style={{ width: thumb.width, transform: `translateX(${thumb.left}px)` }}
+        />
+      )}
+      {options.map(([v, label, icon]) => (
         <button
           key={v}
           onClick={() => onChange(v)}
           aria-pressed={value === v}
-          className={`h-7 rounded-[10px] px-2.5 ${
-            value === v ? "bg-[var(--settings-fill-active)] text-[var(--text-primary)]" : "text-[var(--sidebar-text-muted)] hover:bg-[var(--settings-fill-hover)]"
+          aria-label={icon ? label : undefined}
+          title={icon ? label : undefined}
+          className={`relative z-[1] inline-flex items-center justify-center rounded-[9px] ${icon ? "aspect-square" : "px-2.5"} ${
+            value === v ? "text-[var(--text-primary)]" : "text-[var(--sidebar-text-muted)] hover:text-[var(--text-primary)]"
           }`}
         >
-          {label}
+          {icon ?? label}
         </button>
       ))}
     </div>

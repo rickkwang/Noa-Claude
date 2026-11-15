@@ -10,7 +10,7 @@
 }
 /* Corner radius of the conversation surface, the settings page card and the veil. Matches the native window's corner,
    so a card corner reads as concentric with the window instead of a smaller arc beside it. The right panel is a straight edge. */
-:root { --noa-surface-radius: 20px; --text-danger: #911E1B; }
+:root { --noa-surface-radius: 20px; --text-danger: #911E1B; --ring-warning: #FBB315; --ring-danger: #C83839; }
 /* Shared menu card tokens: dropdown cards (model, add, permissions, session card) and the suggestion popover (slash). */
 :root {
   --menu-radius: 20px;
@@ -19,7 +19,7 @@
   --menu-item-padding: 4px 10px;
   --menu-shadow: 0 0 0 .5px var(--border-default), 0 20px 25px -5px rgba(0, 0, 0, .1), 0 8px 10px -6px rgba(0, 0, 0, .1);
 }
-[data-theme="dark"] { --text-danger: #E02E2A; }
+[data-theme="dark"] { --text-danger: #E02E2A; --ring-danger: #DC3C3D; }
 /* The conversation surface's left edge: window-radius corners over the sidebar floor, edged by a half-pixel ring in the
    same token as other floating surfaces. The ring is a left border rather than a full ring so the window's right
    edge never grows a stray hairline. Collapsed, the radius unwinds to 0 and the ring fades; the shell stays
@@ -640,7 +640,7 @@ html[data-translucent-sidebar="enabled"] [data-sidebar-container] .noa-sidebar-t
   box-sizing: border-box;
   width: max-content;
   min-width: min(196px, 80vw);
-  max-width: min(296px, 80vw);
+  max-width: min(340px, 80vw);
   margin: 1px 0 8px;
   padding: 5px;
   border-radius: 14px;

@@ -13,9 +13,6 @@ import { Lightbox } from "./Lightbox"
 import { useConfirm } from "./ConfirmDialog"
 import { EnvironmentMenu } from "./EnvironmentMenu"
 import {
-  ComposerApprovalIcon,
-  ComposerShieldCodeIcon,
-  ComposerShieldWarningIcon,
   ComposerChevronIcon,
   ComposerFolderIcon,
   ComposerPlusIcon,
@@ -49,7 +46,7 @@ const MODE_OPTIONS: { value: PermissionMode; label: string; description: string 
   { value: "default", label: "Manual", description: "Always ask before making changes" },
   { value: "acceptEdits", label: "Accept edits", description: "Automatically accept all file edits" },
   { value: "plan", label: "Plan", description: "Create a plan before making changes" },
-  { value: "bypassPermissions", label: "Full access", description: "Noa can edit any file and run commands without asking" },
+  { value: "bypassPermissions", label: "Bypass permissions", description: "Noa can edit any file and run commands without asking" },
 ]
 
 type MentionEntry = { name: string; path: string; directory: boolean }
@@ -110,7 +107,7 @@ interface ComposerProps {
   newTask: boolean
   sendShortcut?: AppSettings["composer"]["sendShortcut"]
   followUpMode?: AppSettings["composer"]["followUpMode"]
-  // Full access is hidden from the permission menu until the user opts in from settings.
+  // Bypass permissions is hidden from the permission menu when the user turns it off in settings.
   showFullAccess?: boolean
   systemCaret?: boolean
   contextUsage?: ContextUsage
@@ -422,6 +419,17 @@ export const Composer = memo(function Composer({
     if (disabled || !model) return
     try { localStorage.setItem(modelLabelKey, currentModel?.displayName ?? model) } catch {}
   }, [disabled, modelLabelKey, model, currentModel?.displayName])
+  const autoCompactHint = (() => {
+    if (!contextUsage || contextUsage.isAutoCompactEnabled === false) return null
+    const raw = contextUsage.rawMaxTokens ?? contextUsage.maxTokens
+    const threshold = contextUsage.autoCompactThreshold
+    if (!(threshold && threshold > 0 && threshold < raw)) return null
+    const left = threshold - contextUsage.totalTokens
+    if (!Number.isFinite(left)) return null
+    if (left < 30_000) return "Auto-compacts soon"
+    const step = 10 ** (String(Math.floor(left)).length - 2)
+    return `${compactTokens(Math.floor(left / step) * step)} until auto-compact`
+  })()
   const currentMode = MODE_OPTIONS.find((m) => m.value === (mode ?? "default"))
   // Auto stays listed (greyed out) when the model can't run it; it is hidden only while the model list is loading.
   const autoUnsupported = !!currentModel && !currentModel.supportsAutoMode
@@ -1043,7 +1051,6 @@ export const Composer = memo(function Composer({
             hideChevron
             label={
               <>
-                {MODE_ICONS[mode ?? "default"]}
                 <span className="noa-agent-mode-label">{currentMode?.label ?? "Permissions"}</span>
               </>
             }
@@ -1057,7 +1064,6 @@ export const Composer = memo(function Composer({
               description: modeUnavailable(m.value) ? "Not available for the selected model" : m.description,
               active: m.value === mode,
               disabled: modeUnavailable(m.value),
-              icon: MODE_ICONS[m.value],
               danger: m.value === "bypassPermissions",
               onSelect: () => void selectMode(m.value),
             }))}
@@ -1083,13 +1089,13 @@ export const Composer = memo(function Composer({
                 className="shrink-0"
                 aria-hidden="true"
               >
-                <circle cx={7} cy={7} r={5.5} stroke="currentColor" strokeWidth={1.75} fill="none" opacity={0.18} />
+                <circle cx={7} cy={7} r={6} stroke="currentColor" strokeWidth={2} fill="none" opacity={0.18} />
                 <circle
                   cx={7}
                   cy={7}
-                  r={5.5}
-                  stroke={contextUsage.percentage >= 80 ? "#C24444" : contextUsage.percentage >= 50 ? "#D97757" : "currentColor"}
-                  strokeWidth={1.75}
+                  r={6}
+                  stroke={contextUsage.percentage >= 90 ? "var(--ring-danger)" : contextUsage.percentage >= 75 ? "var(--ring-warning)" : "var(--accent-color, currentColor)"}
+                  strokeWidth={2}
                   strokeLinecap="round"
                   fill="none"
                   pathLength={100}
@@ -1097,6 +1103,7 @@ export const Composer = memo(function Composer({
                   strokeDashoffset={100 - Math.min(100, Math.max(0, contextUsage.percentage))}
                   opacity={contextUsage.percentage > 0 ? 1 : 0}
                   transform="rotate(-90 7 7)"
+                  className="transition-[stroke-dashoffset] duration-300"
                 />
               </svg>
               </button>
@@ -1112,6 +1119,18 @@ export const Composer = memo(function Composer({
                   </span>
                 </span>
                 <UsageBar percentage={contextUsage.percentage} />
+                {autoCompactHint && <span className="text-[var(--sidebar-text-muted)]">{autoCompactHint}</span>}
+                {contextUsage.percentage >= 50 && (
+                  <button
+                    type="button"
+                    disabled={busy || disabled}
+                    title={busy ? "Available when Claude finishes this turn" : undefined}
+                    onClick={() => { if (onSend("/compact")) setContextOpen(false) }}
+                    className="self-start rounded-md px-2 py-1 text-[var(--text-primary)] transition-colors hover:bg-[var(--fill-hover)] disabled:opacity-40 disabled:hover:bg-transparent"
+                  >
+                    Compact
+                  </button>
+                )}
                 {([
                   ["five_hour", "5-hour limit"],
                   ["seven_day", "Weekly limit"],
@@ -1170,14 +1189,6 @@ interface PickerItem {
   leading?: ReactNode
   danger?: boolean
   disabled?: boolean
-}
-
-const MODE_ICONS: Partial<Record<PermissionMode, ReactNode>> = {
-  default: <ComposerApprovalIcon />,
-  auto: <ComposerShieldCodeIcon />,
-  acceptEdits: <Edit2 size={16} />,
-  plan: <List size={16} />,
-  bypassPermissions: <ComposerShieldWarningIcon />,
 }
 
 // Spring presets for the effort slider: thumb travel, and the thumb's grow/shrink under hover or press.
@@ -1509,25 +1520,25 @@ function Picker({
             setOpen(false)
           }}
           aria-pressed={item.active}
-          className={modelPicker ? "noa-model-picker-option" : item.icon ? `noa-approval-item${item.danger ? " is-danger" : ""}` : `flex w-full flex-col gap-0.5 rounded-md px-2.5 py-1.5 text-left ${
+          className={modelPicker ? "noa-model-picker-option" : item.icon || menuTitle ? `noa-approval-item${item.danger ? " is-danger" : ""}` : `flex w-full flex-col gap-0.5 rounded-md px-2.5 py-1.5 text-left ${
             item.active
               ? "bg-[var(--fill-hover)]"
               : "hover:bg-[var(--fill-hover)]"
           }`}
         >
           {item.icon && <span className="noa-approval-icon">{item.icon}</span>}
-          <span className={item.icon ? "noa-approval-text" : "contents"}>
-            <span className={modelPicker ? "noa-model-picker-option-label" : item.icon ? undefined : "text-body font-medium"}>
+          <span className={item.icon || menuTitle ? "noa-approval-text" : "contents"}>
+            <span className={modelPicker ? "noa-model-picker-option-label" : item.icon || menuTitle ? undefined : "text-body font-medium"}>
               {item.leading ? <span className="flex min-w-0 items-center gap-2">{item.leading}<span className="truncate">{item.title}</span></span> : item.title}
               {modelPicker && item.active && <Check size={16} aria-hidden="true" />}
             </span>
             {item.description && (
-              <span className={item.icon ? "noa-approval-desc" : `break-words text-caption text-[var(--sidebar-text-muted,#898781)]${modelPicker ? " mt-0.5" : ""}`}>
+              <span className={item.icon || menuTitle ? "noa-approval-desc" : `break-words text-caption text-[var(--sidebar-text-muted,#898781)]${modelPicker ? " mt-0.5" : ""}`}>
                 {item.description}
               </span>
             )}
           </span>
-          {item.icon && item.active && <Check size={16} className="noa-approval-check" aria-hidden="true" />}
+          {(item.icon || menuTitle) && item.active && <Check size={16} className="noa-approval-check" aria-hidden="true" />}
         </button>
       </div>
     ))}
@@ -1592,7 +1603,7 @@ function UsageBar({ percentage }: { percentage: number }) {
         className="block h-full rounded-full"
         style={{
           width: `${Math.min(100, Math.max(0, percentage))}%`,
-          background: percentage >= 75 ? "#e8a93b" : "var(--accent-color, #3b7ddd)",
+          background: percentage >= 90 ? "var(--ring-danger)" : percentage >= 75 ? "var(--ring-warning)" : "var(--accent-color, #3b7ddd)",
         }}
       />
     </span>

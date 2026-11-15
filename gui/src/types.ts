@@ -63,7 +63,7 @@ export interface AppSettings {
     sendShortcut: 'enter' | 'modifier-enter' | 'modifier-enter-multiline';
     /** Whether a follow-up sent during a running turn queues behind it or steers into it. */
     followUpMode: 'queue' | 'steer';
-    /** Shows Full access in the composer's permission menu. Off by default. */
+    /** Shows Bypass permissions in the composer's permission menu. On by default. */
     showFullAccess: boolean;
     showContextUsage: boolean;
     /** Native caret in the composer instead of the animated one. Off by default. */

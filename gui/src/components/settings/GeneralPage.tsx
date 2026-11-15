@@ -3,7 +3,7 @@ import type { AccountInfo, ModelInfo } from "../../agent/protocol"
 import { outputStyleOptions } from "../../lib/outputStyles"
 import { useConfirm } from "../ConfirmDialog"
 import { previewStreamSound } from "../../lib/streamSound"
-import { actionButton, Row, Section, Select, Slider, TextField, Toggle } from "./controls"
+import { actionButton, Row, Section, Segmented, Select, Slider, TextField, Toggle } from "./controls"
 
 type DefaultMode = AppSettings["agent"]["permissionDefault"]
 
@@ -79,15 +79,15 @@ export function GeneralPage({
           />
         </Row>
         <Row
-          label="Full access"
-          description="Add Full access to the permissions menu. It lets Noa edit any file and use the network without approval."
+          label="Bypass permissions"
+          description="Show Bypass permissions in the permissions menu. It lets Noa edit any file and use the network without approval."
         >
           <Toggle
             checked={settings.composer.showFullAccess}
             onChange={async (showFullAccess) => {
               if (showFullAccess && !(await confirm({
-                title: "Make Full access available?",
-                description: "When selected, Noa can access the internet and read and edit files without asking for approval, including potentially destructive commands. Turning this on adds Full access to the permissions menu. It does not turn Full access on.",
+                title: "Make Bypass permissions available?",
+                description: "When selected, Noa can access the internet and read and edit files without asking for approval, including potentially destructive commands. Turning this on adds Bypass permissions to the permissions menu. It does not turn Bypass permissions on.",
                 confirmLabel: "Confirm",
                 danger: true,
               }))) return
@@ -121,7 +121,7 @@ export function GeneralPage({
           />
         </Row>
         <Row label="Follow-up behavior" description="Messages sent while Noa runs are queued or steer the current run.">
-          <Select
+          <Segmented
             value={settings.composer.followUpMode}
             options={[
               ["queue", "Queue"],
@@ -156,7 +156,7 @@ export function GeneralPage({
           <Row label="Sound preset" description={sound.preset === "classic" ? "Warm triangle wave with a light reverb." : "Soft sine wave with an airy reverb."}>
             <div className="flex items-center gap-2">
               <button type="button" className={actionButton} onClick={() => previewStreamSound()}>Preview</button>
-              <Select
+              <Segmented
                 value={sound.preset}
                 options={[["classic", "Classic"], ["ethereal", "Ethereal"]]}
                 onChange={(preset) => setSound({ preset: preset as typeof sound.preset })}

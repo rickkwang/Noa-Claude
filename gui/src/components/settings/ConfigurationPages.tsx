@@ -97,7 +97,7 @@ export function ConfigurationPage({
             value={agent.permissionMode ?? "default"}
             options={[
               ...(agent.permissionMode && !permissionOptions.some(([mode]) => mode === agent.permissionMode)
-                ? [[agent.permissionMode, agent.permissionMode === "bypassPermissions" ? "Full access" : agent.permissionMode] as [string, string]]
+                ? [[agent.permissionMode, agent.permissionMode === "bypassPermissions" ? "Bypass permissions" : agent.permissionMode] as [string, string]]
                 : []),
               ...permissionOptions.filter(
                 ([mode]) =>
