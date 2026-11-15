@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Changed: Haiku 4.5 and 5.5 now load rarely used tools on demand through `ToolSearch`, as other Claude 4+ models do, instead of sending every tool schema with each request. Only Claude 3.x models keep all tools inline.
+- Changed: on Vertex AI, Claude Opus 4, Opus 4.1 and Sonnet 4 keep their tools inline; on-demand tool loading there is limited to Claude 4.5 and newer.
+
 ## 1.25.0
 
 - New: changing effort mid-conversation no longer invalidates the prompt cache on models that support per-message effort (direct Claude API only). The spinner and the reply's effort line show the level each reply actually ran at. If an endpoint rejects the effort messages, the CLI falls back to changing top-level effort for the rest of the process.

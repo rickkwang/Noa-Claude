@@ -36,6 +36,7 @@ import { getMergedBetas } from './betas.js'
 import { getContextWindowForModel } from './context.js'
 import { logForDebugging } from './debug.js'
 import { isEnvDefinedFalsy, isEnvTruthy } from './envUtils.js'
+import { getCanonicalName } from './model/model.js'
 import {
   getAPIProvider,
   isFirstPartyAnthropicBaseUrl,
@@ -223,6 +224,16 @@ const DEFAULT_UNSUPPORTED_MODEL_PATTERNS = [
 ]
 
 /**
+ * On Vertex AI, tool_reference is treated as available only on Claude 4.5 and
+ * newer, so the Claude 4 models before 4.5 keep their tools inline there.
+ */
+const VERTEX_UNSUPPORTED_CANONICAL_MODELS = new Set([
+  'claude-opus-4-0',
+  'claude-opus-4-1',
+  'claude-sonnet-4',
+])
+
+/**
  * Get the list of model patterns that do NOT support tool_reference.
  * Can be configured via GrowthBook for live updates without code changes.
  */
@@ -256,6 +267,13 @@ function getUnsupportedToolReferencePatterns(): string[] {
  * @returns true if the model supports tool_reference, false otherwise
  */
 export function modelSupportsToolReference(model: string): boolean {
+  if (
+    getAPIProvider() === 'vertex' &&
+    VERTEX_UNSUPPORTED_CANONICAL_MODELS.has(getCanonicalName(model))
+  ) {
+    return false
+  }
+
   const normalizedModel = model.toLowerCase()
   const unsupportedPatterns = getUnsupportedToolReferencePatterns()
 
