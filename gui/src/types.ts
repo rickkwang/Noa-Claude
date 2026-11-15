@@ -70,6 +70,8 @@ export interface AppSettings {
     systemCaret: boolean;
     /** Synthesized notes while a reply streams in. Off by default. */
     streamSound: { enabled: boolean; preset: 'classic' | 'ethereal'; volume: number };
+    /** Mascot perched above the new-task composer before a session starts. */
+    mascot: 'clawd' | 'clippy' | 'rocky' | 'none';
   };
   terminal: {
     /** Where the terminal shortcut opens a terminal: the bottom panel or a right-panel tab. */

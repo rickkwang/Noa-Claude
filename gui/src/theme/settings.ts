@@ -23,7 +23,7 @@ export const defaultSettings: AppSettings = {
     codeFontSize: 12,
     fontSmoothing: true,
   },
-  composer: { sendShortcut: 'enter', followUpMode: 'queue', showFullAccess: true, showContextUsage: true, systemCaret: false, streamSound: { enabled: false, preset: 'classic', volume: 100 } },
+  composer: { sendShortcut: 'enter', followUpMode: 'queue', showFullAccess: true, showContextUsage: true, systemCaret: false, streamSound: { enabled: false, preset: 'classic', volume: 100 }, mascot: 'clawd' },
   terminal: { defaultLocation: 'bottom', fontFamily: '' },
   shortcuts: defaultShortcuts,
   agent: {

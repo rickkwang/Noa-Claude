@@ -149,6 +149,23 @@ export function GeneralPage({
             onChange={(systemCaret) => onChange({ ...settings, composer: { ...settings.composer, systemCaret } })}
           />
         </Row>
+        <Row label="Composer mascot" description="Show an interactive mascot above the input box before a session starts.">
+          <Select
+            value={settings.composer.mascot}
+            options={[
+              ["clawd", "Clawd"],
+              ["clippy", "Clippy"],
+              ["rocky", "Rocky"],
+              ["none", "Off"],
+            ]}
+            onChange={(mascot) =>
+              onChange({
+                ...settings,
+                composer: { ...settings.composer, mascot: mascot as AppSettings["composer"]["mascot"] },
+              })
+            }
+          />
+        </Row>
         <Row label="Streaming sound" description="Play soft synthesized notes while a reply streams in.">
           <Toggle checked={sound.enabled} onChange={(enabled) => setSound({ enabled })} />
         </Row>

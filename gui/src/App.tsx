@@ -1107,6 +1107,7 @@ function Workspace({ cwd }: { cwd: string }) {
                   followUpMode={settings.composer.followUpMode}
                   showFullAccess={settings.composer.showFullAccess}
                   systemCaret={settings.composer.systemCaret}
+                  mascot={settings.composer.mascot}
                   connection={forkPending ? "connecting" : state.connection}
                   forking={forkPending}
                   readOnly={!!state.external}

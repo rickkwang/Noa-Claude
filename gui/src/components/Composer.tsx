@@ -7,6 +7,7 @@ import { startEffortPixelGrid } from "./effortPixelGrid"
 import type { ContextUsage, ImageAttachment, RateLimitInfo, UserContent, ModelInfo, PermissionMode, SlashCommand } from "../agent/protocol"
 import { RateLimitNotice } from "./RateLimitNotice"
 import { ComposerCaret } from "./ComposerCaret"
+import { ComposerMascots } from "./ComposerMascots"
 import { FileAttachmentCard } from "./FileAttachmentCard"
 import { Check, Edit2, FileText, List, Photo, Queue, RotateCcw, Steer, Terminal, X } from "../lib/icons"
 import { Lightbox } from "./Lightbox"
@@ -110,6 +111,7 @@ interface ComposerProps {
   // Bypass permissions is hidden from the permission menu when the user turns it off in settings.
   showFullAccess?: boolean
   systemCaret?: boolean
+  mascot?: AppSettings["composer"]["mascot"]
   contextUsage?: ContextUsage
   // Usage-limit notice: shown in the environment strip for new tasks, above the composer otherwise.
   rateLimit?: RateLimitInfo
@@ -170,6 +172,7 @@ export const Composer = memo(function Composer({
   followUpMode = "queue",
   showFullAccess = false,
   systemCaret = false,
+  mascot = "clawd",
   rateLimit,
   onDismissRateLimit,
 }: ComposerProps) {
@@ -801,6 +804,7 @@ export const Composer = memo(function Composer({
       )}
 
       <div className="noa-agent-input relative flex flex-col">
+        <ComposerMascots visible={Boolean(newTask)} choice={mascot} />
         {editDraft && !editDraft.silent && (
           <div className="flex items-center gap-2 border-b border-[var(--divider-subtle)] px-3 py-1.5 text-caption text-[var(--sidebar-text-muted)]">
             <Edit2 size={12} />
