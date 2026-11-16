@@ -17,6 +17,8 @@ export interface SessionSummary {
   coordinator?: boolean
   // When the coordinator brings this thread back up (epoch ms).
   remindAt?: number
+  // When the thread was marked resolved; unset once it runs again.
+  resolvedAt?: number
 }
 
 export interface ProjectInfo {
@@ -158,6 +160,11 @@ export async function openCoordinator(cwd: string): Promise<string> {
 export async function setThreadReminder(cwd: string, sessionId: string, at: number | null): Promise<void> {
   const response = await fetch(`/api/coordinator/reminder${query(cwd)}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sessionId, at }) })
   if (!response.ok) throw new Error(((await response.json()) as { error?: string }).error ?? "Could not set the reminder")
+}
+
+export async function setThreadResolved(cwd: string, sessionId: string, resolved: boolean): Promise<void> {
+  const response = await fetch(`/api/coordinator/resolve${query(cwd)}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sessionId, resolved }) })
+  if (!response.ok) throw new Error(((await response.json()) as { error?: string }).error ?? "Could not update the thread")
 }
 
 // Sends the user's message to the project chat from another view; returns the coordinator's session id.

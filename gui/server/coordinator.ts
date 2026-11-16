@@ -4,14 +4,15 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { configHome, canonicalCwd, lastReply, listSessions, transcriptPath, type SessionSummary } from "./sessions"
 import { interruptSession, listAgentRuns, runHooks, sendToSession, sessionMode, type RunInfo } from "./agents"
-import { isManagedWorktree, projectWorktrees, worktreeRequest } from "./workspace"
+import { branches, isManagedWorktree, projectWorktrees, worktreeRequest } from "./workspace"
 
 const SERVER = "noa_session"
 // The bridge folds events that arrive together into one update.
 const RELAY_DELAY_MS = 1500
 
 // remindAt: when to bring the thread back up in the project chat (epoch ms).
-interface Thread { id: string; cwd: string; remindAt?: number; remindNote?: string }
+// resolvedAt: when the thread was marked done; a later turn in the thread reopens it.
+interface Thread { id: string; cwd: string; remindAt?: number; remindNote?: string; resolvedAt?: number }
 interface CoordinatorRecord { sessionId: string; threads: Thread[] }
 
 const storePath = () => join(configHome(), "gui-coordinators.json")
@@ -55,6 +56,33 @@ export function setReminder(project: string, thread: { id: string; cwd: string }
   else { entry.remindAt = at; if (note) entry.remindNote = note; else delete entry.remindNote }
   writeStore(store)
   due.get(canonicalCwd(project))?.delete(thread.id)
+}
+
+// Marks a thread resolved, or reopens it (resolved false).
+export function setResolved(project: string, thread: { id: string; cwd: string }, resolved: boolean) {
+  const store = readStore()
+  const record = store[canonicalCwd(project)]
+  if (!record) throw new Error("This project has no coordinator yet.")
+  let entry = record.threads.find((t) => t.id === thread.id)
+  if (!entry) record.threads.push(entry = { id: thread.id, cwd: thread.cwd })
+  if (resolved) entry.resolvedAt = Date.now()
+  else delete entry.resolvedAt
+  writeStore(store)
+}
+
+// The time each still-resolved thread was resolved; a thread updated since then has reopened.
+export function resolutions(project: string, sessions: { id: string; updatedAt: number }[]): Map<string, number> {
+  const resolvedAt = new Map((readStore()[canonicalCwd(project)]?.threads ?? []).flatMap((t) => t.resolvedAt ? [[t.id, t.resolvedAt] as const] : []))
+  return new Map(sessions.flatMap((session) => {
+    const at = resolvedAt.get(session.id)
+    return at && session.updatedAt <= at ? [[session.id, at] as const] : []
+  }))
+}
+
+export async function setThreadResolved(project: string, id: string, resolved: boolean) {
+  const thread = (await threadsOf(project)).find((t) => t.id === id)
+  if (!thread) throw new Error(`No thread ${id} in this project.`)
+  setResolved(project, thread, resolved)
 }
 
 export function reminders(project: string): Map<string, number> {
@@ -101,6 +129,7 @@ You are the coordinator of this project. The user talks to you in the project ch
 - Do not wait to be asked. When you post a status update, cover every thread that is still working or needs the user, not only the one that changed, so the user never has to open threads one by one.
 - When the user asks to be reminded about a thread, or to come back to it later, call remind_thread with the time. An activity line marked "reminder due" means that time has come: bring the thread up again with where it stands and what it needs.
 - Requests that start with "Side question:" or "Fork thread" ask for a new thread; start it with start_session and keep the other threads untouched.
+- When a thread's work is finished and needs nothing more from the user (merged, answered, or abandoned), mark it resolved with resolve_thread so it leaves the active list. A resolved thread reopens by itself when it runs again.
 - Keep replies short. Refer to threads by their titles, not their ids.`
 
 const TOOLS = [
@@ -123,7 +152,7 @@ const TOOLS = [
   },
   {
     name: "list_sessions",
-    description: "List this project's threads with their status (working, needs input, failed, ready for review, done), current step or latest result, and pull request.",
+    description: "List this project's threads with their status (working, needs input, failed, ready for review, done, resolved), current step or latest result, and pull request.",
     inputSchema: { type: "object", properties: {} },
   },
   {
@@ -146,11 +175,19 @@ const TOOLS = [
     },
   },
   {
+    name: "resolve_thread",
+    description: "Mark a thread resolved (its work is done and needs nothing more), or reopen it with resolved false.",
+    inputSchema: { type: "object", properties: { session_id: { type: "string" }, resolved: { type: "boolean" } }, required: ["session_id"] },
+  },
+  {
     name: "stop_session",
     description: "Interrupt a thread's running turn. Its queued messages wait until it is resumed.",
     inputSchema: { type: "object", properties: { session_id: { type: "string" } }, required: ["session_id"] },
   },
 ]
+  // Loaded up front instead of through tool search: the coordinator needs them every turn, and some providers
+  // cannot read the tool references a search returns.
+  .map((tool) => ({ ...tool, _meta: { "anthropic/alwaysLoad": true } }))
 
 type Listed = SessionSummary & { cwd: string; status: string }
 
@@ -158,18 +195,20 @@ async function threadsOf(project: string): Promise<Listed[]> {
   const coordinator = coordinatorSession(project)
   const runs = listAgentRuns()
   const worktrees = await projectWorktrees(project)
-  return [project, ...worktrees].flatMap((cwd) => listSessions(cwd).map((session) => ({ ...session, cwd })))
+  const sessions = [project, ...worktrees].flatMap((cwd) => listSessions(cwd).map((session) => ({ ...session, cwd })))
     .filter((session) => session.id !== coordinator)
     .sort((a, b) => b.updatedAt - a.updatedAt)
-    .map((session) => {
-      const run = runs.find((r) => r.sessionId === session.id)
-      const status = run?.waiting ? `needs input (${run.waitingKinds.join(", ")})`
-        : run?.busy ? "working"
+  const resolved = resolutions(project, sessions)
+  return sessions.map((session) => {
+    const run = runs.find((r) => r.sessionId === session.id)
+    const status = run?.waiting ? `needs input (${run.waitingKinds.join(", ")})`
+      : run?.busy ? "working"
+        : resolved.has(session.id) ? "resolved"
           : session.error ? "failed"
             : session.pr?.state === "open" ? "ready for review"
               : "done"
-      return { ...session, status }
-    })
+    return { ...session, status }
+  })
 }
 
 function describe(thread: Listed): string {
@@ -199,11 +238,14 @@ async function callTool(project: string, coordinator: string, name: string, args
       if (!prompt) throw new Error("The prompt is empty.")
       // A leading slash would run as a CLI command in the thread, without a permission prompt.
       if (prompt.startsWith("/")) throw new Error("The prompt cannot start with a slash. Describe the task in a sentence.")
-      const cwd = args.worktree === true ? (await worktreeRequest(project, { action: "create" }) as { path: string }).path : project
+      // A folder without Git history has nothing to isolate from, so the thread runs in it instead of failing.
+      const repo = args.worktree === true ? await branches(project) : undefined
+      const unversioned = repo !== undefined && !(repo.isGit && repo.hasCommits)
+      const cwd = repo && !unversioned ? (await worktreeRequest(project, { action: "create" }) as { path: string }).path : project
       const thread = { id: crypto.randomUUID(), cwd }
       addThread(project, thread)
       await sendToSession({ cwd, sessionId: thread.id, isNew: true, mode: sessionMode(coordinator) }, prompt, cliRoot)
-      return `Started thread ${thread.id}${cwd === project ? "" : ` in worktree ${cwd}`}.`
+      return `Started thread ${thread.id}${cwd === project ? "" : ` in worktree ${cwd}`}.${unversioned ? " The project is not a Git repository with commits, so it runs in the project folder without a worktree." : ""}`
     }
     case "send_message": {
       const message = typeof args.message === "string" ? args.message.trim() : ""
@@ -229,6 +271,12 @@ async function callTool(project: string, coordinator: string, name: string, args
       if (raw && Number.isNaN(at)) throw new Error(`Could not read the time "${raw}". Use ISO 8601, e.g. 2026-11-17T09:00:00+08:00.`)
       setReminder(project, thread, at, typeof args.note === "string" ? args.note.trim() : undefined)
       return at === undefined ? `Cleared the reminder on "${thread.title}".` : `Will remind you about "${thread.title}" at ${new Date(at).toString()}.`
+    }
+    case "resolve_thread": {
+      const thread = await find()
+      const resolved = args.resolved !== false
+      setResolved(project, thread, resolved)
+      return resolved ? `Resolved "${thread.title}".` : `Reopened "${thread.title}".`
     }
     case "stop_session": {
       const thread = await find()

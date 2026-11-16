@@ -1,22 +1,24 @@
-import { useLayoutEffect, useRef, useState, type AnimationEvent } from "react"
+import { useEffect, useLayoutEffect, useRef, useState, type AnimationEvent } from "react"
 import type { SessionSummary } from "../api"
-import { ChevronDown, MoreHorizontal, Search } from "../lib/icons"
+import { CheckCircle2, ChevronDown, MoreHorizontal, Search } from "../lib/icons"
 import { anchorBelow, PopupMenu, type PopupMenuAnchor } from "./PopupMenu"
 import { ageLabel } from "./SessionHoverCard"
 
-type Group = "review" | "needs" | "working" | "recent"
+type Group = "review" | "needs" | "working" | "recent" | "resolved"
 const GROUPS: { id: Group; title: string }[] = [
   { id: "review", title: "Ready for review" },
   { id: "needs", title: "Needs input" },
   { id: "working", title: "Working" },
   { id: "recent", title: "Recent" },
+  { id: "resolved", title: "Resolved" },
 ]
 // `is:` filters typed into the search box; aliases map onto the groups.
-const IS_FILTERS: Record<string, Group> = { review: "review", pr: "review", needs: "needs", waiting: "needs", working: "working", running: "working", queued: "working", recent: "recent", idle: "recent" }
+const IS_FILTERS: Record<string, Group> = { review: "review", pr: "review", needs: "needs", waiting: "needs", working: "working", running: "working", queued: "working", recent: "recent", idle: "recent", resolved: "resolved", done: "resolved" }
 
 function groupOf(session: SessionSummary): Group {
   if (session.status === "waiting") return "needs"
   if (session.status) return "working"
+  if (session.resolvedAt) return "resolved"
   if (session.error) return "needs"
   return session.pr?.state === "open" ? "review" : "recent"
 }
@@ -25,6 +27,7 @@ function statusLabel(session: SessionSummary): string {
   if (session.status === "waiting") return "Approval required"
   if (session.status === "running") return "Running"
   if (session.status === "queued") return "Queued"
+  if (session.resolvedAt) return "Resolved"
   if (session.error) return "Failed"
   return session.pr?.state === "open" ? "Ready for review" : "Idle"
 }
@@ -71,6 +74,7 @@ function StatusGlyph({ group, label, spin }: { group: Group; label: string; spin
       <circle cx="8" cy="8" r="6.25" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" pathLength="360" strokeDasharray="200 160" strokeDashoffset="-45" />
     </svg>
   </span>
+  if (group === "resolved") return <span role="img" aria-label={label} className="flex shrink-0 text-[var(--text-tertiary)]"><CheckCircle2 size={16} /></span>
   if (group === "recent") return <svg {...common} className="shrink-0 text-[var(--text-tertiary)]">
     {DOTS.map(({ cx, cy }, i) => <circle key={i} cx={cx.toFixed(3)} cy={cy.toFixed(3)} r="1" fill="currentColor" />)}
   </svg>
@@ -107,23 +111,38 @@ function reminderTimes(now = new Date()) {
 }
 
 // The project's tasks grouped by what they need from you, newest first within each group.
-export function ThreadsPanel({ sessions, activeId, onSelect, onRemind }: {
+export function ThreadsPanel({ sessions, activeId, onSelect, onRemind, onResolve }: {
   sessions: SessionSummary[]
   activeId?: string
   onSelect: (id: string) => void
-  // Absent when the project has no coordinator to deliver reminders.
+  // Both absent when the project has no coordinator to keep thread state.
   onRemind?: (id: string, at: number | null) => void
+  onResolve?: (id: string, resolved: boolean) => void
 }) {
   const [query, setQuery] = useState("")
   const [menu, setMenu] = useState<{ session: SessionSummary; anchor: PopupMenuAnchor; trigger: Element }>()
-  const [collapsed, setCollapsed] = useState<Set<Group>>(() => new Set())
+  const [collapsed, setCollapsed] = useState<Set<Group>>(() => new Set(["resolved"]))
+  // A thread that was just resolved, from here, the task menu or the coordinator, stays in place for a moment with an
+  // undo before it moves into the collapsed Resolved group.
+  const [settling, setSettling] = useState<Set<string>>(() => new Set())
+  // Whether each thread in the last list was resolved; only a thread seen open there counts as just resolved, so
+  // switching projects or the first load does not flash every resolved thread.
+  const wasResolved = useRef(new Map<string, boolean>())
+  useEffect(() => {
+    const fresh = sessions.filter(session => session.resolvedAt && wasResolved.current.get(session.id) === false).map(session => session.id)
+    wasResolved.current = new Map(sessions.map(session => [session.id, !!session.resolvedAt]))
+    if (!fresh.length) return
+    setSettling(current => new Set([...current, ...fresh]))
+    setTimeout(() => setSettling(current => new Set([...current].filter(id => !fresh.includes(id)))), 4000)
+  }, [sessions])
+  const groupFor = (session: SessionSummary) => groupOf(settling.has(session.id) && session.resolvedAt ? { ...session, resolvedAt: undefined } : session)
   const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean)
   const only = words.flatMap(word => word.startsWith("is:") && IS_FILTERS[word.slice(3)] ? [IS_FILTERS[word.slice(3)]] : [])
   const text = words.filter(word => !(word.startsWith("is:") && IS_FILTERS[word.slice(3)]))
   const threads = sessions.filter(session => !session.coordinator)
   const shown = threads
     .filter(session => text.every(word => `${session.title} ${line(session) ?? ""} ${session.pr ? `#${session.pr.number}` : ""}`.toLowerCase().includes(word)))
-    .filter(session => !only.length || only.includes(groupOf(session)))
+    .filter(session => !only.length || only.includes(groupFor(session)))
     .sort((a, b) => b.updatedAt - a.updatedAt)
   const listRef = useRef<HTMLDivElement>(null)
   const layout = useRef(new Map<string, { top: number; look?: string }>())
@@ -175,7 +194,7 @@ export function ThreadsPanel({ sessions, activeId, onSelect, onRemind }: {
     <div ref={listRef} className="scrollbar-on-scroll noa-scroll-fade [--edge-fade-distance:24px] min-h-0 flex-1 overflow-y-auto ps-3 pe-1 pt-3 pb-5 [scrollbar-gutter:stable]">
       {!shown.length && <p className="m-0 px-2 py-1 text-[var(--text-tertiary)]">{threads.length ? "No matching threads" : "No threads yet"}</p>}
       {GROUPS.map(({ id, title }) => {
-        const items = shown.filter(session => groupOf(session) === id)
+        const items = shown.filter(session => groupFor(session) === id)
         if (!items.length) return null
         const open = !collapsed.has(id)
         return <section key={id} className="mb-4">
@@ -185,7 +204,7 @@ export function ThreadsPanel({ sessions, activeId, onSelect, onRemind }: {
           </button>
           {open && <ul className="m-0 flex list-none flex-col gap-0.5 p-0">
             {/* Hover and selection cover the whole thread, PR line included; the PR line's padding keeps the rail's end clear of the next row. */}
-            {items.map(session => <li key={session.id} data-flip={session.id} data-look={[groupOf(session), line(session), session.pr?.state, session.remindAt].join("\0")} className={`group relative rounded-lg hover:bg-[var(--fill-hover)] ${session.id === activeId ? "bg-[var(--fill-hover)]" : ""} ${session.pr ? "pb-1" : ""}`}>
+            {items.map(session => <li key={session.id} data-flip={session.id} data-look={[groupFor(session), line(session), session.pr?.state, session.remindAt, session.resolvedAt].join("\0")} className={`group relative rounded-lg hover:bg-[var(--fill-hover)] ${session.id === activeId ? "bg-[var(--fill-hover)]" : ""} ${session.pr ? "pb-1" : ""}`}>
               <button
                 type="button"
                 aria-current={session.id === activeId ? "page" : undefined}
@@ -202,6 +221,9 @@ export function ThreadsPanel({ sessions, activeId, onSelect, onRemind }: {
                   {session.remindAt && <span data-fade className="truncate text-caption leading-4 text-[var(--text-tertiary)]">Reminder · {reminderLabel(session.remindAt)}</span>}
                 </span>
               </button>
+              {settling.has(session.id) && session.resolvedAt && <div data-fade className="-mt-1.5 flex h-5 items-center gap-1 ps-[33px] pb-1 text-caption text-[var(--text-tertiary)]">
+                Resolved{onResolve && <> · <button type="button" onClick={() => onResolve(session.id, false)} className="rounded-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:underline">Undo</button></>}
+              </div>}
               {onRemind && <button
                 type="button"
                 aria-label={`Thread actions for ${session.title}`}
@@ -227,6 +249,10 @@ export function ThreadsPanel({ sessions, activeId, onSelect, onRemind }: {
       label="Thread actions"
       onClose={() => setMenu(undefined)}
       entries={[
+        ...(onResolve && !menu.session.status ? [
+          { label: menu.session.resolvedAt ? "Reopen" : "Resolve", onSelect: () => onResolve(menu.session.id, !menu.session.resolvedAt) },
+          { kind: "separator" as const },
+        ] : []),
         { kind: "heading", label: "Remind me" },
         ...reminderTimes().map(({ label, at }) => ({ label, onSelect: () => onRemind(menu.session.id, at) })),
         ...(menu.session.remindAt ? [{ kind: "separator" as const }, { label: "Clear reminder", onSelect: () => onRemind(menu.session.id, null) }] : []),

@@ -167,7 +167,7 @@ async function changes(cwd: string, scope: string, only?: string) {
 
 // Local branches for the composer's branch switcher: the default branch first,
 // the current branch, then the rest by most recent commit.
-async function branches(cwd: string) {
+export async function branches(cwd: string) {
   if (!(await git(cwd, ["rev-parse", "--is-inside-work-tree"]).catch(() => "")).trim()) return { isGit: false as const }
   const [current, refs, origin, status, head] = await Promise.all([
     git(cwd, ["branch", "--show-current"]),

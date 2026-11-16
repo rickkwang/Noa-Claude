@@ -16,6 +16,7 @@ import {
   openCoordinator,
   messageCoordinator,
   setThreadReminder,
+  setThreadResolved,
   type ProjectInfo,
   type SessionSummary,
 } from "./api"
@@ -50,10 +51,17 @@ import { SearchDialog } from "./components/SearchDialog"
 import { matchesShortcut } from "./lib/shortcuts"
 import { rateLimitKey } from "./components/RateLimitNotice"
 import type { AppSettings } from "./types"
-import { ListDetails, PanelRight } from "./lib/icons"
+import { ListDetails, PanelRight, X } from "./lib/icons"
 
 // Noa's default layout widths.
 const SIDEBAR_DEFAULT_WIDTH = 340
+const DAY_MS = 864e5
+// Per project: the subject each coordinator prompt had when last used or dismissed, and how long dismissal hides them.
+const STEPS_SEEN_KEY = "noa-agent.coordinatorSteps"
+const MAX_STEP_DISMISSALS = 3
+const STEP_CLICK_GUARD_MS = 700
+interface StepsSeen { subjects: Record<string, string>; until?: number; dismissals?: number }
+interface NextStep { id: string; subject: string; label: string; prompt: string }
 
 export function App() {
   // Optional workspace: /?cwd=/absolute/path. The bridge resolves the default when absent.
@@ -598,6 +606,10 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
   const projectCwd = worktreeOf ?? session.cwd
   const coordinatorId = sessionsByProject[projectCwd]?.find((item) => item.coordinator)?.id
   const inCoordinator = !!activeId && activeId === coordinatorId
+  const activeThread = coordinatorId && !inCoordinator ? sessionsByProject[projectCwd]?.find((item) => item.id === activeId) : undefined
+  // Keyed by the titles themselves, so a session list refresh that changes no title keeps the transcript's context stable.
+  const threadTitlesKey = inCoordinator ? JSON.stringify((sessionsByProject[projectCwd] ?? []).map((item) => [item.id, item.title])) : ""
+  const threadTitles = useMemo(() => threadTitlesKey ? Object.fromEntries(JSON.parse(threadTitlesKey) as [string, string][]) : undefined, [threadTitlesKey])
   // Forking mid-turn would copy a partial conversation.
   const forkBlocked = state.connection !== "ready" || state.busy || !!state.queue.length || state.tasks.some(task => task.status === "running")
   async function forkSession() {
@@ -628,19 +640,74 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
       await confirm({ title: "Could not set the reminder", description: (error as Error).message, confirmLabel: "OK", cancelLabel: "Close" })
     }
   })
+  const resolveThread = useEvent(async (id: string, resolved: boolean) => {
+    try {
+      await setThreadResolved(projectCwd, id, resolved)
+      const updated = await fetchSessions(projectCwd).catch(() => undefined)
+      if (updated) setSessionsByProject((all) => ({ ...all, [projectCwd]: updated }))
+    } catch (error) {
+      await confirm({ title: "Could not update the thread", description: (error as Error).message, confirmLabel: "OK", cancelLabel: "Close" })
+    }
+  })
   // Prompts for the project chat, offered from the threads' state so the user need not open them one by one.
-  const nextSteps = useMemo(() => {
-    if (!inCoordinator) return []
-    const threads = (sessionsByProject[projectCwd] ?? []).filter((item) => !item.coordinator)
-    const waiting = threads.filter((item) => item.status === "waiting").length
-    const failed = threads.filter((item) => !item.status && item.error).length
-    const working = threads.filter((item) => item.status === "running" || item.status === "queued").length
-    return [
-      waiting && { label: waiting === 1 ? "1 thread needs you" : `${waiting} threads need you`, prompt: "Which threads are waiting on me, and what does each one need from me?" },
-      failed && { label: failed === 1 ? "1 thread failed" : `${failed} threads failed`, prompt: "Which threads failed, why, and what do you suggest for each?" },
-      threads.length && { label: working ? `Status of ${working} running` : "Status report", prompt: "Give me a status report: for every thread, where it stands and anything it needs from me." },
-    ].filter((step): step is { label: string; prompt: string } => !!step)
+  // Each has a subject; once used or dismissed it stays hidden until its subject changes.
+  const [stepsSeen, setStepsSeen] = useState<Record<string, StepsSeen>>(() => {
+    try { return JSON.parse(localStorage.getItem(STEPS_SEEN_KEY) ?? "{}") } catch { return {} }
+  })
+  useEffect(() => {
+    try { localStorage.setItem(STEPS_SEEN_KEY, JSON.stringify(stepsSeen)) } catch { /* Storage unavailable. */ }
+  }, [stepsSeen])
+  // Every prompt the threads' state calls for now, before hiding the ones already used or dismissed.
+  const allSteps = useMemo(() => {
+    if (!inCoordinator || !sessionsByProject[projectCwd]) return undefined
+    const now = Date.now()
+    const threads = sessionsByProject[projectCwd].filter((item) => !item.coordinator && !item.resolvedAt)
+    const ids = (items: SessionSummary[]) => items.map((item) => item.id).sort().join(" ")
+    const waiting = threads.filter((item) => item.status === "waiting")
+    const failed = threads.filter((item) => !item.status && item.error)
+    const working = threads.filter((item) => item.status === "running" || item.status === "queued")
+    // A thread started over a day ago that is still active, as a long-running piece of work to check on.
+    const long = threads.filter((item) => item.status !== "waiting" && !item.error && item.createdAt <= now - DAY_MS && item.updatedAt >= now - DAY_MS)
+      .sort((a, b) => b.updatedAt - a.updatedAt)[0]
+    const steps: NextStep[] = [
+      ...(waiting.length ? [{ id: "waiting", subject: ids(waiting), label: waiting.length === 1 ? "1 thread needs you" : `${waiting.length} threads need you`, prompt: "Which threads are waiting on me, and what does each one need from me?" }] : []),
+      ...(failed.length ? [{ id: "failed", subject: ids(failed), label: failed.length === 1 ? "1 thread failed" : `${failed.length} threads failed`, prompt: "Which threads failed, why, and what do you suggest for each?" }] : []),
+      ...(long ? [{ id: "thread", subject: long.id, label: `Check on ${long.title.length > 32 ? `${long.title.slice(0, 31)}…` : long.title}`, prompt: `How is "${long.title}" going? Check it with get_session and tell me where it stands.` }] : []),
+      // The status report comes back each hour.
+      ...(threads.length ? [{ id: "status", subject: String(Math.floor(now / 36e5)), label: working.length ? `Status of ${working.length} running` : "Status report", prompt: "Give me a status report: for every thread, where it stands and anything it needs from me." }] : []),
+    ]
+    return steps
   }, [inCoordinator, sessionsByProject, projectCwd])
+  const nextSteps = useMemo(() => {
+    const seen = stepsSeen[projectCwd]
+    if (!allSteps || (seen?.dismissals ?? 0) >= MAX_STEP_DISMISSALS || (seen?.until && seen.until > Date.now())) return []
+    return allSteps.filter((step) => seen?.subjects[step.id] !== step.subject)
+  }, [allSteps, stepsSeen, projectCwd])
+  // A prompt whose state has passed is forgotten, so the same state coming back offers it again.
+  useEffect(() => {
+    const subjects = stepsSeen[projectCwd]?.subjects
+    if (!allSteps || !subjects) return
+    const lapsed = Object.keys(subjects).filter((id) => allSteps.find((step) => step.id === id)?.subject !== subjects[id])
+    if (lapsed.length) setStepsSeen((all) => ({ ...all, [projectCwd]: { ...all[projectCwd]!, subjects: Object.fromEntries(Object.entries(subjects).filter(([id]) => !lapsed.includes(id))) } }))
+  }, [allSteps, stepsSeen, projectCwd])
+  // The prompts keep their row while a turn runs, so the composer does not jump; a click right as they appear is a misclick.
+  const stepsVisible = nextSteps.length > 0 && !state.busy && !state.queue.length
+  const stepsShownAt = useRef(0)
+  const stepIds = nextSteps.map((step) => step.id).join(" ")
+  useEffect(() => { if (stepsVisible) stepsShownAt.current = performance.now() }, [stepsVisible, stepIds])
+  const markSteps = (steps: NextStep[], dismissed: boolean) => setStepsSeen((all) => {
+    const seen = all[projectCwd] ?? { subjects: {} }
+    const dismissals = (seen.dismissals ?? 0) + (dismissed ? 1 : 0)
+    return {
+      ...all,
+      [projectCwd]: {
+        subjects: { ...seen.subjects, ...Object.fromEntries(steps.map((step) => [step.id, step.subject])) },
+        ...(dismissals && { dismissals }),
+        // Dismissing hides the prompts for a day the first time, a week after that, and for good after the third.
+        ...(dismissed ? { until: Date.now() + (dismissals > 1 ? 7 : 1) * DAY_MS } : seen.until && { until: seen.until }),
+      },
+    }
+  })
   function sendComposer(content: UserContent) {
     const steer = state.busy && settings.composer.followUpMode === "steer"
     const sent = queueEditId ? updateQueued(queueEditId, content) : sendMessage(content, steer ? "steer" : undefined)
@@ -943,6 +1010,7 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
             activeSessionId={activeId}
             sideChat={{ key: sideChatKey, ready: sideChatReady, draftKey: session.runtimeId, request, focusKey: sideChatFocus }}
             onRemindThread={coordinatorId ? remindThread : undefined}
+            onResolveThread={coordinatorId ? resolveThread : undefined}
             onSelectSession={(id) => selectSession(sessionsByProject[worktreeOf ?? session.cwd]?.find((s) => s.id === id)?.cwd ?? worktreeOf ?? session.cwd, id)}
           />
         </div>
@@ -966,7 +1034,8 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
               disabled={forkBlocked}
               transcriptView={transcriptView}
               onTranscriptViewChange={(transcriptView) => setSessionTranscriptViews(prev => ({ ...prev, [activeId]: transcriptView }))}
-              onFork={forkSession} />}
+              onFork={forkSession}
+              resolve={activeThread && !activeThread.status && !state.busy ? { resolved: !!activeThread.resolvedAt, onSelect: () => void resolveThread(activeThread.id, !activeThread.resolvedAt) } : undefined} />}
             onRename={
               activeId && !state.busy
                 ? async (name) => {
@@ -1039,6 +1108,7 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
             {hasTurns ? (
               <MessageList
                 key={session.key}
+                threadTitles={threadTitles}
                 cwd={session.cwd}
                 sessionId={activeId}
                 historyBefore={state.historyBefore}
@@ -1141,13 +1211,21 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
                     {state.error}
                   </p>
                 )}
-                {nextSteps.length > 0 && !state.busy && !state.queue.length && (
-                  <div role="group" aria-label="Suggested questions" className="flex flex-wrap gap-1.5 px-1">
+                {nextSteps.length > 0 && (
+                  <div role="group" aria-label="Suggested questions" aria-hidden={!stepsVisible} inert={!stepsVisible} className={`flex flex-wrap gap-1.5 px-1 ${stepsVisible ? "" : "invisible"}`}>
                     {nextSteps.map((step) => (
-                      <button key={step.label} type="button" onClick={() => sendComposer(step.prompt)} className="h-6 rounded-full border border-[var(--border-default)] px-2.5 text-caption text-[var(--text-secondary)] hover:bg-[var(--fill-hover)] hover:text-[var(--text-primary)]">
+                      <button key={step.id} type="button" onClick={(event) => {
+                        // A keyboard press (detail 0) is deliberate; a pointer click this soon after the row appeared is not.
+                        if (event.detail && performance.now() - stepsShownAt.current < STEP_CLICK_GUARD_MS) return
+                        markSteps([step], false)
+                        sendComposer(step.prompt)
+                      }} className="h-6 rounded-full border border-[var(--border-default)] px-2.5 text-caption text-[var(--text-secondary)] hover:bg-[var(--fill-hover)] hover:text-[var(--text-primary)]">
                         {step.label}
                       </button>
                     ))}
+                    <button type="button" aria-label="Dismiss suggestions" title="Dismiss" onClick={() => markSteps(nextSteps, true)} className="flex size-6 items-center justify-center rounded-full text-[var(--text-tertiary)] hover:bg-[var(--fill-hover)] hover:text-[var(--text-primary)]">
+                      <X size={12} />
+                    </button>
                   </div>
                 )}
                 <Composer

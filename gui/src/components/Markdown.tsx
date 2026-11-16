@@ -9,7 +9,7 @@ import { Check, Code, Copy, TextOverflow, TextWrap } from "../lib/icons"
 import { localWebUrl, openBrowser } from "../lib/browserTabs"
 
 // Parse the existing Markdown grammar as a tree; render React children, never raw HTML.
-export const OutputContext = createContext<{ cwd?: string; onOpenFile?: (path: string, line?: number, endLine?: number) => void; onOpenImages?: (items: LightboxItem[], index: number) => void }>({})
+export const OutputContext = createContext<{ cwd?: string; onOpenFile?: (path: string, line?: number, endLine?: number) => void; onOpenImages?: (items: LightboxItem[], index: number) => void; threadTitle?: (id: string) => string | undefined }>({})
 const MAX_HIGHLIGHT_SIZE = 65_536
 const MAX_HIGHLIGHT_LINE = 1_024
 

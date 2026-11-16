@@ -28,6 +28,12 @@ test("failed and unknown tools remain explicit", () => {
     .toEqual({ action: "Calling CustomTool", detail: "hello" })
   expect(toolActivityLabel({ name: "mcp__filesystem__read_file", status: "done", input: { path: "/tmp/a" } }))
     .toEqual({ action: "Used read_file", detail: "filesystem" })
+  expect(toolActivityLabel({ name: "mcp__noa_session__start_session", status: "running", input: { prompt: "Fix the login bug\nDetails" } }))
+    .toEqual({ action: "Starting a thread", detail: "Fix the login bug Details" })
+  expect(toolActivityLabel({ name: "mcp__noa_session__get_session", status: "done", input: { session_id: "t1" } }, (id) => id === "t1" ? "Fix login" : undefined))
+    .toEqual({ action: "Read", detail: "“Fix login”" })
+  expect(toolActivitySummary([{ name: "mcp__noa_session__start_session", input: {} }, { name: "mcp__noa_session__list_sessions", input: {} }])?.label)
+    .toBe("Started a thread, checked threads")
 })
 
 test("stopped tools read as stopped and keep elapsed time", () => {

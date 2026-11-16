@@ -138,7 +138,18 @@ function partialInput(json: string): Record<string, unknown> {
   return input
 }
 
-export function toolActivityLabel(source: Pick<ToolBlock, "name" | "input" | "status" | "images"> & { partialJson?: string }): ToolActivityLabel {
+// The project coordinator's session tools, worded as what it does to its threads: done, running, failed.
+const THREAD_TOOLS: Record<string, [string, string, string]> = {
+  mcp__noa_session__start_session: ["Started a thread", "Starting a thread", "Couldn’t start a thread"],
+  mcp__noa_session__send_message: ["Messaged a thread", "Messaging a thread", "Couldn’t message a thread"],
+  mcp__noa_session__list_sessions: ["Listed threads", "Listing threads", "Couldn’t list threads"],
+  mcp__noa_session__get_session: ["Read a thread", "Reading a thread", "Couldn’t read a thread"],
+  mcp__noa_session__stop_session: ["Stopped a thread", "Stopping a thread", "Couldn’t stop a thread"],
+  mcp__noa_session__remind_thread: ["Set a reminder", "Setting a reminder", "Couldn’t set a reminder"],
+  mcp__noa_session__resolve_thread: ["Updated a thread", "Updating a thread", "Couldn’t update a thread"],
+}
+
+export function toolActivityLabel(source: Pick<ToolBlock, "name" | "input" | "status" | "images"> & { partialJson?: string }, threadTitle?: (id: string) => string | undefined): ToolActivityLabel {
   const block = source.status === "running" && source.partialJson && !Object.keys(source.input).length
     ? { ...source, input: partialInput(source.partialJson) }
     : source
@@ -149,6 +160,15 @@ export function toolActivityLabel(source: Pick<ToolBlock, "name" | "input" | "st
   const command = oneLine(block.input.command)
   const target = basename(block.input.file_path)
   const pattern = oneLine(block.input.pattern)
+  const thread = THREAD_TOOLS[block.name]
+  if (thread) {
+    const [done, active, failedText] = thread
+    const title = typeof block.input.session_id === "string" ? threadTitle?.(block.input.session_id) : undefined
+    const brief = block.name === "mcp__noa_session__start_session" ? oneLine(block.input.prompt).slice(0, 80) : ""
+    const text = failed ? failedText : running ? active : done
+    // A known thread is named in place of "a thread": "Reading “Fix login”".
+    return title ? { action: text.replace(/ a thread$/, "").replace(/ a reminder$/, " a reminder for"), detail: `“${title}”` } : { action: text, detail: brief }
+  }
   if (block.name.startsWith("mcp__")) {
     const [, server, ...toolParts] = block.name.split("__")
     const tool = toolParts.join("__") || server || block.name
@@ -470,6 +490,8 @@ export function toolActivitySummary(blocks: Pick<ToolBlock, "name" | "input" | "
   let reads = 0
   let tools = 0
   let searches = 0
+  let threads = 0
+  let started = 0
   const editedFiles = new Set<string>()
 
   blocks.forEach((block, index) => {
@@ -486,6 +508,9 @@ export function toolActivitySummary(blocks: Pick<ToolBlock, "name" | "input" | "
       editedFiles.add(file || `${block.name}:${index}`)
     } else if (block.name === "WebSearch") {
       searches++
+    } else if (THREAD_TOOLS[block.name]) {
+      if (block.name === "mcp__noa_session__start_session") started++
+      else threads++
     } else {
       tools++
     }
@@ -495,6 +520,8 @@ export function toolActivitySummary(blocks: Pick<ToolBlock, "name" | "input" | "
   // Order: tool calls, file changes, exploration, commands, web search.
   const parts: string[] = []
   const stopped = blocks.some(block => block.name === "Bash" && block.status === "stopped")
+  if (started) parts.push(started === 1 ? "Started a thread" : `Started ${started} threads`)
+  if (threads) parts.push("Checked threads")
   if (tools) parts.push(tools === 1 ? "Called a tool" : "Called tools")
   if (stopped) parts.push("Stopped command")
   if (edits) parts.push(edits === 1 ? "Edited a file" : "Edited files")

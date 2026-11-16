@@ -1,13 +1,15 @@
 import { useEffect, useRef, useState } from "react"
 import type { ControlRequest } from "../agent/protocol"
 import type { AppSettings } from "../types"
-import { GitBranch, ListDetails, MoreHorizontal, RotateCcw } from "../lib/icons"
+import { CheckCircle2, GitBranch, ListDetails, MoreHorizontal, RotateCcw } from "../lib/icons"
 import { anchorBelow, PopupMenu, type PopupMenuAnchor } from "./PopupMenu"
 
 type TranscriptView = AppSettings["appearance"]["transcriptView"]
 
-export function SessionActions({ disabled, transcriptView, onTranscriptViewChange, onFork }: {
+export function SessionActions({ disabled, transcriptView, onTranscriptViewChange, onFork, resolve }: {
   disabled: boolean
+  // A thread in a project with a coordinator can be resolved or reopened from here.
+  resolve?: { resolved: boolean; onSelect: () => void }
   transcriptView: TranscriptView
   onTranscriptViewChange: (view: TranscriptView) => void
   onFork: () => Promise<void>
@@ -19,6 +21,7 @@ export function SessionActions({ disabled, transcriptView, onTranscriptViewChang
   return <>
     <button ref={trigger} type="button" aria-label="Task actions" aria-haspopup="menu" aria-expanded={!!anchor} title="Task actions" disabled={pending} className="flex size-7 items-center justify-center rounded-md hover:bg-[var(--fill-hover)] disabled:opacity-40" onClick={event => setAnchor(anchor ? undefined : anchorBelow(event.currentTarget))}>{pending ? <span className="size-3 animate-spin rounded-full border border-current border-t-transparent" /> : <MoreHorizontal size={16} />}</button>
     {anchor && <PopupMenu anchor={anchor} trigger={trigger.current} label="Task actions" onClose={() => setAnchor(undefined)} entries={[
+      ...(resolve ? [{ label: resolve.resolved ? "Reopen thread" : "Resolve thread", icon: CheckCircle2, onSelect: () => { setAnchor(undefined); resolve.onSelect() } }] : []),
       { label: "Fork conversation", icon: GitBranch, disabled, onSelect: () => {
         setAnchor(undefined)
         setPending(true)

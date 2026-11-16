@@ -71,12 +71,13 @@ interface RightPanelProps {
   activeSessionId?: string
   onSelectSession: (id: string) => void
   onRemindThread?: (id: string, at: number | null) => void
+  onResolveThread?: (id: string, resolved: boolean) => void
   // The current session's side chat; closing its tab clears it.
   sideChat: { key: string; ready: boolean; draftKey: string; request: SideChatRequest; focusKey: number }
 }
 
 // Right column: one pane under a tab strip.
-export function RightPanel({ shortcuts = defaultShortcuts, state, onStopTask, cwd, open = true, tabs, onTabs, newTab, onNewTab, tab, onTab, terminalFocusKey, onBottomTerminal, onReference, onWorkspaceChange, workspaceRefreshKey, focusChange, focusFile, turnDiff, focusTask, sessions, activeSessionId, onSelectSession, onRemindThread, sideChat }: RightPanelProps) {
+export function RightPanel({ shortcuts = defaultShortcuts, state, onStopTask, cwd, open = true, tabs, onTabs, newTab, onNewTab, tab, onTab, terminalFocusKey, onBottomTerminal, onReference, onWorkspaceChange, workspaceRefreshKey, focusChange, focusFile, turnDiff, focusTask, sessions, activeSessionId, onSelectSession, onRemindThread, onResolveThread, sideChat }: RightPanelProps) {
   useSyncExternalStore(subscribeTerminals, terminalsVersion, terminalsVersion)
   useSyncExternalStore(subscribeBrowser, browserVersion, browserVersion)
   const browser = projectBrowser(cwd)
@@ -332,7 +333,7 @@ export function RightPanel({ shortcuts = defaultShortcuts, state, onStopTask, cw
         <SubagentsPanel tasks={subagents} selectedId={selectedTask} onSelect={setSelectedTask} onStopTask={onStopTask} />
       </div>
       <div id="panel-threads" role="tabpanel" aria-labelledby="panel-tab-threads" className="min-h-0 flex-1 flex-col overflow-hidden" style={{ display: shown === "threads" ? "flex" : "none" }}>
-        <ThreadsPanel sessions={sessions} activeId={activeSessionId} onSelect={onSelectSession} onRemind={onRemindThread} />
+        <ThreadsPanel sessions={sessions} activeId={activeSessionId} onSelect={onSelectSession} onRemind={onRemindThread} onResolve={onResolveThread} />
       </div>
       {shown === "sidechat" && (
         <div id="panel-sidechat" role="tabpanel" aria-labelledby="panel-tab-sidechat" className="flex min-h-0 flex-1 flex-col overflow-hidden">

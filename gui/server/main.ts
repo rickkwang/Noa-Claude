@@ -9,7 +9,7 @@ import { listPlugins, pluginAction } from "./plugins"
 import { skillAction, skillsState } from "./skills"
 import { statsSummary } from "./stats"
 import { attachAgent, agentMessage, detachAgent, externalHolder, listAgentRuns, releaseSessionRuns, SPAWN_PERMISSION_MODES, type SocketData } from "./agents"
-import { coordinatorSession, ensureCoordinator, initCoordinator, messageCoordinator, reminders, setThreadReminder } from "./coordinator"
+import { coordinatorSession, ensureCoordinator, initCoordinator, messageCoordinator, reminders, resolutions, setThreadReminder, setThreadResolved } from "./coordinator"
 import { attachTerminal, detachTerminal, TERMINAL_ID, terminalMessage, terminalSize, type TerminalSocketData } from "./terminal"
 
 const REPO_ROOT = resolve(import.meta.dir, "../..")
@@ -140,8 +140,10 @@ cwdRoutes["/api/sessions"] = {
     const worktrees = await projectWorktrees(cwd)
     const coordinator = coordinatorSession(cwd)
     const remindAt = reminders(cwd)
-    return json([...listSessions(cwd).map((session) => session.id === coordinator ? { ...session, title: "Coordinator", coordinator: true } : session), ...worktrees.flatMap((path) => listSessions(path).map((session) => ({ ...session, cwd: path })))]
-      .map((session) => remindAt.has(session.id) ? { ...session, remindAt: remindAt.get(session.id) } : session)
+    const sessions = [...listSessions(cwd).map((session) => session.id === coordinator ? { ...session, title: "Coordinator", coordinator: true } : session), ...worktrees.flatMap((path) => listSessions(path).map((session) => ({ ...session, cwd: path })))]
+    const resolvedAt = resolutions(cwd, sessions)
+    return json(sessions
+      .map((session) => ({ ...session, ...(remindAt.has(session.id) && { remindAt: remindAt.get(session.id) }), ...(resolvedAt.has(session.id) && { resolvedAt: resolvedAt.get(session.id) }) }))
       .sort((a, b) => b.updatedAt - a.updatedAt))
   },
 }
@@ -161,6 +163,20 @@ cwdRoutes["/api/coordinator/reminder"] = {
     if (typeof body?.sessionId !== "string" || (body.at !== null && typeof body.at !== "number")) return json({ error: "Expected sessionId and at" }, 400)
     try {
       await setThreadReminder(cwd, body.sessionId, body.at ?? undefined)
+    } catch (error) {
+      return json({ error: (error as Error).message }, 400)
+    }
+    return json({ ok: true })
+  },
+}
+
+cwdRoutes["/api/coordinator/resolve"] = {
+  methods: ["POST"],
+  async handler({ req, cwd }) {
+    const body = await req.json().catch(() => null) as { sessionId?: unknown; resolved?: unknown } | null
+    if (typeof body?.sessionId !== "string" || typeof body.resolved !== "boolean") return json({ error: "Expected sessionId and resolved" }, 400)
+    try {
+      await setThreadResolved(cwd, body.sessionId, body.resolved)
     } catch (error) {
       return json({ error: (error as Error).message }, 400)
     }

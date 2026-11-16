@@ -22,10 +22,10 @@ export function ToolCard({ block, step: stepProp, defaultOpen = false, active = 
   onStopTask?: (id: string) => void
   onOpenTask?: (id?: string) => void
 }) {
-  const { onOpenImages } = useContext(OutputContext)
+  const { onOpenImages, threadTitle } = useContext(OutputContext)
   const steps = stepProp ? undefined : toolShellSteps(block)
   const step = stepProp ?? (steps?.length === 1 ? steps[0] : undefined)
-  const baseLabel = step ? shellStepLabel(step, block.status !== "running") : toolActivityLabel(block)
+  const baseLabel = step ? shellStepLabel(step, block.status !== "running") : toolActivityLabel(block, threadTitle)
   const live = task ? task.status === "running" : active && block.status === "running"
   const label = task
     ? {

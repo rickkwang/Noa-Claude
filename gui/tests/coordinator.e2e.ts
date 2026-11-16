@@ -21,6 +21,7 @@ writeFileSync(join(config, "gui-projects.json"), JSON.stringify({ projects: [{ p
 // Requests seen by the provider, split by who sent them.
 const coordinatorTurns: string[] = []
 const threadTurns: string[] = []
+const coordinatorTools: string[][] = []
 let calls = 0
 const provider = Bun.serve({
   hostname: "127.0.0.1",
@@ -57,6 +58,7 @@ const provider = Bun.serve({
     const tool = (name: string, input: object) => ({ type: "tool_use", id: `tool_${calls}`, name: body.tools?.find((t: any) => t.name.endsWith(`__${name}`))?.name ?? name, input })
     if (system.includes("# Project coordinator")) {
       coordinatorTurns.push(lastText)
+      coordinatorTools.push((body.tools ?? []).map((t: any) => t.name))
       if (hasResult) return reply({ type: "text", text: lastText.includes("Slow work finished") ? "RESUMED_TOOLS_OK" : "COORD_ACK" })
       // A coordinator resumed without a window must still have its session tools.
       if (lastText.includes("project-activity") && lastText.includes("Slow work finished")) return reply(tool("list_sessions", {}))
@@ -74,6 +76,8 @@ const provider = Bun.serve({
       if (lastText.includes("COORD_SLASH")) return reply(tool("start_session", { prompt: "/goal THREAD_SLASH" }))
       const remind = lastText.match(/COORD_REMIND ([0-9a-f-]{36})/)
       if (remind) return reply(tool("remind_thread", { session_id: remind[1], at: new Date(Date.now() + 2000).toISOString(), note: "REMIND_NOTE" }))
+      const resolve = lastText.match(/COORD_RESOLVE ([0-9a-f-]{36})/)
+      if (resolve) return reply(tool("resolve_thread", { session_id: resolve[1] }))
       const follow = lastText.match(/COORD_FOLLOW ([0-9a-f-]{36})/)
       if (follow) return reply(tool("send_message", { session_id: follow[1], message: "THREAD_FOLLOW add tests" }))
       return reply({ type: "text", text: "COORD_REPLY" })
@@ -112,7 +116,8 @@ const bridge = Bun.spawn([process.execPath, "run", bridgeEntry], {
     CLAUDE_CODE_CACHE_DIR: join(directory, "cache"),
     ANTHROPIC_MODEL: "claude-sonnet-4-6",
     CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
-    ENABLE_TOOL_SEARCH: "false",
+    // On, so the coordinator's tools must reach the model without a search.
+    ENABLE_TOOL_SEARCH: "true",
   },
   stdout: "pipe",
   stderr: "pipe",
@@ -154,6 +159,9 @@ try {
   assert.match(relay, /Finished the fixture work/)
   assert.match(relay, /untrusted/)
   console.log("PASS the coordinator starts a thread and posts an update when it finishes")
+  assert.ok(coordinatorTools[0].includes("mcp__noa_session__start_session"), `session tools are loaded up front: ${coordinatorTools[0].join(", ")}`)
+  assert.ok(coordinatorTools[0].includes("ToolSearch"), "tool search is on, so the check above means something")
+  console.log("PASS the coordinator's session tools load up front with tool search on")
 
   const thread = (await api("/api/sessions")).find((s: any) => s.title === "Fixture thread")
   assert.ok(thread, "the thread is listed with the project")
@@ -197,6 +205,21 @@ try {
   assert.equal((await forked.json() as any).sessionId, coordinator)
   await wait(() => coordinatorTurns.some((t) => t.includes("FORK_REQUEST")), "fork request reached the coordinator")
   console.log("PASS /fork from a thread reaches the coordinator as the user's request")
+
+  say(`COORD_RESOLVE ${thread.id}`)
+  await wait(() => coordinatorTurns.some((t) => t.includes("tool_result") && t.includes("Resolved \\\"Fixture thread\\\"")), "resolve_thread result")
+  assert.ok((await api("/api/sessions")).find((s: any) => s.id === thread.id)?.resolvedAt, "the thread lists as resolved")
+  say("COORD_STATUS")
+  await wait(() => coordinatorTurns.some((t) => t.includes("tool_result") && t.includes("Fixture thread") && t.includes("· resolved")), "list_sessions shows it resolved")
+  const resolveApi = (body: object) => fetch(`http://127.0.0.1:${port}/api/coordinator/resolve?${new URLSearchParams({ cwd })}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })
+  assert.equal((await resolveApi({ sessionId: thread.id, resolved: false })).status, 200)
+  assert.equal((await api("/api/sessions")).find((s: any) => s.id === thread.id)?.resolvedAt, undefined, "reopened from the menu")
+  assert.equal((await resolveApi({ sessionId: thread.id, resolved: true })).status, 200)
+  const follows = threadTurns.filter((t) => t.includes("THREAD_FOLLOW")).length
+  say(`COORD_FOLLOW ${thread.id}`)
+  await wait(() => threadTurns.filter((t) => t.includes("THREAD_FOLLOW")).length > follows, "second follow-up delivered")
+  await wait(async () => (await api("/api/sessions")).find((s: any) => s.id === thread.id)?.resolvedAt === undefined, "a new turn reopens the thread")
+  console.log("PASS a thread can be resolved by the coordinator or the menu, and reopens when it runs again")
 
   say("COORD_START_B")
   await wait(() => replies().some((t) => t.startsWith("STATUS_UPDATE waiting")), "update while a thread waits for approval", 40000)

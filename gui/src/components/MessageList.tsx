@@ -37,6 +37,8 @@ import { streamSound } from "../lib/streamSound"
 
 interface MessageListProps {
   turns: Turn[]
+  // In a project's coordinator chat: thread titles by session id, to name the thread a tool call acts on.
+  threadTitles?: Record<string, string>
   cwd?: string
   onOpenFile?: (path: string, line?: number, endLine?: number) => void
   busy: boolean
@@ -74,7 +76,7 @@ const ESTIMATED_TURN_HEIGHT = 160
 const TODO_TOOLS = ["TodoWrite", "TaskCreate", "TaskUpdate", "TaskList", "TaskGet"]
 const scrollPositions = new Map<string, { top: number; pinned: boolean; heights: Map<string, number> }>()
 
-export function MessageList({ turns, cwd, onOpenFile, busy, result, readingWidth, liveDiff, onTurnDiff, onTurnDiffAction, diffActionPending, onRetry, onEdit, onRewind, rewindBlocked, onUndoRewind, onQuote, tasks, onStopTask, onOpenTask, sessionId, historyBefore, historyLoading, onLoadEarlier, transcriptView = "normal" }: MessageListProps) {
+export function MessageList({ turns, threadTitles, cwd, onOpenFile, busy, result, readingWidth, liveDiff, onTurnDiff, onTurnDiffAction, diffActionPending, onRetry, onEdit, onRewind, rewindBlocked, onUndoRewind, onQuote, tasks, onStopTask, onOpenTask, sessionId, historyBefore, historyLoading, onLoadEarlier, transcriptView = "normal" }: MessageListProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
   const layoutRef = useRef<HTMLDivElement>(null)
@@ -244,7 +246,8 @@ export function MessageList({ turns, cwd, onOpenFile, busy, result, readingWidth
     cwd,
     onOpenFile: (path: string, line?: number, endLine?: number) => handlers.current.onOpenFile?.(path, line, endLine),
     onOpenImages: (items: LightboxItem[], index: number) => setPreview({ items, index }),
-  }), [cwd])
+    threadTitle: (id: string) => threadTitles?.[id],
+  }), [cwd, threadTitles])
   const stableStopTask = useCallback((id: string) => handlers.current.onStopTask?.(id), [])
   const stableOpenTask = useCallback((id?: string) => handlers.current.onOpenTask?.(id), [])
   const stableTurnDiff = useCallback((diff: TurnDiff, path?: string) => handlers.current.onTurnDiff?.(diff, path), [])
@@ -1038,6 +1041,7 @@ function ActivityGroup({ blocks, pending, tasks, onStopTask, onOpenTask, verbose
     const timer = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(timer)
   }, [live])
+  const { threadTitle } = use(OutputContext)
   const tools = blocks.filter((block): block is ToolBlock => block.kind === "tool")
   const summary = toolActivitySummary(tools)
   // The heading summarises what the group did; a failed call says so on its own row.
@@ -1045,7 +1049,7 @@ function ActivityGroup({ blocks, pending, tasks, onStopTask, onOpenTask, verbose
   const liveLabel = liveBlock?.kind === "thinking" || (!liveBlock && pending)
     ? "Thinking"
     : liveBlock?.kind === "tool"
-      ? labelForTool(liveBlock, now)
+      ? labelForTool(liveBlock, now, threadTitle)
       : completedLabel
   const SummaryIcon =
     summary?.kind === "edits" ? Edit2
@@ -1116,14 +1120,14 @@ function endsInToolGroup(blocks: Block[]): boolean {
   return last?.kind === "activity" && last.blocks.some(block => block.kind === "tool")
 }
 
-function labelForTool(block: ToolBlock, now = Date.now()): string {
+function labelForTool(block: ToolBlock, now = Date.now(), threadTitle?: (id: string) => string | undefined): string {
   // A file action names what it is doing, without a timer.
   const step = toolShellSteps(block)?.at(-1)
   if (step) {
     const active = shellStepActiveLabel(step)
     return `${active.action} ${active.detail}`
   }
-  const label = toolActivityLabel(block)
+  const label = toolActivityLabel(block, threadTitle)
   const base = label.detail ? `${label.action} ${label.detail}` : label.action
   const elapsed = block.name === "Bash" && block.status === "running" ? toolElapsedMs(block, now) : undefined
   return elapsed === undefined ? base : `${base} for ${formatElapsed(elapsed)}`
