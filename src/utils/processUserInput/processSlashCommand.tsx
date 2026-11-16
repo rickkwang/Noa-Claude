@@ -84,9 +84,10 @@ async function executeForkedSlashCommand(command: CommandBase & PromptCommand, a
   } = await prepareForkedCommandContext(command, args, context);
 
   // Merge skill's effort into the agent definition so runAgent applies it
-  const agentDefinition = command.effort !== undefined ? {
+  const effort = command.getEffort?.(args, context) ?? command.effort;
+  const agentDefinition = effort !== undefined ? {
     ...baseAgent,
-    effort: command.effort
+    effort
   } : baseAgent;
   logForDebugging(`Executing forked slash command /${command.name} with agent ${agentDefinition.agentType}`);
 

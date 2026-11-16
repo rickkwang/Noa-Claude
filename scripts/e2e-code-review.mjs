@@ -54,21 +54,21 @@ const server = createServer(async (req, res) => {
   }
   const body = JSON.parse(raw || '{}');
   requests.push(JSON.stringify(body));
-  sse(res, JSON.stringify(body).includes('expert code reviewer') ? finding : 'ok');
+  sse(res, JSON.stringify(body).includes('Phase 0 — Gather the diff') ? finding : 'ok');
 });
 await new Promise(r => server.listen(0, '127.0.0.1', r));
 const baseUrl = `http://127.0.0.1:${server.address().port}`;
 const configDir = join(artifacts, 'config');
 mkdirSync(configDir, { recursive: true });
 
-function runCli(prompt, tools) {
+function runCli(prompt, tools, runModel = model, extraEnv = {}) {
   const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => ['PATH', 'HOME', 'TMPDIR', 'USER', 'LANG', 'LC_ALL', 'SHELL'].includes(k)));
   Object.assign(env, {
     CLAUDE_CONFIG_DIR: configDir, ANTHROPIC_API_KEY: 'local-e2e-dummy', ANTHROPIC_BASE_URL: baseUrl,
-    ANTHROPIC_MODEL: model, CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1', DISABLE_AUTOUPDATER: '1',
-  });
+    ANTHROPIC_MODEL: runModel, CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1', CLAUDE_CODE_ALWAYS_ENABLE_EFFORT: '1', DISABLE_AUTOUPDATER: '1',
+  }, extraEnv);
   return new Promise(resolveRun => {
-    const child = spawn(entry, ['--print', '--model', model, '--permission-mode', 'dontAsk', ...(tools ? ['--tools', tools] : []), '--max-turns', '3', prompt], { cwd: fixture, env, stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(entry, ['--print', '--model', runModel, '--permission-mode', 'dontAsk', ...(tools ? ['--tools', tools] : []), '--max-turns', '3', prompt], { cwd: fixture, env, stdio: ['ignore', 'pipe', 'pipe'] });
     let out = '', err = '';
     child.stdout.on('data', d => { out += d; });
     child.stderr.on('data', d => { err += d; });
@@ -78,9 +78,9 @@ function runCli(prompt, tools) {
 }
 
 const results = [];
-async function scenario(name, prompt, tools, check) {
+async function scenario(name, prompt, tools, check, runModel, extraEnv) {
   requests.length = 0;
-  const run = await runCli(prompt, tools);
+  const run = await runCli(prompt, tools, runModel, extraEnv);
   let failure;
   try {
     assert.equal(run.code, 0, `exit ${run.code}: ${run.err.slice(-500)}`);
@@ -99,74 +99,85 @@ async function scenario(name, prompt, tools, check) {
 const ALL_TOOLS = undefined;
 try {
   await scenario('explicit-effort-and-cap', '/code-review high --max-findings 3', ALL_TOOLS, (req, out) => {
-    assert.ok(req.includes('Effort: high'), 'effort not applied');
-    assert.ok(req.includes('at most 3 findings'), 'max-findings not applied');
-    assert.ok(req.includes('recall'), 'high-tier lead-in missing');
-    assert.ok(req.includes('via the Agent tool'), 'fan-out instruction missing with Agent tool');
+    assert.ok(req.includes('high effort → 8 inline angles → dedup (no verify) → ≤3 findings'), 'high tier or cap not applied');
+    assert.ok(req.includes('do not spawn subagents for them'), 'default-model high should run its angles inline');
+    assert.ok(!req.includes('via the Agent tool'), 'default-model high should not fan out');
+    assert.ok(req.includes('Target at least 1 finding.'), 'finding floor not derived from the cap');
     assert.ok(out.includes('E2E_FINDING_42'), 'model findings not returned to the user');
   });
   await scenario('reuse-last-effort-and-cap', '/code-review', ALL_TOOLS, req => {
-    assert.ok(req.includes('Effort: high (reused from the level you typed last time; type a level'), 'last effort not reused');
-    assert.ok(req.includes('at most 3 findings'), 'last max-findings not reused');
-    assert.ok(req.includes('type a level like `/code-review high` to change it'), 'reuse hint missing');
-    assert.ok(req.includes('Pass `--max-findings default` to go back to the usual limit.'), 'max reuse hint missing');
+    assert.ok(req.includes('No effort level given — reusing high, the level the user typed last time.'), 'last effort not reused');
+    assert.ok(req.includes('typing a level (for example `/code-review high`) changes it'), 'reuse hint missing');
+    assert.ok(req.includes('Reporting up to 3 findings, the limit the user set last time'), 'last max-findings not reused');
+    assert.ok(req.includes('passing `--max-findings default` goes back to the usual limit'), 'max reuse hint missing');
+    assert.ok(req.includes('Open your report with one short line'), 'reused settings not relayed to the user');
   });
   await scenario('uppercase-effort-and-pr-number', '/code-review HIGH #123 --comment', ALL_TOOLS, req => {
-    assert.ok(req.includes('Effort: high'), 'uppercase effort not accepted');
-    assert.ok(!req.includes('Ignoring unrecognized effort'), 'uppercase effort reported as unrecognized');
-    assert.ok(req.includes('Post each surviving finding with `gh api`'), '#123 not treated as a PR');
-    assert.ok(!req.includes('needs a PR target'), '#123 refused as a non-PR target');
+    assert.ok(req.includes('`high effort →'), 'uppercase effort not accepted');
+    assert.ok(req.includes('Review target: `#123`'), 'PR target missing');
+    assert.ok(req.includes('## Posting to GitHub (--comment)'), '--comment section missing');
   });
-  await scenario('ultra-unsupported', '/code-review ultra', ALL_TOOLS, req => {
-    assert.ok(req.includes('Noa does not support'), 'ultra was not refused');
-    assert.ok(!req.includes('expert code reviewer'), 'ultra started a review');
+  await scenario('ultra-falls-back-to-max', '/code-review ultra high', ALL_TOOLS, req => {
+    assert.ok(req.includes('Falling back to a local max-effort review'), 'ultra fallback notice missing');
+    assert.ok(req.includes('`max effort →'), 'ultra did not fall back to max');
+    assert.ok(req.includes('Review target: `high`'), 'token after ultra was parsed as a level');
   });
   await scenario('branch-target-and-invalid-max-notice', '/code-review hig --max-findings 0', ALL_TOOLS, req => {
-    assert.ok(req.includes('Review the target `hig`'), 'non-level token was swallowed instead of kept as a target');
+    assert.ok(req.includes('Review target: `hig`'), 'non-level token was swallowed instead of kept as a target');
     assert.ok(!req.includes('Ignoring unrecognized effort'), 'target was treated as an invalid effort');
     assert.ok(req.includes('was ignored: type a whole number above zero'), 'invalid max-findings notice missing');
-    assert.ok(req.includes('You set `--max-findings 3` last time.'), 'stored max not reported when the bad flag falls back to it');
+    assert.ok(req.includes('Reporting up to 3 findings, the limit the user set last time'), 'stored max not reported when the bad flag falls back to it');
     assert.ok(!req.includes('Using the usual limit.'), 'usual-limit notice shown although the stored limit is reused');
-    assert.ok(req.includes('Effort: high (reused from the level you typed last time; type a level'), 'invalid effort should fall back to the last typed level');
+    assert.ok(req.includes('reusing high, the level the user typed last time'), 'should fall back to the last typed level');
   });
-  await scenario('no-agent-tool-fallback', '/code-review medium', 'Read,Bash,Grep,Glob', req => {
+  await scenario('max-fans-out-with-agent-tool', '/code-review max', ALL_TOOLS, req => {
+    assert.ok(req.includes('Run the 10 finder angles via the Agent tool'), 'max tier does not fan out');
+    assert.ok(req.includes('run one verifier via the Agent tool'), 'max tier does not verify');
+    assert.ok(req.includes('a single non-REFUTED vote carries the finding'), 'max verify is not recall mode');
+  });
+  await scenario('no-agent-tool-fallback', '/code-review max', 'Read,Bash,Grep,Glob', req => {
     assert.ok(req.includes('tool is not available here'), 'single-pass fallback missing without Agent tool');
     assert.ok(!req.includes('via the Agent tool'), 'fan-out instruction present without Agent tool');
+    assert.ok(!req.includes('PLAUSIBLE is the default'), 'subagent verdict rules leak into the single-pass fallback');
   });
   await scenario('low-tier-with-fix', '/review low --max-findings all --fix', ALL_TOOLS, req => {
     assert.ok(req.includes('Review at low effort'), 'low tier prompt missing');
-    assert.ok(req.includes('every finding that survives'), 'max-findings all not applied');
-    assert.ok(req.includes('Apply a fix for each finding (low effort does not verify findings)'), 'low-tier fix section missing');
+    assert.ok(req.includes('Output every finding'), 'max-findings all not applied');
+    assert.ok(req.includes('apply the findings to the working tree'), 'low-tier fix section missing');
   });
   await scenario('flag-after-bad-max-is-kept', '/code-review medium --max-findings --fix', ALL_TOOLS, req => {
     assert.ok(req.includes('was ignored: type a whole number'), 'bad max-findings value not reported');
-    assert.ok(req.includes('Apply a fix for each CONFIRMED finding'), '--fix swallowed as the max-findings value');
+    assert.ok(req.includes('apply the findings to the working tree'), '--fix swallowed as the max-findings value');
   });
   await scenario('fix-refused-for-target', '/code-review 123 --fix', ALL_TOOLS, req => {
     assert.ok(req.includes('change no files and say so'), '--fix not refused for a PR target');
-    assert.ok(!req.includes('Apply a fix for each'), '--fix applied to a PR target');
+    assert.ok(!req.includes('apply the findings'), '--fix applied to a PR target');
   });
-  await scenario('user-rules-path', '/code-review medium', ALL_TOOLS, req => {
+  await scenario('user-rules-path', '/code-review medium --max-findings default', ALL_TOOLS, req => {
     assert.ok(req.includes(`${configDir}/CLAUDE.md`), 'convention angle does not use the config home CLAUDE.md');
     assert.ok(!req.includes('~/.claude/CLAUDE.md'), 'hardcoded ~/.claude/CLAUDE.md still in the prompt');
+    assert.ok(req.includes('medium effort → 8 inline angles') === false, 'default-model medium should use the high inline recipe');
+    assert.ok(req.includes('high effort → 8 inline angles → dedup (no verify) → ≤10 findings'), 'default-model medium routing or default cap wrong');
   });
-  await scenario('xhigh-candidate-budget', '/code-review max', ALL_TOOLS, req => {
-    assert.ok(req.includes('up to 8 candidates'), 'xhigh/max finder budget does not match the tier line');
+  await scenario('xhigh-inline-sweep', '/code-review xhigh --max-findings all', ALL_TOOLS, req => {
+    assert.ok(req.includes('10 angles, up to 8 each'), 'xhigh finder budget missing');
+    assert.ok(req.includes('Phase 3 — Sweep for gaps'), 'xhigh sweep missing');
+    assert.ok(!req.includes('via the Agent tool'), 'xhigh should run inline');
+    assert.ok(req.includes('Target at least 7 findings'), 'floor for --max-findings all should use the recipe default');
   });
   await scenario('branch-name-preserved', '/code-review highlight', ALL_TOOLS, req => {
-    assert.ok(req.includes('Review the target `highlight`'), 'branch target was swallowed');
+    assert.ok(req.includes('Review target: `highlight`'), 'branch target was swallowed');
   });
   await scenario('local-path-fix', '/code-review a.ts --fix', ALL_TOOLS, req => {
-    assert.ok(req.includes('Apply a fix for each CONFIRMED finding'), 'local path fix was refused');
+    assert.ok(req.includes('apply the findings to the working tree'), 'local path fix was refused');
     assert.ok(req.includes('Restrict edits to the reviewed target `a.ts`'), 'path fix scope missing');
-    assert.ok(!req.includes('is not checked out here'), 'local path reported as not checked out');
   });
   await scenario('local-path-fix-boundary', '/code-review outside-link.ts --fix', ALL_TOOLS, req => {
     assert.ok(req.includes('change no files and say so'), 'symlink outside the working directory allowed');
-    assert.ok(!req.includes('Apply a fix for each'), 'outside target received fix instruction');
+    assert.ok(!req.includes('apply the findings'), 'outside target received fix instruction');
   });
   await scenario('untracked-path-fix', '/code-review new.ts --fix', ALL_TOOLS, req => {
-    assert.ok(req.includes('Apply a fix for each CONFIRMED finding'), 'untracked local path refused');
+    assert.ok(req.includes('apply the findings to the working tree'), 'untracked local path refused');
     assert.ok(req.includes('Restrict edits to the reviewed target `new.ts`'), 'untracked path scope missing');
   });
   for (const value of ['9007199254740993', '9'.repeat(400)]) {
@@ -181,7 +192,42 @@ try {
     assert.ok(req.includes('same defect, same location, and same cause'), 'dedup rule can merge distinct defects');
   });
   await scenario('comment-without-pr', '/code-review --comment', ALL_TOOLS, req => {
-    assert.ok(req.includes('needs a PR target'), '--comment without PR not refused');
+    assert.ok(req.includes('If the target is not a PR, print the findings and note that `--comment` was ignored'), '--comment without PR not handled');
+  });
+  // Per-model recipes.
+  await scenario('opus-4-8-medium-inline', '/code-review medium --max-findings default', ALL_TOOLS, req => {
+    assert.ok(req.includes('medium effort → 8 inline angles → dedup (no verify) → ≤8 findings'), 'opus 4.8 medium recipe not used');
+    assert.ok(req.includes('reviewing for **correctness bugs**'), 'opus 4.8 medium lead-in missing');
+  }, 'claude-opus-4-8');
+  await scenario('sonnet-5-high-fans-out-with-budget', '/code-review high HEAD~1...HEAD', ALL_TOOLS, req => {
+    assert.ok(req.includes('high effort → 3+5 angles × 6 candidates → 1-vote verify (recall-biased)'), 'sonnet 5 high recipe not used');
+    assert.ok(req.includes('Phase 2 — Verify (1 vote, recall-biased)'), 'recall-biased verify missing');
+    assert.ok(req.includes('This diff is about 2 lines. Spawn about 2 finder subagents (min 2, max 8)'), 'finder budget hint missing');
+  }, 'claude-sonnet-5');
+  // Sonnet 5 defaults to high effort, so medium here proves the typed level reaches the forked reviewer.
+  await scenario('sonnet-5-medium-runs-at-typed-effort', '/code-review medium', ALL_TOOLS, req => {
+    assert.ok(req.includes('medium effort → 3+5 angles × 6 candidates → 1-vote verify'), 'sonnet 5 medium recipe not used');
+    assert.ok(req.includes('"effort":"medium"'), 'forked reviewer not run at the typed effort');
+  }, 'claude-sonnet-5');
+  await scenario('sonnet-5-low-has-no-cap', '/code-review low --max-findings 2', ALL_TOOLS, req => {
+    assert.ok(req.includes('Target min(files_changed, 4) findings'), 'sonnet 5 low recipe not used');
+    assert.ok(req.includes('`--max-findings` does not change this review'), 'no-maximum notice missing');
+    assert.ok(req.includes('"effort":"medium"'), 'sonnet 5 low should run the reviewer at medium effort');
+  }, 'claude-sonnet-5');
+  await scenario('opus-5-high-minimal-clamps-cap', '/code-review high --max-findings all', ALL_TOOLS, req => {
+    assert.ok(req.includes('minimal prompt → single careful diff pass → ≤32 findings'), 'opus 5 minimal recipe or clamp missing');
+    assert.ok(req.includes('This review reports at most 32 findings, so the limit is 32 here.'), 'clamp notice missing');
+  }, 'claude-opus-5');
+  await scenario('typed-level-beats-effort-env', '/code-review max', ALL_TOOLS, req => {
+    assert.ok(req.includes('`max effort →'), 'session effort env overrode the typed level');
+  }, undefined, { CLAUDE_CODE_EFFORT_LEVEL: 'low' });
+  await scenario('unsupported-level-is-capped-with-notice', '/code-review xhigh', ALL_TOOLS, req => {
+    assert.ok(req.includes('xhigh effort is not available for this model; running at high here.'), 'cap notice missing');
+    assert.ok(req.includes('`high effort →'), 'xhigh not capped to the model');
+  }, 'claude-sonnet-4-6', {
+    CLAUDE_CODE_ALWAYS_ENABLE_EFFORT: '',
+    ANTHROPIC_DEFAULT_SONNET_MODEL: 'claude-sonnet-4-6',
+    ANTHROPIC_DEFAULT_SONNET_MODEL_SUPPORTED_CAPABILITIES: 'effort,max_effort',
   });
 } finally {
   server.closeAllConnections();

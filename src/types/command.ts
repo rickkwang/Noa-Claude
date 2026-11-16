@@ -53,6 +53,8 @@ export type PromptCommand = {
   // Only applicable when context is 'fork'
   agent?: string
   effort?: EffortValue
+  // Per-invocation effort for a forked run; overrides `effort` when it returns a value
+  getEffort?: (args: string, context: ToolUseContext) => EffortValue | undefined
   // Glob patterns for file paths this skill applies to
   // When set, the skill is only visible after the model touches matching files
   paths?: string[]

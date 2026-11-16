@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Changed: `/code-review` picks its review recipe per model and effort level, as Claude Code does. By default `medium` and `high` review inline without subagent verification, `xhigh` adds a sweep pass, and only `max` fans out to finder and verifier subagents; Sonnet 5 fans out from `medium` and, from `high` up, sizes the finder fleet to the diff, Opus 4.8 has its own inline recipes, and Opus 5 uses a single careful pass at `medium` and `high`. The forked reviewer runs at the level you typed, and the recipe follows that level capped only to what the model supports (`CLAUDE_CODE_EFFORT_LEVEL` no longer swaps the recipe), saying so when it is capped. `--fix` applies findings of any tier and skips false positives or fixes that would change intended behavior. `/code-review ultra` runs a local `max` review instead of refusing, and notices about reused levels, limits or the fallback reach you in the review's first line.
 - Changed: Haiku 4.5 and 5.5 now load rarely used tools on demand through `ToolSearch`, as other Claude 4+ models do, instead of sending every tool schema with each request. Only Claude 3.x models keep all tools inline.
 - Changed: on Vertex AI, Claude Opus 4, Opus 4.1 and Sonnet 4 keep their tools inline; on-demand tool loading there is limited to Claude 4.5 and newer.
 - Changed: on providers without a search path, WebSearch is still offered; a search attempt returns how to enable it with `NOA_CLAUDE_WEB_SEARCH_BACKEND`, so the model can tell you instead of silently lacking search.

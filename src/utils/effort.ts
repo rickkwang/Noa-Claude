@@ -228,7 +228,7 @@ function getThirdPartyEffortLevels(model: string): EffortLevel[] | undefined {
   return levels
 }
 
-function clampEffortToSupportedLevels(
+export function clampEffortToSupportedLevels(
   requested: EffortLevel,
   supportedLevels: EffortLevel[],
 ): EffortLevel | undefined {

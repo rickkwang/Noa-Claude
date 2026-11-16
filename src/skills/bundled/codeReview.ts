@@ -5,20 +5,20 @@ import { AGENT_TOOL_NAME } from '../../tools/AgentTool/constants.js'
 import { getGlobalConfig, saveGlobalConfig } from '../../utils/config.js'
 import { getCwd } from '../../utils/cwd.js'
 import { getClaudeConfigHomeDir } from '../../utils/envUtils.js'
-import { EFFORT_LEVELS, isEffortLevel } from '../../utils/effort.js'
+import {
+  EFFORT_LEVELS,
+  clampEffortToSupportedLevels,
+  convertEffortValueToLevel,
+  getSupportedEffortLevelsForModel,
+  isEffortLevel,
+  resolveAppliedEffort,
+} from '../../utils/effort.js'
+import { execFileNoThrow } from '../../utils/execFileNoThrow.js'
+import { gitExe } from '../../utils/git.js'
+import { getCanonicalName } from '../../utils/model/model.js'
 import { registerBundledSkill } from '../bundledSkills.js'
 
 type ReviewEffort = (typeof EFFORT_LEVELS)[number]
-
-// Default finding caps per effort level; `--max-findings` overrides them.
-const DEFAULT_MAX_FINDINGS: Record<ReviewEffort, number> = {
-  low: 4,
-  medium: 8,
-  high: 10,
-  xhigh: 15,
-  max: 15,
-}
-const DEFAULT_EFFORT: ReviewEffort = 'medium'
 
 type MaxFindingsFlag = number | 'all' | 'default'
 type ParsedArgs = {
@@ -39,7 +39,7 @@ function parseCodeReviewArgs(raw: string): ParsedArgs {
     tokens.shift()
   }
   const first = tokens[0]
-  if (first !== undefined && isEffortLevel(first.toLowerCase())) {
+  if (!parsed.ultra && first !== undefined && isEffortLevel(first.toLowerCase())) {
     tokens.shift()
     parsed.explicitEffort = first.toLowerCase() as ReviewEffort
   }
@@ -86,147 +86,307 @@ const ANGLE_WRAPPER = `### Angle E — wrapper/proxy correctness
 When the diff adds or modifies a type that wraps another (cache, proxy, decorator, adapter), check that every method routes to the wrapped instance and not back through a registry, session, or global. A caching provider that resolves IDs via \`session.get(...)\` instead of \`delegate.get(...)\` re-enters the cache or recurses. Also check that the wrapper forwards every method its callers use.`
 
 const ANGLE_REUSE = `### Reuse
-Flag new code that re-implements something the codebase already has. Grep shared and utility modules and files adjacent to the change, and name the existing helper to call instead.`
+The angles above hunt for bugs; this one and the next two hunt for cleanup in the changed code. Flag new code that re-implements something the codebase already has. Grep shared and utility modules and files adjacent to the change, and name the existing helper to call instead.`
 
 const ANGLE_SIMPLIFICATION = `### Simplification
-Flag unnecessary complexity the diff adds: redundant or derivable state, copy-paste with slight variation, deep nesting, dead code left behind. Name the simpler form that does the same job. Also flag long-lived objects built from closures or captured environments that keep a large enclosing scope alive; prefer a class or struct that copies only the fields it needs.`
+Flag unnecessary complexity the diff adds: redundant or derivable state, copy-paste with slight variation, deep nesting, dead code left behind. Name the simpler form that does the same job.`
 
 const ANGLE_EFFICIENCY = `### Efficiency
-Flag wasted work the diff introduces: redundant computation or repeated I/O, independent operations run sequentially, blocking work added to startup or hot paths, and state updates inside loops or handlers that fire unconditionally without a change guard.`
-
-const conventionsAngle = (userRules: string) => `### Conventions (CLAUDE.md)
-Find the CLAUDE.md files that govern the changed code: the user-level ${userRules}, the repo-root CLAUDE.md, and any CLAUDE.md or CLAUDE.local.md in a directory that is an ancestor of a changed file (it applies only to files at or below it). Flag a violation only when you can quote the exact rule and the exact line that breaks it. No style preferences and no "spirit of the doc" inferences. Name the CLAUDE.md path and quote the rule in the finding. If no CLAUDE.md applies, return nothing for this angle.`
+Flag wasted work the diff introduces: redundant computation or repeated I/O, independent operations run sequentially, blocking work added to startup or hot paths. Also flag long-lived objects built from closures or captured environments, which keep the whole enclosing scope alive; prefer a class or struct that copies only the fields it needs. Name the cheaper alternative.`
 
 const ANGLE_ALTITUDE = `### Altitude
 Check that each change fixes the root cause at the right depth rather than patching a symptom with a fragile bandaid. Special cases layered on shared infrastructure are a sign the fix is not deep enough: prefer the simpler, more general change to the underlying mechanism, and name it.`
 
-const CORRECTNESS_ANGLES = [
-  ANGLE_LINE_SCAN,
-  ANGLE_REMOVED_BEHAVIOR,
-  ANGLE_CROSS_FILE,
-  ANGLE_PITFALLS,
-  ANGLE_WRAPPER,
-]
-const cleanupAngles = (userRules: string) => [
-  ANGLE_REUSE,
-  ANGLE_SIMPLIFICATION,
-  ANGLE_EFFICIENCY,
-  ANGLE_ALTITUDE,
-  conventionsAngle(userRules),
-]
+const conventionsAngle = (userRules: string) => `### Conventions (CLAUDE.md)
+Find the CLAUDE.md files that govern the changed code: the user-level ${userRules}, the repo-root CLAUDE.md, and any CLAUDE.md or CLAUDE.local.md in a directory that is an ancestor of a changed file (it applies only to files at or below it). Flag a violation only when you can quote the exact rule and the exact line that breaks it. No style preferences and no "spirit of the doc" inferences. Name the CLAUDE.md path and quote the rule in the finding. If no CLAUDE.md applies, return nothing for this angle.`
+
+const CLEANUP_SHAPE = `Cleanup, altitude, and conventions candidates use the same \`file\`/\`line\`/\`summary\` shape; in \`failure_scenario\`, state the concrete cost (what is duplicated, wasted, harder to maintain, or which CLAUDE.md rule is broken) instead of a crash. Correctness bugs always outrank cleanup, altitude, and conventions findings when the output cap forces a cut.`
+
+const PASS_THROUGH = `Pass every candidate with a nameable failure scenario through: finders that silently drop half-believed candidates are the main cause of misses.`
+
+const NO_SUPPRESSION = `Do not let one angle's conclusions suppress another's: if two angles flag the same line for different reasons, record both.`
+
+const DEDUP = `Dedup only candidates describing the same defect, same location, and same cause, keeping the most concrete failure scenario. Keep distinct defects on the same line and separate occurrences of the same mechanism at different locations.`
 
 const PHASE_GATHER = `## Phase 0 — Gather the diff
 Get the unified diff under review:
-- Default (no target): first run \`git status --short\` and \`git ls-files --others --exclude-standard\`. Read non-ignored untracked files as new-file changes. Then gather \`git diff @{upstream}...HEAD\`, plus \`git diff HEAD\` for staged and unstaged changes. If there is no upstream, use \`git diff main...HEAD\` or \`git diff HEAD~1\`.
+- Default (no target): first run \`git status --short\` and \`git ls-files --others --exclude-standard\`. Read non-ignored untracked files as new-file changes. Then gather \`git diff @{upstream}...HEAD\`, plus \`git diff HEAD\` for staged and unstaged changes. If there is no upstream, diff against the default branch (\`main\` or \`master\`) with \`git diff <default>...HEAD\`, or use \`git diff HEAD~1\`.
 - PR (number, \`#number\`, or URL): \`gh pr view <target>\` for context and \`gh pr diff <target>\` for the diff.
-- Branch name: \`git diff <base>...<branch>\`.
+- Branch name: \`git diff <base>...<branch>\`, where \`<base>\` is the default branch.
 - File path: restrict the diff and untracked-file discovery to that path; read untracked files in that scope as new-file changes.
 Stop only when both the diff and in-scope untracked-file list are empty. Do not stop while untracked files remain unread. If a file cannot be read, disclose the coverage gap rather than declaring there is nothing to review.`
 
-const TIER_TEXT: Record<ReviewEffort, string> = {
-  low: 'low effort → 1 diff pass → no verify',
-  medium: 'medium effort → 3+5 angles × 6 candidates → 1-vote verify',
-  high: 'high effort → 3+5 angles × 6 candidates → 1-vote verify (recall-biased)',
-  xhigh: 'xhigh effort → 5+5 angles × 8 candidates → 1-vote verify → sweep',
-  max: 'max effort → 5+5 angles × 8 candidates → 1-vote verify → sweep',
-}
-
-const TIER_LEAD_IN: Partial<Record<ReviewEffort, string>> = {
-  medium: `You are reviewing for **precision** at medium effort: every finding you surface should be one a maintainer would act on.`,
-  high: `You are reviewing for **recall** at high effort: catch every real bug a careful reviewer would catch in one sitting. Catching real bugs matters more than avoiding false positives. Err on the side of surfacing.`,
-  xhigh: `You are reviewing for **recall** at xhigh effort: catch every real bug a careful reviewer would catch, and do not let the first pass be the last one. Err on the side of surfacing.`,
-  max: `You are reviewing exhaustively at max effort: a missed bug is worse than a false positive that a verifier later drops. Err on the side of surfacing.`,
-}
-
-function outputCap(max: number | 'all'): string {
-  return max === 'all'
-    ? 'every finding that survives, no maximum'
-    : `at most ${max} findings`
-}
-
-function lowEffortPrompt(cap: string): string {
-  return `## Review at low effort: one diff pass, no verification, no subagents
-Read the diff and in-scope untracked files as new-file additions. Skip test and fixture hunks (\`test/\`, \`spec/\`, \`__tests__/\`, \`*_test.*\`, \`*.test.*\`, \`fixtures/\`, \`testdata/\`); test-file changes are not reviewed at this level. Do not read whole tracked files.
-Flag runtime-correctness bugs visible from the hunk alone: inverted or wrong conditions, off-by-one, null/undefined dereference where the adjacent lines show the value can be absent, removed guards, falsy-zero checks, missing \`await\`, wrong-variable copy-paste, errors swallowed in a catch that should propagate. Also flag new code that duplicates a helper visible in the diff context, and dead code the diff leaves behind.
-Do not flag style, naming, performance, missing tests, or anything outside the changed lines.
-Output ${cap}, most severe first, one line each: \`path/to/file.ext:123 — what's wrong and the concrete failure\`. If nothing qualifies, output exactly \`(none)\`.`
-}
-
-function finderSection(hasAgent: boolean, angleCount: number, perAngle: number): string {
-  const head = `## Phase 1 — Find candidates (${angleCount} angles)`
-  if (!hasAgent) {
-    return `${head}
-The ${AGENT_TOOL_NAME} tool is not available here, so the fan-out cannot run. Work through every angle yourself, in sequence, in this same context. Do not skip angles for lack of fan-out. Each angle surfaces up to ${perAngle} candidates with \`file\`, \`line\`, a one-line \`summary\`, and a concrete \`failure_scenario\`. Pass every candidate with a nameable failure scenario through.`
-  }
-  return `${head}
-Run each angle as its own subagent via the ${AGENT_TOOL_NAME} tool, all in one message so they run in parallel. Give each subagent the full diff and the instructions for its angle. Each surfaces up to ${perAngle} candidates with \`file\`, \`line\`, a one-line \`summary\`, and a concrete \`failure_scenario\`. Pass every candidate with a nameable failure scenario through: finders that silently drop half-believed candidates bypass verification and are the main cause of misses.`
-}
-
-function verifySection(hasAgent: boolean, recallBiased: boolean): string {
-  const dedup = `Dedup only candidates describing the same defect, same location, and same cause, keeping the most concrete failure scenario. Keep distinct defects on the same line and separate occurrences of the same mechanism at different locations.`
-  const verdicts = `Return exactly one verdict:
-- **CONFIRMED** — you can name the inputs or state that trigger it and the wrong output or crash. Quote the line.
+const VERDICT_STATES = `- **CONFIRMED** — you can name the inputs or state that trigger it and the wrong output or crash. Quote the line.
 - **PLAUSIBLE** — the mechanism is real but the trigger is uncertain (timing, environment, config). State what would confirm it.
-- **REFUTED** — factually wrong (the code does not say that) or guarded elsewhere. Quote the line that proves it.
+- **REFUTED** — factually wrong (the code does not say that) or guarded elsewhere. Quote the line that proves it.`
 
-PLAUSIBLE is the default. Do not refute a candidate for being speculative when the state is realistic: concurrency races, nil on a rare but reachable path (error handler, cold cache, missing optional field), falsy-zero treated as missing, off-by-one on a boundary the code does not exclude, retry storms and partial failures, a regex or allowlist that lost an anchor. REFUTED only when it is constructible from the code: factually wrong, provably impossible, already handled in this diff (cite the guard), or pure style with no observable effect.`
-  const bias = recallBiased ? ' Recall matters more than precision here.' : ''
-  const target = hasAgent
-    ? `For each remaining candidate, run one verifier via the ${AGENT_TOOL_NAME} tool and give it the diff, the relevant files, and the candidate.`
-    : `The ${AGENT_TOOL_NAME} tool is not available, so verify each candidate yourself against the diff and the relevant files. Drop anything you cannot back with a concrete failure scenario.`
-  return `## Phase 2 — Verify (1 vote, 3 states)
-${dedup} ${target}${bias}
+const PLAUSIBLE_DEFAULT = `PLAUSIBLE is the default. Do not refute a candidate for being speculative when the state is realistic: concurrency races, nil on a rare but reachable path (error handler, cold cache, missing optional field), falsy-zero treated as missing, off-by-one on a boundary the code does not exclude, retry storms and partial failures, a regex or allowlist that lost an anchor. REFUTED only when it is constructible from the code: factually wrong, provably impossible, already handled in this diff (cite the guard), or pure style with no observable effect.`
 
-${verdicts}
-
-Keep CONFIRMED and PLAUSIBLE. Drop REFUTED.`
-}
 
 const SWEEP_FOCUS = `moved or extracted code that dropped a guard or anchor; second-tier footguns (dataclass default evaluated once, \`hash()\` non-determinism, lock-scope shrink, predicate methods with side effects); setup and teardown asymmetry in tests; config defaults that were flipped.`
 
-function sweepSection(hasAgent: boolean): string {
-  const runner = hasAgent
-    ? `Run one more finder as a fresh reviewer who has the verified list (via the ${AGENT_TOOL_NAME} tool, or yourself if it is unavailable).`
-    : `Take one more pass yourself as a fresh reviewer who has the verified list.`
-  return `## Phase 3 — Sweep for gaps
-${runner} Re-read the diff and the enclosing functions looking ONLY for defects not already listed. Focus on what the first pass tends to miss: ${SWEEP_FOCUS}
-Surface up to 8 additional candidates, each naming a defect not already on the list. Verify each one the same way as the candidates above before it goes into the output. If nothing new, return nothing — do not pad.`
+const LEAD_PRECISION = `You are reviewing for **precision** at medium effort: every finding you surface should be one a maintainer would act on.`
+const LEAD_CORRECTNESS = `You are reviewing for **correctness bugs**: surface every plausible bug. At this level, catching real bugs matters more than avoiding false positives; err on the side of surfacing.`
+const LEAD_HIGH = `You are reviewing for **recall** at high effort: catch every real bug a careful reviewer would catch in one sitting. Catching real bugs matters more than avoiding false positives. Err on the side of surfacing.`
+const leadDeep = (effort: 'xhigh' | 'max') =>
+  `You are reviewing for **recall** at ${effort === 'max' ? 'maximum' : 'extra-high'} effort: catch every real bug. Catching real bugs matters more than avoiding false positives; a missed bug ships. Err on the side of surfacing.`
+
+function findingCount(cap: number | 'all'): string {
+  return cap === 'all' ? 'every finding' : `at most ${cap} ${cap === 1 ? 'finding' : 'findings'}`
 }
 
-function outputSection(cap: string, hasAgent: boolean): string {
-  const disclosure = hasAgent
-    ? ''
-    : `State clearly, before the JSON, that this was a single-pass review done without the ${AGENT_TOOL_NAME} tool, not the full multi-agent fan-out.\n`
-  return `## Output
-${disclosure}Return ${cap} as a JSON array in a \`\`\`json block, ranked most severe first. Each entry has:
-- \`file\`: repo-relative path
-- \`line\`: line number
-- \`summary\`: one-sentence statement of the defect
-- \`short_summary\`: the claim in at most 60 characters, with no rationale
-- \`failure_scenario\`: concrete inputs or state → wrong output or crash
-- \`category\`: a kebab-case slug such as \`correctness\`, \`simplification\`, \`efficiency\`, \`reuse\`, \`altitude\`, \`conventions\`, or \`test-coverage\`
-- \`verdict\`: CONFIRMED or PLAUSIBLE
-
-If nothing survives verification, return \`[]\`. Correctness findings outrank cleanup, altitude, and conventions findings when the cap forces a cut.`
+function capTag(cap: number | 'all' | undefined): string {
+  return cap === undefined ? '' : cap === 'all' ? ' → all findings' : ` → ≤${cap} findings`
 }
 
-function fullPrompt(effort: ReviewEffort, cap: string, hasAgent: boolean, userRules: string): string {
-  const angles =
-    effort === 'xhigh' || effort === 'max'
-      ? [...CORRECTNESS_ANGLES, ...cleanupAngles(userRules)]
-      : [ANGLE_LINE_SCAN, ANGLE_REMOVED_BEHAVIOR, ANGLE_CROSS_FILE, ...cleanupAngles(userRules).slice(0, 3), ANGLE_ALTITUDE, conventionsAngle(userRules)]
-  const sweep = effort === 'xhigh' || effort === 'max'
+function angleSet(deep: boolean, userRules: string): string {
   return [
-    TIER_LEAD_IN[effort],
+    ANGLE_LINE_SCAN, ANGLE_REMOVED_BEHAVIOR, ANGLE_CROSS_FILE,
+    ...(deep ? [ANGLE_PITFALLS, ANGLE_WRAPPER] : []),
+    ANGLE_REUSE, ANGLE_SIMPLIFICATION, ANGLE_EFFICIENCY, ANGLE_ALTITUDE, conventionsAngle(userRules),
+  ].join('\n\n')
+}
+
+function sweepSection(viaAgent: boolean): string {
+  const runner = viaAgent
+    ? `Run one more finder via the ${AGENT_TOOL_NAME} tool as a fresh reviewer who has the verified list.`
+    : `Take one more pass yourself (same context, no subagent) as a fresh reviewer who has the deduplicated list.`
+  return `## Phase 3 — Sweep for gaps
+${runner} Re-read the diff and the enclosing functions looking ONLY for defects not already listed; do not re-derive or re-confirm anything already there. Focus on what the first pass tends to miss: ${SWEEP_FOCUS}
+Surface up to 8 additional candidates, each naming a defect not already on the list. If nothing new, return nothing from this phase; do not pad.`
+}
+
+function outputSection(cap: number | 'all', floor?: number): string {
+  const target = floor === undefined
+    ? ''
+    : `Target at least ${floor} ${floor === 1 ? 'finding' : 'findings'}. If fewer genuine findings exist, report what you have; do not invent findings to reach the floor.\n`
+  const size = cap === 'all'
+    ? 'every finding that survives, with no maximum,'
+    : `at most ${cap} findings (if more survive, keep the ${cap} most severe)`
+  return `## Output
+${target}Return ${size} as a JSON array in a \`\`\`json block, ranked most severe first. Each entry has \`file\` (repo-relative path), \`line\`, \`summary\` (one sentence), and \`failure_scenario\` (concrete inputs or state → wrong output or crash). If nothing survives, return \`[]\`.`
+}
+
+const LOW_READ = `Read the diff and in-scope untracked files as new-file additions. No subagents, no full-file reads.`
+const LOW_SKIP_TESTS = ` Skip test and fixture hunks (\`test/\`, \`spec/\`, \`__tests__/\`, \`*_test.*\`, \`*.test.*\`, \`fixtures/\`, \`testdata/\`); test-file changes are not reviewed at this level.`
+const LOW_FLAGS = `Flag runtime-correctness bugs visible from the hunk alone: inverted or wrong conditions, off-by-one, null/undefined dereference where the adjacent lines show the value can be absent, removed guards, falsy-zero checks, missing \`await\`, wrong-variable copy-paste, errors swallowed in a catch that should propagate. Also flag, still from the hunk alone, new code that duplicates a helper visible in the diff context, and dead code the diff leaves behind.
+Do not flag style, naming, performance, missing tests, or anything outside the changed lines.`
+const LOW_LINE = `one line each: \`path/to/file.ext:123 — what's wrong and the concrete failure\``
+
+function lowPrompt(cell: 'low' | 'low-sonnet5' | 'o48-low-v1', cap: number | 'all' | undefined): string {
+  const read = `## Review at low effort: one diff pass, no verification
+${LOW_READ}${cell === 'o48-low-v1' ? '' : LOW_SKIP_TESTS}`
+  let output: string
+  if (cell === 'low-sonnet5') {
+    output = `Target min(files_changed, 4) findings, most severe first, ${LOW_LINE}. If you have fewer, do one more pass focused on the largest changed file and on any removed code blocks. Output \`(none)\` only if the diff is trivially correct after that pass.`
+  } else if (cell === 'o48-low-v1') {
+    const c = cap ?? 8
+    const floor = c === 'all' ? 4 : Math.min(4, c)
+    output = `Output ${findingCount(c)}, most severe first, ${LOW_LINE}. Target at least min(files_changed, ${floor}) findings; if you see fewer, widen to other hunks in the same diff before stopping. If fewer than ${floor} genuine findings exist, output what you have.`
+  } else {
+    output = `Output ${findingCount(cap ?? 4)}, most severe first, ${LOW_LINE}. If nothing qualifies, output exactly \`(none)\`.`
+  }
+  return [PHASE_GATHER, read, LOW_FLAGS, output].join('\n\n')
+}
+
+// Agent-backed recipe: parallel finder subagents, one verifier per candidate, and a sweep at xhigh and max.
+function fanOutPrompt(effort: 'medium' | 'high' | 'xhigh' | 'max', cap: number | 'all', userRules: string): string {
+  const deep = effort === 'xhigh' || effort === 'max'
+  const perAngle = deep ? 8 : 6
+  const lead = effort === 'medium' ? LEAD_PRECISION : effort === 'high' ? LEAD_HIGH : leadDeep(effort)
+  const verify = effort === 'high'
+    ? `## Phase 2 — Verify (1 vote, recall-biased)
+${DEDUP} For each remaining candidate, run one verifier via the ${AGENT_TOOL_NAME} tool: give it the diff, the relevant files, and the candidate; it returns exactly one of CONFIRMED, PLAUSIBLE, or REFUTED.
+
+${PLAUSIBLE_DEFAULT}
+
+Keep CONFIRMED and PLAUSIBLE. Drop REFUTED.`
+    : `## Phase 2 — Verify (1 vote, 3 states)
+${DEDUP} For each remaining candidate, run one verifier via the ${AGENT_TOOL_NAME} tool: give it the diff, the relevant files, and the candidate, and have it return exactly one verdict:
+${VERDICT_STATES}
+
+Keep candidates where the vote is CONFIRMED or PLAUSIBLE.${deep ? ' This is recall mode: a single non-REFUTED vote carries the finding. Do not drop on uncertainty.' : ''}`
+  return [
+    lead,
     PHASE_GATHER,
-    finderSection(hasAgent, angles.length, effort === 'xhigh' || effort === 'max' ? 8 : 6),
-    angles.join('\n\n'),
-    verifySection(hasAgent, effort === 'high' || effort === 'xhigh' || effort === 'max'),
-    sweep ? sweepSection(hasAgent) : undefined,
-    outputSection(cap, hasAgent),
-  ]
-    .filter(Boolean)
-    .join('\n\n')
+    `## Phase 1 — Find candidates (${deep ? 10 : 8} angles, up to ${perAngle} each)
+Run the ${deep ? 10 : 8} finder angles via the ${AGENT_TOOL_NAME} tool, all in one message so they run in parallel. Give each the full diff and the instructions for its angle. Each surfaces up to ${perAngle} candidate findings with \`file\`, \`line\`, a one-line \`summary\`, and a concrete \`failure_scenario\`.${deep ? ` ${NO_SUPPRESSION}` : ''}`,
+    angleSet(deep, userRules),
+    deep ? CLEANUP_SHAPE : `${CLEANUP_SHAPE}\n${PASS_THROUGH}`,
+    verify,
+    deep ? sweepSection(true) : undefined,
+    outputSection(cap),
+  ].filter(Boolean).join('\n\n')
+}
+
+// The agent-backed recipe when the Agent tool is missing: every angle in one context, self-checked.
+function singlePassPrompt(effort: 'medium' | 'high' | 'xhigh' | 'max', cap: number | 'all', userRules: string): string {
+  const deep = effort === 'xhigh' || effort === 'max'
+  const lead = effort === 'medium' ? LEAD_PRECISION : effort === 'high' ? LEAD_HIGH : leadDeep(effort)
+  return [
+    lead,
+    `The ${AGENT_TOOL_NAME} tool is not available here, so the multi-agent fan-out and subagent verify pass cannot run. Work through every angle yourself, in this same context, in one pass; do not skip angles for lack of fan-out. Re-check each candidate against the diff before keeping it; drop anything you cannot back up with a concrete failure scenario.`,
+    PHASE_GATHER,
+    `## Phase 1 — Find candidates (${deep ? 10 : 8} angles, single pass)
+Work through the ${deep ? 10 : 8} angles yourself, in sequence; do not spawn subagents. Each surfaces candidate findings with \`file\`, \`line\`, a one-line \`summary\`, and a concrete \`failure_scenario\`.`,
+    angleSet(deep, userRules),
+    CLEANUP_SHAPE,
+    `## Phase 2 — Dedup and self-check (no subagent verify)
+${DEDUP} Re-check each remaining candidate yourself against the diff before keeping it.`,
+    deep ? sweepSection(false) : undefined,
+    `${outputSection(cap)}\nState clearly in your report that this was a single-pass review done without the ${AGENT_TOOL_NAME} tool, not the full multi-agent fan-out.`,
+  ].filter(Boolean).join('\n\n')
+}
+
+// Inline recipe: every angle in the reviewer's own context, dedup only, with a findings floor.
+function inlinePrompt(cell: 'o48-med-v1' | 'o48-high-v1' | 'o48-xhigh-v1', cap: number | 'all', userRules: string): string {
+  const deep = cell === 'o48-xhigh-v1'
+  const perAngle = deep ? 8 : 6
+  const defaultCap = CELL_DEFAULT_CAP[cell]!
+  const floor = Math.max(1, Math.floor((cap === 'all' ? defaultCap : Math.min(cap, defaultCap)) / 2))
+  return [
+    cell === 'o48-med-v1' ? LEAD_CORRECTNESS : cell === 'o48-high-v1' ? LEAD_HIGH : leadDeep('xhigh'),
+    PHASE_GATHER,
+    `## Phase 1 — Find candidates (${deep ? 10 : 8} angles, up to ${perAngle} each)
+Work through each angle yourself, in sequence, in this context; do not spawn subagents for them. Each surfaces up to ${perAngle} candidate findings with \`file\`, \`line\`, a one-line \`summary\`, and a concrete \`failure_scenario\`.${deep ? ` ${NO_SUPPRESSION}` : ''}`,
+    angleSet(deep, userRules),
+    deep ? CLEANUP_SHAPE : `${CLEANUP_SHAPE}\n${PASS_THROUGH}`,
+    `## Phase 2 — Dedup only (no verify)
+Pool all candidates. ${DEDUP} Do not run verifiers and do not re-judge. Sort by severity.${deep ? ' Do not drop on uncertainty.' : ''}`,
+    deep ? sweepSection(false) : undefined,
+    outputSection(cap, floor),
+  ].filter(Boolean).join('\n\n')
+}
+
+function minimalPrompt(cap: number | 'all'): string {
+  return [
+    `You are reviewing the change for real bugs.`,
+    PHASE_GATHER,
+    `Review the diff as a careful senior engineer would: read every hunk, open the surrounding files for context as needed (Read, Grep, git log/blame/show), and hunt for correctness issues: wrong or inverted conditions, off-by-one, null/undefined dereference, missing \`await\`, dropped error handling, removed guards or validations, broken callers of changed functions, races. Prefer real failure modes over style; every finding needs a concrete scenario in which the code misbehaves. Quality over quantity: include everything you genuinely believe is a real issue, and nothing you don't.`,
+    outputSection(cap),
+  ].join('\n\n')
+}
+
+type Cell =
+  | 'low' | 'low-sonnet5' | 'o48-low-v1'
+  | 'medium' | 'high' | 'xhigh' | 'max'
+  | 'o48-med-v1' | 'o48-high-v1' | 'o48-xhigh-v1'
+  | 'o5-bmin'
+type Route = { cell: Cell; finderBudgetHint?: boolean; lowEffortModel?: boolean }
+
+// Default finding caps per recipe; `--max-findings` overrides them. low-sonnet5 has no maximum.
+const CELL_DEFAULT_CAP: Record<Cell, number | undefined> = {
+  low: 4, 'low-sonnet5': undefined, 'o48-low-v1': 8,
+  medium: 8, high: 10, xhigh: 15, max: 15,
+  'o48-med-v1': 8, 'o48-high-v1': 10, 'o48-xhigh-v1': 15,
+  'o5-bmin': 15,
+}
+const MINIMAL_MAX_FINDINGS = 32
+
+// Recipe per model family and effort level; unlisted models use `default`.
+const DEFAULT_ROUTES: Record<ReviewEffort, Route> = {
+  low: { cell: 'low' },
+  medium: { cell: 'o48-high-v1' },
+  high: { cell: 'o48-high-v1' },
+  xhigh: { cell: 'o48-xhigh-v1' },
+  max: { cell: 'max' },
+}
+const ROUTES: Record<string, Record<ReviewEffort, Route>> = {
+  default: DEFAULT_ROUTES,
+  'claude-sonnet-5': {
+    // Sonnet 5 runs the low recipe at medium model effort.
+    low: { cell: 'low-sonnet5', lowEffortModel: true },
+    medium: { cell: 'medium' },
+    high: { cell: 'high', finderBudgetHint: true },
+    xhigh: { cell: 'xhigh', finderBudgetHint: true },
+    max: { cell: 'max', finderBudgetHint: true },
+  },
+  'claude-opus-4-8': {
+    low: { cell: 'o48-low-v1' },
+    medium: { cell: 'o48-med-v1' },
+    high: { cell: 'o48-high-v1' },
+    xhigh: { cell: 'o48-xhigh-v1' },
+    max: { cell: 'max' },
+  },
+  'claude-opus-5': { ...DEFAULT_ROUTES, medium: { cell: 'o5-bmin' }, high: { cell: 'o5-bmin' } },
+}
+
+function modelFamily(model: string | undefined): string {
+  const name = model ? getCanonicalName(model) : undefined
+  return name !== undefined && Object.hasOwn(ROUTES, name) ? name : 'default'
+}
+
+function tierTag(cell: Cell, hasAgent: boolean): string {
+  switch (cell) {
+    case 'low':
+    case 'o48-low-v1':
+      return 'low effort → 1 diff pass → no verify'
+    case 'low-sonnet5':
+      return 'low effort → 1 diff pass → no verify → ≥min(files,4) findings'
+    case 'medium':
+    case 'high':
+      return hasAgent
+        ? `${cell} effort → 3+5 angles × 6 candidates → 1-vote verify${cell === 'high' ? ' (recall-biased)' : ''}`
+        : `${cell} effort → ${AGENT_TOOL_NAME} tool unavailable → single-pass inline`
+    case 'xhigh':
+    case 'max':
+      return hasAgent
+        ? `${cell} effort → 5+5 angles × 8 candidates → 1-vote verify → sweep`
+        : `${cell} effort → ${AGENT_TOOL_NAME} tool unavailable → single-pass inline`
+    case 'o48-med-v1':
+      return 'medium effort → 8 inline angles → dedup (no verify)'
+    case 'o48-high-v1':
+      return 'high effort → 8 inline angles → dedup (no verify)'
+    case 'o48-xhigh-v1':
+      return 'xhigh effort → 10 inline angles → dedup (no verify) → sweep'
+    case 'o5-bmin':
+      return 'minimal prompt → single careful diff pass'
+  }
+}
+
+function recipePrompt(cell: Cell, cap: number | 'all' | undefined, hasAgent: boolean, userRules: string): string {
+  const c = cap ?? CELL_DEFAULT_CAP[cell] ?? 'all'
+  switch (cell) {
+    case 'low':
+    case 'low-sonnet5':
+    case 'o48-low-v1':
+      return lowPrompt(cell, cap)
+    case 'medium':
+    case 'high':
+    case 'xhigh':
+    case 'max':
+      return hasAgent ? fanOutPrompt(cell, c, userRules) : singlePassPrompt(cell, c, userRules)
+    case 'o48-med-v1':
+    case 'o48-high-v1':
+    case 'o48-xhigh-v1':
+      return inlinePrompt(cell, c, userRules)
+    case 'o5-bmin':
+      return minimalPrompt(c)
+  }
+}
+
+// Scales the finder fleet to the committed diff size; uncommitted changes are not counted.
+async function finderBudgetHint(target: string): Promise<string> {
+  let range: string
+  if (!target) range = '@{upstream}...HEAD'
+  else if (target.length <= 256 && /^[@\w][@\w./~^-]*\.\.\.?[@\w][@\w./~^-]*$/.test(target)) range = target
+  else return ''
+  const { stdout, code } = await execFileNoThrow(
+    gitExe(),
+    ['-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=', 'diff', '--no-ext-diff', '--no-textconv', '--numstat', '--end-of-options', range, '--'],
+    { timeout: 5000, preserveOutputOnError: false, useCwd: true },
+  )
+  if (code !== 0) return ''
+  let lines = 0
+  for (const row of stdout.split('\n')) {
+    const match = row.match(/^(\d+)\t(\d+)\t/)
+    if (match) lines += Number(match[1]) + Number(match[2])
+  }
+  if (lines === 0) return ''
+  const budget = Math.max(2, Math.min(8, Math.ceil(lines / 150)))
+  return target
+    ? `This diff is about ${lines} lines. Spawn about ${budget} finder subagents (min 2, max 8); scale your investigation depth to the diff size rather than using a fixed large fleet.`
+    : `The committed diff (@{upstream}...HEAD) is about ${lines} lines. Uncommitted changes aren't counted here, so treat this as a floor: start with about ${budget} finder subagents (min 2, max 8) and scale up if Phase 0 finds additional working-tree scope.`
 }
 
 // Accepts `123`, `#123`, or a GitHub pull request URL.
@@ -247,74 +407,93 @@ async function isLocalPathTarget(target: string): Promise<boolean> {
   }
 }
 
-function actionSections(args: ParsedArgs, hasPr: boolean, effort: ReviewEffort, localPathTarget: boolean): string {
+function actionSections(args: ParsedArgs, localPathTarget: boolean): string {
   const sections: string[] = []
+  if (args.comment) {
+    sections.push(`## Posting to GitHub (--comment)
+The \`--comment\` flag was passed. After producing the findings list, if the review target is a GitHub PR, post each finding as an inline PR comment via \`mcp__github_inline_comment__create_inline_comment\` (one call per finding; include a suggestion block only when it fully fixes the issue). If that tool is not available in this session, fall back to \`gh api\` (repos/{owner}/{repo}/pulls/{pr}/comments) or print the findings instead. If the target is not a PR, print the findings and note that \`--comment\` was ignored.`)
+  }
   if (args.fix) {
     // --fix edits the working tree, so it only runs on the local changes that are checked out.
     sections.push(
       args.target !== '' && !localPathTarget
-        ? `## After the review: --fix
+        ? `## Applying fixes (--fix)
 --fix only applies to the local changes. Target \`${args.target}\` is not a confirmed path in the current working directory, so change no files and say so.`
-        : `## After the review: --fix
-Apply a fix for ${effort === 'low' ? 'each finding (low effort does not verify findings)' : 'each CONFIRMED finding'} in the working tree with the file-edit tools${effort === 'low' ? '' : '; leave PLAUSIBLE findings unfixed and list them'}. Make the smallest change that fixes the stated failure and do not touch unrelated code.${localPathTarget ? ` Restrict edits to the reviewed target \`${args.target}\`.` : ''} Afterwards, report which findings you fixed and which you skipped and why.`,
-    )
-  }
-  if (args.comment) {
-    sections.push(
-      hasPr
-        ? `## After the review: --comment
-Post each surviving finding with \`gh api\`: as an inline review comment when its line is part of the PR diff, otherwise as a single PR comment that names the file and line. Post only the findings from this review.`
-        : `## After the review: --comment
---comment needs a PR target. Do not post anything; say that comments require a PR number.`,
+        : `## Applying fixes (--fix)
+The \`--fix\` flag was passed. After producing the findings list, apply the findings to the working tree instead of stopping at the report: fix each one directly, correctness bugs and cleanups alike.${localPathTarget ? ` Restrict edits to the reviewed target \`${args.target}\`.` : ''} Skip any finding whose fix would change intended behavior, require changes well outside the reviewed diff, or that you judge to be a false positive; note the skip rather than arguing with it. Finish with a brief summary of what was fixed and what was skipped.`,
     )
   }
   return sections.join('\n\n')
 }
 
-function buildCodeReviewPrompt(
-  args: ParsedArgs,
-  context: { effort: ReviewEffort; cap: string; reused: boolean; capSource: CapSource; storedMax?: number | 'all'; hasAgent: boolean; userRules: string; localPathTarget: boolean },
-): string {
-  const hasPr = parsePrNumber(args.target) !== undefined
-  const notices: string[] = []
-  if (args.maxFindingsIgnored) {
-    notices.push(`\`--max-findings\` was ignored: type a whole number above zero, \`all\`, or \`default\` after it.${context.capSource === 'stored' ? '' : ' Using the usual limit.'}`)
-  }
-  if (context.capSource === 'stored' && context.storedMax !== undefined) {
-    notices.push(`You set \`--max-findings ${context.storedMax}\` last time. Pass \`--max-findings default\` to go back to the usual limit.`)
-  }
-  const header = [
-    `You are an expert code reviewer. Review ${args.target ? `the target \`${args.target}\`` : 'the local changes'} for correctness bugs and cleanups.`,
-    `Effort: ${context.effort}${context.reused ? ' (reused from the level you typed last time; type a level like `/code-review high` to change it)' : ''} — ${TIER_TEXT[context.effort]}.`,
-    ...notices,
-  ].join('\n')
-  const body =
-    context.effort === 'low'
-      ? [PHASE_GATHER, lowEffortPrompt(context.cap)].join('\n\n')
-      : fullPrompt(context.effort, context.cap, context.hasAgent, context.userRules)
-  return [header, body, actionSections(args, hasPr, context.effort, context.localPathTarget)].filter(Boolean).join('\n\n')
-}
-
-function resolveEffort(args: ParsedArgs): { effort: ReviewEffort; reused: boolean } {
-  if (args.explicitEffort) return { effort: args.explicitEffort, reused: false }
+function lastUsedEffort(): ReviewEffort | undefined {
   // Config is hand-editable, so a stored value must pass the same check as typed input.
   const last = getGlobalConfig().codeReviewLastEffort
-  return last !== undefined && isEffortLevel(last) ? { effort: last, reused: true } : { effort: DEFAULT_EFFORT, reused: false }
+  return last !== undefined && isEffortLevel(last) ? last : undefined
 }
 
-type CapSource = 'flag' | 'stored' | 'default'
+// The level the user asked for: `ultra` falls back to max, otherwise typed, then last typed.
+function requestedEffort(args: ParsedArgs): ReviewEffort | undefined {
+  return args.ultra ? 'max' : args.explicitEffort ?? lastUsedEffort()
+}
 
-function resolveCap(args: ParsedArgs, effort: ReviewEffort): { cap: string; source: CapSource; storedMax?: number | 'all' } {
-  const flag = args.maxFindings
+// A requested level is capped only to what the model supports; the session effort (including its
+// env override) applies only when no level was requested.
+function resolveLevel(args: ParsedArgs, context: ToolUseContext): ReviewEffort {
+  const requested = requestedEffort(args)
+  const model = context.options?.mainLoopModel
+  if (requested !== undefined) {
+    const supported = model ? getSupportedEffortLevelsForModel(model) : []
+    return supported.length > 0 ? clampEffortToSupportedLevels(requested, supported) ?? requested : requested
+  }
+  const applied = model ? resolveAppliedEffort(model, context.getAppState?.().effortValue) : undefined
+  return applied === undefined ? 'medium' : convertEffortValueToLevel(applied)
+}
+
+function resolveCap(args: ParsedArgs, cell: Cell): { asked?: number | 'all'; stated?: number | 'all'; reused: boolean } {
   const stored = getGlobalConfig().codeReviewLastMaxFindings
-  const storedMax = stored === 'all' || (typeof stored === 'number' && Number.isSafeInteger(stored) && stored > 0) ? stored : undefined
-  if (flag === 'default') return { cap: outputCap(DEFAULT_MAX_FINDINGS[effort]), source: 'default' }
-  if (flag !== undefined) return { cap: outputCap(flag), source: 'flag' }
-  if (storedMax !== undefined) return { cap: outputCap(storedMax), source: 'stored', storedMax }
-  return { cap: outputCap(DEFAULT_MAX_FINDINGS[effort]), source: 'default' }
+  const reused = args.maxFindings === undefined && cell !== 'low-sonnet5'
+    && (stored === 'all' || (typeof stored === 'number' && Number.isSafeInteger(stored) && stored > 0))
+  const asked = reused ? stored as number | 'all' : args.maxFindings === 'default' ? undefined : args.maxFindings
+  const stated = cell === 'low-sonnet5'
+    ? undefined
+    : cell === 'o5-bmin' && (asked === 'all' || (asked !== undefined && asked > MINIMAL_MAX_FINDINGS)) ? MINIMAL_MAX_FINDINGS : asked
+  return { asked, stated, reused }
 }
 
-const ULTRA_UNSUPPORTED = `\`/code-review ultra\` runs a cloud multi-agent review, which Noa does not support. Tell the user to run \`/code-review\` or \`/code-review <low|medium|high|xhigh|max>\` instead, and do not review anything.`
+function capNotice(cap: ReturnType<typeof resolveCap>, ignored: boolean): string {
+  const notes: string[] = []
+  if (ignored) notes.push(`\`--max-findings\` was ignored: type a whole number above zero, \`all\`, or \`default\` after it.${cap.reused ? '' : ' Using the usual limit.'}`)
+  const limitNote = `This review reports at most ${MINIMAL_MAX_FINDINGS} findings, so the limit is ${MINIMAL_MAX_FINDINGS} here.`
+  if (cap.asked !== undefined && cap.stated === undefined) {
+    notes.push('`--max-findings` does not change this review: low effort here has no maximum.')
+  } else if (cap.stated !== cap.asked) {
+    notes.push(cap.reused ? `The user set \`--max-findings ${cap.asked}\` last time. ${limitNote}` : limitNote)
+  } else if (cap.reused && cap.asked !== undefined) {
+    notes.push(cap.asked === 'all'
+      ? 'Reporting every finding, as the user chose last time with `--max-findings all`.'
+      : `Reporting up to ${cap.asked} ${cap.asked === 1 ? 'finding' : 'findings'}, the limit the user set last time with \`--max-findings\`.`)
+  }
+  if (notes.length === 0) return ''
+  const reset = cap.reused ? ', and that passing `--max-findings default` goes back to the usual limit' : ''
+  return `(${notes.join(' ')} Open your report with one short line telling the user this${reset}; that opening line reaches them with the findings.)`
+}
+
+function effortNotice(args: ParsedArgs, level: ReviewEffort): string {
+  if (args.ultra) {
+    return args.fix
+      ? `(Running a local ${level}-effort review and applying its findings.)`
+      : `(ultra (cloud review) isn't available in this environment. Falling back to a local ${level}-effort review.)`
+  }
+  if (args.explicitEffort !== undefined) {
+    return args.explicitEffort === level
+      ? ''
+      : `(${args.explicitEffort} effort is not available for this model; running at ${level} here. Open your report with one short line telling the user this; that opening line reaches them with the findings.)`
+  }
+  const last = lastUsedEffort()
+  if (last === undefined) return ''
+  return `(No effort level given — reusing ${last}, the level the user typed last time${level !== last ? `; running at ${level} here` : ''}. Open your report with one short line telling the user this, and that typing a level (for example \`/code-review high\`) changes it; that opening line reaches them with the findings.)`
+}
 
 function persistArgs(args: ParsedArgs): void {
   if (args.explicitEffort) {
@@ -337,25 +516,33 @@ export function registerCodeReviewSkill(): void {
     context: 'fork',
     // --fix and --comment write to the working tree and GitHub; only the user may start a review.
     disableModelInvocation: true,
+    // The forked reviewer runs at the level the user typed (or typed last time), mapped per model.
+    getEffort(raw: string, context: ToolUseContext) {
+      const args = parseCodeReviewArgs(raw)
+      if (args.ultra) return undefined
+      const requested = args.explicitEffort ?? lastUsedEffort()
+      if (requested === undefined) return undefined
+      return ROUTES[modelFamily(context.options?.mainLoopModel)]![requested].lowEffortModel ? 'medium' : requested
+    },
     async getPromptForCommand(raw: string, context: ToolUseContext) {
       const args = parseCodeReviewArgs(raw)
-      if (args.ultra) return [{ type: 'text', text: ULTRA_UNSUPPORTED }]
+      const level = resolveLevel(args, context)
+      const notice = effortNotice(args, level)
       persistArgs(args)
-      const { effort, reused } = resolveEffort(args)
-      const hasAgent = (context?.options?.tools ?? []).some(
-        tool => tool.name === AGENT_TOOL_NAME,
-      )
-      const cap = resolveCap(args, effort)
-      const prompt = buildCodeReviewPrompt(args, {
-        effort,
-        cap: cap.cap,
-        capSource: cap.source,
-        storedMax: cap.storedMax,
-        reused,
-        hasAgent,
-        userRules: join(getClaudeConfigHomeDir(), 'CLAUDE.md'),
-        localPathTarget: args.fix && await isLocalPathTarget(args.target),
-      })
+      const route = ROUTES[modelFamily(context.options?.mainLoopModel)]![level]
+      const hasAgent = (context?.options?.tools ?? []).some(tool => tool.name === AGENT_TOOL_NAME)
+      const cap = resolveCap(args, route.cell)
+      const localPathTarget = args.fix && await isLocalPathTarget(args.target)
+      const budgetHint = route.finderBudgetHint && hasAgent ? await finderBudgetHint(args.target) : ''
+      const prompt = [
+        notice,
+        capNotice(cap, args.maxFindingsIgnored),
+        args.target ? `Review target: \`${args.target}\`` : '',
+        budgetHint,
+        `\`${tierTag(route.cell, hasAgent)}${capTag(cap.stated ?? CELL_DEFAULT_CAP[route.cell])}\``,
+        recipePrompt(route.cell, cap.stated, hasAgent, join(getClaudeConfigHomeDir(), 'CLAUDE.md')),
+        actionSections(args, localPathTarget),
+      ].filter(Boolean).join('\n\n')
       return [{ type: 'text', text: prompt }]
     },
   })
