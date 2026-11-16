@@ -68,6 +68,12 @@ export function applyPermissionUpdate(
         )
         return context
       }
+      if (update.mode === 'auto' && !context.isAutoModeAvailable) {
+        logForDebugging(
+          "Ignoring permission update: setMode 'auto' rejected — mode is not available",
+        )
+        return context
+      }
       logForDebugging(
         `Applying permission update: Setting mode to '${update.mode}'`,
       )
@@ -235,6 +241,17 @@ export function persistPermissionUpdate(update: PermissionUpdate): void {
   if (update.type === 'setMode' && update.mode === 'bypassPermissions') {
     logForDebugging(
       "setMode 'bypassPermissions' is session-scoped; not persisting as defaultMode",
+    )
+    return
+  }
+  if (
+    update.type === 'setMode' &&
+    update.mode === 'auto' &&
+    (update.destination === 'projectSettings' ||
+      update.destination === 'localSettings')
+  ) {
+    logForDebugging(
+      `setMode 'auto' is not persisted to '${update.destination}' — only userSettings/flagSettings/policySettings may grant defaultMode 'auto'`,
     )
     return
   }

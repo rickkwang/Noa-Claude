@@ -30,10 +30,17 @@ const server = createServer(async (req, res) => {
     res.writeHead(200, { 'content-type': 'application/json' }); res.end('{"input_tokens":100}'); return;
   }
   const body = JSON.parse(raw || '{}');
-  active.requests.push({ path: req.url, headers: req.headers, body });
-  res.writeHead(200, { 'content-type': 'text/event-stream' });
+  const classifier = JSON.stringify(body.system).includes('cc_automode_permissions');
+  active.requests.push({ path: req.url, headers: req.headers, body, classifier });
+  res.writeHead(200, { 'content-type': body.stream ? 'text/event-stream' : 'application/json' });
   const emit = (event, data) => res.write(`event: ${event}\ndata: ${JSON.stringify({ type: event, ...data })}\n\n`);
-  const scripted = active.toolUses && active.requests.length === 1 ? active.toolUses : null;
+  if (!classifier) active.mainTurns = (active.mainTurns ?? 0) + 1;
+  const scripted = !classifier ? active.toolSteps?.[active.mainTurns - 1] ?? (active.toolUses && active.mainTurns === 1 ? active.toolUses : null) : null;
+  if (!body.stream) {
+    const content = scripted ?? [{ type: 'text', text: classifier ? '<block>no</block>' : 'SAFE_OK' }];
+    res.end(JSON.stringify({ id: `msg_${active.requests.length}`, type: 'message', role: 'assistant', model: body.model, content, stop_reason: scripted ? 'tool_use' : 'end_turn', stop_sequence: null, usage: { input_tokens: 100, output_tokens: 10 } }));
+    return;
+  }
   emit('message_start', { message: { id: `msg_${active.requests.length}`, type: 'message', role: 'assistant', model: body.model, content: [], stop_reason: null, stop_sequence: null, usage: { input_tokens: 100, output_tokens: 0 } } });
   if (scripted) {
     scripted.forEach((call, index) => {
@@ -44,7 +51,7 @@ const server = createServer(async (req, res) => {
     emit('message_delta', { delta: { stop_reason: 'tool_use', stop_sequence: null }, usage: { output_tokens: 10 } });
   } else {
     emit('content_block_start', { index: 0, content_block: { type: 'text', text: '' } });
-    emit('content_block_delta', { index: 0, delta: { type: 'text_delta', text: 'SAFE_OK' } });
+    emit('content_block_delta', { index: 0, delta: { type: 'text_delta', text: classifier ? '<block>no</block>' : 'SAFE_OK' } });
     emit('content_block_stop', { index: 0 });
     emit('message_delta', { delta: { stop_reason: 'end_turn', stop_sequence: null }, usage: { output_tokens: 10 } });
   }
@@ -124,6 +131,69 @@ const cases = {
     requests: 2,
     toolUses: ({ workspace }) => [{ id: 'bypass_write', name: 'Write', input: { file_path: join(workspace, 'bypass.txt'), content: 'BYPASS_WRITE' } }],
     expect: 'write-denied',
+  },
+  'auto-project-default-ignored': {
+    project: true,
+    projectPermissions: { defaultMode: 'auto' },
+    expect: 'auto-off',
+  },
+  'auto-local-default-ignored': {
+    project: true,
+    localPermissions: { defaultMode: 'auto' },
+    expect: 'auto-off',
+  },
+  'auto-user-default-allowed': {
+    userSettings: { permissions: { defaultMode: 'auto' } },
+    expect: 'auto-on',
+  },
+  'auto-custom-endpoint-keeps-model': {
+    flags: ['--permission-mode', 'auto'],
+    model: 'kimi/k3.1-pro',
+    requests: 3,
+    toolUses: ({ workspace }) => [{ id: 'auto_bash', name: 'Bash', input: { command: `node -e "require('fs').writeFileSync('auto-route.txt','ok')"`, description: 'Run classifier route fixture' } }],
+    expect: 'custom-model',
+  },
+  'auto-sensitive-write-requires-approval': {
+    project: true,
+    flags: ['--permission-mode', 'auto'],
+    requests: 3,
+    toolSteps: ({ workspace }) => [
+      [{ id: 'sensitive_read', name: 'Read', input: { file_path: join(workspace, '.noa', 'settings.json') } }],
+      [{ id: 'sensitive_write', name: 'Write', input: { file_path: join(workspace, '.noa', 'settings.json'), content: 'SENSITIVE_CLASSIFIER_CONTENT_77' } }],
+    ],
+    expect: 'sensitive-approval',
+  },
+  'auto-sensitive-edit-requires-approval': {
+    project: true,
+    flags: ['--permission-mode', 'auto'],
+    requests: 3,
+    toolSteps: ({ workspace }) => [
+      [{ id: 'sensitive_read', name: 'Read', input: { file_path: join(workspace, '.noa', 'settings.json') } }],
+      [{ id: 'sensitive_edit', name: 'Edit', input: { file_path: join(workspace, '.noa', 'settings.json'), old_string: HOOK_MARKER, new_string: 'SENSITIVE_CLASSIFIER_CONTENT_77' } }],
+    ],
+    expect: 'sensitive-approval',
+  },
+  'auto-repeat-action-reclassified': {
+    model: 'kimi/k3.1-pro',
+    flags: ['--permission-mode', 'auto'],
+    requests: 5,
+    toolSteps: () => [
+      [{ id: 'repeat_write_1', name: 'Bash', input: { command: `node -e "require('fs').writeFileSync('repeat.txt','ok')"`, description: 'Repeat classifier fixture' } }],
+      [{ id: 'repeat_write_2', name: 'Bash', input: { command: `node -e "require('fs').writeFileSync('repeat.txt','ok')"`, description: 'Repeat classifier fixture' } }],
+    ],
+    expect: 'reclassified',
+  },
+  'auto-long-context-preserves-history': {
+    model: 'claude-sonnet-4-6',
+    flags: ['--permission-mode', 'auto'],
+    prompt: `Do not push any changes. LONG_CONTEXT_${'x'.repeat(200000)}_END. Do not delete any files.`,
+    requests: 3,
+    toolUses: () => [{ id: 'long_context_bash', name: 'Bash', input: { command: `node -e "require('fs').writeFileSync('long-context.txt','ok')"`, description: 'Preserve classifier history fixture' } }],
+    expect: 'preserved-history',
+  },
+  'auto-flag-default-allowed': {
+    flags: ['--settings', JSON.stringify({ permissions: { defaultMode: 'auto' } })],
+    expect: 'auto-on',
   },
   // --safe-mode does not load the project CLAUDE.md or the project SessionStart hook.
   'safe-mode-skips-project': {
@@ -208,7 +278,7 @@ async function run(name) {
   mkdirSync(dir, { recursive: true });
   const workspace = scenario.project ? writeProject(dir, scenario.projectPermissions, scenario.localPermissions) : join(dir, 'workspace');
   mkdirSync(workspace, { recursive: true });
-  active = { requests: [], toolUses: scenario.toolUses?.({ dir, workspace }) ?? null };
+  active = { requests: [], toolUses: scenario.toolUses?.({ dir, workspace }) ?? null, toolSteps: scenario.toolSteps?.({ dir, workspace }) ?? null, mainTurns: 0 };
   const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => ['PATH', 'HOME', 'TMPDIR', 'USER', 'LOGNAME', 'SHELL', 'LANG', 'LC_ALL'].includes(k)));
   Object.assign(env, {
     CLAUDE_CONFIG_DIR: join(dir, 'config'),
@@ -221,7 +291,7 @@ async function run(name) {
     mkdirSync(env.CLAUDE_CONFIG_DIR, { recursive: true });
     writeFileSync(join(env.CLAUDE_CONFIG_DIR, 'settings.json'), JSON.stringify(scenario.userSettings));
   }
-  const command = ['--print', 'Say SAFE_OK.', '--output-format', 'json', '--model', 'claude-opus-5-5', ...(scenario.flags ?? [])];
+  const command = ['--print', scenario.prompt ?? 'Say SAFE_OK.', '--output-format', 'json', '--model', scenario.model ?? 'claude-opus-5-5', ...(scenario.flags ?? [])];
   const [bin, binArgs] = entry.endsWith('.js') ? ['bun', [entry, ...command]] : [entry, command];
   const child = spawn(bin, binArgs, { cwd: workspace, env, stdio: ['ignore', 'pipe', 'pipe'] });
   let stdout = '', stderr = '';
@@ -304,6 +374,36 @@ function check(name, { dir, exit, stdout, stderr, workspace }) {
       assert.doesNotMatch(String(write.content), /restricted mode/, 'control refusal came from --restricted');
       assert.equal(existsSync(join(workspace, 'inside.txt')), false, 'control write landed despite project deny');
     }
+  }
+  if (name === 'auto-repeat-action-reclassified') {
+    assert.equal(active.requests.filter(r => r.classifier).length, 2, 'repeated action reused a stale verdict');
+    assert.equal(readFileSync(join(workspace, 'repeat.txt'), 'utf8'), 'ok');
+  }
+  if (name === 'auto-long-context-preserves-history') {
+    const call = active.requests.find(r => r.classifier);
+    assert.ok(call, 'long-context action did not reach the classifier');
+    const messages = JSON.stringify(call.body.messages);
+    assert.ok(messages.includes(cases[name].prompt), 'classifier silently discarded user context or boundaries');
+  }
+  if (name === 'auto-custom-endpoint-keeps-model') {
+    const calls = active.requests.filter(r => r.classifier);
+    assert.equal(calls.length, 1, 'expected one classifier request');
+    assert.ok(calls.every(r => r.body.model === 'kimi/k3.1-pro'), 'custom endpoint silently changed the classifier model');
+    assert.ok(calls[0].path.startsWith('/'), 'classifier did not use the shared local endpoint');
+  }
+  if (cases[name].expect === 'sensitive-approval') {
+    assert.equal(active.requests.filter(r => r.classifier).length, 0, 'redacted sensitive action reached the classifier');
+    const results = active.requests.at(-1).body.messages.flatMap(m => Array.isArray(m.content) ? m.content : []).filter(b => b.type === 'tool_result');
+    const mutation = results.find(r => r.tool_use_id === (name.includes('-write-') ? 'sensitive_write' : 'sensitive_edit'));
+    assert.ok(mutation?.is_error, 'sensitive mutation did not require approval');
+    assert.match(String(mutation.content), /requested permissions/i, 'sensitive mutation failed before the approval boundary');
+    const settings = JSON.parse(readFileSync(join(workspace, '.noa', 'settings.json'), 'utf8'));
+    assert.ok(settings.hooks.SessionStart, 'sensitive mutation changed the original settings');
+    assert.ok(!JSON.stringify(settings).includes('SENSITIVE_CLASSIFIER_CONTENT_77'), 'sensitive content was written without approval');
+  }
+  if (cases[name].expect === 'auto-off' || cases[name].expect === 'auto-on') {
+    const active = JSON.stringify(body.messages).includes('## Auto Mode Active');
+    assert.equal(active, cases[name].expect === 'auto-on', 'unexpected auto mode startup state');
   }
   if (cases[name].expect === 'write-denied' || cases[name].expect === 'write-allowed') {
     const results = active.requests[1].body.messages.flatMap(m => Array.isArray(m.content) ? m.content : []).filter(b => b.type === 'tool_result');

@@ -74,6 +74,10 @@ export type AutoModeClassifierStats = {
   inputTokens: number
   outputTokens: number
   durationMs: number
+  costUSD: number
+  model?: string
+  models?: string[]
+  provider?: string
 }
 
 export function createAutoModeClassifierStats(): AutoModeClassifierStats {
@@ -91,6 +95,7 @@ export function createAutoModeClassifierStats(): AutoModeClassifierStats {
     inputTokens: 0,
     outputTokens: 0,
     durationMs: 0,
+    costUSD: 0,
   }
 }
 
@@ -706,6 +711,14 @@ export function recordAutoModeClassifierCall(
   update: Partial<AutoModeClassifierStats>,
 ): void {
   const stats = STATE.autoModeClassifierStats
+  if (typeof update.model === 'string') {
+    stats.model = update.model
+    stats.models ??= []
+    if (!stats.models.includes(update.model)) {
+      stats.models.push(update.model)
+    }
+  }
+  if (typeof update.provider === 'string') stats.provider = update.provider
   for (const [key, value] of Object.entries(update)) {
     if (typeof value !== 'number') continue
     stats[key as keyof AutoModeClassifierStats] += value

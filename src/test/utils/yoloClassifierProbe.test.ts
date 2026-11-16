@@ -471,7 +471,7 @@ describe('auto mode classifier probe', () => {
     expect(getClassifierProbeState()).toBe('unprobed')
   })
 
-  test('uses the provider-aware Sonnet default for Bedrock probes', async () => {
+  test('keeps the main model for Bedrock instead of probing another deployment', async () => {
     process.env.CLAUDE_CODE_USE_BEDROCK = '1'
     setMainLoopModelOverride('us.anthropic.claude-opus-4-7-v1:0')
 
@@ -479,10 +479,8 @@ describe('auto mode classifier probe', () => {
       new AbortController().signal,
     )
 
-    expect(resolved.model).toContain('claude-sonnet-4-5')
-    expect(resolved.model).not.toContain('claude-sonnet-5')
-    expect(resolved.probeLease).toBeDefined()
-    expect(completeClassifierProbe(resolved.probeLease!, 'unprobed')).toBe(true)
+    expect(resolved).toEqual({ model: 'us.anthropic.claude-opus-4-7-v1:0' })
+    expect(getClassifierProbeState()).toBe('unprobed')
   })
 
   test('does not retry a prompt-too-long probe against the main model', async () => {
@@ -577,5 +575,22 @@ describe('auto mode classifier probe', () => {
     const model = _getClassifierModelForTesting()
     expect(typeof model).toBe('string')
     expect(getClassifierProbeState()).toBe('unprobed')
+  })
+
+  test('preserves caller sessionModel when resuming after a demoted concurrent probe', async () => {
+    setMainLoopModelOverride('claude-opus-4-7')
+    const first = await _resolveClassifierModelForTesting(
+      new AbortController().signal,
+      'claude-opus-4-7',
+    )
+    expect(first.probeLease).toBeDefined()
+
+    const waiter = _resolveClassifierModelForTesting(
+      new AbortController().signal,
+      'claude-haiku-4-5',
+    )
+    expect(completeClassifierProbe(first.probeLease!, 'demoted')).toBe(true)
+
+    await expect(waiter).resolves.toEqual({ model: 'claude-haiku-4-5' })
   })
 })

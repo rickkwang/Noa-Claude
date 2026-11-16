@@ -14,7 +14,10 @@ import { readFileSyncWithMetadata } from '../../utils/fileRead.js'
 import { safeParseJSON } from '../../utils/json.js'
 import { lazySchema } from '../../utils/lazySchema.js'
 import { parseCellId } from '../../utils/notebook.js'
-import { checkWritePermissionForTool } from '../../utils/permissions/filesystem.js'
+import {
+  checkPathSafetyForAutoEdit,
+  checkWritePermissionForTool,
+} from '../../utils/permissions/filesystem.js'
 import type { PermissionDecision } from '../../utils/permissions/PermissionResult.js'
 import { jsonParse, jsonStringify } from '../../utils/slowOperations.js'
 import { reachesNetworkPath } from '../../utils/fsOperations.js'
@@ -118,6 +121,9 @@ export const NotebookEditTool = buildTool({
   toAutoClassifierInput(input) {
     if (feature('AUTO_MODE')) {
       const mode = input.edit_mode ?? 'replace'
+      if (!checkPathSafetyForAutoEdit(input.notebook_path).safe) {
+        return `${input.notebook_path} ${mode}: sensitive notebook edit; source withheld (${input.new_source.length} characters)`
+      }
       return `${input.notebook_path} ${mode}: ${input.new_source}`
     }
     return ''

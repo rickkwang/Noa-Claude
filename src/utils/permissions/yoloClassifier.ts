@@ -35,10 +35,9 @@ import { resolveAntModel } from '../model/antModels.js'
 import { CLAUDE_SONNET_5_CONFIG } from '../model/configs.js'
 import {
   getCanonicalName,
-  getDefaultSonnetModel,
   getMainLoopModel,
 } from '../model/model.js'
-import { getAPIProvider } from '../model/providers.js'
+import { getAPIProvider, isDirectFirstParty } from '../model/providers.js'
 import { getAutoModeConfig } from '../settings/settings.js'
 import { sideQuery } from '../sideQuery.js'
 import { jsonStringify } from '../slowOperations.js'
@@ -58,6 +57,7 @@ import {
   tryBeginClassifierProbe,
   waitForClassifierProbe,
 } from './autoModeState.js'
+import { calculateCostFromTokens } from '../modelCost.js'
 import { getClaudeTempDir } from './filesystem.js'
 import { permissionRuleValueFromString } from './permissionRuleParser.js'
 
@@ -1830,6 +1830,7 @@ export async function classifyYoloAction(
   tools: Tools,
   context: ToolPermissionContext,
   signal: AbortSignal,
+  sessionModel?: string,
 ): Promise<YoloClassifierResult> {
   const result = await runYoloClassifier(
     messages,
@@ -1837,6 +1838,7 @@ export async function classifyYoloAction(
     tools,
     context,
     signal,
+    sessionModel,
   )
   // null = the action never reached the API, so there is nothing to account
   // for. Keeping that case out here means the session counters below describe
@@ -1845,7 +1847,7 @@ export async function classifyYoloAction(
     return {
       shouldBlock: false,
       reason: 'Tool declares no classifier-relevant input',
-      model: getClassifierModel(),
+      model: getClassifierModel(sessionModel),
     }
   }
   recordClassifierOutcome(result)
@@ -1864,6 +1866,15 @@ function recordClassifierOutcome(result: YoloClassifierResult): void {
     !result.unavailable &&
     !result.transcriptTooLong &&
     !result.refusedBySafeguard
+  const finalCost = result.usage
+    ? calculateCostFromTokens(result.model, result.usage)
+    : 0
+  const fallbackCost = result.fallbackFromTelemetry?.usage
+    ? calculateCostFromTokens(
+        result.fallbackFromTelemetry.model,
+        result.fallbackFromTelemetry.usage,
+      )
+    : 0
   recordAutoModeClassifierCall({
     calls: 1,
     resolvedAtStage1: result.stage === 'fast' ? 1 : 0,
@@ -1881,6 +1892,9 @@ function recordClassifierOutcome(result: YoloClassifierResult): void {
       : 0,
     outputTokens: usage?.outputTokens ?? 0,
     durationMs: result.durationMs ?? 0,
+    model: result.model,
+    provider: isDirectFirstParty() ? 'firstParty' : getAPIProvider() === 'firstParty' ? 'customEndpoint' : getAPIProvider(),
+    costUSD: finalCost + fallbackCost,
   })
 }
 
@@ -1891,6 +1905,7 @@ async function runYoloClassifier(
   tools: Tools,
   context: ToolPermissionContext,
   signal: AbortSignal,
+  sessionModel?: string,
 ): Promise<YoloClassifierResult | null> {
   const lookup = buildToolLookup(tools)
   const actionCompact = toCompact(action, lookup)
@@ -2041,7 +2056,7 @@ async function runYoloClassifier(
   // Upstream runs only the two-stage XML classifier; the legacy
   // forced-tool_use path (classify_result) no longer exists there or here.
   const { model: resolvedModel, probeLease } =
-    await resolveClassifierModel(signal)
+    await resolveClassifierModel(signal, sessionModel)
   const mode = getTwoStageMode()
   return runClassifierWithProbeFallback(
     (callModel, callSignal) =>
@@ -2070,6 +2085,7 @@ async function runYoloClassifier(
     probeLease,
     mode,
     signal,
+    sessionModel,
   )
 }
 
@@ -2119,21 +2135,11 @@ function getExternalDefaultClassifierModel(
     return explicitDefault === mainModel ? undefined : explicitDefault
   }
 
-  // OpenAI-compatible endpoints have no Claude Sonnet model to probe. Every
-  // other route (including a first-party gateway, as upstream does) probes,
-  // and a failed probe demotes to the main model for the session.
-  const provider = getAPIProvider()
-  if (provider === 'openaiCompatible') {
-    return undefined
-  }
-
-  // First-party: upstream probes its catalog Sonnet 5 entry (`sonnet5`), not
-  // the Sonnet alias, which already points at a newer model. Other providers
-  // keep their provider-aware Sonnet default (not verified against upstream).
-  const probeModel =
-    provider === 'firstParty'
-      ? CLAUDE_SONNET_5_CONFIG.firstParty
-      : getDefaultSonnetModel()
+  // Third-party routes keep the session model: probing another model would
+  // silently change what the provider receives and can select a deployment the
+  // user did not choose. Only first-party uses the catalog's Sonnet default.
+  if (!isDirectFirstParty()) return undefined
+  const probeModel = CLAUDE_SONNET_5_CONFIG.firstParty
   return probeModel === mainModel ? undefined : probeModel
 }
 
@@ -2155,7 +2161,7 @@ function getClassifierProbeIdentity(model: string): string {
  * Ant-only env var takes precedence, then GrowthBook JSON config override,
  * then the main loop model.
  */
-function getClassifierModel(): string {
+function getClassifierModel(sessionModel = getMainLoopModel()): string {
   if (process.env.USER_TYPE === 'ant') {
     const envModel = process.env.CLAUDE_CODE_AUTO_MODE_MODEL
     if (envModel) return envModel
@@ -2166,7 +2172,7 @@ function getClassifierModel(): string {
   )
   if (config?.model) return config.model
 
-  const mainModel = getMainLoopModel()
+  const mainModel = sessionModel
   const externalDefault = getExternalDefaultClassifierModel(mainModel)
   if (!externalDefault) return mainModel
   if (
@@ -2197,6 +2203,7 @@ type ResolvedClassifierModel = {
  */
 async function resolveClassifierModel(
   signal?: AbortSignal,
+  sessionModel = getMainLoopModel(),
 ): Promise<ResolvedClassifierModel> {
   if (process.env.USER_TYPE === 'ant') {
     const envModel = process.env.CLAUDE_CODE_AUTO_MODE_MODEL
@@ -2210,7 +2217,7 @@ async function resolveClassifierModel(
     return { model: config.model }
   }
 
-  const mainModel = getMainLoopModel()
+  const mainModel = sessionModel
   const externalDefault = getExternalDefaultClassifierModel(mainModel)
   if (!externalDefault) {
     return { model: mainModel }
@@ -2237,7 +2244,7 @@ async function resolveClassifierModel(
   if (signal?.aborted) {
     return { model: mainModel }
   }
-  return resolveClassifierModel(signal)
+  return resolveClassifierModel(signal, sessionModel)
 }
 
 /**
@@ -2323,6 +2330,7 @@ async function runClassifierWithProbeFallback(
   probeLease: ClassifierProbeLease | undefined,
   mode: TwoStageMode,
   outerSignal: AbortSignal,
+  sessionModel = getMainLoopModel(),
 ): Promise<YoloClassifierResult> {
   const isProbe = probeLease !== undefined
   let result: YoloClassifierResult
@@ -2369,7 +2377,7 @@ async function runClassifierWithProbeFallback(
 
   if (probeFailed) {
     logForDebugging(
-      `Got error trying ${primaryModel} as auto mode classifier, using ${getMainLoopModel()}`,
+      `Got error trying ${primaryModel} as auto mode classifier, using ${sessionModel}`,
       { level: 'warn' },
     )
     logForDebugging(
@@ -2378,7 +2386,7 @@ async function runClassifierWithProbeFallback(
     )
   }
 
-  const fallbackModel = probeFailed ? getMainLoopModel() : undefined
+  const fallbackModel = probeFailed ? sessionModel : undefined
   if (!fallbackModel || fallbackModel === primaryModel) {
     return result
   }

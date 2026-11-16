@@ -1522,7 +1522,8 @@ export function checkWritePermissionForTool<Input extends AnyObject>(
       decisionReason: {
         type: 'safetyCheck',
         reason: safetyCheck.message,
-        classifierApprovable: safetyCheck.classifierApprovable,
+        // Sensitive write contents are withheld from the classifier.
+        classifierApprovable: false,
       },
     }
   }

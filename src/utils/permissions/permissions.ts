@@ -606,15 +606,7 @@ export const hasPermissionsToUseTool: CanUseToolFn = async (
         mode: appState.toolPermissionContext.mode,
         autoActive: autoModeStateModule?.isAutoModeActive() ?? false,
       }
-      // Non-classifier-approvable safetyCheck decisions stay immune to ALL
-      // auto-approve paths: the acceptEdits fast-path, the safe-tool allowlist,
-      // and the classifier. Step 1g only guards bypassPermissions; this guards
-      // auto. classifierApprovable safetyChecks (sensitive-file paths) fall
-      // through to the classifier — the fast-paths below naturally don't fire
-      // because the tool's own checkPermissions still returns 'ask'.
-      // sandboxOverride asks (dangerouslyDisableSandbox) get the same treatment.
-      // Intentionally stricter than upstream, which lets the classifier approve
-      // a sandbox escape: escapes are rare, so a prompt costs little.
+      // Manual-only safety checks and sandbox escapes must bypass every auto-approval path.
       if (
         (result.decisionReason?.type === 'safetyCheck' &&
           !result.decisionReason.classifierApprovable) ||
@@ -793,6 +785,7 @@ export const hasPermissionsToUseTool: CanUseToolFn = async (
             context.options.tools,
             appState.toolPermissionContext,
             context.abortController.signal,
+            context.options.mainLoopModel,
           )
         classifierResult = isClassifierQueueEnabled()
           ? await runClassifierQueued(

@@ -44,6 +44,7 @@ import { expandPath } from '../../utils/path.js'
 import {
   checkWritePermissionForTool,
   matchingRuleForInput,
+  checkPathSafetyForAutoEdit,
 } from '../../utils/permissions/filesystem.js'
 import type { PermissionDecision } from '../../utils/permissions/PermissionResult.js'
 import { matchWildcardPattern } from '../../utils/permissions/shellRuleMatching.js'
@@ -130,6 +131,9 @@ export const FileWriteTool = buildTool({
     return outputSchema()
   },
   toAutoClassifierInput(input) {
+    if (!checkPathSafetyForAutoEdit(input.file_path).safe) {
+      return `${input.file_path}: sensitive file write; content withheld (${input.content.length} characters)`
+    }
     return `${input.file_path}: ${input.content}`
   },
   getPath(input): string {

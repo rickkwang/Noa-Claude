@@ -16,6 +16,8 @@ process.env.NODE_ENV = 'test'
 
 const { getEmptyToolPermissionContext } = await import('../src/Tool.js')
 const { FileWriteTool } = await import('../src/tools/FileWriteTool/FileWriteTool.js')
+const { FileEditTool } = await import('../src/tools/FileEditTool/FileEditTool.js')
+const { NotebookEditTool } = await import('../src/tools/NotebookEditTool/NotebookEditTool.js')
 const { createAssistantMessage } = await import('../src/utils/messages.js')
 const { applyPermissionUpdate, persistPermissionUpdate } = await import('../src/utils/permissions/PermissionUpdate.js')
 const { initialPermissionModeFromCLI } = await import('../src/utils/permissions/permissionSetup.js')
@@ -62,6 +64,24 @@ try {
     observed.push({ isNonInteractiveSession, planWrite: result.behavior })
   }
   assert.equal(existsSync(join(artifacts, 'not-written.txt')), false)
+
+  persistPermissionUpdate({
+    type: 'setMode',
+    mode: 'auto' as never,
+    destination: 'projectSettings',
+  })
+  const projectSettingsAfterAuto = join(artifacts, '.noa', 'settings.json')
+  assert.equal(existsSync(projectSettingsAfterAuto), false)
+
+  const sensitivePath = join(artifacts, '.noa', 'settings.json')
+  const writeProjection = FileWriteTool.toAutoClassifierInput({ file_path: sensitivePath, content: 'PRIVATE_WRITE_VALUE' })
+  const editProjection = FileEditTool.toAutoClassifierInput({ file_path: sensitivePath, old_string: 'old', new_string: 'PRIVATE_EDIT_VALUE', replace_all: false })
+  const notebookProjection = NotebookEditTool.toAutoClassifierInput({ notebook_path: sensitivePath, new_source: 'PRIVATE_NOTEBOOK_VALUE' })
+  assert.ok(!writeProjection.includes('PRIVATE_WRITE_VALUE'))
+  assert.ok(!editProjection.includes('PRIVATE_EDIT_VALUE'))
+  assert.ok(!notebookProjection.includes('PRIVATE_NOTEBOOK_VALUE'))
+  assert.ok(FileWriteTool.toAutoClassifierInput({ file_path: join(artifacts, 'ordinary.txt'), content: 'ORDINARY_VALUE' }).includes('ORDINARY_VALUE'))
+  observed.push({ sensitiveWriteWithheld: true, sensitiveEditWithheld: true, sensitiveNotebookWithheld: true, ordinaryWritePreserved: true })
   passed = true
   console.log('PASS bypass setMode, consent inheritance, persistence, and plan boundaries; no Write executed')
 } finally {

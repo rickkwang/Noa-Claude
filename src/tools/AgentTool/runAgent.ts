@@ -92,6 +92,7 @@ import type { ContentReplacementState } from '../../utils/toolResultStorage.js'
 import { createAgentId } from '../../utils/uuid.js'
 import { filterToolsForAgent, resolveAgentTools, extractStructuredOutput } from './agentToolUtils.js'
 import { createDenialTrackingState } from '../../utils/permissions/denialTracking.js'
+import { isAutoModeGateEnabled } from '../../utils/permissions/permissionSetup.js'
 import { type AgentDefinition, isBuiltInAgent } from './loadAgentsDir.js'
 
 // Count server users across reconnects, not just the initial connection.
@@ -478,6 +479,9 @@ export async function* runAgent({
         agentPermissionMode &&
         (agentPermissionMode !== 'bypassPermissions' ||
           state.toolPermissionContext.isBypassPermissionsModeAvailable) &&
+        (agentPermissionMode !== 'auto' ||
+          (state.toolPermissionContext.isAutoModeAvailable &&
+            isAutoModeGateEnabled())) &&
         state.toolPermissionContext.mode !== 'bypassPermissions' &&
         state.toolPermissionContext.mode !== 'acceptEdits' &&
         !(

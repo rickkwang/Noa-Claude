@@ -714,6 +714,16 @@ function isBackgroundBypassBlocked(): boolean {
   )
 }
 
+function isDefaultModeGrantedByTrustedSettings(mode: PermissionMode): boolean {
+  return getEnabledSettingSources().some(
+    source =>
+      (source === 'userSettings' ||
+        source === 'flagSettings' ||
+        source === 'policySettings') &&
+      getSettingsForSource(source)?.permissions?.defaultMode === mode,
+  )
+}
+
 export function initialPermissionModeFromCLI({
   permissionModeCli,
   dangerouslySkipPermissions,
@@ -793,16 +803,9 @@ export function initialPermissionModeFromCLI({
   }
   if (settings.permissions?.defaultMode) {
     const settingsMode = settings.permissions.defaultMode as PermissionMode
-    const bypassGrantedByTrustedSettings =
-      settingsMode !== 'bypassPermissions' ||
-      getEnabledSettingSources().some(
-        source =>
-          (source === 'userSettings' ||
-            source === 'flagSettings' ||
-            source === 'policySettings') &&
-          getSettingsForSource(source)?.permissions?.defaultMode ===
-            'bypassPermissions',
-      )
+    const trustedDefaultMode =
+      (settingsMode !== 'bypassPermissions' && settingsMode !== 'auto') ||
+      isDefaultModeGrantedByTrustedSettings(settingsMode)
     // CCR supports acceptEdits, plan, default, and auto (upstream's
     // $ud) — ignore other defaultModes from settings (e.g. bypassPermissions
     // would otherwise silently grant full access in a remote environment).
@@ -819,13 +822,13 @@ export function initialPermissionModeFromCLI({
       })
     }
     // auto from settings requires the same gate check as from CLI
-    else if (!bypassGrantedByTrustedSettings) {
+    else if (!trustedDefaultMode) {
       logForDebugging(
-        'settings defaultMode "bypassPermissions" ignored — only policy/user/flag settings may grant bypass mode',
+        `settings defaultMode "${settingsMode}" ignored — only policy/user/flag settings may grant ${settingsMode} mode`,
         { level: 'warn' },
       )
       notification =
-        'Permission mode bypassPermissions from settings was ignored — only policy, user, or flag settings may grant it'
+        `Permission mode ${settingsMode} from settings was ignored — only policy, user, or flag settings may grant it`
     } else if (feature('AUTO_MODE') && settingsMode === 'auto') {
       if (autoModeCircuitBrokenSync) {
         logForDebugging(

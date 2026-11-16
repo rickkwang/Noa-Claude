@@ -659,7 +659,8 @@ export const AgentTool = buildTool({
     // import from tools.ts (which would create a circular dependency).
     const workerPermissionContext = {
       ...appState.toolPermissionContext,
-      mode: selectedAgent.permissionMode === 'bypassPermissions' && !appState.toolPermissionContext.isBypassPermissionsModeAvailable
+      mode: (selectedAgent.permissionMode === 'bypassPermissions' && !appState.toolPermissionContext.isBypassPermissionsModeAvailable) ||
+        (selectedAgent.permissionMode === 'auto' && !appState.toolPermissionContext.isAutoModeAvailable)
         ? appState.toolPermissionContext.mode
         : selectedAgent.permissionMode ?? 'acceptEdits'
     };

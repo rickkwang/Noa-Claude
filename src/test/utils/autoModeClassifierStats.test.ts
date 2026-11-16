@@ -4,7 +4,7 @@ import {
   recordAutoModeClassifierCall as recordCall,
   resetAutoModeClassifierStats,
 } from '../../bootstrap/state.js'
-import { formatAutoModeClassifierUsage } from '../../cost-tracker.js'
+import { formatAutoModeClassifierUsage, formatTotalCost } from '../../cost-tracker.js'
 import type { Tools } from '../../Tool.js'
 import { classifyYoloAction } from '../../utils/permissions/yoloClassifier.js'
 
@@ -84,6 +84,8 @@ describe('formatAutoModeClassifierUsage', () => {
       inputTokens: 3000,
       outputTokens: 120,
       durationMs: 2600,
+      model: 'claude-sonnet-5',
+      provider: 'firstParty',
     })
 
     const out = formatAutoModeClassifierUsage()
@@ -92,6 +94,7 @@ describe('formatAutoModeClassifierUsage', () => {
     expect(out).toContain('stage 2 escalation:  1/2 (50%)')
     expect(out).toContain('re-samples:          2')
     expect(out).toContain('4000 in, 125 out')
+    expect(out).toContain('claude-sonnet-5 via firstParty')
   })
 
   test('omits outcome categories that never happened', () => {
@@ -119,6 +122,23 @@ describe('formatAutoModeClassifierUsage', () => {
     recordCall({ calls: 1, unavailable: 1 })
     expect(formatAutoModeClassifierUsage()).toContain(
       'stage 2 escalation:  0/0 (0%)',
+    )
+  })
+
+  test('includes classifier cost in the session total with separate subtotals', () => {
+    recordCall({ calls: 1, resolvedAtStage1: 1, allowed: 1, costUSD: 0.125 })
+    const out = formatTotalCost()
+    expect(out).toContain('main conversation:')
+    expect(out).toContain('auto classifier:')
+    expect(out).toContain('$0.1250')
+  })
+
+  test('lists all unique classifier models used in the session', () => {
+    recordCall({ calls: 1, resolvedAtStage1: 1, allowed: 1, model: 'claude-sonnet-5', provider: 'firstParty' })
+    recordCall({ calls: 1, resolvedAtStage1: 1, allowed: 1, model: 'claude-opus-4-7', provider: 'firstParty' })
+    recordCall({ calls: 1, resolvedAtStage1: 1, allowed: 1, model: 'claude-opus-4-7', provider: 'firstParty' })
+    expect(formatAutoModeClassifierUsage()).toContain(
+      'claude-sonnet-5, claude-opus-4-7 via firstParty',
     )
   })
 

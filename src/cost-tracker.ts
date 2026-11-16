@@ -229,8 +229,9 @@ function formatModelUsage(): string {
 }
 
 export function formatTotalCost(): string {
+  const classifierCost = getAutoModeClassifierStats().costUSD
   const costDisplay =
-    formatCost(getTotalCostUSD()) +
+    formatCost(getTotalCostUSD() + classifierCost) +
     (hasUnknownModelCost()
       ? ' (costs may be inaccurate due to usage of unknown models)'
       : '')
@@ -240,6 +241,9 @@ export function formatTotalCost(): string {
 
   return chalk.dim(
     `Total cost:            ${costDisplay}\n` +
+      (classifierCost > 0
+        ? `  main conversation:   ${formatCost(getTotalCostUSD())}\n  auto classifier:     ${formatCost(classifierCost)}\n`
+        : '') +
       `Total duration (API):  ${formatDuration(getTotalAPIDuration())}
 Total duration (wall): ${formatDuration(getTotalDuration())}
 Total code changes:    ${getTotalLinesAdded()} ${getTotalLinesAdded() === 1 ? 'line' : 'lines'} added, ${getTotalLinesRemoved()} ${getTotalLinesRemoved() === 1 ? 'line' : 'lines'} removed
@@ -289,8 +293,12 @@ export function formatAutoModeClassifierUsage(): string {
     .filter((part): part is string => part !== null)
     .join(', ')
 
+  const modelLabel =
+    stats.models && stats.models.length > 0 ? stats.models.join(', ') : stats.model
+
   return (
     `\nAuto mode classifier:  ${stats.calls} ${stats.calls === 1 ? 'call' : 'calls'}, ${formatDuration(stats.durationMs)}\n` +
+    (modelLabel ? `  model:               ${modelLabel}${stats.provider ? ` via ${stats.provider}` : ''}\n` : '') +
     `  outcomes:            ${outcomes}\n` +
     `  stage 2 escalation:  ${stats.escalatedToStage2}/${staged} (${escalationPct}%)\n` +
     `  re-samples:          ${stats.resamples}\n` +
