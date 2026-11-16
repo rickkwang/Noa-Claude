@@ -10,7 +10,7 @@
 }
 /* Corner radius of the conversation surface, the settings page card and the veil. Matches the native window's corner,
    so a card corner reads as concentric with the window instead of a smaller arc beside it. The right panel is a straight edge. */
-:root { --noa-surface-radius: 20px; --text-danger: #911E1B; --ring-warning: #FBB315; --ring-danger: #C83839; }
+:root { --noa-surface-radius: 0px; --text-danger: #911E1B; --ring-warning: #FBB315; --ring-danger: #C83839; }
 /* Shared menu card tokens: dropdown cards (model, add, permissions, session card) and the suggestion popover (slash). */
 :root {
   --menu-radius: 20px;
@@ -529,9 +529,10 @@ html[data-translucent-sidebar="enabled"] body {
   background-color: transparent;
 }
 
-/* The shell is transparent; the veil is the opaque page plane to the right of the sidebar. It is a translated layer,
-   not a gradient whose stop animates (translateX rides the compositor), and it carries the content surface's
-   rounded left corners so the notch shows the native material rather than a page-coloured square. */
+/* The shell is transparent; the veil is the opaque page plane to the right of the sidebar. Its left edge tracks
+   --noa-sidebar-material-width alongside the chat column's margin-left so they never desync during dock motion,
+   and it carries the content surface's rounded left corners so the notch shows the native material rather than a
+   page-coloured square. */
 html[data-translucent-sidebar="enabled"] .noa-app-shell {
   /* The sidebar tint lives on the shell, under the veil, so the veil's corner notches match the column. */
   background: color-mix(in srgb, var(--sidebar-material-color, #FAFAF8) var(--sidebar-material-tint, 70%), transparent) !important;
@@ -543,11 +544,11 @@ html[data-translucent-sidebar="enabled"] .noa-app-shell::before {
   content: '';
   position: absolute;
   inset: 0;
+  left: var(--noa-sidebar-material-width);
   z-index: -1;
   pointer-events: none;
   border-left: 0.5px solid transparent;
   background-color: var(--bg-primary, #FCFCFB);
-  transform: translateX(var(--noa-sidebar-material-width));
   /* Parked; only the dock-motion rule below arms a transition. */
   transition: none;
 }
@@ -559,9 +560,9 @@ html[data-translucent-sidebar="enabled"] .noa-app-shell:has([data-sidebar-expand
 
 /* Veil animates only on the sidebar's own dock motion (data-sidebar-dock-motion from App.tsx), not for
    preview, resize drag, or settle frames. The flag is off at first paint, so a restart has no entry animation.
-   Same duration and curve as the column width and content surface, so the three edges move as one. */
+   Same duration, curve and layout pass as the column width and chat column margin, so the edges move as one. */
 html[data-translucent-sidebar="enabled"] .noa-app-shell[data-sidebar-dock-motion="true"]::before {
-  transition: transform 500ms cubic-bezier(0.4, 0, 0.2, 1), border-radius 500ms cubic-bezier(0.4, 0, 0.2, 1), border-left-color 500ms cubic-bezier(0.4, 0, 0.2, 1);
+  transition: left 500ms cubic-bezier(0.4, 0, 0.2, 1), border-radius 500ms cubic-bezier(0.4, 0, 0.2, 1), border-left-color 500ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 /* The veil above already paints the opaque rounded content plane when translucency is enabled; hiding

@@ -832,12 +832,14 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
   const sidebarWidth = sidebarOpen ? sidebarTarget : 0
   const workspaceWidth = windowSize.width - sidebarWidth
   const rightMax = Math.max(320, workspaceWidth - 352)
-  const rightDefault = Math.max(320, Math.min(windowSize.height * 1.6, workspaceWidth - 500), Math.min(640, workspaceWidth - 352))
-  const defaultRatio = rightMax === 320 ? 0 : Math.max(0, Math.min(1, (rightDefault - 320) / (rightMax - 320)))
+  const rightWindowMax = Math.max(320, windowSize.width - 352)
+  const rightDefault = Math.max(320, Math.min(windowSize.height * 1.6, windowSize.width - 500), Math.min(640, rightWindowMax))
+  const defaultRatio = rightWindowMax === 320 ? 0 : Math.max(0, Math.min(1, (rightDefault - 320) / (rightWindowMax - 320)))
   useEffect(() => {
-    if (rightRatio === null && rightMax > 320) setRightRatio(defaultRatio)
-  }, [rightRatio, rightMax, defaultRatio])
-  const rightTarget = Math.round(320 + (rightRatio ?? defaultRatio) * (rightMax - 320))
+    if (rightRatio === null && rightWindowMax > 320) setRightRatio(defaultRatio)
+  }, [rightRatio, rightWindowMax, defaultRatio])
+  const rightDesired = Math.round(320 + (rightRatio ?? defaultRatio) * (rightWindowMax - 320))
+  const rightTarget = Math.min(rightDesired, rightMax)
   const rightWidth = rightOpen ? rightTarget : 0
   // The overview docks as a column only with the right panel closed and a chat area wide enough;
   // otherwise it floats over the chat as a popover.
@@ -970,7 +972,10 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
           grow={-1}
           width={rightWidth}
           defaultWidth={rightDefault}
-          onResize={(width) => setRightRatio(rightMax === 320 ? 0 : Math.max(0, Math.min(1, (width - 320) / (rightMax - 320))))}
+          onResize={(width) => {
+            const clamped = Math.min(width, rightMax)
+            setRightRatio(rightWindowMax === 320 ? 0 : Math.max(0, Math.min(1, (clamped - 320) / (rightWindowMax - 320))))
+          }}
           onDraggingChange={setResizing}
           style={{ right: rightWidth - 4, zIndex: 40 }}
         />
@@ -1098,7 +1103,7 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
         <div
           ref={chatColumnRef}
           inert={customizeOpen ? true : undefined}
-          className={`relative flex min-w-0 flex-1 flex-col ${customizeOpen ? "invisible" : ""} ${moving ? "" : "transition-[margin-left,margin-right] duration-500 ease-in-out"}`}
+          className={`relative z-0 flex min-w-0 flex-1 flex-col ${customizeOpen ? "invisible" : ""} ${moving ? "" : "transition-[margin-left,margin-right] duration-500 ease-in-out"}`}
           style={{ marginLeft: sidebarWidth, marginRight: rightWidth }}
         >
           {/* The conversation and its floating composer sit above the terminal panel. */}
