@@ -306,6 +306,7 @@ function QuestionCard({ permission, onAnswer, draft, onDraftChange }: Permission
   return (
     <form
       aria-label="Agent needs your input"
+      onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); e.currentTarget.requestSubmit() } }}
       onSubmit={(e) => {
         e.preventDefault()
         if (!answers[questions[questionIndex]!.question]) return
@@ -313,24 +314,24 @@ function QuestionCard({ permission, onAnswer, draft, onDraftChange }: Permission
         if (Object.values(answers).some(answer => !answer)) return
         onAnswer(permission, true, false, { ...permission.input, answers })
       }}
-      className="noa-approval-card flex max-h-[50vh] shrink-0 flex-col gap-3 overflow-auto rounded-3xl border border-[var(--border-default)] p-4"
+      className="noa-approval-card flex max-h-[50vh] shrink-0 flex-col overflow-auto rounded-2xl border border-[var(--border-default)]"
     >
-      {questions.length > 1 && <div className="flex items-center justify-between text-caption text-[var(--text-secondary)]">
+      {questions.length > 1 && <div className="flex items-center justify-between bg-[color-mix(in_srgb,var(--text-primary)_5%,transparent)] px-5 pt-3 text-caption text-[var(--text-secondary)]">
         <span>Question {questionIndex + 1} of {questions.length}</span>
-        <button type="button" aria-label="Previous question" disabled={questionIndex === 0} onClick={() => setQuestionIndex(index => index - 1)} className={`${button} disabled:opacity-40`}>Previous</button>
+        <button type="button" aria-label="Previous question" disabled={questionIndex === 0} onClick={() => setQuestionIndex(index => index - 1)} className="disabled:opacity-40">Previous</button>
       </div>}
       {questions.slice(questionIndex, questionIndex + 1).map((q) => (
-        <fieldset key={q.question} className="flex min-w-0 flex-col gap-1.5">
-          <legend className="mb-2 text-body">{q.question}</legend>
+        <fieldset key={q.question} className="flex min-w-0 flex-col">
+          <legend className="float-left w-full bg-[color-mix(in_srgb,var(--text-primary)_5%,transparent)] px-5 py-4 text-body">{q.question}</legend>
           {q.options.map((option) => (
             <label
               key={option.label}
-              className="flex cursor-pointer items-start gap-2 rounded-md bg-[var(--surface-page)] px-2 py-1.5 text-body"
+              className="flex cursor-pointer items-start gap-3 border-t border-[var(--border-light)] px-5 py-3 text-body"
             >
               <input
                 type={q.multiSelect ? "checkbox" : "radio"}
                 name={q.question}
-                className="mt-1 accent-[var(--accent-color)]"
+                className="peer sr-only"
                 checked={(selected[q.question] ?? []).includes(option.label)}
                 onChange={() => {
                   if (!q.multiSelect) setCustom((prev) => ({ ...prev, [q.question]: "" }))
@@ -344,9 +345,10 @@ function QuestionCard({ permission, onAnswer, draft, onDraftChange }: Permission
                   }))
                 }}
               />
+              <span aria-hidden className={`mt-0.5 grid size-5 shrink-0 place-items-center rounded-full border border-[var(--border-default)] after:content-[''] peer-checked:border-[var(--accent-color)] peer-checked:bg-[var(--accent-color)] peer-checked:after:size-2 peer-checked:after:rounded-full peer-checked:after:bg-white peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[var(--accent-color)]`} />
               <span>
                 {option.label}
-                <span className="block text-caption text-[var(--sidebar-text-muted)]">{option.description}</span>
+                <span className="block text-caption text-[var(--text-secondary)]">{option.description}</span>
               </span>
             </label>
           ))}
@@ -358,20 +360,21 @@ function QuestionCard({ permission, onAnswer, draft, onDraftChange }: Permission
               setCustom((prev) => ({ ...prev, [q.question]: e.target.value }))
               if (!q.multiSelect) setSelected((prev) => ({ ...prev, [q.question]: [] }))
             }}
-            className="min-h-8 rounded-md border border-[var(--border-default)] bg-transparent px-2 text-body outline-none focus:border-[var(--accent-color)]"
+            className="mx-5 mb-3 mt-1 min-h-9 rounded-lg border border-[var(--border-default)] bg-transparent px-3 text-body outline-none focus:border-[var(--accent-color)]"
           />
         </fieldset>
       ))}
-      <div className="flex justify-end gap-2">
-        <button type="button" onClick={() => onAnswer(permission, false, false)} className={button}>
-          Cancel
+      <div className="flex justify-end gap-2 border-t border-[var(--border-light)] px-5 py-3">
+        <button type="button" onClick={() => onAnswer(permission, false, false)} className="noa-press h-8 rounded-lg bg-[color-mix(in_srgb,var(--text-primary)_6%,transparent)] px-3 text-body">
+          Skip
         </button>
         <button
           type="submit"
           disabled={!answers[questions[questionIndex]!.question] || questionIndex === questions.length - 1 && Object.values(answers).some(answer => !answer)}
-          className={`${button} bg-[var(--text-primary)] text-[var(--surface-page)] disabled:opacity-40`}
+          className="noa-press h-8 rounded-lg bg-[var(--text-primary)] px-3 text-body text-[var(--surface-page)] disabled:opacity-40"
         >
           {questionIndex < questions.length - 1 ? "Next" : "Submit"}
+          <span aria-hidden className="ml-1.5 inline-flex gap-0.5 align-middle text-micro opacity-70"><kbd className="rounded border border-current/30 px-1">⌘</kbd><kbd className="rounded border border-current/30 px-1">↵</kbd></span>
         </button>
       </div>
     </form>
