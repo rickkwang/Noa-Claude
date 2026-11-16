@@ -638,33 +638,40 @@ async function countBuiltInToolTokens(
       }
     }
 
-    // Count each deferred tool
-    const tokensByTool = await Promise.all(
-      deferredBuiltinTools.map(t =>
-        countToolDefinitionTokens(
-          [t],
-          getToolPermissionContext,
-          agentInfo,
-          model,
-          countTokens,
+    // Single bulk API call for all deferred built-in tools, then distribute
+    // proportionally by local schema size estimation (matches countMcpToolTokens).
+    if (deferredBuiltinTools.length > 0) {
+      const deferredSchemas = await Promise.all(
+        deferredBuiltinTools.map(t =>
+          toolToAPISchema(t, {
+            getToolPermissionContext,
+            tools: deferredBuiltinTools,
+            agents: agentInfo?.activeAgents ?? [],
+            model,
+          }),
         ),
-      ),
-    )
-
-    for (const [i, tool] of deferredBuiltinTools.entries()) {
-      const tokens = Math.max(
-        0,
-        (tokensByTool[i] || 0) - TOOL_TOKEN_COUNT_OVERHEAD,
       )
-      const isLoaded = loadedToolNames.has(tool.name)
-      deferredBuiltinDetails.push({
-        name: tool.name,
-        tokens,
-        isLoaded,
-      })
-      totalDeferredTokens += tokens
-      if (isLoaded) {
-        loadedDeferredTokens += tokens
+      const bulkRaw = (await countTokens([], deferredSchemas)) ?? 0
+      const totalBulkTokens = Math.max(0, bulkRaw - TOOL_TOKEN_COUNT_OVERHEAD)
+      const estimates = deferredSchemas.map(s =>
+        roughTokenCountEstimation(jsonStringify(s)),
+      )
+      const estimateTotal = estimates.reduce((s, e) => s + e, 0) || 1
+
+      for (const [i, tool] of deferredBuiltinTools.entries()) {
+        const tokens = Math.round(
+          (estimates[i]! / estimateTotal) * totalBulkTokens,
+        )
+        const isLoaded = loadedToolNames.has(tool.name)
+        deferredBuiltinDetails.push({
+          name: tool.name,
+          tokens,
+          isLoaded,
+        })
+        totalDeferredTokens += tokens
+        if (isLoaded) {
+          loadedDeferredTokens += tokens
+        }
       }
     }
   } else if (deferredBuiltinTools.length > 0) {
@@ -1244,6 +1251,7 @@ export async function analyzeContextUsage(
     { agentTokens, agentDetails },
     { slashCommandTokens, commandInfo },
     messageBreakdown,
+    skillResult,
   ] = await Promise.all([
     countSystemTokens(effectiveSystemPrompt, countTokens),
     countMemoryFileTokens(countTokens),
@@ -1275,15 +1283,14 @@ export async function analyzeContextUsage(
       countTokens,
     ),
     approximateMessageTokens(messages, countTokens),
+    // Count skills in parallel; countSkillTokens isolates its own errors.
+    countSkillTokens(
+      tools,
+      getToolPermissionContext,
+      agentDefinitions,
+      countTokens,
+    ),
   ])
-
-  // Count skills separately with error isolation
-  const skillResult = await countSkillTokens(
-    tools,
-    getToolPermissionContext,
-    agentDefinitions,
-    countTokens,
-  )
   const skillInfo = skillResult.skillInfo
   // Use sum of individual skill token estimates (matches what's shown in details)
   // rather than skillResult.skillTokens which includes tool schema overhead

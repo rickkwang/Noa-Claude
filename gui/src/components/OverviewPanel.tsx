@@ -167,7 +167,14 @@ export function OverviewPanel({ state, cwd, open, workspaceRefreshKey, endInset,
   onRefreshContext: () => void; onRefreshMcp: () => void; onReference: (path: string) => void; onOpenChanges: () => void
   onOpenTask: (id: string) => void; onStopTask: (id: string) => void
 }) {
-  useEffect(() => { if (open && state.connection === "ready") { onRefreshContext(); onRefreshMcp() } }, [open, state.connection, onRefreshContext, onRefreshMcp])
+  const hasContextRef = useRef(Boolean(state.contextUsage || state.contextLoading))
+  hasContextRef.current = Boolean(state.contextUsage || state.contextLoading)
+  useEffect(() => {
+    if (open && state.connection === "ready") {
+      if (!hasContextRef.current) onRefreshContext()
+      onRefreshMcp()
+    }
+  }, [open, state.connection, onRefreshContext, onRefreshMcp])
   const changes = useChangeSummary(cwd, open, workspaceRefreshKey)
   const [layout, setLayout] = useState(loadLayout)
   const [drag, setDrag] = useState<Drag>()

@@ -3218,27 +3218,42 @@ function runHeadlessStreaming(
               )
             }
             const appState = getAppState()
-            const data = await collectContextData({
-              messages: mutableMessages,
-              getAppState,
-              options: {
-                mainLoopModel: getMainLoopModel(),
-                tools: buildAllTools(appState),
-                agentDefinitions: appState.agentDefinitions,
-                customSystemPrompt: options.systemPrompt,
-                appendSystemPrompt: options.appendSystemPrompt,
-                mcpClients: appState.mcp.clients,
-              },
-              detail,
-            })
+            const UTILIZATION_WAIT_MS = 250
+            const [data, usageResult] = await Promise.all([
+              collectContextData({
+                messages: mutableMessages,
+                getAppState,
+                options: {
+                  mainLoopModel: getMainLoopModel(),
+                  tools: buildAllTools(appState),
+                  agentDefinitions: appState.agentDefinitions,
+                  customSystemPrompt: options.systemPrompt,
+                  appendSystemPrompt: options.appendSystemPrompt,
+                  mcpClients: appState.mcp.clients,
+                },
+                detail,
+              }),
+              import('src/services/api/usage.js')
+                .then(({ fetchCachedUtilization }) =>
+                  Promise.race([
+                    fetchCachedUtilization().then(
+                      usage => ({ status: 'ok' as const, usage }),
+                      error => ({ status: 'error' as const, error }),
+                    ),
+                    new Promise<{ status: 'timeout' }>(resolve =>
+                      setTimeout(() => resolve({ status: 'timeout' }), UTILIZATION_WAIT_MS),
+                    ),
+                  ]),
+                )
+                .catch(error => ({ status: 'error' as const, error })),
+            ])
             const outputData = getIsRemoteMode()
               ? { ...data, memoryFiles: [] }
               : data
             const rateLimits = { ...getRawUtilization() }
             let rateLimitsError: string | undefined
-            try {
-              const { fetchCachedUtilization } = await import('src/services/api/usage.js')
-              const usage = await fetchCachedUtilization()
+            if (usageResult.status === 'ok') {
+              const usage = usageResult.usage
               for (const key of ['five_hour', 'seven_day'] as const) {
                 const window = usage?.[key]
                 if (window && window.utilization !== null && window.resets_at) {
@@ -3248,8 +3263,8 @@ function runHeadlessStreaming(
                   }
                 }
               }
-            } catch (error) {
-              logError(error)
+            } else if (usageResult.status === 'error') {
+              logError(usageResult.error)
               rateLimitsError = 'Could not load plan usage. Check account sign-in and try again.'
             }
             sendControlResponseSuccess(message, {
