@@ -61,6 +61,16 @@ function inListedProject(cwd: string): boolean {
   )
 }
 
+// First word of the global git user.name, for the mascot's greeting; read once per bridge run.
+let cachedUserName: string | null | undefined
+function userName(): string | undefined {
+  if (cachedUserName === undefined) {
+    const result = Bun.spawnSync(["git", "config", "--global", "user.name"], { stdout: "pipe", stderr: "ignore" })
+    cachedUserName = result.success ? result.stdout.toString().trim().split(/\s+/)[0] || null : null
+  }
+  return cachedUserName ?? undefined
+}
+
 type BridgeSocketData = SocketData | TerminalSocketData
 const isTerminal = (ws: ServerWebSocket<BridgeSocketData>): ws is ServerWebSocket<TerminalSocketData> => "kind" in ws.data
 
@@ -272,7 +282,7 @@ Bun.serve<BridgeSocketData>({
     }
     if (url.pathname === "/api/info") {
       const cwd = resolveCwd(url.searchParams.get("cwd"))
-      return cwd ? json({ cwd }) : json({ error: "cwd is not a directory" }, 400)
+      return cwd ? json({ cwd, userName: userName() }) : json({ error: "cwd is not a directory" }, 400)
     }
 
     const historyMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)$/)

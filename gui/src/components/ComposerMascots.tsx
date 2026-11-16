@@ -1,5 +1,6 @@
-import { memo, useEffect, useRef, useState } from "react"
+import { memo, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react"
 import type { AppSettings } from "../types"
+import { MASCOT_REPLIES, type Greeting } from "../lib/mascotGreeting"
 
 export type MascotChoice = AppSettings["composer"]["mascot"]
 
@@ -27,12 +28,15 @@ interface MascotSpec {
   visCenterX: number
   bottomPad: number
   rightOffset: number
+  // How far the widest animation (e.g. Clawd's Desktop, Rocky's Wave) reaches left of the button, in px;
+  // the speech bubble starts beyond it so no animation draws over it.
+  leftReach: number
 }
 
 const MASCOTS: MascotSpec[] = [
-  { id: "clawd", label: "Clawd", scale: 0.37, cellWidth: 151, visWidth: 86, visHeight: 57, visCenterX: 86.5, bottomPad: 0, rightOffset: 8 },
-  { id: "clippy", label: "Clippy", scale: 0.48, cellWidth: 95, visWidth: 94, visHeight: 86, visCenterX: 46.5, bottomPad: 4, rightOffset: 10 },
-  { id: "rocky", label: "Rocky", scale: 0.48, cellWidth: 91, visWidth: 57, visHeight: 78, visCenterX: 56.0, bottomPad: 0, rightOffset: 11 },
+  { id: "clawd", label: "Clawd", scale: 0.37, cellWidth: 151, visWidth: 86, visHeight: 57, visCenterX: 86.5, bottomPad: 0, rightOffset: 8, leftReach: 16 },
+  { id: "clippy", label: "Clippy", scale: 0.48, cellWidth: 95, visWidth: 94, visHeight: 86, visCenterX: 46.5, bottomPad: 4, rightOffset: 10, leftReach: 0 },
+  { id: "rocky", label: "Rocky", scale: 0.48, cellWidth: 91, visWidth: 57, visHeight: 78, visCenterX: 56.0, bottomPad: 0, rightOffset: 11, leftReach: 14 },
 ]
 
 const characterCache = new Map<string, Promise<MascotCharacter>>()
@@ -72,6 +76,10 @@ class MascotPlayer {
   showRestPose(): void {
     const cell = !this.destroyed ? this.c.animations.RestPose?.frames[0]?.cells[0] : undefined
     if (cell) this.draw(cell)
+  }
+
+  has(name: string): boolean {
+    return Boolean(this.c.animations[name])
   }
 
   play(name: string): void {
@@ -140,12 +148,99 @@ class MascotPlayer {
   }
 }
 
-function MascotItem({ spec }: { spec: MascotSpec }) {
+// Outline of a rounded bubble whose bottom-right corner swells into a short, blunt tail, drawn as one
+// path so the outline has no seams. Coordinates sit on the 1px stroke's centerline.
+function bubblePath(width: number, height: number): string {
+  const k = 11.5, left = 0.5, top = 0.5, right = width - 0.5, bottom = height - 0.5
+  return [
+    `M${left + k} ${top}`, `H${right - k}`, `A${k} ${k} 0 0 1 ${right} ${top + k}`,
+    `V${bottom - 11}`,
+    // A wide base that starts leaving the edges well before the corner keeps the swell blunt. The tip points
+    // about 25° below horizontal, toward the mascot, and its tangent runs across that direction so it stays round.
+    `C${right} ${bottom - 5} ${right + 1.96} ${bottom - 1.87} ${right + 0.9} ${bottom + 0.4}`,
+    `C${right - 0.16} ${bottom + 2.67} ${right - 5} ${bottom} ${right - 11} ${bottom}`,
+    `H${left + k}`, `A${k} ${k} 0 0 1 ${left} ${bottom - k}`,
+    `V${top + k}`, `A${k} ${k} 0 0 1 ${left + k} ${top}`, "Z",
+  ].join(" ")
+}
+
+function SpeechBubble({ children, style, leaving, onDismiss }: { children: ReactNode; style: CSSProperties; leaving: boolean; onDismiss: () => void }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [size, setSize] = useState<{ width: number; height: number }>()
+  useLayoutEffect(() => {
+    const element = ref.current
+    if (!element) return
+    const measure = () => setSize({ width: element.offsetWidth, height: element.offsetHeight })
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [])
+  return (
+    <div
+      ref={ref}
+      role="status"
+      onClick={onDismiss}
+      style={style}
+      data-leaving={leaving || undefined}
+      className="noa-mascot-bubble pointer-events-auto absolute isolate w-max max-w-[240px] cursor-default text-balance px-3 py-1.5 text-left text-[length:var(--text-chat-sm)] leading-5 text-[color-mix(in_srgb,var(--text-primary)_86%,transparent)]"
+    >
+      {size && (
+        <svg aria-hidden="true" width={size.width} height={size.height} className="absolute inset-0 -z-10 overflow-visible">
+          <path d={bubblePath(size.width, size.height)} fill="var(--surface-page, #F9F9F7)" stroke="var(--border-default)" strokeWidth="1" />
+        </svg>
+      )}
+      {children}
+    </div>
+  )
+}
+
+// The page greets on its own at most once every half hour; clicking the mascot always answers.
+const AUTO_GREET_INTERVAL_MS = 30 * 60_000
+const BUBBLE_MS = 10_000
+let lastAutoGreetAt = -Infinity
+
+function MascotItem({ spec, greeting, typing }: { spec: MascotSpec; greeting?: Greeting; typing: boolean }) {
   const stageRef = useRef<HTMLDivElement>(null)
   const playerRef = useRef<MascotPlayer | null>(null)
   const poolRef = useRef<string[]>([])
   const lastAnimRef = useRef<string | undefined>(undefined)
+  const lastReplyRef = useRef<string | undefined>(undefined)
+  const hideTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const [ready, setReady] = useState(false)
+  const [bubble, setBubble] = useState<string>()
+  const [leaving, setLeaving] = useState(false)
+  const leaveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  // Fade out before unmounting, so the bubble leaves as softly as it arrives.
+  const hide = () => {
+    clearTimeout(hideTimer.current)
+    setLeaving(true)
+    clearTimeout(leaveTimer.current)
+    leaveTimer.current = setTimeout(() => { setBubble(undefined); setLeaving(false) }, 180)
+  }
+
+  const say = (text: string, animation?: string) => {
+    const player = playerRef.current
+    const reduced = document.documentElement.dataset.reduceMotion === "true" || window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    if (player && animation && !reduced) player.play(player.has(animation) ? animation : player.has("Waving") ? "Waving" : "Wave")
+    clearTimeout(leaveTimer.current)
+    setLeaving(false)
+    setBubble(text)
+    clearTimeout(hideTimer.current)
+    hideTimer.current = setTimeout(hide, BUBBLE_MS)
+  }
+
+  useEffect(() => {
+    if (!ready || !greeting || performance.now() - lastAutoGreetAt < AUTO_GREET_INTERVAL_MS) return
+    const timer = setTimeout(() => {
+      lastAutoGreetAt = performance.now()
+      say(greeting.text, greeting.animation)
+    }, 600)
+    return () => clearTimeout(timer)
+  }, [ready, greeting]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => { if (typing) hide() }, [typing]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => () => { clearTimeout(hideTimer.current); clearTimeout(leaveTimer.current) }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -180,10 +275,24 @@ function MascotItem({ spec }: { spec: MascotSpec }) {
     if (!next) return
     lastAnimRef.current = next
     player.play(next)
+    const replies = MASCOT_REPLIES.filter((reply) => reply !== lastReplyRef.current)
+    const reply = replies[Math.floor(Math.random() * replies.length)]!
+    lastReplyRef.current = reply
+    say(reply)
   }
 
   const centerOffsetX = (spec.cellWidth / 2 - spec.visCenterX) * spec.scale
   return (
+    <>
+    {bubble && (
+      <SpeechBubble
+        leaving={leaving}
+        onDismiss={hide}
+        style={{ right: Math.round(spec.visWidth * spec.scale) + spec.leftReach + 6, bottom: Math.round(spec.visHeight * spec.scale) + 8 }}
+      >
+        {bubble}
+      </SpeechBubble>
+    )}
     <button
       type="button"
       onMouseDown={(e) => e.preventDefault()}
@@ -206,15 +315,16 @@ function MascotItem({ spec }: { spec: MascotSpec }) {
         }}
       />
     </button>
+    </>
   )
 }
 
-export const ComposerMascots = memo(function ComposerMascots({ visible, choice = "clawd" }: { visible: boolean; choice?: MascotChoice }) {
+export const ComposerMascots = memo(function ComposerMascots({ visible, choice = "clawd", greeting, typing = false }: { visible: boolean; choice?: MascotChoice; greeting?: Greeting; typing?: boolean }) {
   if (!visible || choice === "none") return null
   const spec = MASCOTS.find((m) => m.id === choice) ?? MASCOTS[0]!
   return (
     <div aria-label="Composer mascot" style={{ right: spec.rightOffset }} className="pointer-events-none absolute bottom-full z-10 flex items-end select-none">
-      <MascotItem key={spec.id} spec={spec} />
+      <MascotItem key={spec.id} spec={spec} greeting={greeting} typing={typing} />
     </div>
   )
 })

@@ -15,7 +15,9 @@ import {
   deleteSession,
   openCoordinator,
   type ProjectInfo,
+  type SessionSummary,
 } from "./api"
+import { greetingFor } from "./lib/mascotGreeting"
 import { AddProjectDialog } from "./components/AddProjectDialog"
 import { useConfirm } from "./components/ConfirmDialog"
 import { Composer } from "./components/Composer"
@@ -53,16 +55,16 @@ const SIDEBAR_DEFAULT_WIDTH = 340
 
 export function App() {
   // Optional workspace: /?cwd=/absolute/path. The bridge resolves the default when absent.
-  const [workspace, setWorkspace] = useState<string>()
+  const [workspace, setWorkspace] = useState<{ cwd: string; userName?: string }>()
   const [loadError, setLoadError] = useState<string>()
 
   useEffect(() => {
     fetch(`/api/info${query(new URLSearchParams(window.location.search).get("cwd") ?? undefined)}`)
       .then(async (r) => {
         if (!r.ok) throw new Error((await r.json()).error ?? `HTTP ${r.status}`)
-        return (await r.json()) as { cwd: string }
+        return (await r.json()) as { cwd: string; userName?: string }
       })
-      .then((info) => setWorkspace(info.cwd))
+      .then(setWorkspace)
       .catch((err: Error) => setLoadError(err.message))
   }, [])
 
@@ -74,10 +76,10 @@ export function App() {
     )
   if (!workspace)
     return <div className="grid h-full place-items-center text-[var(--sidebar-text,#52514E)]">Connecting…</div>
-  return <Workspace cwd={workspace} />
+  return <Workspace cwd={workspace.cwd} userName={workspace.userName} />
 }
 
-function Workspace({ cwd }: { cwd: string }) {
+function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
   const [settings, setSettings] = useAppSettings()
   const [sessionTranscriptViews, setSessionTranscriptViews] = useState<Record<string, AppSettings["appearance"]["transcriptView"]>>({})
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -600,6 +602,19 @@ function Workspace({ cwd }: { cwd: string }) {
     return true
   }
   const hasTurns = state.turns.length > 0
+  // Settled once sessions have loaded, so the mascot does not greet from an empty history.
+  const sessionsLoaded = loadedProjects.size > 0
+  const greeting = useMemo(() => {
+    if (!sessionsLoaded) return undefined
+    const newest = (items: SessionSummary[] = []) => items.length ? Math.max(...items.map((item) => item.updatedAt)) : undefined
+    return greetingFor({
+      now: new Date(),
+      name: userName,
+      project: session.cwd.split("/").filter(Boolean).pop() ?? session.cwd,
+      lastHere: newest(sessionsByProject[session.cwd]),
+      lastAny: newest(Object.values(sessionsByProject).flat()),
+    })
+  }, [session.key, session.cwd, userName, sessionsLoaded]) // eslint-disable-line react-hooks/exhaustive-deps
   // Stable props for the memoized Composer: streaming re-renders App every frame, and the
   // composer should only re-render when something it shows changes.
   const composerEditDraft = useMemo(
@@ -1107,6 +1122,7 @@ function Workspace({ cwd }: { cwd: string }) {
                   showFullAccess={settings.composer.showFullAccess}
                   systemCaret={settings.composer.systemCaret}
                   mascot={settings.composer.mascot}
+                  greeting={greeting}
                   connection={forkPending ? "connecting" : state.connection}
                   forking={forkPending}
                   readOnly={!!state.external}

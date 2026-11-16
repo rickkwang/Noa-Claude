@@ -2811,3 +2811,8 @@ input[type="number"]::-webkit-inner-spin-button {
   37.78%, 100% { opacity: 0; }
 }
 @media (prefers-reduced-motion: reduce) { .noa-thread-spin, .noa-thread-dot { animation: none; } }
+
+/* New-task mascot speech bubble: sits up and to the left of the mascot, beyond the reach of every animation. */
+.noa-mascot-bubble { transform-origin: bottom right; animation: noa-mascot-bubble-in 260ms cubic-bezier(.22,1,.36,1) backwards; transition: opacity 180ms ease, transform 180ms ease; }
+.noa-mascot-bubble[data-leaving] { opacity: 0; transform: translate(2px, 2px) scale(.97); }
+@keyframes noa-mascot-bubble-in { from { opacity: 0; transform: translate(3px, 4px) scale(.96); } to { opacity: 1; transform: none; } }

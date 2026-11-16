@@ -8,6 +8,7 @@ import type { ContextUsage, ImageAttachment, RateLimitInfo, UserContent, ModelIn
 import { RateLimitNotice } from "./RateLimitNotice"
 import { ComposerCaret } from "./ComposerCaret"
 import { ComposerMascots } from "./ComposerMascots"
+import type { Greeting } from "../lib/mascotGreeting"
 import { FileAttachmentCard } from "./FileAttachmentCard"
 import { Check, Edit2, FileText, List, Photo, Queue, RotateCcw, Steer, Terminal, X } from "../lib/icons"
 import { Lightbox } from "./Lightbox"
@@ -112,6 +113,7 @@ interface ComposerProps {
   showFullAccess?: boolean
   systemCaret?: boolean
   mascot?: AppSettings["composer"]["mascot"]
+  greeting?: Greeting
   contextUsage?: ContextUsage
   // Usage-limit notice: shown in the environment strip for new tasks, above the composer otherwise.
   rateLimit?: RateLimitInfo
@@ -173,6 +175,7 @@ export const Composer = memo(function Composer({
   showFullAccess = false,
   systemCaret = false,
   mascot = "clawd",
+  greeting,
   rateLimit,
   onDismissRateLimit,
 }: ComposerProps) {
@@ -804,7 +807,7 @@ export const Composer = memo(function Composer({
       )}
 
       <div className="noa-agent-input relative flex flex-col">
-        <ComposerMascots visible={Boolean(newTask)} choice={mascot} />
+        <ComposerMascots visible={Boolean(newTask)} choice={mascot} greeting={greeting} typing={text.trim().length > 0} />
         {editDraft && !editDraft.silent && (
           <div className="flex items-center gap-2 border-b border-[var(--divider-subtle)] px-3 py-1.5 text-caption text-[var(--sidebar-text-muted)]">
             <Edit2 size={12} />
