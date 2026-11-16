@@ -17,6 +17,7 @@ export type GuiCommandAction =
   | "reload"
   | "login"
   | "btw"
+  | "fork"
 export interface ComposerCommand extends SlashCommand {
   group: string
   action?: GuiCommandAction
@@ -103,6 +104,7 @@ const guiCommands: ComposerCommand[] = [
   },
   { name: "login", description: "Sign in with your Claude account", argumentHint: "", action: "login", group: "Commands" },
   { name: "btw", description: "Ask a quick side question without adding to the session", argumentHint: "[question]", action: "btw", group: "Commands" },
+  { name: "fork", description: "Branch this conversation; in a project thread, ask the coordinator for a new thread from it", argumentHint: "[direction]", action: "fork", group: "Commands" },
 ]
 export function composerCommands(commands: SlashCommand[]): ComposerCommand[] {
   const guiNames = new Set(guiCommands.flatMap((command) => [command.name, ...(command.aliases ?? [])]))
@@ -113,7 +115,6 @@ export function composerCommands(commands: SlashCommand[]): ComposerCommand[] {
         (command) =>
           !guiNames.has(command.name) &&
           command.name !== "provider" &&
-          command.name !== "fork" &&
           !command.hidden &&
           command.type !== "local-jsx" &&
           !command.description.startsWith("(removed)"),

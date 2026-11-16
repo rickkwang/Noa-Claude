@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, useState, type AnimationEvent } from "react"
 import type { SessionSummary } from "../api"
-import { ChevronDown, Search } from "../lib/icons"
+import { ChevronDown, MoreHorizontal, Search } from "../lib/icons"
+import { anchorBelow, PopupMenu, type PopupMenuAnchor } from "./PopupMenu"
 import { ageLabel } from "./SessionHoverCard"
 
 type Group = "review" | "needs" | "working" | "recent"
@@ -87,13 +88,34 @@ function PullRequestGlyph({ state }: { state?: keyof typeof PR_STATES }) {
   </svg>
 }
 
+function reminderLabel(at: number) {
+  const date = new Date(at)
+  const time = date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
+  const days = Math.round((new Date(date).setHours(0, 0, 0, 0) - new Date().setHours(0, 0, 0, 0)) / 864e5)
+  return days === 0 ? time : days === 1 ? `Tomorrow ${time}` : `${date.toLocaleDateString([], { month: "short", day: "numeric" })} ${time}`
+}
+
+function reminderTimes(now = new Date()) {
+  const tomorrow = new Date(now)
+  tomorrow.setDate(now.getDate() + 1)
+  tomorrow.setHours(9, 0, 0, 0)
+  return [
+    { label: "In 1 hour", at: now.getTime() + 36e5 },
+    { label: "In 3 hours", at: now.getTime() + 3 * 36e5 },
+    { label: "Tomorrow at 9:00", at: tomorrow.getTime() },
+  ]
+}
+
 // The project's tasks grouped by what they need from you, newest first within each group.
-export function ThreadsPanel({ sessions, activeId, onSelect }: {
+export function ThreadsPanel({ sessions, activeId, onSelect, onRemind }: {
   sessions: SessionSummary[]
   activeId?: string
   onSelect: (id: string) => void
+  // Absent when the project has no coordinator to deliver reminders.
+  onRemind?: (id: string, at: number | null) => void
 }) {
   const [query, setQuery] = useState("")
+  const [menu, setMenu] = useState<{ session: SessionSummary; anchor: PopupMenuAnchor; trigger: Element }>()
   const [collapsed, setCollapsed] = useState<Set<Group>>(() => new Set())
   const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean)
   const only = words.flatMap(word => word.startsWith("is:") && IS_FILTERS[word.slice(3)] ? [IS_FILTERS[word.slice(3)]] : [])
@@ -163,7 +185,7 @@ export function ThreadsPanel({ sessions, activeId, onSelect }: {
           </button>
           {open && <ul className="m-0 flex list-none flex-col gap-0.5 p-0">
             {/* Hover and selection cover the whole thread, PR line included; the PR line's padding keeps the rail's end clear of the next row. */}
-            {items.map(session => <li key={session.id} data-flip={session.id} data-look={[groupOf(session), line(session), session.pr?.state].join("\0")} className={`relative rounded-lg hover:bg-[var(--fill-hover)] ${session.id === activeId ? "bg-[var(--fill-hover)]" : ""} ${session.pr ? "pb-1" : ""}`}>
+            {items.map(session => <li key={session.id} data-flip={session.id} data-look={[groupOf(session), line(session), session.pr?.state, session.remindAt].join("\0")} className={`group relative rounded-lg hover:bg-[var(--fill-hover)] ${session.id === activeId ? "bg-[var(--fill-hover)]" : ""} ${session.pr ? "pb-1" : ""}`}>
               <button
                 type="button"
                 aria-current={session.id === activeId ? "page" : undefined}
@@ -174,11 +196,19 @@ export function ThreadsPanel({ sessions, activeId, onSelect }: {
                 <span className="flex min-w-0 flex-1 flex-col">
                   <span className="flex min-w-0 items-baseline gap-3">
                     <span className="min-w-0 flex-1 truncate text-[var(--text-primary)]">{session.title}</span>
-                    <span className="shrink-0 text-caption tabular-nums text-[var(--text-tertiary)]">{ageLabel(session.updatedAt)}</span>
+                    <span className={`shrink-0 text-caption tabular-nums text-[var(--text-tertiary)] ${onRemind ? "group-hover:invisible group-focus-within:invisible" : ""}`}>{ageLabel(session.updatedAt)}</span>
                   </span>
                   {line(session) && <span data-fade className="truncate text-caption leading-4 text-[var(--text-secondary)]">{line(session)}</span>}
+                  {session.remindAt && <span data-fade className="truncate text-caption leading-4 text-[var(--text-tertiary)]">Reminder · {reminderLabel(session.remindAt)}</span>}
                 </span>
               </button>
+              {onRemind && <button
+                type="button"
+                aria-label={`Thread actions for ${session.title}`}
+                aria-haspopup="menu"
+                onClick={event => { const trigger = event.currentTarget; setMenu(current => current?.trigger === trigger ? undefined : { session, anchor: anchorBelow(trigger), trigger }) }}
+                className="absolute end-1.5 top-[7px] flex size-[22px] items-center justify-center rounded-md text-[var(--text-tertiary)] opacity-0 hover:bg-[var(--fill-hover)] hover:text-[var(--text-primary)] focus-visible:opacity-100 group-hover:opacity-100"
+              ><MoreHorizontal size={14} /></button>}
               {/* Rail from under the status glyph, turning into the PR row. */}
               {session.pr && <span aria-hidden className="pointer-events-none absolute start-[15.5px] top-[30px] bottom-[14px] w-[16px] rounded-es-lg border-s border-b border-[var(--text-tertiary)] opacity-50" />}
               {session.pr && <div data-fade className="mt-0.5 flex h-5 items-center ps-[33px] text-chat-sm">
@@ -191,5 +221,16 @@ export function ThreadsPanel({ sessions, activeId, onSelect }: {
         </section>
       })}
     </div>
+    {menu && onRemind && <PopupMenu
+      anchor={menu.anchor}
+      trigger={menu.trigger}
+      label="Thread actions"
+      onClose={() => setMenu(undefined)}
+      entries={[
+        { kind: "heading", label: "Remind me" },
+        ...reminderTimes().map(({ label, at }) => ({ label, onSelect: () => onRemind(menu.session.id, at) })),
+        ...(menu.session.remindAt ? [{ kind: "separator" as const }, { label: "Clear reminder", onSelect: () => onRemind(menu.session.id, null) }] : []),
+      ]}
+    />}
   </div>
 }

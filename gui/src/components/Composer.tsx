@@ -612,7 +612,7 @@ export const Composer = memo(function Composer({
       setBrowserFilter(action === "skills" ? "Skills" : undefined)
       setBrowserSearch(""); setBrowserOpen(true); setBrowserAction(undefined); setMenuDismissed(false); if (slash) replaceSlash(""); textareaRef.current?.focus(); return
     } else {
-      if (value && action !== "btw") { setAttachmentError(`/${command.name} does not take arguments.`); return }
+      if (value && action !== "btw" && action !== "fork") { setAttachmentError(`/${command.name} does not take arguments.`); return }
       onCommand(action, value)
     }
     if (slash) replaceSlash("")

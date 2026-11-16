@@ -9,7 +9,7 @@ import { listPlugins, pluginAction } from "./plugins"
 import { skillAction, skillsState } from "./skills"
 import { statsSummary } from "./stats"
 import { attachAgent, agentMessage, detachAgent, externalHolder, listAgentRuns, releaseSessionRuns, SPAWN_PERMISSION_MODES, type SocketData } from "./agents"
-import { coordinatorSession, ensureCoordinator, initCoordinator } from "./coordinator"
+import { coordinatorSession, ensureCoordinator, initCoordinator, messageCoordinator, reminders, setThreadReminder } from "./coordinator"
 import { attachTerminal, detachTerminal, TERMINAL_ID, terminalMessage, terminalSize, type TerminalSocketData } from "./terminal"
 
 const REPO_ROOT = resolve(import.meta.dir, "../..")
@@ -139,7 +139,9 @@ cwdRoutes["/api/sessions"] = {
     // Sessions started in the project's worktrees are listed with it, tagged with the folder they run in.
     const worktrees = await projectWorktrees(cwd)
     const coordinator = coordinatorSession(cwd)
+    const remindAt = reminders(cwd)
     return json([...listSessions(cwd).map((session) => session.id === coordinator ? { ...session, title: "Coordinator", coordinator: true } : session), ...worktrees.flatMap((path) => listSessions(path).map((session) => ({ ...session, cwd: path })))]
+      .map((session) => remindAt.has(session.id) ? { ...session, remindAt: remindAt.get(session.id) } : session)
       .sort((a, b) => b.updatedAt - a.updatedAt))
   },
 }
@@ -149,6 +151,35 @@ cwdRoutes["/api/coordinator"] = {
   handler({ cwd }) {
     if (isManagedWorktree(cwd)) return json({ error: "Open the coordinator from the project, not from a worktree" }, 400)
     return json({ sessionId: ensureCoordinator(cwd) })
+  },
+}
+
+cwdRoutes["/api/coordinator/reminder"] = {
+  methods: ["POST"],
+  async handler({ req, cwd }) {
+    const body = await req.json().catch(() => null) as { sessionId?: unknown; at?: unknown } | null
+    if (typeof body?.sessionId !== "string" || (body.at !== null && typeof body.at !== "number")) return json({ error: "Expected sessionId and at" }, 400)
+    try {
+      await setThreadReminder(cwd, body.sessionId, body.at ?? undefined)
+    } catch (error) {
+      return json({ error: (error as Error).message }, 400)
+    }
+    return json({ ok: true })
+  },
+}
+
+cwdRoutes["/api/coordinator/message"] = {
+  methods: ["POST"],
+  async handler({ req, cwd }) {
+    if (isManagedWorktree(cwd)) return json({ error: "Message the coordinator from the project, not from a worktree" }, 400)
+    const body = await req.json().catch(() => null) as { text?: unknown } | null
+    const text = typeof body?.text === "string" ? body.text.trim() : ""
+    if (!text || text.startsWith("/")) return json({ error: "Expected a message that does not start with a slash" }, 400)
+    try {
+      return json({ sessionId: await messageCoordinator(cwd, text) })
+    } catch (error) {
+      return json({ error: (error as Error).message }, 500)
+    }
   },
 }
 

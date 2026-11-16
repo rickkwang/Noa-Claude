@@ -15,6 +15,8 @@ export interface SessionSummary {
   cwd?: string
   // The project's coordinator chat, which runs the other sessions as threads.
   coordinator?: boolean
+  // When the coordinator brings this thread back up (epoch ms).
+  remindAt?: number
 }
 
 export interface ProjectInfo {
@@ -150,6 +152,19 @@ export async function openCoordinator(cwd: string): Promise<string> {
   const response = await fetch(`/api/coordinator${query(cwd)}`, { method: "POST" })
   const body = (await response.json()) as { sessionId?: string; error?: string }
   if (!response.ok || !body.sessionId) throw new Error(body.error ?? "Could not open the coordinator")
+  return body.sessionId
+}
+
+export async function setThreadReminder(cwd: string, sessionId: string, at: number | null): Promise<void> {
+  const response = await fetch(`/api/coordinator/reminder${query(cwd)}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sessionId, at }) })
+  if (!response.ok) throw new Error(((await response.json()) as { error?: string }).error ?? "Could not set the reminder")
+}
+
+// Sends the user's message to the project chat from another view; returns the coordinator's session id.
+export async function messageCoordinator(cwd: string, text: string): Promise<string> {
+  const response = await fetch(`/api/coordinator/message${query(cwd)}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }) })
+  const body = (await response.json()) as { sessionId?: string; error?: string }
+  if (!response.ok || !body.sessionId) throw new Error(body.error ?? "Could not message the coordinator")
   return body.sessionId
 }
 

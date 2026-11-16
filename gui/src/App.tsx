@@ -14,6 +14,8 @@ import {
   renameSession,
   deleteSession,
   openCoordinator,
+  messageCoordinator,
+  setThreadReminder,
   type ProjectInfo,
   type SessionSummary,
 } from "./api"
@@ -592,6 +594,53 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
       setEditDraft(undefined)
     }
   }, [queueEditId, state.queue])
+  // The project chat runs the project's other sessions as threads.
+  const projectCwd = worktreeOf ?? session.cwd
+  const coordinatorId = sessionsByProject[projectCwd]?.find((item) => item.coordinator)?.id
+  const inCoordinator = !!activeId && activeId === coordinatorId
+  // Forking mid-turn would copy a partial conversation.
+  const forkBlocked = state.connection !== "ready" || state.busy || !!state.queue.length || state.tasks.some(task => task.status === "running")
+  async function forkSession() {
+    setForkPending(true)
+    try {
+      const result = await request({ subtype: "session_action", action: "fork" })
+      setRefreshTick(n => n + 1)
+      selectSession(session.cwd, result.sessionId)
+    } finally { setForkPending(false) }
+  }
+  // In a project with a coordinator, forking a thread asks the coordinator for a new thread that picks up from it.
+  async function forkThread(direction?: string) {
+    if (!activeId) return
+    const title = sessionsByProject[projectCwd]?.find((item) => item.id === activeId)?.title ?? "this thread"
+    const text = `Fork thread "${title}" (${activeId}): read it with get_session, then start a new thread that picks up from where it is${direction ? ` and takes this direction instead: ${direction}` : " and tries a different approach"}. Leave the original thread as it is.`
+    try {
+      selectSession(projectCwd, await messageCoordinator(projectCwd, text))
+    } catch (error) {
+      await confirm({ title: "Could not fork the thread", description: (error as Error).message, confirmLabel: "OK", cancelLabel: "Close" })
+    }
+  }
+  const remindThread = useEvent(async (id: string, at: number | null) => {
+    try {
+      await setThreadReminder(projectCwd, id, at)
+      const updated = await fetchSessions(projectCwd).catch(() => undefined)
+      if (updated) setSessionsByProject((all) => ({ ...all, [projectCwd]: updated }))
+    } catch (error) {
+      await confirm({ title: "Could not set the reminder", description: (error as Error).message, confirmLabel: "OK", cancelLabel: "Close" })
+    }
+  })
+  // Prompts for the project chat, offered from the threads' state so the user need not open them one by one.
+  const nextSteps = useMemo(() => {
+    if (!inCoordinator) return []
+    const threads = (sessionsByProject[projectCwd] ?? []).filter((item) => !item.coordinator)
+    const waiting = threads.filter((item) => item.status === "waiting").length
+    const failed = threads.filter((item) => !item.status && item.error).length
+    const working = threads.filter((item) => item.status === "running" || item.status === "queued").length
+    return [
+      waiting && { label: waiting === 1 ? "1 thread needs you" : `${waiting} threads need you`, prompt: "Which threads are waiting on me, and what does each one need from me?" },
+      failed && { label: failed === 1 ? "1 thread failed" : `${failed} threads failed`, prompt: "Which threads failed, why, and what do you suggest for each?" },
+      threads.length && { label: working ? `Status of ${working} running` : "Status report", prompt: "Give me a status report: for every thread, where it stands and anything it needs from me." },
+    ].filter((step): step is { label: string; prompt: string } => !!step)
+  }, [inCoordinator, sessionsByProject, projectCwd])
   function sendComposer(content: UserContent) {
     const steer = state.busy && settings.composer.followUpMode === "steer"
     const sent = queueEditId ? updateQueued(queueEditId, content) : sendMessage(content, steer ? "steer" : undefined)
@@ -635,7 +684,14 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
     onWorktree: useEvent((on: boolean) => toggleWorktree(on)),
     onSend: useEvent((content: UserContent) => sendComposer(content)),
     onCommand: useEvent((action: string, value?: string) => {
-      if (action === "btw") {
+      if (action === "btw" && inCoordinator && value) sendComposer(`Side question: ${value}\n\nAnswer it in a new thread so the threads already running are not interrupted.`)
+      else if (action === "fork") {
+        if (inCoordinator) void confirm({ title: "Open a thread to fork it", description: "/fork starts a new thread from the thread you are in. In the project chat, describe the new work instead.", confirmLabel: "OK", cancelLabel: "Close" })
+        else if (!activeId) void confirm({ title: "Nothing to fork yet", description: "Send a message first, then fork the task.", confirmLabel: "OK", cancelLabel: "Close" })
+        else if (coordinatorId) void forkThread(value)
+        else if (forkBlocked) void confirm({ title: "Can't fork right now", description: "Wait for the current turn, queued messages and background tasks to finish.", confirmLabel: "OK", cancelLabel: "Close" })
+        else forkSession().catch((error) => confirm({ title: "Could not fork the task", description: (error as Error).message, confirmLabel: "OK", cancelLabel: "Close" }))
+      } else if (action === "btw") {
         setRightOpen(true)
         setRightNewTab(false)
         setRightTab("sidechat")
@@ -886,6 +942,7 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
             sessions={sessionsByProject[worktreeOf ?? session.cwd] ?? []}
             activeSessionId={activeId}
             sideChat={{ key: sideChatKey, ready: sideChatReady, draftKey: session.runtimeId, request, focusKey: sideChatFocus }}
+            onRemindThread={coordinatorId ? remindThread : undefined}
             onSelectSession={(id) => selectSession(sessionsByProject[worktreeOf ?? session.cwd]?.find((s) => s.id === id)?.cwd ?? worktreeOf ?? session.cwd, id)}
           />
         </div>
@@ -906,17 +963,10 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
             key={activeId ?? session.key}
             title={title}
             actions={activeId && <SessionActions
-              disabled={state.connection !== "ready" || state.busy || !!state.queue.length || state.tasks.some(task => task.status === "running")}
+              disabled={forkBlocked}
               transcriptView={transcriptView}
               onTranscriptViewChange={(transcriptView) => setSessionTranscriptViews(prev => ({ ...prev, [activeId]: transcriptView }))}
-              onFork={async () => {
-              setForkPending(true)
-              try {
-                const result = await request({ subtype: "session_action", action: "fork" })
-                setRefreshTick(n => n + 1)
-                selectSession(session.cwd, result.sessionId)
-              } finally { setForkPending(false) }
-            }} />}
+              onFork={forkSession} />}
             onRename={
               activeId && !state.busy
                 ? async (name) => {
@@ -1090,6 +1140,15 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
                   <p role="alert" className="m-0 break-words px-1 text-caption text-[#C24444]">
                     {state.error}
                   </p>
+                )}
+                {nextSteps.length > 0 && !state.busy && !state.queue.length && (
+                  <div role="group" aria-label="Suggested questions" className="flex flex-wrap gap-1.5 px-1">
+                    {nextSteps.map((step) => (
+                      <button key={step.label} type="button" onClick={() => sendComposer(step.prompt)} className="h-6 rounded-full border border-[var(--border-default)] px-2.5 text-caption text-[var(--text-secondary)] hover:bg-[var(--fill-hover)] hover:text-[var(--text-primary)]">
+                        {step.label}
+                      </button>
+                    ))}
+                  </div>
                 )}
                 <Composer
                   key={session.key}

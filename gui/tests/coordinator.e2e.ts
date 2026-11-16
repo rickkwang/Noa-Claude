@@ -72,6 +72,8 @@ const provider = Bun.serve({
       if (lastText.includes("COORD_START")) return reply(tool("start_session", { prompt: "THREAD_TASK_A do the work" }))
       if (lastText.includes("COORD_STATUS")) return reply(tool("list_sessions", {}))
       if (lastText.includes("COORD_SLASH")) return reply(tool("start_session", { prompt: "/goal THREAD_SLASH" }))
+      const remind = lastText.match(/COORD_REMIND ([0-9a-f-]{36})/)
+      if (remind) return reply(tool("remind_thread", { session_id: remind[1], at: new Date(Date.now() + 2000).toISOString(), note: "REMIND_NOTE" }))
       const follow = lastText.match(/COORD_FOLLOW ([0-9a-f-]{36})/)
       if (follow) return reply(tool("send_message", { session_id: follow[1], message: "THREAD_FOLLOW add tests" }))
       return reply({ type: "text", text: "COORD_REPLY" })
@@ -172,6 +174,29 @@ try {
   assert.match(routed, /coordinator-context nonce=/)
   await wait(() => replies().filter((t) => t.startsWith("STATUS_UPDATE done")).length >= 2, "update after the follow-up")
   console.log("PASS a follow-up reaches the thread framed as coordinator context, and its result is relayed")
+
+  say(`COORD_REMIND ${thread.id}`)
+  await wait(() => coordinatorTurns.some((t) => t.includes("tool_result") && t.includes("Will remind you about")), "remind_thread result")
+  assert.ok((await api("/api/sessions")).find((s: any) => s.id === thread.id)?.remindAt > Date.now() - 5000, "the thread lists its reminder")
+  await wait(() => coordinatorTurns.some((t) => t.includes("project-activity") && t.includes("reminder due: REMIND_NOTE") && t.includes("Fixture thread")), "reminder delivered", 40000)
+  await wait(async () => (await api("/api/sessions")).find((s: any) => s.id === thread.id)?.remindAt === undefined, "reminder cleared once delivered")
+  console.log("PASS remind_thread sets a reminder that brings the thread back to the coordinator at its time")
+
+  const remindApi = (body: object) => fetch(`http://127.0.0.1:${port}/api/coordinator/reminder?${new URLSearchParams({ cwd })}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })
+  assert.equal((await remindApi({ sessionId: thread.id, at: Date.now() - 1000 })).status, 400, "a past reminder is refused")
+  const later = Date.now() + 36e5
+  assert.equal((await remindApi({ sessionId: thread.id, at: later })).status, 200)
+  assert.equal((await api("/api/sessions")).find((s: any) => s.id === thread.id)?.remindAt, later)
+  assert.equal((await remindApi({ sessionId: thread.id, at: null })).status, 200)
+  assert.equal((await api("/api/sessions")).find((s: any) => s.id === thread.id)?.remindAt, undefined)
+  console.log("PASS the thread menu's reminder can be set and cleared, and a past time is refused")
+
+  const message = (text: string) => fetch(`http://127.0.0.1:${port}/api/coordinator/message?${new URLSearchParams({ cwd })}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text }) })
+  assert.equal((await message("/clear")).status, 400, "a slash command is not sent to the coordinator")
+  const forked = await message(`Fork thread "Fixture thread" (${thread.id}): FORK_REQUEST`)
+  assert.equal((await forked.json() as any).sessionId, coordinator)
+  await wait(() => coordinatorTurns.some((t) => t.includes("FORK_REQUEST")), "fork request reached the coordinator")
+  console.log("PASS /fork from a thread reaches the coordinator as the user's request")
 
   say("COORD_START_B")
   await wait(() => replies().some((t) => t.startsWith("STATUS_UPDATE waiting")), "update while a thread waits for approval", 40000)
