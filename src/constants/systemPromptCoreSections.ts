@@ -290,6 +290,15 @@ Don't create planning, decision, or analysis documents unless the user asks for 
  */
 export const ACT_DONT_REDERIVE_SECTION = `When you have enough information to act, act. Do not re-derive facts already established in the conversation, re-litigate a decision the user has already made, or narrate options you will not pursue. If you are weighing a choice, give a recommendation, not an exhaustive survey`
 
+// The /focus view hides everything but each turn's final message, so the model
+// is told to put the whole report there. Lean and verbose prompts word it
+// differently.
+export const FOCUS_MODE_SECTION = `# Focus mode
+The user has focus mode enabled. In focus mode, the user only sees your final text message in each response. They do not see tool calls, tool results, or any text you emit between tool calls. This overrides earlier guidance about giving short updates between tool calls \u2014 skip those updates and put everything the user needs to know in your final message. Do not assume they saw earlier progress updates.`
+
+export const FOCUS_MODE_LEAN_SECTION = `# Focus mode
+The user has focus mode enabled. They only see your final text message in each response \u2014 not tool calls, tool results, or any text you write between tool calls. Anything you say mid-turn is not seen, so don't narrate progress between tool calls. Put everything the user needs into your final message: what you investigated, what you found, what you changed, decisions you made, and what's next. Do not assume they saw earlier output.`
+
 /**
  * Ported verbatim from upstream's `context_management` section. Emitted in both
  * prompt modes there, ungated — it describes what the harness does to the

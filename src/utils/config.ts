@@ -395,6 +395,7 @@ export type GlobalConfig = {
   // Todo feature configuration
   todoFeatureEnabled: boolean // Whether the todo feature is enabled
   showExpandedTodos?: boolean // Whether to show todos expanded, even when empty
+  briefTranscript?: boolean // Focus view: each turn shows only the prompt, a summary row and the final response
   showSpinnerTree?: boolean // Whether to show the teammate spinner tree instead of pills
   leftArrowOpensAgents?: boolean // ← on an empty prompt opens the agents view (default on)
 
@@ -632,6 +633,7 @@ function createDefaultGlobalConfig(): GlobalConfig {
     btwUseCount: 0,
     todoFeatureEnabled: true,
     showExpandedTodos: false,
+    briefTranscript: false,
     messageIdleNotifThresholdMs: 60000,
     autoConnectIde: false,
     autoInstallIdeExtension: true,

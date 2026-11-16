@@ -112,6 +112,8 @@ export type AppState = DeepImmutable<{
    */
   diffPanelVisible: boolean
   isBriefOnly: boolean
+  // Focus view (/focus): fold each turn to prompt, summary row and final response
+  briefTranscript: boolean
   // Optional - only present when ENABLE_AGENT_SWARMS is true (for dead code elimination)
   showTeammateMessagePreview?: boolean
   selectedIPAgentIndex: number
@@ -444,6 +446,7 @@ export function getDefaultAppState(): AppState {
     prStatus: null,
     expandedView: 'none',
     isBriefOnly: false,
+    briefTranscript: false,
     showTeammateMessagePreview: false,
     selectedIPAgentIndex: -1,
     coordinatorTaskIndex: -1,

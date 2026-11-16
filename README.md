@@ -228,6 +228,7 @@ Queries go to the configured service. SearXNG needs its JSON output format enabl
 - **Auto-fix Hook** — After file edits, automatically run configurable lint/test commands (configured in `settings.json` under `autoFix`).
 - **SSRF Protection** — URL resolution validated against IPv4/IPv6 private ranges before outbound HTTP requests.
 - **TUI Mode** — `/tui` switches between default and fullscreen (no-flicker) terminal layout.
+- **Focus View** — `/focus [on|off]` (fullscreen only) folds each turn to your prompt, one summary row for the tool work, and the final response; the model is told to put everything in that final message. `"viewMode": "focus"` in settings pins it on.
 - **PR Intent Scan** — CI checks PR added lines for suspicious links/download patterns and fails on high-severity findings.
 - **Privacy** — see the [Privacy](#privacy) section below.
 

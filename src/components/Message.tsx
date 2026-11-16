@@ -591,6 +591,8 @@ export function areMessagePropsEqual(prev: Props, next: Props): boolean {
   // containerWidth is an absolute number in the no-metadata path (wrapper
   // Box is skipped). Static messages must re-render on terminal resize.
   if (prev.containerWidth !== next.containerWidth) return false;
+  // Focus view re-annotates a static turn_duration row with its hidden count.
+  if (prev.message.briefHiddenCount !== next.message.briefHiddenCount) return false;
   if (prev.isStatic && next.isStatic) return true;
   return false;
 }

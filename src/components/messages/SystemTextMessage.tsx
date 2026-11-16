@@ -559,8 +559,10 @@ function TurnDurationMessage(t0) {
     const nudges = message.budgetNudges > 0 ? ` \u00B7 ${message.budgetNudges} ${message.budgetNudges === 1 ? "nudge" : "nudges"}` : "";
     t4 = `${showTurnDuration ? " \xB7 " : ""}${usage}${nudges}`;
   }
-  const budgetSuffix = t4;
-  if (!showTurnDuration && !hasBudget) {
+  const hiddenCount = message.briefHiddenCount ?? 0;
+  const hiddenSuffix = hiddenCount > 0 ? `${showTurnDuration || hasBudget ? " \u00B7 " : ""}${hiddenCount} ${hiddenCount === 1 ? "message" : "messages"} hidden (/focus to show)` : "";
+  const budgetSuffix = t4 + hiddenSuffix;
+  if (!showTurnDuration && !hasBudget && !hiddenSuffix) {
     return null;
   }
   const t5 = addMargin ? 1 : 0;

@@ -27,6 +27,7 @@ import { collapseBackgroundBashNotifications } from '../utils/collapseBackground
 import { collapseHookSummaries } from '../utils/collapseHookSummaries.js';
 import { collapseReadSearchGroups, getToolUseIdsFromCollapsedGroup } from '../utils/collapseReadSearch.js';
 import { collapseTeammateShutdowns } from '../utils/collapseTeammateShutdowns.js';
+import { foldFocusTurns } from '../utils/focusFold.js';
 import { getGlobalConfig } from '../utils/config.js';
 import { isEnvTruthy } from '../utils/envUtils.js';
 import { isFullscreenEnvEnabled } from '../utils/fullscreen.js';
@@ -397,6 +398,9 @@ const MessagesImpl = ({
     columns
   } = useTerminalSize();
   const toggleShowAllShortcut = useShortcutDisplay('transcript:toggleShowAll', 'Transcript', 'Ctrl+E');
+  // Focus view folds only the fullscreen main view; transcript mode stays unfiltered.
+  const focusView = useAppState(s_0 => s_0.briefTranscript) && isFullscreenEnvEnabled() && screen !== 'transcript';
+  const focusTurnLive = focusView && !!isLoading;
   // Progress messages (hook progress, subagent activity) arrive one per tick and
   // feed only the progress lookups. Splitting them off here keeps the transcript
   // array identical across ticks, so every memo below skips — a tick no longer
@@ -515,7 +519,8 @@ const MessagesImpl = ({
     const {
       messages: groupedMessages
     } = applyGrouping(messagesToShow, tools, verbose);
-    const collapsed = collapseBackgroundBashNotifications(collapseHookSummaries(collapseTeammateShutdowns(isTranscriptMode && virtualScrollRuntimeGate ? groupedMessages : collapseReadSearchGroups(groupedMessages, tools))), verbose);
+    const collapsedAll = collapseBackgroundBashNotifications(collapseHookSummaries(collapseTeammateShutdowns(isTranscriptMode && virtualScrollRuntimeGate ? groupedMessages : collapseReadSearchGroups(groupedMessages, tools))), verbose);
+    const collapsed = focusView ? foldFocusTurns(collapsedAll, tools, focusTurnLive) : collapsedAll;
     const transcriptLookups = buildTranscriptLookups(normalizedMessages, messagesToShow);
     const hiddenMessageCount = messagesToShowNotTruncated.length - MAX_MESSAGES_TO_SHOW_IN_TRANSCRIPT_MODE;
     return {
@@ -524,7 +529,7 @@ const MessagesImpl = ({
       hasTruncatedMessages,
       hiddenMessageCount
     };
-  }, [verbose, normalizedMessages, isTranscriptMode, virtualScrollRuntimeGate, syntheticStreamingToolUseMessages, shouldTruncate, tools, isBriefOnly]);
+  }, [verbose, normalizedMessages, isTranscriptMode, virtualScrollRuntimeGate, syntheticStreamingToolUseMessages, shouldTruncate, tools, isBriefOnly, focusView, focusTurnLive]);
 
   // Cheap join — the two halves are memoized independently above, so a progress
   // tick rebuilds only the progress half.

@@ -113,7 +113,11 @@ export function CollapsedReadSearchContent({
   // needed — it's 0 until results arrive, then only grows).
   const gitOpBashCount = message.gitOpBashCount ?? 0;
   const bashCount = isFullscreenEnvEnabled() ? Math.max(0, maxBashCountRef.current - gitOpBashCount) : 0;
-  const hasNonMemoryOps = searchCount > 0 || readCount > 0 || listCount > 0 || replCount > 0 || mcpCallCount > 0 || bashCount > 0 || gitOpBashCount > 0;
+  // Set only on focus-view summary rows, which also fold edits, agents and other tools.
+  const editFileCount = message.editFileCount ?? 0;
+  const agentCount = message.agentCount ?? 0;
+  const otherToolCount = message.otherToolCount ?? 0;
+  const hasNonMemoryOps = searchCount > 0 || readCount > 0 || listCount > 0 || replCount > 0 || mcpCallCount > 0 || bashCount > 0 || gitOpBashCount > 0 || editFileCount > 0 || agentCount > 0 || otherToolCount > 0;
   const readPaths = message.readFilePaths;
   const searchArgs = message.searchArgs;
   let incomingHint = message.latestDisplayHint;
@@ -237,6 +241,13 @@ export function CollapsedReadSearchContent({
         {isFirst ? verb[0]!.toUpperCase() + verb.slice(1) : verb} {body}
       </Text>);
   }
+  if (editFileCount > 0) {
+    pushPart('edit', isActiveGroup ? 'editing' : 'edited', <Text>
+        <Text bold>{editFileCount}</Text> {editFileCount === 1 ? 'file' : 'files'}
+        {(message.linesAdded ?? 0) > 0 && <Text color="diffAddedWord"> +{message.linesAdded}</Text>}
+        {(message.linesRemoved ?? 0) > 0 && <Text color="diffRemovedWord"> -{message.linesRemoved}</Text>}
+      </Text>);
+  }
   if (isFullscreenEnvEnabled() && message.commits?.length) {
     const byKind = {
       committed: 'committed',
@@ -302,6 +313,17 @@ export function CollapsedReadSearchContent({
             <Text bold>{mcpCallCount}</Text> times
           </>}
       </Text>);
+  }
+  if (agentCount > 0) {
+    const description = agentCount === 1 ? message.agentDescriptions?.[0] : undefined;
+    pushPart('agent', isActiveGroup ? 'running' : 'ran', description !== undefined ? <Text>
+          agent · <Text bold>{description}</Text>
+        </Text> : <Text>
+          <Text bold>{agentCount}</Text> {agentCount === 1 ? 'agent' : 'agents'}
+        </Text>);
+  }
+  if (otherToolCount > 0) {
+    pushCountPart('other', 'calling', 'called', otherToolCount, 'tool', 'tools');
   }
   if (isFullscreenEnvEnabled() && bashCount > 0) {
     pushCountPart('bash', 'running', 'ran', bashCount, 'bash command', 'bash commands');

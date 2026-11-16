@@ -24,6 +24,8 @@
  */
 import {
   ACT_DONT_REDERIVE_SECTION,
+  FOCUS_MODE_LEAN_SECTION,
+  FOCUS_MODE_SECTION,
   AUTONOMY_SECTION,
   CONTEXT_MANAGEMENT_SECTION,
   CORRECTIONS_SECTION,
@@ -143,6 +145,8 @@ export function buildPortedSubjects(): Record<string, string> {
   return {
     PRONOUNS_SECTION,
     ACT_DONT_REDERIVE_SECTION,
+    FOCUS_MODE_SECTION,
+    FOCUS_MODE_LEAN_SECTION,
     CONTEXT_MANAGEMENT_SECTION,
     'anti_verbosity fable branch': getAntiVerbositySection(
       UNBUNDLED_MODEL,
@@ -233,6 +237,8 @@ export function buildPortedSubjects(): Record<string, string> {
 export const PORTED_DIGESTS: Record<string, string> = {
   PRONOUNS_SECTION: '3fcd2b200896a716',
   ACT_DONT_REDERIVE_SECTION: '4e4e48fb23ceb764',
+  FOCUS_MODE_SECTION: '84397ddabed997eb',
+  FOCUS_MODE_LEAN_SECTION: 'fcfa9b3857c84a59',
   CONTEXT_MANAGEMENT_SECTION: '9856a95edb9c2bdb',
   'anti_verbosity fable branch': '5ed4cea73ffcf6d5',
   // The branch checked ahead of the fable one; Fable 5.1 / Mythos 5.1 get this

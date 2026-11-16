@@ -34,6 +34,8 @@ import {
 } from './systemPromptCompact.js'
 import {
   ACT_DONT_REDERIVE_SECTION,
+  FOCUS_MODE_LEAN_SECTION,
+  FOCUS_MODE_SECTION,
   AUTONOMY_SECTION,
   CONTEXT_MANAGEMENT_SECTION,
   CORRECTIONS_SECTION,
@@ -69,6 +71,7 @@ import {
   getProactiveSection,
 } from './systemPromptFeatureSections.js'
 import { getSubagentSteer } from '../utils/subagentSteer.js'
+import { isFocusModePromptOn } from '../utils/focusView.js'
 
 // Dead code elimination: conditional imports for feature-gated modules
 /* eslint-disable @typescript-eslint/no-require-imports */
@@ -253,6 +256,14 @@ export function buildDynamicSystemPromptSections(params: {
     ...(feature('KAIROS') || feature('KAIROS_BRIEF')
       ? [systemPromptSection('brief', () => getBriefSection())]
       : []),
+    // Key carries the lean gate; /focus evicts both keys when it toggles.
+    systemPromptSection(lean ? 'focus_mode:L' : 'focus_mode', () =>
+      isFocusModePromptOn()
+        ? lean
+          ? FOCUS_MODE_LEAN_SECTION
+          : FOCUS_MODE_SECTION
+        : null,
+    ),
     systemPromptSection('act_dont_rederive', () => ACT_DONT_REDERIVE_SECTION),
     // Compact-head companions. Upstream gates these on the prompt bundle, not
     // on the lean prompt: three of the four lean models (Fable 5, Mythos 5,

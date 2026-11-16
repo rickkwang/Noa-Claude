@@ -801,6 +801,14 @@ export const SettingsSchema = lazySchema(() =>
         .boolean()
         .optional()
         .describe('Whether to show tips in the spinner'),
+      viewMode: z
+        .enum(['default', 'verbose', 'focus'])
+        .optional()
+        // An unknown value drops only this field, not the whole settings file.
+        .catch(undefined)
+        .describe(
+          'Transcript view. "focus" shows each turn as the prompt, a summary row and the final response, and overrides /focus.',
+        ),
       spinnerVerbs: z
         .object({
           mode: z.enum(['append', 'replace']),
