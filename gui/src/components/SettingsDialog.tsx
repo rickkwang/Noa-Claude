@@ -245,9 +245,9 @@ export function SettingsDialog({
             <ArrowLeft size={16} />
           </button>
         </div>
-        {/* Settings nav: 16px semibold title, a pill search, sentence-case group label, 30px rows. */}
+        {/* Settings nav: 16px semibold title, a rounded-lg search, sentence-case group label, 30px rows. */}
         <h2 className="mt-[15px] px-2 text-[16px] leading-6 font-medium">Settings</h2>
-        <label className="mt-[13px] flex h-9 items-center gap-2 rounded-full bg-[var(--settings-fill-hover)] px-3 text-[var(--sidebar-text-muted)]">
+        <label className="mt-[13px] flex h-[30px] items-center gap-2.5 rounded-lg bg-[var(--settings-fill-hover)] px-2 text-[var(--sidebar-text-muted)]">
           <Search size={16} />
           <input
             value={query}
