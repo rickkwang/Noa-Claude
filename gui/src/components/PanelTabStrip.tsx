@@ -87,16 +87,27 @@ export function PanelTabStrip({ tabs, activeKey, label, onSelect, onClose, onCon
     if (drag.target <= index && index < start.index) return width
     return 0
   }
-  // A tab that becomes active scrolls fully into view when the strip overflows. Only the strip scrolls:
-  // scrollIntoView would also scroll clipped ancestors, shifting the whole app while a panel is hidden.
+  // A tab that becomes active scrolls fully into view (clear of the 28px edge-fade mask) when
+  // the strip overflows. Only the strip scrolls: scrollIntoView would also scroll clipped ancestors,
+  // shifting the whole app while a panel is hidden.
   useEffect(() => {
     const list = listRef.current
-    const tab = activeKey ? list?.querySelector<HTMLElement>(`[data-tab="${CSS.escape(activeKey)}"]`) : null
-    if (!list || !tab) return
-    const start = tab.getBoundingClientRect().left - list.getBoundingClientRect().left + list.scrollLeft
-    const end = start + tab.offsetWidth
-    if (start < list.scrollLeft) list.scrollLeft = start
-    else if (end > list.scrollLeft + list.clientWidth) list.scrollLeft = end - list.clientWidth
+    if (!list) return
+    const FADE_PAD = 28
+    const ensureActiveVisible = () => {
+      const tab = activeKey ? list.querySelector<HTMLElement>(`[data-tab="${CSS.escape(activeKey)}"]`) : null
+      if (!tab || list.clientWidth === 0) return
+      const start = tab.getBoundingClientRect().left - list.getBoundingClientRect().left + list.scrollLeft
+      const end = start + tab.offsetWidth
+      const padLeft = start > 0 ? FADE_PAD : 0
+      const padRight = end < list.scrollWidth ? FADE_PAD : 0
+      if (start - padLeft < list.scrollLeft) list.scrollLeft = Math.max(0, start - padLeft)
+      else if (end + padRight > list.scrollLeft + list.clientWidth) list.scrollLeft = Math.min(list.scrollWidth - list.clientWidth, end + padRight - list.clientWidth)
+    }
+    ensureActiveVisible()
+    const observer = new ResizeObserver(ensureActiveVisible)
+    observer.observe(list)
+    return () => observer.disconnect()
   }, [activeKey, tabs.length])
   // Arrow keys move between tabs, as in a WAI-ARIA tablist.
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
