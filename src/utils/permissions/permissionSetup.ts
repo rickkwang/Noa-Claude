@@ -12,17 +12,23 @@ import type {
   ToolPermissionContext,
   ToolPermissionRulesBySource,
 } from '../../Tool.js'
+import { isBgSession } from '../background/bgJob.js'
 import { getGlobalConfig } from '../config.js'
 import { getCwd } from '../cwd.js'
 import { isEnvTruthy } from '../envUtils.js'
 import type { SettingSource } from '../settings/constants.js'
-import { SETTING_SOURCES } from '../settings/constants.js'
+import {
+  getEnabledSettingSources,
+  SETTING_SOURCES,
+} from '../settings/constants.js'
 import { grantedAdditionalDirectories } from './projectGrants.js'
 import {
   getSettings_DEPRECATED,
   getSettingsFilePathForSource,
+  getSettingsForSource,
   getUseAutoModeDuringPlan,
   hasAutoModeOptIn,
+  hasSkipDangerousModePermissionPrompt,
 } from '../settings/settings.js'
 import {
   type PermissionMode,
@@ -696,6 +702,18 @@ function isSymlinkTo({
 /**
  * Safely convert CLI flags to a PermissionMode
  */
+function isBackgroundBypassBlocked(): boolean {
+  return (
+    isBgSession() &&
+    !getGlobalConfig().bypassPermissionsModeAccepted &&
+    !getEnabledSettingSources().some(
+      source =>
+        (source === 'userSettings' || source === 'policySettings') &&
+        getSettingsForSource(source)?.skipDangerousModePermissionPrompt,
+    )
+  )
+}
+
 export function initialPermissionModeFromCLI({
   permissionModeCli,
   dangerouslySkipPermissions,
@@ -711,6 +729,22 @@ export function initialPermissionModeFromCLI({
   inheritedPermissionMode?: string
 }): { mode: PermissionMode; notification?: string } {
   const settings = getSettings_DEPRECATED() || {}
+
+  if (isEnvTruthy(process.env.CLAUDE_CODE_SUBPROCESS_ENV_SCRUB)) {
+    const hasExplicitMode =
+      dangerouslySkipPermissions ||
+      (!!permissionModeCli &&
+        permissionModeFromString(permissionModeCli) !== 'default') ||
+      (!!inheritedPermissionMode &&
+        permissionModeFromString(inheritedPermissionMode) !== 'default')
+    const notification = hasExplicitMode
+      ? 'Permission mode forced to default — CLAUDE_CODE_SUBPROCESS_ENV_SCRUB is set (allowed_non_write_users hardening). Declare allowedTools explicitly, or set CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=0 to opt out.'
+      : undefined
+    if (notification) process.stderr.write(`Warning: ${notification}\n`)
+    return { mode: 'default', notification }
+  }
+
+  const backgroundBypassBlocked = isBackgroundBypassBlocked()
 
   // Check GrowthBook gate first - highest precedence
   const growthBookDisableBypassPermissionsMode =
@@ -759,6 +793,16 @@ export function initialPermissionModeFromCLI({
   }
   if (settings.permissions?.defaultMode) {
     const settingsMode = settings.permissions.defaultMode as PermissionMode
+    const bypassGrantedByTrustedSettings =
+      settingsMode !== 'bypassPermissions' ||
+      getEnabledSettingSources().some(
+        source =>
+          (source === 'userSettings' ||
+            source === 'flagSettings' ||
+            source === 'policySettings') &&
+          getSettingsForSource(source)?.permissions?.defaultMode ===
+            'bypassPermissions',
+      )
     // CCR supports acceptEdits, plan, default, and auto (upstream's
     // $ud) — ignore other defaultModes from settings (e.g. bypassPermissions
     // would otherwise silently grant full access in a remote environment).
@@ -775,7 +819,14 @@ export function initialPermissionModeFromCLI({
       })
     }
     // auto from settings requires the same gate check as from CLI
-    else if (feature('AUTO_MODE') && settingsMode === 'auto') {
+    else if (!bypassGrantedByTrustedSettings) {
+      logForDebugging(
+        'settings defaultMode "bypassPermissions" ignored — only policy/user/flag settings may grant bypass mode',
+        { level: 'warn' },
+      )
+      notification =
+        'Permission mode bypassPermissions from settings was ignored — only policy, user, or flag settings may grant it'
+    } else if (feature('AUTO_MODE') && settingsMode === 'auto') {
       if (autoModeCircuitBrokenSync) {
         logForDebugging(
           'auto mode circuit breaker active (cached) — falling back to default',
@@ -793,7 +844,8 @@ export function initialPermissionModeFromCLI({
     const inherited = permissionModeFromString(inheritedPermissionMode)
     if (
       inherited === 'bypassPermissions' &&
-      !getGlobalConfig().bypassPermissionsModeAccepted
+      !getGlobalConfig().bypassPermissionsModeAccepted &&
+      !hasSkipDangerousModePermissionPrompt()
     ) {
       logForDebugging(
         'inherited bypassPermissions ignored — bypass mode was never accepted on this machine',
@@ -821,6 +873,11 @@ export function initialPermissionModeFromCLI({
         notification = 'Bypass permissions mode was disabled by settings'
       }
       continue // Skip this mode if it's disabled
+    }
+    if (mode === 'bypassPermissions' && backgroundBypassBlocked) {
+      notification =
+        'Permission mode downgraded to default: bypass in a background session needs consent recorded in user or policy settings'
+      continue
     }
 
     result = { mode, notification } // Use the first valid mode
@@ -971,7 +1028,15 @@ export async function initializeToolPermissionContext({
   const isBypassPermissionsModeAvailable =
     bypassPermissionsAvailabilityRequested &&
     !growthBookDisableBypassPermissionsMode &&
-    !settingsDisableBypassPermissionsMode
+    !settingsDisableBypassPermissionsMode &&
+    !isBackgroundBypassBlocked() &&
+    !isEnvTruthy(process.env.CLAUDE_CODE_SUBPROCESS_ENV_SCRUB)
+
+  if (allowDangerouslySkipPermissions && isBackgroundBypassBlocked()) {
+    warnings.push(
+      '--allow-dangerously-skip-permissions ignored: bypass in a background session needs consent recorded in user or policy settings',
+    )
+  }
 
   const rulesFromDisk = loadAllPermissionRulesFromDisk()
 

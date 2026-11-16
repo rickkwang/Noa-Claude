@@ -213,7 +213,9 @@ async function resumeAgentBackgroundInner({
 
   const workerPermissionContext = {
     ...appState.toolPermissionContext,
-    mode: selectedAgent.permissionMode ?? 'acceptEdits',
+    mode: selectedAgent.permissionMode === 'bypassPermissions' && !appState.toolPermissionContext.isBypassPermissionsModeAvailable
+      ? appState.toolPermissionContext.mode
+      : selectedAgent.permissionMode ?? 'acceptEdits',
   }
   const workerTools = isResumedFork
     ? toolUseContext.options.tools

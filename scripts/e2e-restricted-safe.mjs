@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-// Pins what --restricted and --safe-mode put on the wire and that auth still works under safe mode.
+// Pins restricted/safe-mode behavior and bypass authorization boundaries with real tool calls.
 // Only the model transport is scripted (a localhost Anthropic SSE fixture).
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
@@ -76,6 +76,55 @@ const cases = {
     flags: ['--restricted', '--dangerously-skip-permissions'],
     expect: 'refused',
   },
+  // Repository-controlled settings cannot grant bypass; trusted user/flag settings can.
+  'bypass-project-default-ignored': {
+    project: true,
+    projectPermissions: { defaultMode: 'bypassPermissions' },
+    requests: 2,
+    toolUses: ({ workspace }) => [{ id: 'bypass_write', name: 'Write', input: { file_path: join(workspace, 'bypass.txt'), content: 'BYPASS_WRITE' } }],
+    expect: 'write-denied',
+  },
+  'bypass-local-default-ignored': {
+    project: true,
+    localPermissions: { defaultMode: 'bypassPermissions' },
+    requests: 2,
+    toolUses: ({ workspace }) => [{ id: 'bypass_write', name: 'Write', input: { file_path: join(workspace, 'bypass.txt'), content: 'BYPASS_WRITE' } }],
+    expect: 'write-denied',
+  },
+  'bypass-user-default-allowed': {
+    userSettings: { permissions: { defaultMode: 'bypassPermissions' } },
+    requests: 2,
+    toolUses: ({ workspace }) => [{ id: 'bypass_write', name: 'Write', input: { file_path: join(workspace, 'bypass.txt'), content: 'BYPASS_WRITE' } }],
+    expect: 'write-allowed',
+  },
+  'bypass-flag-default-allowed': {
+    flags: ['--settings', JSON.stringify({ permissions: { defaultMode: 'bypassPermissions' } })],
+    requests: 2,
+    toolUses: ({ workspace }) => [{ id: 'bypass_write', name: 'Write', input: { file_path: join(workspace, 'bypass.txt'), content: 'BYPASS_WRITE' } }],
+    expect: 'write-allowed',
+  },
+  'bypass-background-requires-user-consent': {
+    flags: ['--dangerously-skip-permissions'],
+    env: { NOA_CLAUDE_BG_JOB: 'abcdef01' },
+    requests: 2,
+    toolUses: ({ workspace }) => [{ id: 'bypass_write', name: 'Write', input: { file_path: join(workspace, 'bypass.txt'), content: 'BYPASS_WRITE' } }],
+    expect: 'write-denied',
+  },
+  'bypass-background-user-consent-allowed': {
+    flags: ['--dangerously-skip-permissions'],
+    env: { NOA_CLAUDE_BG_JOB: 'abcdef01' },
+    userSettings: { skipDangerousModePermissionPrompt: true },
+    requests: 2,
+    toolUses: ({ workspace }) => [{ id: 'bypass_write', name: 'Write', input: { file_path: join(workspace, 'bypass.txt'), content: 'BYPASS_WRITE' } }],
+    expect: 'write-allowed',
+  },
+  'bypass-subprocess-scrub-forces-default': {
+    flags: ['--dangerously-skip-permissions'],
+    env: { CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: '1' },
+    requests: 2,
+    toolUses: ({ workspace }) => [{ id: 'bypass_write', name: 'Write', input: { file_path: join(workspace, 'bypass.txt'), content: 'BYPASS_WRITE' } }],
+    expect: 'write-denied',
+  },
   // --safe-mode does not load the project CLAUDE.md or the project SessionStart hook.
   'safe-mode-skips-project': {
     flags: ['--safe-mode'],
@@ -141,7 +190,7 @@ const cases = {
 const selected = Object.keys(cases).filter(name => !option('--case') || name === option('--case'));
 assert.ok(selected.length > 0, 'unknown --case');
 
-function writeProject(dir, permissions) {
+function writeProject(dir, permissions, localPermissions) {
   const workspace = join(dir, 'workspace');
   mkdirSync(join(workspace, '.noa'), { recursive: true });
   writeFileSync(join(workspace, 'CLAUDE.md'), `${PROJECT_RULE}\n`);
@@ -149,6 +198,7 @@ function writeProject(dir, permissions) {
     hooks: { SessionStart: [{ hooks: [{ type: 'command', command: `echo ${HOOK_MARKER} > ${join(dir, 'hook-ran.txt')}` }] }] },
     ...(permissions && { permissions }),
   }));
+  if (localPermissions) writeFileSync(join(workspace, '.noa', 'settings.local.json'), JSON.stringify({ permissions: localPermissions }));
   return workspace;
 }
 
@@ -156,7 +206,7 @@ async function run(name) {
   const scenario = cases[name];
   const dir = join(artifacts, name);
   mkdirSync(dir, { recursive: true });
-  const workspace = scenario.project ? writeProject(dir, scenario.projectPermissions) : join(dir, 'workspace');
+  const workspace = scenario.project ? writeProject(dir, scenario.projectPermissions, scenario.localPermissions) : join(dir, 'workspace');
   mkdirSync(workspace, { recursive: true });
   active = { requests: [], toolUses: scenario.toolUses?.({ dir, workspace }) ?? null };
   const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => ['PATH', 'HOME', 'TMPDIR', 'USER', 'LOGNAME', 'SHELL', 'LANG', 'LC_ALL'].includes(k)));
@@ -165,8 +215,13 @@ async function run(name) {
     ANTHROPIC_API_KEY: 'local-e2e-dummy',
     DISABLE_AUTOUPDATER: '1',
     ANTHROPIC_BASE_URL: local,
+    ...scenario.env,
   });
-  const command = ['--print', 'Say SAFE_OK.', '--output-format', 'json', '--model', 'claude-opus-5-5', ...scenario.flags];
+  if (scenario.userSettings) {
+    mkdirSync(env.CLAUDE_CONFIG_DIR, { recursive: true });
+    writeFileSync(join(env.CLAUDE_CONFIG_DIR, 'settings.json'), JSON.stringify(scenario.userSettings));
+  }
+  const command = ['--print', 'Say SAFE_OK.', '--output-format', 'json', '--model', 'claude-opus-5-5', ...(scenario.flags ?? [])];
   const [bin, binArgs] = entry.endsWith('.js') ? ['bun', [entry, ...command]] : [entry, command];
   const child = spawn(bin, binArgs, { cwd: workspace, env, stdio: ['ignore', 'pipe', 'pipe'] });
   let stdout = '', stderr = '';
@@ -249,6 +304,15 @@ function check(name, { dir, exit, stdout, stderr, workspace }) {
       assert.doesNotMatch(String(write.content), /restricted mode/, 'control refusal came from --restricted');
       assert.equal(existsSync(join(workspace, 'inside.txt')), false, 'control write landed despite project deny');
     }
+  }
+  if (cases[name].expect === 'write-denied' || cases[name].expect === 'write-allowed') {
+    const results = active.requests[1].body.messages.flatMap(m => Array.isArray(m.content) ? m.content : []).filter(b => b.type === 'tool_result');
+    const write = results.find(r => r.tool_use_id === 'bypass_write');
+    assert.ok(write, 'bypass boundary Write produced no tool result');
+    const allowed = cases[name].expect === 'write-allowed';
+    assert.equal(!write.is_error, allowed, `unexpected Write decision: ${JSON.stringify(write)}`);
+    assert.equal(existsSync(join(workspace, 'bypass.txt')), allowed, 'Write result does not match the expected bypass boundary');
+    if (name === 'bypass-subprocess-scrub-forces-default') assert.match(stderr, /Permission mode forced to default/, 'scrub downgrade warning missing');
   }
   if (name === 'restricted-write-confinement' || name === 'write-outside-refused-without-restricted') {
     const results = active.requests[1].body.messages.flatMap(m => Array.isArray(m.content) ? m.content : []).filter(b => b.type === 'tool_result');

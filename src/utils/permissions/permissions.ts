@@ -1579,7 +1579,8 @@ async function hasPermissionsToUseToolInner(
   const shouldBypassPermissions =
     appState.toolPermissionContext.mode === 'bypassPermissions' ||
     (appState.toolPermissionContext.mode === 'plan' &&
-      appState.toolPermissionContext.prePlanMode === 'bypassPermissions')
+      appState.toolPermissionContext.prePlanMode === 'bypassPermissions' &&
+      !context.options.isNonInteractiveSession)
   if (shouldBypassPermissions) {
     return {
       behavior: 'allow',

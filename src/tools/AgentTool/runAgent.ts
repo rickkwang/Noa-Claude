@@ -476,6 +476,8 @@ export async function* runAgent({
       // Override permission mode if agent defines one (unless parent is bypassPermissions, acceptEdits, or auto)
       if (
         agentPermissionMode &&
+        (agentPermissionMode !== 'bypassPermissions' ||
+          state.toolPermissionContext.isBypassPermissionsModeAvailable) &&
         state.toolPermissionContext.mode !== 'bypassPermissions' &&
         state.toolPermissionContext.mode !== 'acceptEdits' &&
         !(

@@ -58,7 +58,16 @@ export function applyPermissionUpdate(
   update: PermissionUpdate,
 ): ToolPermissionContext {
   switch (update.type) {
-    case 'setMode':
+    case 'setMode': {
+      if (
+        update.mode === 'bypassPermissions' &&
+        !context.isBypassPermissionsModeAvailable
+      ) {
+        logForDebugging(
+          "Ignoring permission update: setMode 'bypassPermissions' rejected — mode is not available",
+        )
+        return context
+      }
       logForDebugging(
         `Applying permission update: Setting mode to '${update.mode}'`,
       )
@@ -66,6 +75,7 @@ export function applyPermissionUpdate(
         ...context,
         mode: update.mode,
       }
+    }
 
     case 'addRules': {
       const ruleStrings = update.rules.map(rule =>
@@ -222,6 +232,12 @@ export function supportsPersistence(
  */
 export function persistPermissionUpdate(update: PermissionUpdate): void {
   if (!supportsPersistence(update.destination)) return
+  if (update.type === 'setMode' && update.mode === 'bypassPermissions') {
+    logForDebugging(
+      "setMode 'bypassPermissions' is session-scoped; not persisting as defaultMode",
+    )
+    return
+  }
 
   logForDebugging(
     `Persisting permission update: ${update.type} to source '${update.destination}'`,
