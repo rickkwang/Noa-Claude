@@ -1,4 +1,5 @@
 import type { LocalJSXCommandOnDone } from '../../types/command.js'
+import type { SkillStatsInputs } from './SkillStats.js'
 
 /**
  * Top-level view state of the /plugin dialog, owned by PluginSettings.
@@ -29,6 +30,7 @@ export type ViewState =
       targetMarketplace?: string
       action?: 'remove' | 'update'
     }
+  | { type: 'stats' }
   | { type: 'marketplace-menu' }
   | { type: 'marketplace-list' }
   | {
@@ -53,4 +55,6 @@ export type PluginSettingsProps = {
    * current response instead of right away, so the user is told so.
    */
   midTurn?: boolean
+  /** Session commands and model behind the Stats tab; the tab is hidden without them. */
+  skillStatsInputs?: SkillStatsInputs
 }

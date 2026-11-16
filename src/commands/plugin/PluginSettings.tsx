@@ -30,8 +30,9 @@ import { ManagePlugins } from './ManagePlugins.js';
 import { formatErrorMessage, getErrorGuidance } from './PluginErrors.js';
 import { type ParsedCommand, parsePluginArgs } from './parseArgs.js';
 import type { PluginSettingsProps, ViewState } from './types.js';
+import { SkillStats } from './SkillStats.js';
 import { ValidatePlugin } from './ValidatePlugin.js';
-type TabId = 'discover' | 'installed' | 'marketplaces' | 'errors';
+type TabId = 'discover' | 'installed' | 'marketplaces' | 'errors' | 'stats';
 function MarketplaceList(t0) {
   const $ = _c(4);
   const {
@@ -720,6 +721,10 @@ function getInitialViewState(parsedCommand: ParsedCommand): ViewState {
       return {
         type: 'marketplace-menu'
       };
+    case 'stats':
+      return {
+        type: 'stats'
+      };
     case 'menu':
     default:
       // Default to discover view showing all plugins
@@ -731,6 +736,7 @@ function getInitialViewState(parsedCommand: ParsedCommand): ViewState {
 function getInitialTab(viewState: ViewState): TabId {
   if (viewState.type === 'manage-plugins') return 'installed';
   if (viewState.type === 'manage-marketplaces') return 'marketplaces';
+  if (viewState.type === 'stats') return 'stats';
   return 'discover';
 }
 export function PluginSettings(t0: PluginSettingsProps) {
@@ -739,7 +745,8 @@ export function PluginSettings(t0: PluginSettingsProps) {
     onComplete: onCompleteProp,
     args,
     showMcpRedirectMessage,
-    midTurn
+    midTurn,
+    skillStatsInputs
   } = t0;
   let parsedCommand;
   let t1;
@@ -848,6 +855,7 @@ export function PluginSettings(t0: PluginSettingsProps) {
             break bb37;
           }
         case "errors":
+        case "stats":
       }
     };
     $[7] = t4;
@@ -959,7 +967,7 @@ export function PluginSettings(t0: PluginSettingsProps) {
   if (viewState.type === "help") {
     let t16;
     if ($[28] === Symbol.for("react.memo_cache_sentinel")) {
-      t16 = <Box flexDirection="column"><Text bold={true}>Plugin Command Usage:</Text><Text> </Text><Text dimColor={true}>Installation:</Text><Text> /plugin install - Browse and install plugins</Text><Text>{" "}{"/plugin install <marketplace> - Install from specific marketplace"}</Text><Text>{" /plugin install <plugin> - Install specific plugin"}</Text><Text>{" "}{"/plugin install <plugin>@<market> - Install plugin from marketplace"}</Text><Text> </Text><Text dimColor={true}>Management:</Text><Text> /plugin manage - Manage installed plugins</Text><Text>{" /plugin enable <plugin> - Enable a plugin"}</Text><Text>{" /plugin disable <plugin> - Disable a plugin"}</Text><Text>{" /plugin uninstall <plugin> - Uninstall a plugin"}</Text><Text> </Text><Text dimColor={true}>Marketplaces:</Text><Text> /plugin marketplace - Marketplace management menu</Text><Text> /plugin marketplace add - Add a marketplace</Text><Text>{" "}{"/plugin marketplace add <path/url> [--scope user|project|local] [--sparse <paths...>] - Add marketplace directly"}</Text><Text> /plugin marketplace update - Update marketplaces</Text><Text>{" "}{"/plugin marketplace update <name> - Update specific marketplace"}</Text><Text> /plugin marketplace remove - Remove a marketplace</Text><Text>{" "}{"/plugin marketplace remove <name> - Remove specific marketplace"}</Text><Text> /plugin marketplace list - List all marketplaces</Text><Text> </Text><Text dimColor={true}>Validation:</Text><Text>{" "}{"/plugin validate <path> - Validate a manifest file or directory"}</Text><Text> </Text><Text dimColor={true}>Other:</Text><Text> /plugin - Main plugin menu</Text><Text> /plugin help - Show this help</Text><Text> /plugins - Alias for /plugin</Text></Box>;
+      t16 = <Box flexDirection="column"><Text bold={true}>Plugin Command Usage:</Text><Text> </Text><Text dimColor={true}>Installation:</Text><Text> /plugin install - Browse and install plugins</Text><Text>{" "}{"/plugin install <marketplace> - Install from specific marketplace"}</Text><Text>{" /plugin install <plugin> - Install specific plugin"}</Text><Text>{" "}{"/plugin install <plugin>@<market> - Install plugin from marketplace"}</Text><Text> </Text><Text dimColor={true}>Management:</Text><Text> /plugin manage - Manage installed plugins</Text><Text>{" /plugin enable <plugin> - Enable a plugin"}</Text><Text>{" /plugin disable <plugin> - Disable a plugin"}</Text><Text>{" /plugin uninstall <plugin> - Uninstall a plugin"}</Text><Text> </Text><Text dimColor={true}>Marketplaces:</Text><Text> /plugin marketplace - Marketplace management menu</Text><Text> /plugin marketplace add - Add a marketplace</Text><Text>{" "}{"/plugin marketplace add <path/url> [--scope user|project|local] [--sparse <paths...>] - Add marketplace directly"}</Text><Text> /plugin marketplace update - Update marketplaces</Text><Text>{" "}{"/plugin marketplace update <name> - Update specific marketplace"}</Text><Text> /plugin marketplace remove - Remove a marketplace</Text><Text>{" "}{"/plugin marketplace remove <name> - Remove specific marketplace"}</Text><Text> /plugin marketplace list - List all marketplaces</Text><Text> </Text><Text dimColor={true}>Stats:</Text><Text> /plugin stats - Skill usage and listing cost</Text><Text> </Text><Text dimColor={true}>Validation:</Text><Text>{" "}{"/plugin validate <path> - Validate a manifest file or directory"}</Text><Text> </Text><Text dimColor={true}>Other:</Text><Text> /plugin - Main plugin menu</Text><Text> /plugin help - Show this help</Text><Text> /plugins - Alias for /plugin</Text></Box>;
       $[28] = t16;
     } else {
       t16 = $[28];
@@ -1025,7 +1033,7 @@ export function PluginSettings(t0: PluginSettingsProps) {
   }
   let t17;
   if ($[44] !== error || $[45] !== markPluginsChanged || $[46] !== result || $[47] !== viewState.targetMarketplace || $[48] !== viewState.targetPlugin || $[49] !== viewState.type) {
-    t17 = <Tab id="discover" title="Discover">{viewState.type === "browse-marketplace" ? <BrowseMarketplace error={error} setError={setError} result={result} setResult={setResult} setViewState={setViewState} onInstallComplete={markPluginsChanged} targetMarketplace={viewState.targetMarketplace} targetPlugin={viewState.targetPlugin} /> : <DiscoverPlugins error={error} setError={setError} result={result} setResult={setResult} setViewState={setViewState} onInstallComplete={markPluginsChanged} onSearchModeChange={setChildSearchActive} targetPlugin={viewState.type === "discover-plugins" ? viewState.targetPlugin : undefined} />}</Tab>;
+    t17 = <Tab key="discover" id="discover" title="Discover">{viewState.type === "browse-marketplace" ? <BrowseMarketplace error={error} setError={setError} result={result} setResult={setResult} setViewState={setViewState} onInstallComplete={markPluginsChanged} targetMarketplace={viewState.targetMarketplace} targetPlugin={viewState.targetPlugin} /> : <DiscoverPlugins error={error} setError={setError} result={result} setResult={setResult} setViewState={setViewState} onInstallComplete={markPluginsChanged} onSearchModeChange={setChildSearchActive} targetPlugin={viewState.type === "discover-plugins" ? viewState.targetPlugin : undefined} />}</Tab>;
     $[44] = error;
     $[45] = markPluginsChanged;
     $[46] = result;
@@ -1041,7 +1049,7 @@ export function PluginSettings(t0: PluginSettingsProps) {
   const t20 = viewState.type === "manage-plugins" ? viewState.action : undefined;
   let t21;
   if ($[51] !== markPluginsChanged || $[52] !== t18 || $[53] !== t19 || $[54] !== t20) {
-    t21 = <Tab id="installed" title="Installed"><ManagePlugins setViewState={setViewState} setResult={setResult} onManageComplete={markPluginsChanged} onSearchModeChange={setChildSearchActive} targetPlugin={t18} targetMarketplace={t19} action={t20} /></Tab>;
+    t21 = <Tab key="installed" id="installed" title="Installed"><ManagePlugins setViewState={setViewState} setResult={setResult} onManageComplete={markPluginsChanged} onSearchModeChange={setChildSearchActive} targetPlugin={t18} targetMarketplace={t19} action={t20} /></Tab>;
     $[51] = markPluginsChanged;
     $[52] = t18;
     $[53] = t19;
@@ -1054,7 +1062,7 @@ export function PluginSettings(t0: PluginSettingsProps) {
   const t23 = viewState.type === "manage-marketplaces" ? viewState.action : undefined;
   let t24;
   if ($[56] !== error || $[57] !== exitState || $[58] !== markPluginsChanged || $[59] !== t22 || $[60] !== t23) {
-    t24 = <Tab id="marketplaces" title="Marketplaces"><ManageMarketplaces setViewState={setViewState} error={error} setError={setError} setResult={setResult} exitState={exitState} onManageComplete={markPluginsChanged} targetMarketplace={t22} action={t23} /></Tab>;
+    t24 = <Tab key="marketplaces" id="marketplaces" title="Marketplaces"><ManageMarketplaces setViewState={setViewState} error={error} setError={setError} setResult={setResult} exitState={exitState} onManageComplete={markPluginsChanged} targetMarketplace={t22} action={t23} /></Tab>;
     $[56] = error;
     $[57] = exitState;
     $[58] = markPluginsChanged;
@@ -1074,16 +1082,19 @@ export function PluginSettings(t0: PluginSettingsProps) {
   }
   let t26;
   if ($[64] !== errorsTabTitle || $[65] !== t25) {
-    t26 = <Tab id="errors" title={errorsTabTitle}>{t25}</Tab>;
+    t26 = <Tab key="errors" id="errors" title={errorsTabTitle}>{t25}</Tab>;
     $[64] = errorsTabTitle;
     $[65] = t25;
     $[66] = t26;
   } else {
     t26 = $[66];
   }
+  const statsTab = skillStatsInputs ? [<Tab key="stats" id="stats" title="Stats"><SkillStats inputs={skillStatsInputs} onExit={() => setViewState({
+        type: "menu"
+      })} /></Tab>] : [];
   let t27;
-  if ($[67] !== activeTab || $[68] !== childSearchActive || $[69] !== t16 || $[70] !== t17 || $[71] !== t21 || $[72] !== t24 || $[73] !== t26 || $[75] !== tabContentHeight) {
-    t27 = <Pane color="suggestion"><Tabs title="Plugins" selectedTab={activeTab} onTabChange={handleTabChange} color="suggestion" disableNavigation={childSearchActive} banner={t16} contentHeight={tabContentHeight}>{t17}{t21}{t24}{t26}</Tabs></Pane>;
+  if ($[67] !== activeTab || $[68] !== childSearchActive || $[69] !== t16 || $[70] !== t17 || $[71] !== t21 || $[72] !== t24 || $[73] !== t26 || $[75] !== tabContentHeight || $[79] !== skillStatsInputs) {
+    t27 = <Pane color="suggestion"><Tabs title="Plugins" selectedTab={activeTab} onTabChange={handleTabChange} color="suggestion" disableNavigation={childSearchActive} banner={t16} contentHeight={tabContentHeight}>{[t17, t21, t24, t26, ...statsTab]}</Tabs></Pane>;
     $[67] = activeTab;
     $[68] = childSearchActive;
     $[69] = t16;
@@ -1093,6 +1104,7 @@ export function PluginSettings(t0: PluginSettingsProps) {
     $[73] = t26;
     $[74] = t27;
     $[75] = tabContentHeight;
+    $[79] = skillStatsInputs;
   } else {
     t27 = $[74];
   }

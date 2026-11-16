@@ -5,6 +5,7 @@ export type ParsedCommand =
   | { type: 'help' }
   | { type: 'install'; marketplace?: string; plugin?: string }
   | { type: 'manage' }
+  | { type: 'stats' }
   | { type: 'uninstall'; plugin?: string }
   | { type: 'enable'; plugin?: string }
   | { type: 'disable'; plugin?: string }
@@ -68,6 +69,9 @@ export function parsePluginArgs(args?: string): ParsedCommand {
 
     case 'manage':
       return { type: 'manage' }
+
+    case 'stats':
+      return { type: 'stats' }
 
     case 'uninstall':
       return { type: 'uninstall', plugin: parts[1] }

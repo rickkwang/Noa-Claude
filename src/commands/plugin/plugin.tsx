@@ -6,5 +6,8 @@ export async function call(onDone: LocalJSXCommandOnDone, context: LocalJSXComma
   // dispatchedAsImmediate means a turn is still streaming, so the
   // /reload-plugins this dialog queues on close won't run until it ends —
   // PluginSettings says so instead of closing silently.
-  return <PluginSettings onComplete={onDone} args={args} midTurn={context?.dispatchedAsImmediate === true} />;
+  return <PluginSettings onComplete={onDone} args={args} midTurn={context?.dispatchedAsImmediate === true} skillStatsInputs={context?.options?.commands ? {
+    commands: context.options.commands,
+    mainLoopModel: context.options.mainLoopModel
+  } : undefined} />;
 }
