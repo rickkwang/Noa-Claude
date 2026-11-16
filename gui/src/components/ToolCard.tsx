@@ -1,4 +1,4 @@
-import { useContext, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react"
+import { memo, useContext, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react"
 import { createPortal } from "react-dom"
 import type { AgentTask, Block, ToolBlock } from "../agent/reducer"
 import { formatElapsed, shellStepLabel, toolActivityLabel, toolDiffStats, toolElapsedMs, toolRowSteps, toolShellSteps, type ShellStep } from "../agent/toolActivity"
@@ -534,7 +534,8 @@ function ShellOutput({ block, onCollapse }: { block: ToolBlock; onCollapse: () =
 }
 
 // Line-level diff: unchanged lines stay in place as context, as in a unified diff.
-function DiffView({ oldText, newText }: { oldText: string; newText: string }) {
+// Memoized: the live turn re-renders on every streamed delta, and diffLines is costly on large edits.
+const DiffView = memo(function DiffView({ oldText, newText }: { oldText: string; newText: string }) {
   const lines = diffLines(oldText, newText).flatMap((part) => {
     const text = part.value.endsWith("\n") ? part.value.slice(0, -1) : part.value
     const kind = part.added ? "+" : part.removed ? "-" : " "
@@ -550,4 +551,4 @@ function DiffView({ oldText, newText }: { oldText: string; newText: string }) {
       ))}
     </pre>
   )
-}
+})
