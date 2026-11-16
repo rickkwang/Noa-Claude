@@ -526,7 +526,7 @@ export function DigitalWavesBackground({
 
     function onPointerDown(e: PointerEvent) {
       if (e.button !== 0) return;
-      if ((e.target as HTMLElement | null)?.closest("[data-wave-obstacle]")) return;
+      if ((e.target as HTMLElement | null)?.closest("[data-wave-obstacle], [data-wave-no-drop]")) return;
       const rect = canvas!.getBoundingClientRect();
       drop(e.clientX - rect.left, e.clientY - rect.top);
     }

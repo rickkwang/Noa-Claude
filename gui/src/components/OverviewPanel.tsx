@@ -303,17 +303,17 @@ export function OverviewPanel({ state, cwd, open, workspaceRefreshKey, endInset,
     </RailCard>,
   }
   const cardClass = (index: number) => docked
-    ? "rounded-lg shadow-[0_0_0_1px_var(--border-default)] empty:hidden"
+    ? "rounded-lg bg-[var(--surface-page,#F9F9F7)] shadow-[0_0_0_1px_var(--border-default)] empty:hidden"
     : `${index > 0 ? "rounded-[10px] border-t border-[var(--divider-subtle)] " : ""}empty:hidden`
   const cardEls = visible.map((id, index) => <div key={id} ref={(node) => { if (node) cardRefs.current.set(id, node); else cardRefs.current.delete(id) }}
     className={cardClass(index)}
-    style={{ transform: drag ? `translateY(${shiftOf(id)}px)` : undefined, transition: drag && drag.id !== id ? `transform ${SORT_MS}ms ease` : undefined, zIndex: drag?.id === id ? 1 : undefined, position: drag?.id === id ? "relative" : undefined, background: drag?.id === id ? "var(--surface-page, #F9F9F7)" : undefined }}>
+    style={{ transform: drag ? `translateY(${shiftOf(id)}px)` : undefined, transition: drag && drag.id !== id ? `transform ${SORT_MS}ms ease` : undefined, zIndex: drag?.id === id ? 1 : undefined, position: drag?.id === id ? "relative" : undefined }}>
     {cards[id]}
   </div>)
   return <div className={docked ? "noa-overview-dock" : "noa-overview-layer"} style={{ insetInlineEnd: endInset, ...(docked ? {} : { bottom: bottomInset }) }}>
     {docked
-      ? <aside ref={panelRef} aria-label="Overview" className="flex flex-col gap-2 p-px font-ui">{cardEls}</aside>
-      : <aside ref={panelRef} aria-label="Overview" className="noa-overview font-ui">{cardEls}</aside>}
+      ? <aside ref={panelRef} aria-label="Overview" data-wave-no-drop className="flex flex-col gap-2 p-px font-ui">{cardEls}</aside>
+      : <aside ref={panelRef} aria-label="Overview" data-wave-no-drop className="noa-overview font-ui">{cardEls}</aside>}
     {menu && <div role="menu" aria-label="Overview cards" style={{ position: "fixed", left: menu.x, top: menu.y }} onPointerDown={(event) => event.stopPropagation()} className="noa-floating-panel pointer-events-auto z-50 min-w-40 rounded-[var(--menu-popover-radius)] bg-[var(--bg-card)] p-1 font-ui text-body shadow-[var(--menu-shadow)]">
       <div className={`px-2 py-1 ${MUTED}`}>Show</div>
       {CARDS.map((card) => <button key={card.id} type="button" role="menuitemcheckbox" aria-checked={!layout.hidden.includes(card.id)} onClick={() => update({ ...layout, hidden: layout.hidden.includes(card.id) ? layout.hidden.filter((id) => id !== card.id) : [...layout.hidden, card.id] })} className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-start hover:bg-[var(--fill-hover)]">
