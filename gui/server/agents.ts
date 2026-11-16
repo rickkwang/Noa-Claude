@@ -43,6 +43,13 @@ function waitKind(request: { subtype: string; tool_name?: string }): WaitKind {
   if (request.subtype === "can_use_tool") return request.tool_name === "AskUserQuestion" ? "question" : "permission"
   return "other"
 }
+// One line saying what the request asks of the user, for thread lists.
+function waitText(request: { subtype: string; tool_name?: string; input?: any; message?: unknown }): string | undefined {
+  const kind = waitKind(request)
+  const question = kind === "question" ? request.input?.questions?.[0]?.question : kind === "elicitation" ? request.message : undefined
+  if (typeof question === "string" && question.trim()) return question.trim().replace(/\s+/g, " ").slice(0, 160)
+  if (kind === "permission" && request.tool_name) return `Approve ${request.tool_name}`
+}
 interface AgentRun {
   id: string
   cwd: string
@@ -73,7 +80,7 @@ interface AgentRun {
     liveAt?: number
     finalizing?: Promise<void>
   }
-  waiting: Map<string, WaitKind>
+  waiting: Map<string, { kind: WaitKind; text?: string }>
   activeTasks: Set<string>
   title?: string
   // A new task names itself after its first real prompt; resumed ones keep their title.
@@ -497,7 +504,7 @@ export const runHooks: {
   waiting?: (run: RunInfo) => void
 } = {}
 export interface RunInfo { cwd: string; sessionId?: string; failed: boolean; waitingKinds: WaitKind[] }
-const runInfo = (run: AgentRun): RunInfo => ({ cwd: run.cwd, sessionId: run.sessionId, failed: run.turnSucceeded === false, waitingKinds: [...new Set(run.waiting.values())] })
+const runInfo = (run: AgentRun): RunInfo => ({ cwd: run.cwd, sessionId: run.sessionId, failed: run.turnSucceeded === false, waitingKinds: [...new Set([...run.waiting.values()].map((wait) => wait.kind))] })
 // Starts a CLI for a task; `previous` is the exited run it replaces, whose mode and queue carry over.
 function spawnRun(opts: SpawnOptions, root: string, previous?: AgentRun): AgentRun {
   const args = [
@@ -691,7 +698,7 @@ function spawnRun(opts: SpawnOptions, root: string, previous?: AgentRun): AgentR
       return
     }
     if (message.type === "system" && message.subtype === "init") current.sessionId = message.session_id
-    if (message.type === "control_request") current.waiting.set(message.request_id, waitKind(message.request))
+    if (message.type === "control_request") current.waiting.set(message.request_id, { kind: waitKind(message.request), text: waitText(message.request) })
     if (message.type === "control_cancel_request") current.waiting.delete(message.request_id)
     // The CLI answers a finished background task with a turn of its own; queued messages wait for it.
     if (message.type === "assistant" && !message.parent_tool_use_id && (!current.turn || current.turn.finalizing)) { current.busy = true; cliTurns++ }
@@ -992,7 +999,8 @@ export function listAgentRuns() {
       coordinator,
       busy: r.busy,
       waiting: r.waiting.size > 0,
-      waitingKinds: [...new Set(r.waiting.values())],
+      waitingKinds: [...new Set([...r.waiting.values()].map((wait) => wait.kind))],
+      waitingFor: [...r.waiting.values()].find((wait) => wait.text)?.text,
       interrupted: r.turn?.interrupted === true,
       failed: r.turnSucceeded === false,
       queued: r.queue.length,

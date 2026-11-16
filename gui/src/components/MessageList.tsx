@@ -23,7 +23,7 @@ import { ArrowDown, AlertTriangle, BookOpen, Check, ChevronDown, ChevronRight, C
 import { Collapsible } from "./Collapsible"
 import { ErrorBoundary } from "./ErrorBoundary"
 import { copyContent } from "./RichContent"
-import { Markdown, OutputContext } from "./Markdown"
+import { linkThreads, Markdown, OutputContext } from "./Markdown"
 import { MessageRail, type MessageRailItem } from "./MessageRail"
 import { ToolCard } from "./ToolCard"
 import { ThinkingActivity } from "./ThinkingActivity"
@@ -39,6 +39,8 @@ interface MessageListProps {
   turns: Turn[]
   // In a project's coordinator chat: thread titles by session id, to name the thread a tool call acts on.
   threadTitles?: Record<string, string>
+  // Opens a thread the project chat names.
+  onOpenThread?: (id: string) => void
   cwd?: string
   onOpenFile?: (path: string, line?: number, endLine?: number) => void
   busy: boolean
@@ -76,7 +78,7 @@ const ESTIMATED_TURN_HEIGHT = 160
 const TODO_TOOLS = ["TodoWrite", "TaskCreate", "TaskUpdate", "TaskList", "TaskGet"]
 const scrollPositions = new Map<string, { top: number; pinned: boolean; heights: Map<string, number> }>()
 
-export function MessageList({ turns, threadTitles, cwd, onOpenFile, busy, result, readingWidth, liveDiff, onTurnDiff, onTurnDiffAction, diffActionPending, onRetry, onEdit, onRewind, rewindBlocked, onUndoRewind, onQuote, tasks, onStopTask, onOpenTask, sessionId, historyBefore, historyLoading, onLoadEarlier, transcriptView = "normal" }: MessageListProps) {
+export function MessageList({ turns, threadTitles, onOpenThread, cwd, onOpenFile, busy, result, readingWidth, liveDiff, onTurnDiff, onTurnDiffAction, diffActionPending, onRetry, onEdit, onRewind, rewindBlocked, onUndoRewind, onQuote, tasks, onStopTask, onOpenTask, sessionId, historyBefore, historyLoading, onLoadEarlier, transcriptView = "normal" }: MessageListProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
   const layoutRef = useRef<HTMLDivElement>(null)
@@ -240,13 +242,15 @@ export function MessageList({ turns, threadTitles, cwd, onOpenFile, busy, result
   }
 
   // Rows are memoized, so handlers they receive must keep one identity across renders.
-  const handlers = useRef({ onStopTask, onOpenTask, onTurnDiff, onTurnDiffAction, onOpenFile })
-  handlers.current = { onStopTask, onOpenTask, onTurnDiff, onTurnDiffAction, onOpenFile }
+  const handlers = useRef({ onStopTask, onOpenTask, onTurnDiff, onTurnDiffAction, onOpenFile, onOpenThread })
+  handlers.current = { onStopTask, onOpenTask, onTurnDiff, onTurnDiffAction, onOpenFile, onOpenThread }
   const outputContext = useMemo(() => ({
     cwd,
     onOpenFile: (path: string, line?: number, endLine?: number) => handlers.current.onOpenFile?.(path, line, endLine),
     onOpenImages: (items: LightboxItem[], index: number) => setPreview({ items, index }),
     threadTitle: (id: string) => threadTitles?.[id],
+    threadTitles,
+    onOpenThread: (id: string) => handlers.current.onOpenThread?.(id),
   }), [cwd, threadTitles])
   const stableStopTask = useCallback((id: string) => handlers.current.onStopTask?.(id), [])
   const stableOpenTask = useCallback((id?: string) => handlers.current.onOpenTask?.(id), [])
@@ -354,7 +358,7 @@ export function MessageList({ turns, threadTitles, cwd, onOpenFile, busy, result
     const relay = relayed(segment.text)
     railItems.push({
       id: segment.id,
-      label: firstLine(relay ? relay.kind === "activity" ? relay.lines.join(" · ") : relay.text : segment.text) || "(No content)",
+      label: firstLine(relay ? relay.kind === "activity" ? relay.lines.map((line) => `${line.title ?? ""}${line.text}`).join(" · ") : relay.text : segment.text) || "(No content)",
       preview,
     })
   }
@@ -463,7 +467,9 @@ export function MessageList({ turns, threadTitles, cwd, onOpenFile, busy, result
     if (relay?.kind === "activity") {
       return (
         <div role="status" aria-label="Thread activity" className="flex flex-col gap-0.5 text-chat-sm leading-5 text-[var(--text-tertiary)]">
-          {relay.lines.map((line, i) => <p key={i} className="m-0 truncate">{line}</p>)}
+          {relay.lines.map((line, i) => <p key={i} className="m-0 truncate">
+            {line.id && onOpenThread ? <button type="button" onClick={() => onOpenThread(line.id!)} className="cursor-pointer text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:underline">{line.title}</button> : line.title}{line.text}
+          </p>)}
         </div>
       )
     }
@@ -1172,11 +1178,15 @@ function WorkedFor({ durationMs, count, interrupted, collapsed, live, onToggle }
 
 // Fold long message content while keeping the toggle inside the bubble.
 // Messages between a project's coordinator and its threads carry framing the user did not write; show what they say.
-function relayed(text: string): { kind: "activity"; lines: string[] } | { kind: "coordinator"; text: string } | undefined {
+function relayed(text: string): { kind: "activity"; lines: { title?: string; id?: string; text: string }[] } | { kind: "coordinator"; text: string } | undefined {
   const body = (tag: string) => text.match(new RegExp(`<${tag} nonce="([0-9a-f]{32})" untrusted="true">\\n[^\\n]*\\n([\\s\\S]*)\\n</${tag} nonce="\\1">`))?.[2]
   if (text.startsWith("<project-activity>")) {
     const content = body("child-session-output")
-    return content === undefined ? undefined : { kind: "activity", lines: content.split("\n").map(line => line.replace(/^- "(.*?)" \([0-9a-f-]{36}\)/, "$1").replace(/ https?:\/\/\S+/g, "")).filter(Boolean) }
+    return content === undefined ? undefined : { kind: "activity", lines: content.split("\n").map((line) => {
+      const thread = line.match(/^- "(.*?)" \(([0-9a-f-]{36})\)/)
+      const rest = (thread ? line.slice(thread[0].length) : line).replace(/ https?:\/\/\S+/g, "")
+      return thread ? { title: thread[1]!, id: thread[2]!, text: rest } : { text: rest }
+    }).filter((line) => line.title || line.text) }
   }
   if (text.startsWith("<project-session-instructions")) {
     const content = body("coordinator-context")
@@ -1424,7 +1434,10 @@ function PacedMarkdown({ text, streaming, fresh, streamKey }: { text: string; st
     revealPaces.delete(streamKey)
     if (revealedTexts.size > 2000) revealedTexts.delete(revealedTexts.values().next().value!)
   }, [caughtUp, streaming, streamKey])
-  return <Markdown text={caughtUp ? text : text.slice(0, shown)} streaming={streaming || !caughtUp} streamKey={streamKey} />
+  const { threadTitles } = use(OutputContext)
+  const done = caughtUp && !streaming
+  const linked = useMemo(() => done && threadTitles ? linkThreads(text, threadTitles) : text, [done, text, threadTitles])
+  return <Markdown text={caughtUp ? linked : text.slice(0, shown)} streaming={streaming || !caughtUp} streamKey={streamKey} />
 }
 
 function BlockView({ block, streaming, streamKey }: { block: Block; streaming?: boolean; streamKey?: string }) {

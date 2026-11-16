@@ -513,8 +513,10 @@ try {
       ),
     "question approval",
   )
-  const pendingRuns = await (await fetch(`http://127.0.0.1:${port}/api/runs`)).json() as { runtimeId: string; waitingKinds?: string[] }[]
+  const pendingRuns = await (await fetch(`http://127.0.0.1:${port}/api/runs`)).json() as { runtimeId: string; waitingKinds?: string[]; waitingFor?: string }[]
   assert.deepEqual(pendingRuns.find((run) => run.runtimeId === thirdRuntime)?.waitingKinds, ["question"], "A pending AskUserQuestion is reported as a question for desktop notifications")
+  const asked = (third.events.findLast((e) => e.kind === "agent" && e.message.type === "control_request") as any).message.request.input.questions[0].question
+  assert.equal(pendingRuns.find((run) => run.runtimeId === thirdRuntime)?.waitingFor, asked, "A pending question is reported with its text for thread lists")
   const permission = third.events.findLast((e) => e.kind === "agent" && e.message.type === "control_request") as any
   third.send({
     type: "control_response",

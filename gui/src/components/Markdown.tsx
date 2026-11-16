@@ -9,7 +9,7 @@ import { Check, Code, Copy, TextOverflow, TextWrap } from "../lib/icons"
 import { localWebUrl, openBrowser } from "../lib/browserTabs"
 
 // Parse the existing Markdown grammar as a tree; render React children, never raw HTML.
-export const OutputContext = createContext<{ cwd?: string; onOpenFile?: (path: string, line?: number, endLine?: number) => void; onOpenImages?: (items: LightboxItem[], index: number) => void; threadTitle?: (id: string) => string | undefined }>({})
+export const OutputContext = createContext<{ cwd?: string; onOpenFile?: (path: string, line?: number, endLine?: number) => void; onOpenImages?: (items: LightboxItem[], index: number) => void; threadTitle?: (id: string) => string | undefined; threadTitles?: Record<string, string>; onOpenThread?: (id: string) => void }>({})
 const MAX_HIGHLIGHT_SIZE = 65_536
 const MAX_HIGHLIGHT_LINE = 1_024
 
@@ -36,8 +36,34 @@ export function localReference(href: string, cwd?: string): { path: string; line
   return { path: resolved.slice(base.length + 1), line: match ? positiveLine(match[2] ?? match[3]) : undefined, ...(match?.[4] ? { endLine: positiveLine(match[4]) } : {}) }
 }
 
+// Thread references in the project chat, written by linkThreads.
+const THREAD_HREF = "noa-thread:"
+const SEGMENT = /(```[\s\S]*?(?:```|$)|`[^`\n]+`|\[[^\]\n]*\]\([^)\n]*\)|https?:\/\/\S+)/
+const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+
+// Turns the threads a project chat reply names into links that open them: exact titles, and the session ids a
+// model sometimes prints instead. Code blocks and existing links are left alone; a code span naming a thread is linked.
+export function linkThreads(text: string, titles: Record<string, string>): string {
+  const entries = Object.entries(titles).filter(([, title]) => title.trim().length >= 4)
+  if (!entries.length) return text
+  const byTitle = new Map(entries.map(([id, title]) => [title, id]))
+  const link = (id: string) => `[${titles[id]!.replace(/[[\]]/g, "")}](${THREAD_HREF}${id})`
+  // A name inside a longer word ("ping" in "mapping") is not a reference to the thread.
+  const names = new RegExp(`(?<![\\w-])(?:${[...entries.map(([id]) => id), ...entries.map(([, title]) => title).sort((a, b) => b.length - a.length)].map(escapeRegExp).join("|")})(?![\\w-])`, "g")
+  return text.split(SEGMENT).map((part, index) => {
+    if (index % 2 === 1) {
+      const code = part.match(/^`([^`]+)`$/)?.[1]
+      const id = code && (titles[code] ? code : byTitle.get(code))
+      return id ? link(id) : part
+    }
+    // An id on a line that also names its thread stays as written; alone, it reads as the title.
+    return part.split("\n").map((line) => line.replace(names, (match) => titles[match] ? (line.includes(titles[match]!) ? match : link(match)) : link(byTitle.get(match)!))).join("\n")
+  }).join("")
+}
+
 function OutputLink({ href, children }: { href: string; children: ReactNode }) {
-  const { cwd, onOpenFile } = useContext(OutputContext)
+  const { cwd, onOpenFile, onOpenThread } = useContext(OutputContext)
+  if (href.startsWith(THREAD_HREF) && onOpenThread) return <button type="button" className="inline cursor-pointer text-[var(--accent-color)] underline underline-offset-2" onClick={() => onOpenThread(href.slice(THREAD_HREF.length))}>{children}</button>
   const local = localReference(href, cwd)
   if (local && /\.(?:mp3|wav|m4a|aac|ogg|opus|flac|mp4|m4v|mov|webm)$/i.test(local.path)) return <OutputImage href={href} alt={typeof children === "string" ? children : local.path} />
   if (local) return <button type="button" className="inline cursor-pointer text-[var(--accent-color)] underline underline-offset-2" title={href} onClick={() => onOpenFile?.(local.path, local.line, local.endLine)}>{children}</button>

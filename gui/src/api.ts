@@ -6,6 +6,8 @@ export interface SessionSummary {
   updatedAt: number
   createdAt: number
   status?: "running" | "waiting" | "queued"
+  // What a waiting session asks of the user.
+  waitingFor?: string
   // One line on where the task stands, and the pull request the task opened.
   summary?: string
   progress?: string

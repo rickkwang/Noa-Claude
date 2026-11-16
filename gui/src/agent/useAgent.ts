@@ -27,6 +27,8 @@ interface AgentOptions {
   defaultPermissionMode?: PermissionMode
   // GUI default output style for new sessions; "inherit" keeps the CLI's own setting.
   defaultOutputStyle?: string
+  // False for a second view of another session in the same folder, so it does not overwrite the folder's model preview.
+  persistPreview?: boolean
 }
 
 // Requests whose responses carry data the UI needs; everything else is fire-and-forget.
@@ -58,7 +60,7 @@ function readModelPreview(cwd?: string): ModelPreview {
 
 const INITIALIZE_TIMEOUT_MS = 20_000
 
-export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermissionMode, defaultOutputStyle }: AgentOptions) {
+export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermissionMode, defaultOutputStyle, persistPreview = true }: AgentOptions) {
   const [state, dispatch] = useReducer(reducer, undefined, () => ({ ...initialState, ...readModelPreview(cwd), ...(defaultPermissionMode ? { permissionMode: defaultPermissionMode } : {}) }))
   // Bumped when another process releases the task this view was following, to attach a CLI of its own.
   const [followEnded, setFollowEnded] = useState(0)
@@ -70,11 +72,11 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
   defaultOutputStyleRef.current = defaultOutputStyle
   const modelPreviewCwdRef = useRef(cwd)
   useEffect(() => {
-    if (modelPreviewCwdRef.current !== cwd || state.connection !== "ready" || !state.models.length || !state.model) return
+    if (!persistPreview || modelPreviewCwdRef.current !== cwd || state.connection !== "ready" || !state.models.length || !state.model) return
     try {
       localStorage.setItem(`noa-agent.modelPreview:${cwd ?? ""}`, JSON.stringify({ models: state.models, model: state.model, effort: state.effort, permissionMode: state.permissionMode }))
     } catch {}
-  }, [cwd, state.connection, state.models, state.model, state.effort, state.permissionMode])
+  }, [persistPreview, cwd, state.connection, state.models, state.model, state.effort, state.permissionMode])
   const ownerRef = useRef(runtimeId)
   const defaultModeRef = useRef(defaultPermissionMode)
   defaultModeRef.current = defaultPermissionMode

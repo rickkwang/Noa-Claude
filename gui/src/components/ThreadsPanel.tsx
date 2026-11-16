@@ -34,6 +34,7 @@ function statusLabel(session: SessionSummary): string {
 
 // A running task shows the step it is on, a failed one why, otherwise where it ended up.
 function line(session: SessionSummary) {
+  if (session.status === "waiting") return session.waitingFor || session.progress || session.summary
   return session.status ? session.progress || session.summary : session.error || session.summary
 }
 
@@ -169,7 +170,7 @@ export function ThreadsPanel({ sessions, activeId, onSelect, onRemind, onResolve
         for (const part of element.querySelectorAll<HTMLElement>("[data-fade]")) part.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 300, easing: "ease-out" })
     }
     layout.current = next
-  }, [sessions, query, collapsed])
+  }, [sessions, query, collapsed, settling])
   const toggle = (id: Group) => setCollapsed(current => {
     const next = new Set(current)
     if (next.has(id)) next.delete(id)

@@ -77,7 +77,7 @@ export function useSessionSync({
       refreshing = true
       try {
         const runsResponse = await fetch("/api/runs")
-        const runs = await runsResponse.json() as { cwd: string; sessionId?: string; title?: string; coordinator?: boolean; busy: boolean; waiting: boolean; queued: number }[]
+        const runs = await runsResponse.json() as { cwd: string; sessionId?: string; title?: string; coordinator?: boolean; busy: boolean; waiting: boolean; waitingFor?: string; queued: number }[]
         const results = await Promise.allSettled(projects.map((project) => fetchSessions(project.path)))
         const completeResults = results.map((result) => result.status === "fulfilled" && result.value.length < SESSION_LIST_LIMIT)
         const active = activeSessionRef.current
@@ -136,7 +136,7 @@ export function useSessionSync({
               const base = result.status === "fulfilled" ? result.value : prev
               const visible = base.map((session): SessionSummary => {
                 const run = runs.find((r) => r.cwd === (session.cwd ?? project.path) && r.sessionId === session.id)
-                return { ...session, status: run?.waiting ? "waiting" : run?.busy ? "running" : run?.queued ? "queued" : undefined }
+                return { ...session, status: run?.waiting ? "waiting" : run?.busy ? "running" : run?.queued ? "queued" : undefined, ...(run?.waiting && run.waitingFor && { waitingFor: run.waitingFor }) }
               })
               for (const run of runs.filter((r) => r.cwd === project.path && r.sessionId)) {
                 if (!visible.some((s) => s.id === run.sessionId)) {
@@ -149,6 +149,7 @@ export function useSessionSync({
                     updatedAt: existing?.updatedAt ?? now,
                     createdAt: existing?.createdAt ?? now,
                     status: run.waiting ? "waiting" : run.busy ? "running" : run.queued ? "queued" : undefined,
+                    ...(run.waiting && run.waitingFor && { waitingFor: run.waitingFor }),
                   })
                 }
               }
@@ -157,7 +158,7 @@ export function useSessionSync({
                 prev.every((s, i) => {
                   const v = visible[i]!
                   // PR state refreshes from GitHub without touching the transcript, so updatedAt alone misses it.
-                  return s.id === v.id && s.title === v.title && s.updatedAt === v.updatedAt && s.status === v.status && s.cwd === v.cwd && s.summary === v.summary && s.error === v.error && s.pr?.state === v.pr?.state
+                  return s.id === v.id && s.title === v.title && s.updatedAt === v.updatedAt && s.status === v.status && s.cwd === v.cwd && s.summary === v.summary && s.error === v.error && s.pr?.state === v.pr?.state && s.waitingFor === v.waitingFor && s.resolvedAt === v.resolvedAt && s.remindAt === v.remindAt
                 })
               next[project.path] = sameList ? prev : visible
               if (!sameList) changed = true

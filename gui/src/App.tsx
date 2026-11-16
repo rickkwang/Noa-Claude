@@ -606,6 +606,23 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
   const projectCwd = worktreeOf ?? session.cwd
   const coordinatorId = sessionsByProject[projectCwd]?.find((item) => item.coordinator)?.id
   const inCoordinator = !!activeId && activeId === coordinatorId
+  // A thread opened from the project chat shows beside it.
+  const [threadPaneId, setThreadPaneId] = useState<string>()
+  const paneSession = inCoordinator && threadPaneId ? sessionsByProject[projectCwd]?.find((item) => item.id === threadPaneId) : undefined
+  const paneThread = paneSession && { id: paneSession.id, cwd: paneSession.cwd ?? projectCwd, title: paneSession.title }
+  // Leaving the project chat, switching to another project's, or the thread being deleted closes the pane.
+  const paneOpen = !!paneSession
+  useEffect(() => {
+    if (paneOpen) return
+    setThreadPaneId(undefined)
+    setRightTabs((tabs) => tabs.filter((tab) => tab !== "thread"))
+  }, [paneOpen])
+  const openThread = useEvent((id: string) => {
+    setThreadPaneId(id)
+    setRightOpen(true)
+    setRightNewTab(false)
+    setRightTab("thread")
+  })
   const activeThread = coordinatorId && !inCoordinator ? sessionsByProject[projectCwd]?.find((item) => item.id === activeId) : undefined
   // Keyed by the titles themselves, so a session list refresh that changes no title keeps the transcript's context stable.
   const threadTitlesKey = inCoordinator ? JSON.stringify((sessionsByProject[projectCwd] ?? []).map((item) => [item.id, item.title])) : ""
@@ -1011,7 +1028,10 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
             sideChat={{ key: sideChatKey, ready: sideChatReady, draftKey: session.runtimeId, request, focusKey: sideChatFocus }}
             onRemindThread={coordinatorId ? remindThread : undefined}
             onResolveThread={coordinatorId ? resolveThread : undefined}
-            onSelectSession={(id) => selectSession(sessionsByProject[worktreeOf ?? session.cwd]?.find((s) => s.id === id)?.cwd ?? worktreeOf ?? session.cwd, id)}
+            onSelectSession={(id) => inCoordinator ? openThread(id) : selectSession(sessionsByProject[worktreeOf ?? session.cwd]?.find((s) => s.id === id)?.cwd ?? worktreeOf ?? session.cwd, id)}
+            thread={paneThread}
+            onOpenThreadFull={() => paneThread && selectSession(paneThread.cwd, paneThread.id)}
+            onCloseThread={() => setThreadPaneId(undefined)}
           />
         </div>
       </div>
@@ -1109,6 +1129,7 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
               <MessageList
                 key={session.key}
                 threadTitles={threadTitles}
+                onOpenThread={inCoordinator ? openThread : undefined}
                 cwd={session.cwd}
                 sessionId={activeId}
                 historyBefore={state.historyBefore}
