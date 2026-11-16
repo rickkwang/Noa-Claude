@@ -744,7 +744,6 @@ function Workspace({ cwd }: { cwd: string }) {
         {
           "--noa-sidebar-width": `${sidebar.width}px`,
           "--noa-sidebar-material-width": `${sidebarWidth}px`,
-          "--noa-right-panel-width": `${rightWidth}px`,
         } as React.CSSProperties
       }
     >
