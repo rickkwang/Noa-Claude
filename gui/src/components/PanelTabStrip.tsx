@@ -123,7 +123,7 @@ export function PanelTabStrip({ tabs, activeKey, label, onSelect, onClose, onCon
   }
   return (
     <div className={`flex shrink-0 items-center gap-1.5 select-none ${className}`} style={style}>
-      <div className="@container flex h-full min-w-0 flex-1 items-center ps-2">
+      <div className="@container flex h-full min-w-0 flex-1 items-center ps-3">
         <div ref={listRef} role="tablist" aria-label={label} onKeyDown={onKeyDown} className="noa-edge-fade-x hide-scrollbar flex h-full min-w-0 flex-initial items-center overflow-x-auto">
           {tabs.map((tab, index) => {
             const selected = tab.key === activeKey

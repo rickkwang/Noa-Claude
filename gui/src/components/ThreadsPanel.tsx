@@ -199,7 +199,7 @@ export function ThreadsPanel({ sessions, activeId, onSelect, onRemind, onResolve
         if (!items.length) return null
         const open = !collapsed.has(id)
         return <section key={id} className="mb-4">
-          <button type="button" data-flip={`group:${id}`} aria-expanded={open} onClick={() => toggle(id)} className="mb-1.5 flex h-6 items-center gap-1 rounded-md px-2 text-chat-sm text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]">
+          <button type="button" data-flip={`group:${id}`} aria-expanded={open} onClick={() => toggle(id)} className="mb-1.5 flex h-6 items-center gap-1 rounded-md ps-[9px] pe-2 text-chat-sm text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]">
             {title} · {items.length}
             <ChevronDown size={14} className={open ? "" : "-rotate-90"} />
           </button>
