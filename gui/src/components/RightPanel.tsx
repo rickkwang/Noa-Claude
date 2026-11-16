@@ -93,8 +93,11 @@ export function RightPanel({ shortcuts = defaultShortcuts, state, onStopTask, cw
   const suggested = [...new Set([...browser.suggested, ...replyUrls])].filter(url => !browser.dismissed.has(url))
   const terminals = snapshotTerminals(cwd, "right")
   const activeTerminal = terminals.find((terminal) => terminal.id === terminalTabs(cwd, "right").active) ?? terminals[0]
-  // Strip order: tools, terminals, browser pages, then an open New tab.
-  const stripKeys = [...tabs, ...terminals.map((terminal) => TERMINAL_KEY + terminal.id), ...browser.tabs.map(page => BROWSER_KEY + page.id), ...(newTab ? ["new"] : [])]
+  // Strip order: tools, terminals, browser pages, then an open New tab, unless tabs were dragged into another order.
+  const [order, setOrder] = useState<string[]>([])
+  const naturalKeys = [...tabs, ...terminals.map((terminal) => TERMINAL_KEY + terminal.id), ...browser.tabs.map(page => BROWSER_KEY + page.id), ...(newTab ? ["new"] : [])]
+  const rank = (key: string) => { const index = order.indexOf(key); return index < 0 ? order.length + naturalKeys.indexOf(key) : index }
+  const stripKeys = [...naturalKeys].sort((a, b) => rank(a) - rank(b))
   const activeKey = tab === "terminal" ? (activeTerminal ? TERMINAL_KEY + activeTerminal.id : undefined) : tab === "browser" ? (activeBrowser ? BROWSER_KEY + activeBrowser.id : undefined) : tab
   const shownKey = activeKey && stripKeys.includes(activeKey) ? activeKey : stripKeys[0]
   // With no tabs at all the New tab page fills the panel, as an empty state.
@@ -232,6 +235,11 @@ export function RightPanel({ shortcuts = defaultShortcuts, state, onStopTask, cw
         onContextMenu={(key, event) => { if (key.startsWith(TERMINAL_KEY)) setTabMenu({ key, anchor: { left: event.clientX, top: event.clientY, bottom: event.clientY } }) }}
         onNew={() => { onNewTab(true); onTab("new") }}
         newLabel="New tab"
+        onReorder={(from, to) => {
+          const next = stripKeys.filter((key) => key !== from)
+          next.splice(stripKeys.indexOf(to), 0, from)
+          setOrder(next)
+        }}
       />
       {tabMenu && (
         <PopupMenu

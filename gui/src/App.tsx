@@ -1000,7 +1000,7 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
       >
         <div
           className="noa-edge-fade-left absolute inset-y-0 right-0 h-full transition-opacity duration-500 ease-in-out"
-          style={{ width: rightOpen ? "100%" : rightTarget, opacity: rightOpen ? 1 : 0 }}
+          style={{ width: rightTarget, opacity: rightOpen ? 1 : 0 }}
         >
           <RightPanel
             shortcuts={settings.shortcuts}

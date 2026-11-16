@@ -5,6 +5,7 @@ import {
   moveTerminal,
   openTerminal,
   restyleTerminals,
+  reorderTerminal,
   selectTerminal,
   snapshotTerminals,
   subscribeTerminals,
@@ -95,6 +96,7 @@ export function TerminalPanel({ cwd, open, height, available, styleKey, focusKey
           onContextMenu={(id, event) => setMenu({ id, anchor: { left: event.clientX, top: event.clientY, bottom: event.clientY } })}
           onNew={() => openTerminal(cwd)}
           newLabel="New terminal"
+          onReorder={(id, to) => reorderTerminal(cwd, id, to)}
           trailing={
             <button type="button" aria-label="Hide bottom panel" title="Hide bottom panel" onClick={onHide} className="noa-terminal-action flex size-7 shrink-0 items-center justify-center rounded-[10px]">
               <ChevronDown size={16} />

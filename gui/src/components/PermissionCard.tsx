@@ -314,19 +314,19 @@ function QuestionCard({ permission, onAnswer, draft, onDraftChange }: Permission
         if (Object.values(answers).some(answer => !answer)) return
         onAnswer(permission, true, false, { ...permission.input, answers })
       }}
-      className="noa-approval-card flex max-h-[50vh] shrink-0 flex-col overflow-auto rounded-2xl border border-[var(--border-default)]"
+      className="noa-approval-card flex max-h-[50vh] shrink-0 flex-col overflow-auto rounded-xl border border-[var(--border-default)]"
     >
-      {questions.length > 1 && <div className="flex items-center justify-between bg-[color-mix(in_srgb,var(--text-primary)_5%,transparent)] px-5 pt-3 text-caption text-[var(--text-secondary)]">
+      {questions.length > 1 && <div className="flex items-center justify-between px-5 pt-4 text-caption text-[var(--text-secondary)]">
         <span>Question {questionIndex + 1} of {questions.length}</span>
         <button type="button" aria-label="Previous question" disabled={questionIndex === 0} onClick={() => setQuestionIndex(index => index - 1)} className="disabled:opacity-40">Previous</button>
       </div>}
       {questions.slice(questionIndex, questionIndex + 1).map((q) => (
         <fieldset key={q.question} className="flex min-w-0 flex-col">
-          <legend className="float-left w-full bg-[color-mix(in_srgb,var(--text-primary)_5%,transparent)] px-5 py-4 text-body">{q.question}</legend>
+          <legend className="float-left w-full px-5 pb-2 pt-5 text-body font-medium leading-5">{q.question}</legend>
           {q.options.map((option) => (
             <label
               key={option.label}
-              className="flex cursor-pointer items-start gap-3 border-t border-[var(--border-light)] px-5 py-3 text-body"
+              className="flex cursor-pointer items-start gap-3 px-5 py-2.5 text-body leading-5 hover:bg-[var(--fill-hover)]"
             >
               <input
                 type={q.multiSelect ? "checkbox" : "radio"}
@@ -345,10 +345,10 @@ function QuestionCard({ permission, onAnswer, draft, onDraftChange }: Permission
                   }))
                 }}
               />
-              <span aria-hidden className={`mt-0.5 grid size-5 shrink-0 place-items-center rounded-full border border-[var(--border-default)] after:content-[''] peer-checked:border-[var(--accent-color)] peer-checked:bg-[var(--accent-color)] peer-checked:after:size-2 peer-checked:after:rounded-full peer-checked:after:bg-white peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[var(--accent-color)]`} />
+              <span aria-hidden className={`mt-0.5 grid size-4 shrink-0 place-items-center rounded-full border border-[var(--border-default)] after:content-[''] peer-checked:border-[var(--accent-color)] peer-checked:bg-[var(--accent-color)] peer-checked:after:size-1.5 peer-checked:after:rounded-full peer-checked:after:bg-white peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[var(--accent-color)]`} />
               <span>
                 {option.label}
-                <span className="block text-caption text-[var(--text-secondary)]">{option.description}</span>
+                <span className="mt-1 block text-caption leading-[18px] text-[var(--text-secondary)]">{option.description}</span>
               </span>
             </label>
           ))}
@@ -360,11 +360,11 @@ function QuestionCard({ permission, onAnswer, draft, onDraftChange }: Permission
               setCustom((prev) => ({ ...prev, [q.question]: e.target.value }))
               if (!q.multiSelect) setSelected((prev) => ({ ...prev, [q.question]: [] }))
             }}
-            className="mx-5 mb-3 mt-1 min-h-9 rounded-lg border border-[var(--border-default)] bg-transparent px-3 text-body outline-none focus:border-[var(--accent-color)]"
+            className="mx-5 mt-3 h-9 rounded-lg border border-[var(--border-default)] bg-transparent px-3 text-body outline-none focus:border-[var(--accent-color)]"
           />
         </fieldset>
       ))}
-      <div className="flex justify-end gap-2 border-t border-[var(--border-light)] px-5 py-3">
+      <div className="flex justify-end gap-2 px-5 pb-5 pt-4">
         <button type="button" onClick={() => onAnswer(permission, false, false)} className="noa-press h-8 rounded-lg bg-[color-mix(in_srgb,var(--text-primary)_6%,transparent)] px-3 text-body">
           Skip
         </button>

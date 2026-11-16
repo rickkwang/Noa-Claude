@@ -441,6 +441,16 @@ export function closeTerminal(cwd: string, id: string) {
   update(cwd, place(project(cwd), location, rest.ids, rest.active))
 }
 
+// A dragged tab takes the place of the tab it was dropped on.
+export function reorderTerminal(cwd: string, id: string, to: string) {
+  const location = terminalLocation(cwd, id)
+  if (!location) return
+  const tabs = terminalTabs(cwd, location)
+  const ids = tabs.ids.filter((tab) => tab !== id)
+  ids.splice(tabs.ids.indexOf(to), 0, id)
+  update(cwd, place(project(cwd), location, ids, tabs.active))
+}
+
 // The shell keeps running; only the panel that shows it changes.
 export function moveTerminal(cwd: string, id: string, to: TerminalLocation) {
   const from = terminalLocation(cwd, id)
