@@ -735,6 +735,9 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
     return true
   }
   const hasTurns = state.turns.length > 0
+  // A resumed session is never a new task; keep the conversation layout until history arrives.
+  const resumingEmpty = !!session.resume && !hasTurns
+  const isNewTask = !hasTurns && !resumingEmpty
   // Settled once sessions have loaded, so the mascot does not greet from an empty history.
   const sessionsLoaded = loadedProjects.size > 0
   const greeting = useMemo(() => {
@@ -952,13 +955,13 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
         className={`noa-content-surface ${moving ? "" : "transition-[left,border-radius,border-left-color] duration-500 ease-in-out"}`}
         style={{ left: sidebarWidth }}
       />
-      {/* One titlebar rule across both columns; above the right panel so it is not hidden behind it. */}
-      {!customizeOpen && (
+      {/* One titlebar rule across both columns; hidden over the new-task canvas. */}
+      {!customizeOpen && (!isNewTask || rightOpen) && (
         <div
           aria-hidden="true"
           data-titlebar-divider
           className={`pointer-events-none absolute z-40 h-[0.5px] bg-[var(--divider-subtle,#E6E2DA)] ${moving ? "" : "transition-[left] duration-500 ease-in-out"}`}
-          style={{ top: 43.5, left: sidebarWidth, right: 0 }}
+          style={{ top: 43.5, left: !isNewTask ? sidebarWidth : `calc(100% - ${rightWidth}px)`, right: 0 }}
         />
       )}
       {rightOpen && !customizeOpen && (
@@ -1123,7 +1126,7 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
             }}
             style={{ paddingRight: overviewDockInset, "--noa-overview-dock": `${overviewDockInset}px`, "--composer-overlay": `${footerHeight}px` } as React.CSSProperties}
           >
-            {!hasTurns && <DigitalWavesBackground theme={settings.appearance.theme} />}
+            {isNewTask && <DigitalWavesBackground theme={settings.appearance.theme} />}
             {draggingFiles && <FileDropOverlay />}
             {hasTurns ? (
               <MessageList
@@ -1163,6 +1166,8 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
                 onOpenTask={openTask}
                 transcriptView={transcriptView}
               />
+            ) : resumingEmpty ? (
+              <div className="flex-1" />
             ) : (
               <EmptyState
                 cwd={session.cwd}
@@ -1173,7 +1178,7 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
             )}
             {/* With a conversation the composer floats over the list:
                 messages scroll beneath it and a gradient fades them out above the card. */}
-            <div ref={footerRef} className={hasTurns ? "noa-conversation-footer" : "shrink-0 pb-2 pt-2"}>
+            <div ref={footerRef} className={!isNewTask ? "noa-conversation-footer" : "shrink-0 pb-2 pt-2"}>
               <div data-wave-obstacle="18" className="noa-conversation-column noa-composer-column flex flex-col gap-2" style={{ maxWidth: readingWidth }}>
                 {state.external && (
                   <p role="status" className="m-0 px-2 text-caption text-[var(--text-tertiary)]">
@@ -1273,7 +1278,7 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
                   onBranchChange={composerEvents.onBranchChange}
                   worktreeOf={worktreeOf}
                   onWorktree={composerEvents.onWorktree}
-                  newTask={!hasTurns}
+                  newTask={isNewTask}
                   contextUsage={settings.composer.showContextUsage ? state.contextUsage : undefined}
                   sendShortcut={settings.composer.sendShortcut}
                   followUpMode={settings.composer.followUpMode}
