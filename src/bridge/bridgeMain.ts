@@ -3,6 +3,7 @@ import { feature } from 'bun:bundle'
 import { randomUUID } from 'crypto'
 import { hostname, tmpdir } from 'os'
 import { basename, join, resolve } from 'path'
+import { PRODUCT_HELP_URL } from '../constants/links.js'
 import { getRemoteSessionUrl } from '../constants/product.js'
 import { checkGate_CACHED_OR_BLOCKING } from '../services/analytics/growthbook.js'
 import {
@@ -2241,7 +2242,7 @@ export async function bridgeMain(args: string[]): Promise<void> {
     })
     // biome-ignore lint/suspicious/noConsole: intentional dialog output
     console.log(
-      `\nNoa Remote Control is launching in spawn mode which lets you create new sessions in this project from Noa Claude on Web or your Mobile app. Learn more here: https://code.claude.com/docs/en/remote-control\n\n` +
+      `\nNoa Remote Control is launching in spawn mode which lets you create new sessions in this project from Noa Claude on Web or your Mobile app. Learn more here: ${PRODUCT_HELP_URL}\n\n` +
         `Spawn mode for this project:\n` +
         `  [1] same-dir \u2014 sessions share the current directory (default)\n` +
         `  [2] worktree \u2014 each session gets an isolated git worktree\n\n` +

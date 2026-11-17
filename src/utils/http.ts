@@ -12,6 +12,7 @@ import {
   isClaudeAISubscriber,
 } from './auth.js'
 import { getApiClientVersion } from '../constants/apiClientVersion.js'
+import { PRODUCT_URL } from '../constants/product.js'
 import { getClaudeCodeUserAgent } from './userAgent.js'
 import { getWorkload } from './workloadContext.js'
 
@@ -58,12 +59,10 @@ export function getMCPUserAgent(): string {
   return `claude-code/${MACRO.VERSION}${suffix}`
 }
 
-// User-Agent for WebFetch requests to arbitrary sites. `Claude-User` is
-// Anthropic's publicly documented agent for user-initiated fetches (what site
-// operators match in robots.txt); the claude-code suffix lets them distinguish
-// local CLI traffic from claude.ai server-side fetches.
+// User-Agent for WebFetch requests to arbitrary sites. Identifies Noa Claude
+// rather than Anthropic's server-side or Claude Code crawler.
 export function getWebFetchUserAgent(): string {
-  return `Claude-User (${getClaudeCodeUserAgent()}; +https://support.anthropic.com/)`
+  return `Noa-Claude/${MACRO.VERSION} (+${PRODUCT_URL})`
 }
 
 export type AuthHeaders = {

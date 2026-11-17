@@ -1484,11 +1484,16 @@ export function getErrorMessageIfRefusal(
 
   logEvent('tengu_refusal_api_response', {})
 
-  const baseMessage = getIsNonInteractiveSession()
-    ? `${API_ERROR_MESSAGE_PREFIX}: Noa Claude is unable to respond to this request, which appears to violate our Usage Policy (https://www.anthropic.com/legal/aup). Try rephrasing the request or attempting a different approach.`
-    : `${API_ERROR_MESSAGE_PREFIX}: Noa Claude is unable to respond to this request, which appears to violate our Usage Policy (https://www.anthropic.com/legal/aup). Please double press esc to edit your last message or start a new session for Noa Claude to assist with a different task.`
-
   const provider = getAPIProvider()
+  const isAnthropicDirect =
+    provider === 'firstParty' && isDirectFirstParty()
+  const policyClause = isAnthropicDirect
+    ? 'Noa Claude is unable to respond to this request, which appears to violate our Usage Policy (https://www.anthropic.com/legal/aup).'
+    : 'The model provider declined to respond to this request.'
+  const baseMessage = getIsNonInteractiveSession()
+    ? `${API_ERROR_MESSAGE_PREFIX}: ${policyClause} Try rephrasing the request or attempting a different approach.`
+    : `${API_ERROR_MESSAGE_PREFIX}: ${policyClause} Please double press esc to edit your last message or start a new session for Noa Claude to assist with a different task.`
+
   const canRecommendClaudeModel =
     provider !== 'openaiCompatible' &&
     (provider !== 'firstParty' ||
