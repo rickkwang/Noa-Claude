@@ -152,7 +152,7 @@ function ctx() {
   return {
     toolUseContext: {
       abortController: new AbortController(),
-      options: { mainLoopModel: 'test-model' },
+      options: { mainLoopModel: 'claude-haiku-5-5' },
       onCompactProgress: () => {},
     },
   } as never
@@ -213,8 +213,8 @@ describe('tryReactiveCompact end-to-end', () => {
     if (call.kind !== 'partial') return
     expect(call.direction).toBe('up_to')
     expect(call.pivot).toBeGreaterThan(0)
-    // The latest request is in the kept tail, not paraphrased by the summary.
-    expect(messages.slice(call.pivot).at(-1)).toBe(messages.at(-1))
+    // Keep the latest answer as well as the request that follows it.
+    expect(call.messages.slice(call.pivot)).toEqual(expect.arrayContaining(messages.slice(-2)))
     expect(call.opts.trigger).toBe('auto')
     expect(call.opts.suppressFollowUpQuestions).toBe(true)
     expect(call.opts.ownsLifecycle).toBe(false)

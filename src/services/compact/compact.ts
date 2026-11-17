@@ -1913,25 +1913,24 @@ export async function streamCompactSummary({
       // messages. Without this check, an aborted compact "succeeds" with
       // "Request was aborted." as the summary — the text doesn't start with
       // "API Error" so the caller's startsWithApiErrorPrefix guard misses it.
+      if (assistantMsg && !assistantMsg.isApiErrorMessage && assistantText?.startsWith(PROMPT_TOO_LONG_ERROR_MESSAGE)) {
+        return assistantMsg
+      }
       if (assistantMsg && assistantText && !assistantMsg.isApiErrorMessage) {
-        // Skip success logging for PTL error text — it's returned so the
-        // caller's retry loop catches it, but it's not a successful summary.
-        if (!assistantText.startsWith(PROMPT_TOO_LONG_ERROR_MESSAGE)) {
-          logEvent('tengu_compact_cache_sharing_success', {
-            preCompactTokenCount,
-            outputTokens: result.totalUsage.output_tokens,
-            cacheReadInputTokens: result.totalUsage.cache_read_input_tokens,
-            cacheCreationInputTokens:
-              result.totalUsage.cache_creation_input_tokens,
-            cacheHitRate:
-              result.totalUsage.cache_read_input_tokens > 0
-                ? result.totalUsage.cache_read_input_tokens /
-                  (result.totalUsage.cache_read_input_tokens +
-                    result.totalUsage.cache_creation_input_tokens +
-                    result.totalUsage.input_tokens)
-                : 0,
-          })
-        }
+        logEvent('tengu_compact_cache_sharing_success', {
+          preCompactTokenCount,
+          outputTokens: result.totalUsage.output_tokens,
+          cacheReadInputTokens: result.totalUsage.cache_read_input_tokens,
+          cacheCreationInputTokens:
+            result.totalUsage.cache_creation_input_tokens,
+          cacheHitRate:
+            result.totalUsage.cache_read_input_tokens > 0
+              ? result.totalUsage.cache_read_input_tokens /
+                (result.totalUsage.cache_read_input_tokens +
+                  result.totalUsage.cache_creation_input_tokens +
+                  result.totalUsage.input_tokens)
+              : 0,
+        })
         return assistantMsg
       }
       logForDebugging(

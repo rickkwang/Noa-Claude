@@ -78,7 +78,7 @@ ${getAnalysisInstruction('full')}
 Your summary should include:
 
 ${SHARED_SECTIONS}
-8. Current Work: What was being worked on immediately before this summary, with attention to the most recent messages.
+8. Current Work: What was being worked on immediately before this summary. Include the outcome, decisions, and unresolved work from the most recent assistant reply in the portion being summarized.
 9. Optional Next Step: The next step, only if it directly continues the most recent work and the user's latest explicit request. Do not resume tangential or already-completed work without confirming with the user first. When a next step exists, quote the relevant recent lines verbatim so the task is not reinterpreted.
 
 ${OUTPUT_FIDELITY_INSTRUCTION}

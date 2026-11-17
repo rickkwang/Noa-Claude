@@ -39,7 +39,7 @@ import {
 } from '../../utils/messages.js'
 import { streamCompactSummary } from './compact.js'
 import { estimateMessageTokens } from './microCompact.js'
-import { getPartialCompactPrompt } from './prompt.js'
+import { getPartialCompactPrompt, hasSummaryBlock } from './prompt.js'
 
 export function isPrecomputeEnabled(): boolean {
   const env = process.env.NOA_CLAUDE_PRECOMPUTE_COMPACT ?? process.env.CLAUDE_CODE_PRECOMPUTE_COMPACT
@@ -287,7 +287,7 @@ async function computeSummary(
 
   if (abort.signal.aborted) return null
   const text = getAssistantMessageText(response)
-  if (!text || (response as AssistantMessage).isApiErrorMessage) return null
+  if (!text || response.isApiErrorMessage || !hasSummaryBlock(text)) return null
   return text
 }
 
