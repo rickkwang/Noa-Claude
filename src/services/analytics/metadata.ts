@@ -588,12 +588,6 @@ const buildEnvContext = memoize(async (): Promise<EnvContext> => {
     ...(process.env.CLAUDE_CODE_REMOTE_ENVIRONMENT_TYPE && {
       remoteEnvironmentType: process.env.CLAUDE_CODE_REMOTE_ENVIRONMENT_TYPE,
     }),
-    // Gated by feature flag to prevent leaking "coworkerType" string in external builds
-    ...(feature('COWORKER_TYPE_TELEMETRY')
-      ? process.env.CLAUDE_CODE_COWORKER_TYPE
-        ? { coworkerType: process.env.CLAUDE_CODE_COWORKER_TYPE }
-        : {}
-      : {}),
     ...(process.env.CLAUDE_CODE_CONTAINER_ID && {
       claudeCodeContainerId: process.env.CLAUDE_CODE_CONTAINER_ID,
     }),
@@ -827,9 +821,6 @@ export function to1PEventFormat(
 
   if (envContext.remoteEnvironmentType) {
     env.remote_environment_type = envContext.remoteEnvironmentType
-  }
-  if (feature('COWORKER_TYPE_TELEMETRY') && envContext.coworkerType) {
-    env.coworker_type = envContext.coworkerType
   }
   if (envContext.claudeCodeContainerId) {
     env.claude_code_container_id = envContext.claudeCodeContainerId

@@ -61,7 +61,7 @@ import { runAgent } from './runAgent.js';
 import { renderGroupedAgentToolUse, renderToolResultMessage, renderToolUseErrorMessage, renderToolUseMessage, renderToolUseProgressMessage, renderToolUseRejectedMessage, renderToolUseTag, userFacingName, userFacingNameBackgroundColor } from './UI.js';
 
 /* eslint-disable @typescript-eslint/no-require-imports */
-const proactiveModule = feature('PROACTIVE') || feature('KAIROS') ? require('../../proactive/index.js') as typeof import('../../proactive/index.js') : null;
+const proactiveModule = feature('KAIROS') ? require('../../proactive/index.js') as typeof import('../../proactive/index.js') : null;
 const autoModeStateModule = feature('AUTO_MODE') ? require('../../utils/permissions/autoModeState.js') as typeof import('../../utils/permissions/autoModeState.js') : null;
 /* eslint-enable @typescript-eslint/no-require-imports */
 
