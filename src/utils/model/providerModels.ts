@@ -1,3 +1,17 @@
+import { createHash } from 'crypto'
+
+export function getOpenAIModelDiscoveryBaseUrl(): string {
+  return (process.env.OPENAI_BASE_URL?.trim() ||
+    process.env.OPENAI_API_BASE?.trim() || 'https://api.openai.com/v1').replace(/\/+$/, '')
+}
+
+export function getOpenAIModelDiscoveryScope(baseUrl: string): string {
+  const chatGPT = process.env.NOA_CLAUDE_OPENAI_AUTH === 'chatgpt'
+  return createHash('sha256')
+    .update(JSON.stringify([baseUrl, chatGPT, chatGPT ? process.env.CHATGPT_ACCOUNT_ID : undefined]))
+    .digest('hex')
+}
+
 /**
  * The model catalogue of the active provider profile, carried through the
  * environment like the rest of the profile's routing (see buildProviderEnv).

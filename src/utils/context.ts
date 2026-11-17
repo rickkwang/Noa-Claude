@@ -7,9 +7,13 @@ import { isEnvTruthy } from './envUtils.js'
 import { getCanonicalName } from './model/model.js'
 import { getModelCapability } from './model/modelCapabilities.js'
 import { hasNative1mContext } from './model/native1m.js'
+import modelContextWindows from './model/modelContextWindows.json'
+import { getAPIProvider } from './model/providers.js'
 import {
   getActiveProviderContextWindow,
   getActiveProviderMaxOutputTokens,
+  getOpenAIModelDiscoveryBaseUrl,
+  getOpenAIModelDiscoveryScope,
 } from './model/providerModels.js'
 
 export const MODEL_CONTEXT_WINDOW_DEFAULT = 200_000
@@ -94,8 +98,11 @@ function resolveContextWindowForModel(
   model: string,
   betas?: string[],
 ): number {
-  // [1m] suffix — explicit client-side opt-in, respected over all detection
-  if (has1mContext(model)) {
+  const openAICompatible = getAPIProvider() === 'openaiCompatible'
+  const chatGPT = openAICompatible && process.env.NOA_CLAUDE_OPENAI_AUTH === 'chatgpt'
+  const wants1m = has1mContext(model)
+  // The ChatGPT suffix requests a larger window, not an override of the server ceiling.
+  if (wants1m && !chatGPT) {
     return 1_000_000
   }
 
@@ -104,7 +111,40 @@ function resolveContextWindowForModel(
   // can see a third-party id: it matches no capability entry and carries no
   // [1m], so it would otherwise resolve to the conservative default however
   // much the endpoint really serves.
-  const providerWindow = getActiveProviderContextWindow(model)
+  let providerWindow = getActiveProviderContextWindow(model)
+  if (providerWindow === undefined && openAICompatible) {
+    const baseUrl = getOpenAIModelDiscoveryBaseUrl()
+    const cache = getGlobalConfig().openAIContextWindowsCache
+    const id = (chatGPT ? model.replace(/\[1m\]$/i, '') : model).trim().toLowerCase()
+    if (cache?.scope === getOpenAIModelDiscoveryScope(baseUrl)) {
+      const window = cache.windows?.[id]
+      if (Number.isSafeInteger(window) && window > 0) providerWindow = window
+      if (chatGPT) {
+        const maximum = cache.maximums?.[id]
+        if (Number.isSafeInteger(maximum) && maximum > 0) {
+          const target = wants1m ? 1_000_000 : Number(process.env.NOA_CLAUDE_CHATGPT_CONTEXT_WINDOW)
+          providerWindow = Number.isSafeInteger(target) && target > 0
+            ? Math.min(target, maximum)
+            : maximum
+        }
+      }
+    }
+    if (providerWindow === undefined) {
+      if (baseUrl === 'https://api.openai.com' || baseUrl === 'https://api.openai.com/v1') {
+        // The public API catalog does not describe ChatGPT plan limits. The
+        // ChatGPT backend serves a 500K default but advertises 872K as the
+        // ceiling for Sol models; use the ceiling when discovery is missing.
+        if (chatGPT) {
+          if (id === 'gpt-6.2-sol' || id === 'gpt-6.1-sol') providerWindow = 872_000
+        } else if (Object.hasOwn(modelContextWindows.openai, id)) {
+          providerWindow = modelContextWindows.openai[id]
+        }
+      } else if (baseUrl === 'https://openrouter.ai/api/v1' &&
+                 Object.hasOwn(modelContextWindows.openrouter, id)) {
+        providerWindow = modelContextWindows.openrouter[id]
+      }
+    }
+  }
   if (providerWindow !== undefined) {
     if (providerWindow > MODEL_CONTEXT_WINDOW_DEFAULT && is1mContextDisabled()) {
       return MODEL_CONTEXT_WINDOW_DEFAULT

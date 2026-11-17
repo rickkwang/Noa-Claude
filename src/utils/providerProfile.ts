@@ -179,12 +179,6 @@ export const PROVIDER_TYPE_CONTEXT_WINDOWS: Partial<
     'glm-5.3': 1_000_000,
     'glm-5.3-flash': 1_000_000,
   },
-  // Exception to "documented only": the API model serves 1.05M, but the window
-  // for plan usage is undocumented (Codex has served 272K and 500K). 272K, the
-  // long-context pricing threshold, under-reports, which only compacts early.
-  chatgpt: {
-    'gpt-6.1-sol': 272_000,
-  },
 }
 
 /**

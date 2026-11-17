@@ -13,7 +13,7 @@ import { logForDebugging } from '../../utils/debug.js'
 import { withOAuth401Retry } from '../../utils/http.js'
 import { lazySchema } from '../../utils/lazySchema.js'
 import { logError } from '../../utils/log.js'
-import { discoverOpenAICompatibleModelOptions } from '../../utils/model/openaiModelDiscovery.js'
+import { discoverOpenAICompatibleCatalog } from '../../utils/model/openaiModelDiscovery.js'
 import { DISCOVERED_MODEL_DESCRIPTION } from '../../utils/model/modelOptions.js'
 import { getAPIProvider, isFirstPartyAnthropicBaseUrl } from '../../utils/model/providers.js'
 import { isEssentialTrafficOnly } from '../../utils/privacyLevel.js'
@@ -128,13 +128,13 @@ export async function fetchBootstrapData(): Promise<void> {
     const response = await fetchBootstrapAPI()
     const clientData = response?.client_data ?? null
     let additionalModelOptions = response?.additional_model_options ?? []
-    const discoveredOpenAIModels =
-      await discoverOpenAICompatibleModelOptions().catch(error => {
+    const { options: discoveredOpenAIModels, contextWindows } =
+      await discoverOpenAICompatibleCatalog().catch(error => {
         const message = error instanceof Error ? error.message : String(error)
         logForDebugging(
           `[Bootstrap] OpenAI-compatible model discovery failed: ${message}`,
         )
-        return []
+        return { options: [], contextWindows: undefined }
       })
     additionalModelOptions = mergeModelOptions(
       additionalModelOptions,
@@ -155,7 +155,8 @@ export async function fetchBootstrapData(): Promise<void> {
     const config = getGlobalConfig()
     if (
       isEqual(config.clientDataCache, clientData) &&
-      isEqual(config.additionalModelOptionsCache, additionalModelOptions)
+      isEqual(config.additionalModelOptionsCache, additionalModelOptions) &&
+      (!contextWindows || isEqual(config.openAIContextWindowsCache, contextWindows))
     ) {
       logForDebugging('[Bootstrap] Cache unchanged, skipping write')
       return
@@ -166,6 +167,7 @@ export async function fetchBootstrapData(): Promise<void> {
       ...current,
       clientDataCache: clientData,
       additionalModelOptionsCache: additionalModelOptions,
+      openAIContextWindowsCache: contextWindows ?? current.openAIContextWindowsCache,
     }))
   } catch (error) {
     logError(error)

@@ -1,6 +1,7 @@
 import axios from 'axios'
 import { logForDebugging } from '../debug.js'
 import { DISCOVERED_MODEL_DESCRIPTION, type ModelOption } from './modelOptions.js'
+import { getOpenAIModelDiscoveryBaseUrl, getOpenAIModelDiscoveryScope } from './providerModels.js'
 import { getAPIProvider } from './providers.js'
 import type { ProviderType } from '../providerProfile.js'
 
@@ -9,11 +10,15 @@ const DISCOVERY_TIMEOUT_MS = 5000
 type OpenAIModelsResponse = {
   data?: Array<{
     id?: string | null
+    context_length?: number
+    max_input_tokens?: number
   }>
   // Sign in with ChatGPT lists the account's models here instead.
   models?: Array<{
     slug?: string | null
     visibility?: string | null
+    context_window?: number
+    max_context_window?: number
   }>
 }
 
@@ -45,13 +50,6 @@ function isNonEmptyString(value: string | null | undefined): value is string {
 
 function normalizeBaseUrl(value: string): string {
   return value.replace(/\/+$/, '')
-}
-
-function getNormalizedOpenAIBaseUrl(): string {
-  return normalizeBaseUrl(
-    readTrimmedEnv('OPENAI_BASE_URL', 'OPENAI_API_BASE') ??
-      'https://api.openai.com/v1',
-  )
 }
 
 function isAzureOpenAIBaseUrl(baseUrl: string): boolean {
@@ -176,10 +174,15 @@ function normalizeKimiCodeModelName(modelName: string): string {
   return compact === 'kimi-for-coding' ? compact : modelName
 }
 
+type ContextWindows = {
+  windows: Record<string, number>
+  maximums?: Record<string, number>
+}
+
 async function fetchOpenAIModels(
   urls: string[],
   headers: Record<string, string>,
-): Promise<string[]> {
+): Promise<{ names: string[] } & ContextWindows> {
   for (const url of urls) {
     try {
       const response = await axios.get<OpenAIModelsResponse>(url, {
@@ -194,7 +197,34 @@ async function fetchOpenAIModels(
             .map(model => model.slug ?? ''),
         ].filter(isNonEmptyString),
       )
-      if (modelNames.length > 0) return modelNames
+      if (modelNames.length === 0) continue
+      const windows: Array<[string, number]> = []
+      for (const model of response.data?.data ?? []) {
+        const limits = [model.context_length, model.max_input_tokens].filter(
+          (value): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value > 0,
+        )
+        if (isNonEmptyString(model.id) && limits.length > 0) {
+          windows.push([model.id.trim().toLowerCase(), Math.min(...limits)])
+        }
+      }
+      const maximums: Array<[string, number]> = []
+      for (const model of response.data?.models ?? []) {
+        if (model.visibility !== 'list' || !isNonEmptyString(model.slug)) continue
+        const id = model.slug.trim().toLowerCase()
+        const maximum = model.max_context_window
+        if (typeof maximum === 'number' && Number.isSafeInteger(maximum) && maximum > 0) {
+          maximums.push([id, maximum])
+        }
+        const window = model.context_window
+        if (typeof window === 'number' && Number.isSafeInteger(window) && window > 0) {
+          windows.push([id, window])
+        }
+      }
+      return {
+        names: modelNames,
+        windows: Object.fromEntries(windows),
+        maximums: maximums.length > 0 ? Object.fromEntries(maximums) : undefined,
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       logForDebugging(
@@ -202,7 +232,7 @@ async function fetchOpenAIModels(
       )
     }
   }
-  return []
+  return { names: [], windows: {} }
 }
 
 async function fetchAnthropicCompatibleModels(
@@ -254,19 +284,21 @@ async function fetchOllamaModels(
   }
 }
 
-export async function discoverOpenAICompatibleModelOptions(): Promise<
-  ModelOption[]
+export async function discoverOpenAICompatibleCatalog(): Promise<
+  { options: ModelOption[]; contextWindows?: { scope: string } & ContextWindows }
 > {
   if (getAPIProvider() !== 'openaiCompatible') {
-    return []
+    return { options: [] }
   }
 
-  const baseUrl = getNormalizedOpenAIBaseUrl()
+  const baseUrl = getOpenAIModelDiscoveryBaseUrl()
+  const scope = getOpenAIModelDiscoveryScope(baseUrl)
   const headers =
     process.env.NOA_CLAUDE_OPENAI_AUTH === 'chatgpt'
       ? await getChatGPTAuthHeaders()
       : getOpenAIAuthHeaders(baseUrl)
-  let names = await fetchOpenAIModels(getModelListUrls(baseUrl), headers)
+  const catalog = await fetchOpenAIModels(getModelListUrls(baseUrl), headers)
+  let names = catalog.names
   if (names.length === 0) {
     const ollamaTagsUrl = getOllamaTagsUrl(baseUrl)
     if (ollamaTagsUrl) {
@@ -274,11 +306,16 @@ export async function discoverOpenAICompatibleModelOptions(): Promise<
     }
   }
 
-  return names.map(name => ({
-    value: name,
-    label: name,
-    description: DISCOVERED_MODEL_DESCRIPTION,
-  }))
+  return {
+    options: names.map(name => ({
+      value: name,
+      label: name,
+      description: DISCOVERED_MODEL_DESCRIPTION,
+    })),
+    contextWindows: Object.keys(catalog.windows).length > 0 || catalog.maximums
+      ? { scope, windows: catalog.windows, maximums: catalog.maximums }
+      : undefined,
+  }
 }
 
 export async function discoverProviderModelNames({
@@ -311,10 +348,10 @@ export async function discoverProviderModelNames({
       return tagsUrl ? fetchOllamaModels(tagsUrl, {}) : []
     }
     case 'chatgpt':
-      return fetchOpenAIModels(
+      return (await fetchOpenAIModels(
         getModelListUrls(normalizedBaseUrl),
         await getChatGPTAuthHeaders(),
-      )
+      )).names
     case 'openai':
     case 'gemini':
     case 'github':
@@ -333,7 +370,7 @@ export async function discoverProviderModelNames({
         type === 'gemini' && apiKey
           ? { 'x-goog-api-key': apiKey }
           : getOpenAIAuthHeaders(normalizedBaseUrl, apiKey)
-      let names = await fetchOpenAIModels(
+      let { names } = await fetchOpenAIModels(
         getModelListUrls(normalizedBaseUrl),
         headers,
       )

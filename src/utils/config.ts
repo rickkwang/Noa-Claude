@@ -594,6 +594,11 @@ export type GlobalConfig = {
 
   // Additional model options for the model picker (fetched during bootstrap).
   additionalModelOptionsCache?: ModelOption[]
+  openAIContextWindowsCache?: {
+    scope: string
+    windows: Record<string, number>
+    maximums?: Record<string, number>
+  }
 
   // Version of the last-applied migration set. When equal to
   // CURRENT_MIGRATION_VERSION, runMigrations() skips all sync migrations
