@@ -303,7 +303,7 @@ export function StatsPanel() {
 
   return (
     <section className="flex w-full max-w-[560px] flex-col items-center text-left" aria-label="Usage stats">
-      <button type="button" data-wave-obstacle="14" onClick={toggle} aria-expanded={open} className="noa-stats-toggle flex items-center gap-1.5 rounded-full px-3 py-1 text-[length:var(--text-caption)] text-[var(--text-tertiary)]">
+      <button type="button" data-wave-obstacle="14" onClick={toggle} aria-expanded={open} className="noa-stats-toggle flex items-center gap-1.5 rounded-lg px-3 py-1 text-[length:var(--text-caption)] text-[var(--text-tertiary)]">
         <span className={stats ? "" : "opacity-0"}>
           <span className="text-[var(--text-secondary)]">{stats?.allTimeMessages ?? "0"}</span> messages
           <span className="mx-1.5 opacity-60">·</span>
