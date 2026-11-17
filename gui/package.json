@@ -63,6 +63,7 @@
     },
     "files": [
       "electron/**/*",
+      "!electron/icon.icns",
       "package.json"
     ],
     "extraResources": [

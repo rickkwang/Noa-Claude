@@ -56,8 +56,9 @@ const install = spawnSync(bunPath(), ["install", "--production", "--frozen-lockf
 if (install.status !== 0) fail("production install of the repo runtime failed")
 
 // Packages dist/main.js imports at run time instead of bundling: the build's externals (native
-// modules). ws and node-fetch are built into Bun. Everything else in node_modules is removed.
-const RUNTIME_PACKAGES = ["sharp", "audio-capture-napi", "modifiers-napi", "url-handler-napi"]
+// modules). ws and node-fetch are built into Bun, and sharp falls back to macOS `sips` in
+// imageProcessor.ts. Everything else in node_modules is removed.
+const RUNTIME_PACKAGES = ["audio-capture-napi", "modifiers-napi", "url-handler-napi"]
 // The bundle replaces sandbox-runtime with a stub and only reads its package.json for the version
 // that diagnostics report, so keep that one file.
 const SANDBOX_MANIFEST = join(runtimeRepo, "node_modules", "@anthropic-ai", "sandbox-runtime", "package.json")
@@ -102,15 +103,18 @@ writeFileSync(SANDBOX_MANIFEST, sandboxManifest)
 const runtimeGui = join(runtimeRepo, "gui")
 mkdirSync(runtimeGui, { recursive: true })
 async function bundle(options) {
-  const result = await Bun.build({ target: "bun", format: "esm", loader: { ".md": "text" }, ...options })
+  const result = await Bun.build({ target: "bun", format: "esm", minify: true, loader: { ".md": "text" }, ...options })
   if (!result.success) fail(`bundling failed:\n${result.logs.map(String).join("\n")}`)
 }
-await bundle({ entrypoints: [join(gui, "server", "main.ts")], outdir: join(runtimeGui, "server") })
-// The bridge loads stats and transcript recovery by path at run time, so keep their bundled modules.
+// Bridge + dynamically loaded CLI utils: bundle together with code splitting so shared CLI
+// dependencies are emitted once as shared chunks instead of duplicated across server and utils.
 await bundle({
-  entrypoints: ["stats.ts", "format.ts", "model/model.ts", "sessionStorage.ts"].map((file) => join(repo, "src", "utils", file)),
-  root: join(repo, "src", "utils"),
-  outdir: join(runtimeRepo, "src", "utils"),
+  entrypoints: [
+    join(gui, "server", "main.ts"),
+    ...["stats.ts", "format.ts", "model/model.ts", "sessionStorage.ts"].map((file) => join(repo, "src", "utils", file)),
+  ],
+  root: repo,
+  outdir: runtimeRepo,
   splitting: true,
 })
 copyFiltered(join(gui, "dist"), join(runtimeGui, "dist"))
