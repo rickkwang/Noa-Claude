@@ -23,8 +23,6 @@ import { sleep } from '../sleep.js'
 import { jsonStringify, writeFileSync_DEPRECATED } from '../slowOperations.js'
 import { getBinaryName, getPlatform } from './installer.js'
 
-const GCS_BUCKET_URL =
-  'https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases'
 export const ARTIFACTORY_REGISTRY_URL =
   'https://artifactory.infra.ant.dev/artifactory/api/npm/npm-all/'
 
@@ -145,8 +143,9 @@ export async function getLatestVersion(
     return getLatestVersionFromArtifactory(npmTag)
   }
 
-  // Use GCS for external users
-  return getLatestVersionFromBinaryRepo(channel, GCS_BUCKET_URL)
+  throw new Error(
+    'Native binary releases are not hosted on Anthropic GCS for Noa Claude; update via install.sh or your package manager.',
+  )
 }
 
 export async function downloadVersionFromArtifactory(
@@ -509,9 +508,9 @@ export async function downloadVersion(
     return 'npm'
   }
 
-  // Use GCS for external users
-  await downloadVersionFromBinaryRepo(version, stagingPath, GCS_BUCKET_URL)
-  return 'binary'
+  throw new Error(
+    'Native binary releases are not hosted on Anthropic GCS for Noa Claude; update via install.sh or your package manager.',
+  )
 }
 
 // Exported for testing

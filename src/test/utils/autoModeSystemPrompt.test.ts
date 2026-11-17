@@ -91,6 +91,11 @@ describe('buildDefaultExternalSystemPrompt (upstream dVp)', () => {
     expect(prompt).toContain('- Data Exfiltration:')
     expect(prompt).toContain('- **Organization**: None configured')
   })
+
+  test('includes Noa local config and transcript paths', () => {
+    expect(prompt).toContain('.noa/settings*.json')
+    expect(prompt).toContain('~/.noa/projects/')
+  })
 })
 
 describe('mergeWithDefaults (upstream x$r)', () => {

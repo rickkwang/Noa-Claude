@@ -1,5 +1,4 @@
 // @ts-nocheck
-import axios from 'axios'
 import { constants as fsConstants } from 'fs'
 import { access, writeFile } from 'fs/promises'
 import { homedir } from 'os'
@@ -30,9 +29,6 @@ import {
   writeFileLines,
 } from './shellConfig.js'
 import { jsonParse } from './slowOperations.js'
-
-const GCS_BUCKET_URL =
-  'https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases'
 
 class AutoUpdaterError extends ClaudeError {}
 
@@ -389,28 +385,17 @@ export async function getNpmDistTags(): Promise<NpmDistTags> {
 }
 
 /**
- * Get the latest version from GCS bucket for a given release channel.
- * This is used by installations that don't have npm (e.g. package manager installs).
+ * Official Anthropic GCS release buckets are not used by Noa Claude.
+ * Keep this function returning null so non-curl installs do not poll
+ * upstream Claude Code release pointers.
  */
 export async function getLatestVersionFromGcs(
-  channel: ReleaseChannel,
+  _channel: ReleaseChannel,
 ): Promise<string | null> {
-  if (usesCurlInstallerBuild()) {
-    logForDebugging(
-      'Skipping GCS version lookup: native/package-manager release channel is not configured for Noa Claude',
-    )
-    return null
-  }
-  try {
-    const response = await axios.get(`${GCS_BUCKET_URL}/${channel}`, {
-      timeout: 5000,
-      responseType: 'text',
-    })
-    return response.data.trim()
-  } catch (error) {
-    logForDebugging(`Failed to fetch ${channel} from GCS: ${error}`)
-    return null
-  }
+  logForDebugging(
+    'Skipping GCS version lookup: Noa Claude does not use Anthropic GCS release buckets',
+  )
+  return null
 }
 
 /**

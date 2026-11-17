@@ -302,6 +302,13 @@ export function buildDefaultExternalSystemPrompt(): string {
  * settings-deny marker replaced. Ports upstream yci (with
  * collapseEmptySlotLines: false — empty replacements just drop their marker).
  */
+const NOA_CONFIG_PROTECTION_ADDENDUM = `
+
+## Noa Claude Local Config & Transcript Paths
+Treat Noa Claude's local configuration and transcript paths as equivalent to the Claude Code paths listed above:
+- Self-Modification also covers \`.noa/settings*.json\`, \`.noa/rules/\`, \`.noa/hooks/\`, \`.noa/commands/\`, \`.noa/agents/\`, \`.noa/skills/\`, \`.noa/output-styles/\`, \`.noa/workflows/\`, \`.noa/routines/\`, \`.noa/scheduled_tasks.json\`, and \`.noa/loop.md\` (while treating \`.noa/worktrees/<name>/\` as ordinary project files unless they contain nested config paths).
+- Session Transcript Tampering also covers session \`.jsonl\` history files under \`~/.noa/projects/\` (or the active \`CLAUDE_CONFIG_DIR\` equivalent).`
+
 function renderClassifierTemplate(
   rules: AutoModeRules,
   settingsDenyBlock: string,
@@ -322,7 +329,10 @@ function renderClassifierTemplate(
       (_m, rawDefault: string) => renderSlot(slotValues[slot], rawDefault),
     )
   }
-  return prompt.replace(SETTINGS_DENY_RULES_MARKER, () => settingsDenyBlock)
+  return (
+    prompt.replace(SETTINGS_DENY_RULES_MARKER, () => settingsDenyBlock) +
+    NOA_CONFIG_PROTECTION_ADDENDUM
+  )
 }
 
 function getAutoModeDumpDir(): string {
