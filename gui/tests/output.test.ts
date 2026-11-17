@@ -289,10 +289,10 @@ test("edit approval defaults to the Codex file summary instead of expanded repla
 test("edit diffs keep unchanged lines as context and shell output has no running placeholder", () => {
   const edit = { ...bash, id: "e", name: "Edit", status: "done" as const, input: { file_path: "a.ts", old_string: "one\ntwo\nthree", new_string: "one\nTWO\nthree" } }
   const html = render(createElement(ToolCard, { block: edit, defaultOpen: true }))
-  expect(html.match(/>one</g)?.length ?? 0).toBe(0)
-  expect((html.match(/ one</g) ?? []).length).toBe(1)
-  expect(html).toContain("-two")
-  expect(html).toContain("+TWO")
+  expect(html.match(/>one</g)?.length ?? 0).toBe(1)
+  expect(html.match(/>three</g)?.length ?? 0).toBe(1)
+  expect(html).toContain(">−</span><span class=\"min-w-0 flex-1\">two<")
+  expect(html).toContain(">+</span><span class=\"min-w-0 flex-1\">TWO<")
   expect(render(createElement(ToolCard, { block: bash, defaultOpen: true }))).not.toContain("Waiting for output")
   expect(render(createElement(ToolCard, { block: { ...bash, status: "error" as const }, defaultOpen: true }))).toContain("Exit code unknown")
 })
