@@ -240,20 +240,6 @@ export async function probeSeedCacheAnyVersion(
 }
 
 /**
- * Get legacy (non-versioned) cache path for a plugin.
- * Format: ~/.noa/plugins/cache/{plugin-name}/
- *
- * Used for backward compatibility with existing installations.
- *
- * @param pluginName - Plugin name (without marketplace suffix)
- * @returns Absolute path to legacy plugin directory
- */
-export function getLegacyCachePath(pluginName: string): string {
-  const cachePath = getPluginCachePath()
-  return join(cachePath, pluginName.replace(/[^a-zA-Z0-9\-_]/g, '-'))
-}
-
-/**
  * Recursively copy a directory.
  * Exported for testing purposes.
  */

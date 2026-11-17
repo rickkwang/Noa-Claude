@@ -23,18 +23,12 @@
  * 5. Open in ui.perfetto.dev to visualize
  */
 
-import { feature } from 'bun:bundle'
 import { mkdirSync, writeFileSync } from 'fs'
 import { mkdir, writeFile } from 'fs/promises'
 import { dirname, join } from 'path'
 import { getSessionId } from '../../bootstrap/state.js'
-import { registerCleanup } from '../cleanupRegistry.js'
 import { logForDebugging } from '../debug.js'
-import {
-  getClaudeConfigHomeDir,
-  isEnvDefinedFalsy,
-  isEnvTruthy,
-} from '../envUtils.js'
+import { getClaudeConfigHomeDir } from '../envUtils.js'
 import { errorMessage } from '../errors.js'
 import { djb2Hash } from '../hash.js'
 import { jsonStringify } from '../slowOperations.js'
@@ -256,83 +250,6 @@ export function initializePerfettoTracing(): void {
   logForDebugging(
     `[Perfetto] initializePerfettoTracing called, env value: ${envValue}`,
   )
-
-  // Wrap in feature() for dead code elimination - entire block removed from external builds
-  if (feature('PERFETTO_TRACING')) {
-    if (!envValue || isEnvDefinedFalsy(envValue)) {
-      logForDebugging(
-        '[Perfetto] Tracing disabled (env var not set or disabled)',
-      )
-      return
-    }
-
-    isEnabled = true
-    startTimeMs = Date.now()
-
-    // Determine trace file path
-    if (isEnvTruthy(envValue)) {
-      const tracesDir = join(getClaudeConfigHomeDir(), 'traces')
-      tracePath = join(tracesDir, `trace-${getSessionId()}.json`)
-    } else {
-      // Use the provided path
-      tracePath = envValue
-    }
-
-    logForDebugging(
-      `[Perfetto] Tracing enabled, will write to: ${tracePath}, isEnabled=${isEnabled}`,
-    )
-
-    // Start periodic full-trace write if CLAUDE_CODE_PERFETTO_WRITE_INTERVAL_S is a positive integer
-    const intervalSec = parseInt(
-      process.env.CLAUDE_CODE_PERFETTO_WRITE_INTERVAL_S ?? '',
-      10,
-    )
-    if (intervalSec > 0) {
-      writeIntervalId = setInterval(() => {
-        void periodicWrite()
-      }, intervalSec * 1000)
-      // Don't let the interval keep the process alive on its own
-      if (writeIntervalId.unref) writeIntervalId.unref()
-      logForDebugging(
-        `[Perfetto] Periodic write enabled, interval: ${intervalSec}s`,
-      )
-    }
-
-    // Start stale span cleanup interval
-    staleSpanCleanupId = setInterval(() => {
-      evictStaleSpans()
-      evictOldestEvents()
-    }, STALE_SPAN_CLEANUP_INTERVAL_MS)
-    if (staleSpanCleanupId.unref) staleSpanCleanupId.unref()
-
-    // Register cleanup to write final trace on exit
-    registerCleanup(async () => {
-      logForDebugging('[Perfetto] Cleanup callback invoked')
-      await writePerfettoTrace()
-    })
-
-    // Also register a beforeExit handler as a fallback
-    // This ensures the trace is written even if cleanup registry is not called
-    process.on('beforeExit', () => {
-      logForDebugging('[Perfetto] beforeExit handler invoked')
-      void writePerfettoTrace()
-    })
-
-    // Register a synchronous exit handler as a last resort
-    // This is the final fallback to ensure trace is written before process exits
-    process.on('exit', () => {
-      if (!traceWritten) {
-        logForDebugging(
-          '[Perfetto] exit handler invoked, writing trace synchronously',
-        )
-        writePerfettoTraceSync()
-      }
-    })
-
-    // Emit process metadata events for main process
-    const mainAgent = getCurrentAgentInfo()
-    emitProcessMetadata(mainAgent)
-  }
 }
 
 /**
