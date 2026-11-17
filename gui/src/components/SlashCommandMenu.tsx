@@ -1,12 +1,12 @@
 import { useEffect, useRef, type KeyboardEvent } from "react"
 import type { ComposerCommand } from "../agent/commands"
 import { Check, ChevronRight } from "../lib/icons"
-import type { CodexIconName } from "../lib/codexIcons"
-import { CodexIcon } from "./CodexIcon"
+import type { VectorIconName } from "../lib/vectorIcons"
+import { VectorIcon } from "./VectorIcon"
 
 function CommandIcon({ command, size = 16 }: { command: ComposerCommand; size?: number }) {
   const name = command.name.toLowerCase()
-  const icon: CodexIconName =
+  const icon: VectorIconName =
     command.action === "new" ? "plus-circle"
       : command.action === "resume" ? "history"
         : command.action === "model" ? "sparkles"
@@ -26,7 +26,7 @@ function CommandIcon({ command, size = 16 }: { command: ComposerCommand; size?: 
                                     : name.includes("agent") ? "person-group"
                                       : command.group === "Skills" ? "sparkle-fill" : "text-page"
   return (
-    <CodexIcon
+    <VectorIcon
       name={icon}
       size={size}
       className={
@@ -69,7 +69,7 @@ export function SlashCommandMenu({
     <div data-state={closing ? "closing" : "open"} className="noa-slash-menu noa-floating-panel absolute bottom-full left-0 right-0 z-30 mb-2 overflow-hidden rounded-panel bg-[var(--bg-card)]">
       {title && onQuery ? (
         <div className="flex h-9 items-center gap-2 px-3 text-[var(--sidebar-text-muted)]">
-          <CodexIcon name="search" size={15} className="shrink-0" />
+          <VectorIcon name="search" size={15} className="shrink-0" />
           <input
             autoFocus
             role="combobox"

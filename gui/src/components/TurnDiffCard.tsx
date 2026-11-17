@@ -3,7 +3,7 @@ import { formatPatch, parsePatch } from "diff"
 import type { TurnDiff, TurnDiffActionResult, TurnDiffFile } from "../agent/protocol"
 import { ChevronDown, ChevronRight, ChevronUp, RotateCcw, X } from "../lib/icons"
 import { useConfirm } from "./ConfirmDialog"
-import { CodexIcon } from "./CodexIcon"
+import { VectorIcon } from "./VectorIcon"
 import CodeView from "./CodeView"
 import { OutputContext } from "./Markdown"
 
@@ -134,7 +134,7 @@ export function TurnDiffCard({ diff, onOpen, onAction, pending }: {
             title={action === "undo" ? "Undo" : "Reapply"}
           >
             {action === "reapply" ? "Reapply" : "Undo"}
-            {pending ? <RotateCcw size={12} aria-hidden="true" className="animate-spin" /> : <CodexIcon name={action} size={12} />}
+            {pending ? <RotateCcw size={12} aria-hidden="true" className="animate-spin" /> : <VectorIcon name={action} size={12} />}
           </button>
         )}
         <button type="button" className="noa-turn-diff-view" onClick={() => onOpen(single ? diff.files[0]!.path : undefined)}>View changes</button>
@@ -201,7 +201,7 @@ export function LiveDiffSummary({ diff, onOpen }: { diff: TurnDiff; onOpen: () =
       onClick={onOpen}
       aria-label={`${count} ${count === 1 ? "file" : "files"} changed. View changes`}
     >
-      <CodexIcon name="square-plus-minus" size={14} className="shrink-0" />
+      <VectorIcon name="square-plus-minus" size={14} className="shrink-0" />
       <span className="noa-shimmer">{count} {count === 1 ? "file" : "files"} changed</span>
       <Stats file={diff} />
     </button>

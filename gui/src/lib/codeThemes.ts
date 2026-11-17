@@ -566,10 +566,6 @@ export const CODE_THEMES: CodeThemeDefinition[] = [
   },
 ];
 
-export function isKnownCodeThemeId(id: string): boolean {
-  return CODE_THEMES.some((theme) => theme.id === id);
-}
-
 export function getCodeThemeOptions(variant: 'light' | 'dark'): [string, string][] {
   return CODE_THEMES.filter((theme) => theme.variant === 'both' || theme.variant === variant).map((theme) => [
     theme.id,

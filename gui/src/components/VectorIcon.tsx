@@ -1,13 +1,13 @@
 import { useMemo } from "react"
-import { codexIcons, type CodexIconName } from "../lib/codexIcons"
+import { vectorIcons, type VectorIconName } from "../lib/vectorIcons"
 
-export function CodexIcon({ name, size = 16, className, ...rest }: {
-  name: CodexIconName
+export function VectorIcon({ name, size = 16, className, ...rest }: {
+  name: VectorIconName
   size?: number
   className?: string
   "aria-hidden"?: boolean
 }) {
-  const icon = codexIcons[name]
+  const icon = vectorIcons[name]
   // A fresh object each render makes React re-parse the markup.
   const html = useMemo(() => ({ __html: icon.body }), [icon])
   return (

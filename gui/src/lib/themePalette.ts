@@ -187,15 +187,6 @@ export function deriveSurfaces(
   };
 }
 
-export const themeSurfaces = (
-  isDark: boolean,
-  appearance?: AppSettings['appearance'],
-): ThemeSurfaces => {
-  const resolved = resolveChromeTheme(appearance, isDark);
-  const rawContrast = appearance ? activeContrast(appearance, isDark) : CONTRAST_DEFAULTS[isDark ? 'dark' : 'light'];
-  return deriveSurfaces(resolved, isDark, rawContrast);
-};
-
 export const DEFAULT_SEMANTIC_COLORS: Record<ThemeVariant, Required<SemanticColors>> = {
   light: {
     diffAdded: '#00a240',

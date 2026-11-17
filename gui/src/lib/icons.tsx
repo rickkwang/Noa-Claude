@@ -1,18 +1,18 @@
-// Central icon mapping, all from Codex's icon set: its 16px light glyphs (glyphs.ts) and a few full-viewBox
-// icons (codexIcons.ts), exported under the legacy lucide-react names so call sites are unchanged.
+// Central icon mapping: 16px glyphs (glyphs.ts) and full-viewBox vector icons (vectorIcons.ts),
+// exported under standard icon names so call sites are unchanged.
 // To swap a shape, change its mapping here only.
 import type { CSSProperties } from 'react';
 import { GLYPHS } from './glyphs';
-import { codexIcons, type CodexIconName } from './codexIcons';
+import { vectorIcons, type VectorIconName } from './vectorIcons';
 
 type IconProps = { size?: number; className?: string; style?: CSSProperties };
 
-// Codex icons carry their own viewBox; the size defaults to 16px to match the glyphs.
-function codex(name: CodexIconName) {
-  const { viewBox, body } = codexIcons[name];
+// Vector icons carry their own viewBox; the size defaults to 16px to match the glyphs.
+function vectorIcon(name: VectorIconName) {
+  const { viewBox, body } = vectorIcons[name];
   // React re-parses innerHTML whenever this object's identity changes, so build it once per icon.
   const html = { __html: body };
-  return function CodexGlyph({ size = 16, className, style }: IconProps) {
+  return function VectorGlyph({ size = 16, className, style }: IconProps) {
     return (
       <svg
         xmlns="http://www.w3.org/2000/svg"
@@ -57,9 +57,9 @@ export const Worktree = glyph("arrow-branch");
 export const ArrowDown = glyph("arrow-down-md");
 export const ArrowLeft = glyph("arrow-left-md");
 export const ArrowRight = glyph("arrow-right-md");
-export const Brain = codex("brain");
-export const Queue = codex("queue");
-export const Steer = codex("steer");
+export const Brain = vectorIcon("brain");
+export const Queue = vectorIcon("queue");
+export const Steer = vectorIcon("steer");
 export const BookOpen = glyph("book-open");
 export const Bookmark = glyph("bookmark");
 export const BookmarkFilled = glyph("bookmark-fill");
@@ -68,14 +68,13 @@ export const CheckCircle2 = glyph("checkmark-circle");
 export const ChevronDown = glyph("chevron-down-md");
 export const ChevronLeft = glyph("chevron-left-md");
 export const ChevronRight = glyph("chevron-right-md");
-export const ChevronsUpDown = codex("arrow-up-arrow-down");
+export const ChevronsUpDown = vectorIcon("arrow-up-arrow-down");
 export const ChevronUp = glyph("chevron-up-md");
 export const Edit2 = glyph("pencil");
-export const Cloud = glyph("cloud");
 export const Copy = glyph("square-on-square");
 export const Download = glyph("arrow-down-line-horizontal");
 export const ExternalLink = glyph("open-link");
-export const Globe = codex("globe");
+export const Globe = vectorIcon("globe");
 export const ArrowUpRight = glyph("arrow-up-right-md");
 export const Eye = glyph("eye");
 export const FileText = glyph("document-text");
@@ -88,8 +87,8 @@ export const FileCss = glyph("file-css");
 export const FileHtml = glyph("file-html");
 export const FilePython = glyph("file-python");
 export const Photo = glyph("photo");
-export const ListDetails = codex("list-bullet");
-export const PanelBottom = codex("dock");
+export const ListDetails = vectorIcon("list-bullet");
+export const PanelBottom = vectorIcon("dock");
 export const Filter = glyph("filter");
 export const Folder = glyph("folder");
 export const FolderOpen = glyph("folder-open");
@@ -115,8 +114,8 @@ export const PlusMinus = glyph("plus-minus-square");
 export const RefreshCcw = glyph("arrows-clockwise-rotate-lg");
 export const RotateCcw = glyph("arrow-rotate-counterclockwise");
 export const Search = glyph("magnifying-glass-md");
-export const MessageCircle = codex("chat-bubble");
-export const Gauge = codex("gauge");
+export const MessageCircle = vectorIcon("chat-bubble");
+export const Gauge = vectorIcon("gauge");
 export const Keyboard = glyph("keyboard");
 export const Settings = glyph("gear");
 export const SlidersHorizontal = glyph("sliders");
