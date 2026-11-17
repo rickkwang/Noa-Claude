@@ -61,6 +61,7 @@ import type {
   AssistantMessage,
   AttachmentMessage,
   Message,
+  StreamEvent,
   SystemCompactBoundaryMessage,
   SystemMessage,
   UserMessage,
@@ -1796,6 +1797,48 @@ export async function recordSidechainTranscript(
     agentId,
     startingParentUuid,
   )
+}
+
+export function createSidechainTranscriptRecorder(agentId: string, initialMessages: Message[]) {
+  let parentUuid = initialMessages.findLast(isLoggableMessage)?.uuid ?? null
+  const pending: Message[] = []
+
+  async function flush() {
+    if (!pending.length) return
+    const batch = pending.splice(0)
+    const start = parentUuid
+    parentUuid = batch.at(-1)!.uuid
+    await recordSidechainTranscript(batch, agentId, start).catch(error =>
+      logForDebugging(`Failed to record sidechain transcript: ${error}`),
+    )
+  }
+
+  return {
+    async record(message: Message) {
+      if (!isLoggableMessage(message)) return
+      const held = pending.length > 0 || (message.type === 'assistant' &&
+        !message.isApiErrorMessage && message.message.stop_reason === null)
+      pending.push(message)
+      if (!held) await flush()
+    },
+    async onStream(event: StreamEvent) {
+      const final = event.finalizedAssistant
+      if (final && final.message.stop_reason !== null) {
+        // Tool-input backfill can clone the emitted message before its metadata is final.
+        const message = pending.find(m => m.uuid === final.uuid)
+        if (message?.type === 'assistant') {
+          message.message.usage = final.message.usage
+          message.message.stop_reason = final.message.stop_reason
+        }
+        await flush()
+      }
+    },
+    forget(uuid: UUID) {
+      const index = pending.findIndex(message => message.uuid === uuid)
+      if (index !== -1) pending.splice(index, 1)
+    },
+    [Symbol.asyncDispose]: flush,
+  }
 }
 
 export async function recordQueueOperation(queueOp: QueueOperationMessage) {

@@ -9,7 +9,6 @@
  * 4. Isolate mutable state to prevent interference with the main agent loop
  */
 
-import type { UUID } from 'crypto'
 import { randomUUID } from 'crypto'
 import type { PromptCommand } from '../commands.js'
 import type { QuerySource } from '../constants/querySource.js'
@@ -36,7 +35,7 @@ import {
 } from './messages.js'
 import { createDenialTrackingState } from './permissions/denialTracking.js'
 import { parseToolListFromCLI } from './permissions/permissionSetup.js'
-import { isLoggableMessage, recordSidechainTranscript } from './sessionStorage.js'
+import { createSidechainTranscriptRecorder, recordSidechainTranscript } from './sessionStorage.js'
 import { isRestrictedToPluginOnly, isSourceAdminTrusted } from './settings/pluginOnlyPolicy.js'
 import type { SystemPrompt } from './systemPromptType.js'
 import {
@@ -579,19 +578,14 @@ export async function runForkedAgent({
   // Generate agent ID and record initial messages for transcript
   // When skipTranscript is set, skip agent ID creation and all transcript I/O
   const agentId = skipTranscript ? undefined : createAgentId(forkLabel)
-  let lastRecordedUuid: UUID | null = null
   if (agentId) {
     await recordSidechainTranscript(initialMessages, agentId).catch(err =>
       logForDebugging(
         `Forked agent [${forkLabel}] failed to record initial transcript: ${err}`,
       ),
     )
-    // Track the last recorded message UUID for parent chain continuity
-    lastRecordedUuid =
-      initialMessages.length > 0
-        ? initialMessages.findLast(isLoggableMessage)?.uuid ?? null
-        : null
   }
+  await using transcript = agentId ? createSidechainTranscriptRecorder(agentId, initialMessages) : undefined
 
   // Run the query loop with isolated context (cache-safe params preserved)
   try {
@@ -610,6 +604,7 @@ export async function runForkedAgent({
     })) {
       // Extract real usage from message_delta stream events (final usage per API call)
       if (message.type === 'stream_event') {
+        await transcript?.onStream(message)
         if (
           'event' in message &&
           message.event?.type === 'message_delta' &&
@@ -636,6 +631,9 @@ export async function runForkedAgent({
         }
         continue
       }
+      if (message.type === 'tombstone') {
+        transcript?.forget(message.message.uuid)
+      }
       if (message.type === 'stream_request_start') {
         continue
       }
@@ -650,23 +648,13 @@ export async function runForkedAgent({
       // Record transcript for recordable message types (same pattern as runAgent.ts)
       const msg = message as Message
       if (
-        agentId &&
+        transcript &&
         (msg.type === 'assistant' ||
           msg.type === 'user' ||
-          msg.type === 'progress' ||
           msg.type === 'attachment' ||
-          (msg.type === 'system' && msg.subtype === 'compact_boundary')) &&
-        isLoggableMessage(msg)
+          (msg.type === 'system' && msg.subtype === 'compact_boundary'))
       ) {
-        await recordSidechainTranscript([msg], agentId, lastRecordedUuid).catch(
-          err =>
-            logForDebugging(
-              `Forked agent [${forkLabel}] failed to record transcript: ${err}`,
-            ),
-        )
-        if (msg.type !== 'progress') {
-          lastRecordedUuid = msg.uuid
-        }
+        await transcript.record(msg)
       }
     }
   } finally {

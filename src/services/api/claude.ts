@@ -2419,6 +2419,7 @@ async function* queryModel(
         yield {
           type: 'stream_event',
           event: part,
+          ...(part.type === 'message_delta' && { finalizedAssistant: newMessages.at(-1) }),
           // The level this reply runs at: under per-message effort the
           // top-level value stays at the conversation's base level.
           ...(part.type === 'message_start' ? { ttftMs, sentEffort: sentPerTurnEffort ?? sentEffort } : undefined),

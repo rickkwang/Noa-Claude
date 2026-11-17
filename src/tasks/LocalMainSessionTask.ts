@@ -10,7 +10,6 @@
  * This reuses the LocalAgentTask state structure since the behavior is similar.
  */
 
-import type { UUID } from 'crypto'
 import { randomBytes } from 'crypto'
 import {
   OUTPUT_FILE_TAG,
@@ -42,7 +41,7 @@ import { enqueuePendingNotification } from '../utils/messageQueueManager.js'
 import { emitTaskTerminatedSdk } from '../utils/sdkEventQueue.js'
 import {
   getAgentTranscriptPath,
-  isLoggableMessage,
+  createSidechainTranscriptRecorder,
   recordSidechainTranscript,
 } from '../utils/sessionStorage.js'
 import {
@@ -340,7 +339,7 @@ export function startBackgroundSession({
       const recentActivities: ToolActivity[] = []
       let toolCount = 0
       let tokenCount = 0
-      let lastRecordedUuid: UUID | null = messages.findLast(isLoggableMessage)?.uuid ?? null
+      await using transcript = createSidechainTranscriptRecorder(taskId, messages)
 
       for await (const event of query({
         messages: bgMessages,
@@ -362,6 +361,9 @@ export function startBackgroundSession({
           return
         }
 
+        if (event.type === 'stream_event') await transcript.onStream(event)
+        if (event.type === 'tombstone') transcript.forget(event.message.uuid)
+
         if (
           event.type !== 'user' &&
           event.type !== 'assistant' &&
@@ -373,13 +375,7 @@ export function startBackgroundSession({
 
         bgMessages.push(event)
 
-        // Per-message write (matches runAgent.ts pattern) — gives live
-        // task progress and keeps the transcript file current even if
-        // /clear re-links the symlink mid-run.
-        await recordSidechainTranscript([event], taskId, lastRecordedUuid).catch(
-          err => logForDebugging(`bg-session transcript write failed: ${err}`),
-        )
-        if (isLoggableMessage(event)) lastRecordedUuid = event.uuid
+        await transcript.record(event)
 
         if (event.type === 'assistant') {
           for (const block of event.message.content) {

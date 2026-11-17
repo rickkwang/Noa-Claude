@@ -227,6 +227,7 @@ export type ToolUseSummaryMessage = {
 export type StreamEvent = {
   type: 'stream_event'
   event: BetaRawMessageStreamEvent
+  finalizedAssistant?: Pick<AssistantMessage, 'uuid' | 'message'>
   ttftMs?: number
   sentEffort?: EffortLevel
 }

@@ -1,6 +1,5 @@
 // @ts-nocheck
 import { feature } from 'bun:bundle'
-import type { UUID } from 'crypto'
 import { randomUUID } from 'crypto'
 import uniqBy from 'lodash-es/uniqBy.js'
 import { logForDebugging } from 'src/utils/debug.js'
@@ -69,7 +68,7 @@ import { getRuntimeMainLoopModel } from '../../utils/model/model.js'
 import type { ModelAlias } from '../../utils/model/aliases.js'
 import {
   clearAgentTranscriptSubdir,
-  isLoggableMessage,
+  createSidechainTranscriptRecorder,
   recordSidechainTranscript,
   setAgentTranscriptSubdir,
   writeAgentMetadata,
@@ -895,8 +894,7 @@ export async function* runAgent({
       ...(personalityName && { personalityName }),
     }).catch(_err => logForDebugging(`Failed to write agent metadata: ${_err}`))
 
-    // Track the last recorded message UUID for parent chain continuity
-    let lastRecordedUuid: UUID | null = initialMessages.findLast(isLoggableMessage)?.uuid ?? null
+    await using transcript = createSidechainTranscriptRecorder(agentId, initialMessages)
 
     for await (const message of query({
       messages: initialMessages,
@@ -909,6 +907,8 @@ export async function* runAgent({
       maxTurns: maxTurns ?? agentDefinition.maxTurns,
     })) {
       onQueryProgress?.()
+      if (message.type === 'stream_event') await transcript.onStream(message)
+      if (message.type === 'tombstone') transcript.forget(message.message.uuid)
       // Forward subagent API request starts to parent's metrics display
       // so TTFT/OTPS update during subagent execution.
       if (
@@ -930,17 +930,7 @@ export async function* runAgent({
       }
 
       if (isRecordableMessage(message)) {
-        // Record only the new message with correct parent (O(1) per message)
-        await recordSidechainTranscript(
-          [message],
-          agentId,
-          lastRecordedUuid,
-        ).catch(err =>
-          logForDebugging(`Failed to record sidechain transcript: ${err}`),
-        )
-        if (isLoggableMessage(message)) {
-          lastRecordedUuid = message.uuid
-        }
+        await transcript.record(message)
         yield message
       }
     }

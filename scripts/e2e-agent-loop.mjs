@@ -520,6 +520,7 @@ const server = createServer(async (req, res) => {
     }
     // The connection drops after output: no stop reason, no message_stop.
     if (active.case === 'truncated' && n === 1) { res.end(); return; }
+    if (active.case === 'agent-custom-fork' && child) await delay(400);
     emit('message_delta', { type: 'message_delta', delta: { stop_reason: stop, stop_sequence: null }, usage: {output_tokens:msg.usage.output_tokens} });
     emit('message_stop', { type: 'message_stop' });
     res.end();
@@ -861,6 +862,15 @@ try {
             const uniqueWrites=[...new Map(writes.map(w=>[w.tool_use_id,w])).values()];assert.equal(uniqueWrites.length,2,'expected initial and resumed Write results');assert.ok(uniqueWrites.every(w=>w.is_error),'agent Write was not denied');
           } else if(scenario==='agent-custom-fork'){
             assert.equal(runResult.code,0);assert.equal(runResult.result.result,'AUDIT_OK');assert.ok(active.childRequests>=4,'resumed child never ran');
+            const config = join(dir, 'config');
+            const rows = readdirSync(config, { recursive: true }).filter(name => /agent-[^/]+\.jsonl$/.test(name))
+              .flatMap(name => readFileSync(join(config, name), 'utf8').trim().split('\n').map(line => JSON.parse(line)));
+            const completed = rows.filter(row => row.type === 'assistant' && row.message?.content?.some(block => block.text === 'CUSTOM_DONE'));
+            assert.ok(completed.length >= 2, 'missing completed child transcript rows');
+            for (const { message } of completed) {
+              assert.equal(message.stop_reason, 'end_turn');
+              assert.ok(message.usage.output_tokens > 0, 'transcript retained placeholder output usage');
+            }
             const resumed=active.requests.find(r=>r.childStep===3);assert.ok(JSON.stringify(resumed.body.system).includes('FORK_CUSTOM_RULE_42'),'custom agent named fork lost its system prompt on resume');assert.deepEqual(resumed.body.tools.map(t=>t.name),['Read'],'resuming custom fork widened its tool pool');
           } else if (scenario.startsWith('task-') || scenario==='goal-child-usage') {
           assert.equal(runResult.code,0);assert.equal(runResult.result.result,'AUDIT_OK');assert.ok(count>=3,'tools never ran');
