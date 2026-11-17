@@ -2545,6 +2545,7 @@ function recoverOrphanedParallelToolResults(
   // as the srcUUID, and --fork-session strips srcUUID but keeps parentUuid.
   const siblingsByMsgId = new Map<string, TranscriptMessage[]>()
   const toolResultsByAsst = new Map<UUID, TranscriptMessage[]>()
+  const pdfsByToolResult = new Map<UUID, TranscriptMessage[]>()
   for (const m of messages.values()) {
     if (m.type === 'assistant') {
       const payload = getTranscriptMessagePayload(m)
@@ -2563,6 +2564,13 @@ function recoverOrphanedParallelToolResults(
       const group = toolResultsByAsst.get(m.parentUuid)
       if (group) group.push(m)
       else toolResultsByAsst.set(m.parentUuid, [m])
+    } else if (m.type === 'user' && m.isMeta && m.parentUuid) {
+      const content = getTranscriptMessagePayload(m).content
+      if (Array.isArray(content) && content.some(b => b.type === 'document')) {
+        const group = pdfsByToolResult.get(m.parentUuid)
+        if (group) group.push(m)
+        else pdfsByToolResult.set(m.parentUuid, [m])
+      }
     }
   }
 
@@ -2586,6 +2594,9 @@ function recoverOrphanedParallelToolResults(
       if (!trs) continue
       for (const tr of trs) {
         if (!seen.has(tr.uuid)) orphanedTRs.push(tr)
+        for (const pdf of pdfsByToolResult.get(tr.uuid) ?? []) {
+          if (!seen.has(pdf.uuid)) orphanedTRs.push(pdf)
+        }
       }
     }
     if (orphanedSiblings.length === 0 && orphanedTRs.length === 0) continue

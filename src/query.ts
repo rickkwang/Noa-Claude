@@ -623,15 +623,26 @@ async function* queryLoop(
       appendSystemContext(systemPrompt, systemContext),
     )
 
+    const compactPermissionMode = toolUseContext.getAppState().toolPermissionContext.mode
+    const compactModel = getRuntimeMainLoopModel({
+      permissionMode: compactPermissionMode,
+      mainLoopModel: toolUseContext.options.mainLoopModel,
+      exceeds200kTokens: compactPermissionMode === 'plan' &&
+        doesMostRecentAssistantMessageExceed200k(messagesForQuery),
+    })
+    const compactContext = compactModel === toolUseContext.options.mainLoopModel
+      ? toolUseContext
+      : { ...toolUseContext, options: { ...toolUseContext.options, mainLoopModel: compactModel } }
+
     queryCheckpoint('query_autocompact_start')
     const { compactionResult, consecutiveFailures, rapidRefillTripped, consecutiveRapidRefills } = await deps.autocompact(
       messagesForQuery,
-      toolUseContext,
+      compactContext,
       {
         systemPrompt,
         userContext,
         systemContext,
-        toolUseContext,
+        toolUseContext: compactContext,
         forkContextMessages: messagesForQuery,
       },
       querySource,
@@ -1439,7 +1450,7 @@ async function* queryLoop(
 
       // Prompt-too-long recovery: the streaming loop withheld the error.
       // Try reactive compact once; repeated overflows surface the error.
-      const isWithheld413 =
+      const isWithheldContextOverflow =
         lastMessage?.type === 'assistant' &&
         lastMessage.isApiErrorMessage &&
         isPromptTooLongMessage(lastMessage)
@@ -1450,7 +1461,7 @@ async function* queryLoop(
       const isWithheldMedia =
         reactiveRecoveryEnabled &&
         reactiveCompact.isWithheldMediaSizeError(lastMessage)
-      if (isWithheld413 || isWithheldMedia) {
+      if (isWithheldContextOverflow || isWithheldMedia) {
         // Reactive compaction counts toward the rapid-refill breaker like the
         // proactive path: a context that overflows again within a few turns of
         // every compact can't be saved by one more summary.
@@ -1484,7 +1495,9 @@ async function* queryLoop(
             systemPrompt,
             userContext,
             systemContext,
-            toolUseContext,
+            toolUseContext: currentModel === toolUseContext.options.mainLoopModel
+              ? toolUseContext
+              : { ...toolUseContext, options: { ...toolUseContext.options, mainLoopModel: currentModel } },
             forkContextMessages: messagesForQuery,
           },
           error: lastMessage,

@@ -22,6 +22,7 @@ import {
 } from 'src/utils/auth.js'
 import {
   createAssistantAPIErrorMessage,
+  getPdfSourceDigest,
   NO_RESPONSE_REQUESTED,
 } from 'src/utils/messages.js'
 import {
@@ -223,6 +224,7 @@ export function isMediaSizeError(raw: string): boolean {
 export function isMediaSizeErrorMessage(msg: AssistantMessage): boolean {
   return (
     msg.isApiErrorMessage === true &&
+    msg.rejectedPdfSource === undefined &&
     msg.errorDetails !== undefined &&
     isMediaSizeError(msg.errorDetails)
   )
@@ -500,6 +502,7 @@ export function getAssistantMessageFromError(
   options?: {
     messages?: Message[]
     messagesForAPI?: (UserMessage | AssistantMessage)[]
+    sentMessages?: readonly { role: string; content: unknown }[]
   },
 ): AssistantMessage {
   const message = mapAssistantMessageFromError(error, model, options)
@@ -524,6 +527,7 @@ function mapAssistantMessageFromError(
   options?: {
     messages?: Message[]
     messagesForAPI?: (UserMessage | AssistantMessage)[]
+    sentMessages?: readonly { role: string; content: unknown }[]
   },
 ): AssistantMessage {
   // Check for SDK timeout errors
@@ -706,40 +710,39 @@ function mapAssistantMessageFromError(
     })
   }
 
-  // Check for PDF page limit errors
-  if (
-    error instanceof Error &&
-    /maximum of \d+ PDF pages/.test(error.message)
-  ) {
-    return createAssistantAPIErrorMessage({
-      content: getPdfTooLargeErrorMessage(),
-      error: 'invalid_request',
-      errorDetails: error.message,
-    })
-  }
-
-  // Check for password-protected PDF errors
-  if (
-    error instanceof Error &&
-    error.message.includes('The PDF specified is password protected')
-  ) {
-    return createAssistantAPIErrorMessage({
-      content: getPdfPasswordProtectedErrorMessage(),
-      error: 'invalid_request',
-    })
-  }
-
-  // Check for invalid PDF errors (e.g., HTML file renamed to .pdf)
-  // Without this handler, invalid PDF document blocks persist in conversation
-  // context and cause every subsequent API call to fail with 400.
-  if (
-    error instanceof Error &&
-    error.message.includes('The PDF specified was not valid')
-  ) {
-    return createAssistantAPIErrorMessage({
-      content: getPdfInvalidErrorMessage(),
-      error: 'invalid_request',
-    })
+  if (error instanceof Error) {
+    const pdfError = /maximum of \d+ PDF pages/.test(error.message)
+      ? getPdfTooLargeErrorMessage()
+      : error.message.includes('The PDF specified is password protected')
+        ? getPdfPasswordProtectedErrorMessage()
+        : error.message.includes('The PDF specified was not valid')
+          ? getPdfInvalidErrorMessage()
+          : undefined
+    if (pdfError) {
+      const sent = options?.sentMessages ?? options?.messagesForAPI?.map(m => m.message)
+      const path = /\bmessages\.(\d+)\.content\.(\d+)(?:\.content\.(\d+))?/.exec(error.message)
+      const blocks = path ? sent?.[Number(path[1])]?.content : undefined
+      const block = Array.isArray(blocks) ? blocks[Number(path?.[2])] : undefined
+      const target = path?.[3] === undefined ? block : block?.content?.[Number(path[3])]
+      let rejectedPdfSource = getPdfSourceDigest(target)
+      const ambiguous = !path && sent && pdfError !== getPdfTooLargeErrorMessage()
+      if (ambiguous) {
+        const lastReply = sent.findLastIndex(m => m.role === 'assistant')
+        const docs = sent.slice(lastReply + 1).flatMap(({ content }) => Array.isArray(content)
+          ? content.flatMap(b => b.type === 'tool_result' && Array.isArray(b.content) ? b.content : [b])
+          : []).filter(b => b.type === 'document')
+        if (docs.length === 1) rejectedPdfSource = getPdfSourceDigest(docs[0])
+      }
+      const content = ambiguous && !rejectedPdfSource
+        ? `${pdfError} The provider did not identify which PDF was rejected. ${getIsNonInteractiveSession()
+          ? 'Start a new session and retry with one PDF at a time.'
+          : 'Rewind to before the batch (double press Esc), then read one PDF at a time.'}`
+        : pdfError
+      return {
+        ...createAssistantAPIErrorMessage({ content, error: 'invalid_request', errorDetails: error.message }),
+        rejectedPdfSource,
+      }
+    }
   }
 
   // Check for image size errors (e.g., "image exceeds 5 MB maximum: 5316852 bytes > 5242880 bytes")
@@ -801,12 +804,27 @@ function mapAssistantMessageFromError(
     })
   }
 
-  // Check for request too large errors (413 status)
-  // This typically happens when a large PDF + conversation context exceeds the 32MB API limit
   if (error instanceof APIError && error.status === 413) {
+    const sent = options?.sentMessages ?? options?.messagesForAPI?.map(m => m.message)
+    const mediaLimit = getAPIProvider() === 'vertex' ? 30 * 1024 * 1024 : API_REQUEST_MAX_SIZE
+    let mediaBytes = 0
+    for (const { content } of sent ?? []) {
+      if (!Array.isArray(content)) continue
+      for (const block of content) {
+        const items = block.type === 'tool_result' && Array.isArray(block.content) ? block.content : [block]
+        for (const item of items) {
+          if (item.type === 'image' || item.type === 'document') {
+            mediaBytes += Buffer.byteLength(JSON.stringify(item), 'utf8')
+          }
+        }
+      }
+      if (mediaBytes >= mediaLimit) break
+    }
+    const mediaAloneOverLimit = mediaBytes >= mediaLimit
     return createAssistantAPIErrorMessage({
-      content: getRequestTooLargeErrorMessage(),
+      content: mediaAloneOverLimit ? getRequestTooLargeErrorMessage(null) : PROMPT_TOO_LONG_ERROR_MESSAGE,
       error: 'invalid_request',
+      errorDetails: mediaAloneOverLimit ? `${REQUEST_TOO_LARGE_DETAILS_PREFIX}${error.message}` : error.message,
     })
   }
 

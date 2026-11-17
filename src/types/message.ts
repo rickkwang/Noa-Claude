@@ -129,6 +129,7 @@ export type AssistantMessage = MessageBase & {
   apiFailureCategory?: ApiFailureCategory
   error?: SDKAssistantMessageError
   errorDetails?: string
+  rejectedPdfSource?: string
   isApiErrorMessage?: boolean
   /** The stream ended after output, without a stop reason: the response above may be incomplete. */
   truncatedAfterOutput?: boolean

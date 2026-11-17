@@ -1546,6 +1546,7 @@ async function* queryModel(
   let sentPerTurnEffort: EffortLevel | undefined
   const messageThreadRequest = createMessageThreadRequest(options.querySource, options.agentId, options.model)
 
+  let sentMessages: BetaMessageStreamParams['messages'] | undefined
   const paramsFromContext = (retryContext: RetryContext) => {
     // healAdvisorRefusal turned the advisor off after the API refused it:
     // retry without its tool, beta header and history blocks.
@@ -1801,6 +1802,7 @@ async function* queryModel(
     const requestEffort = params.output_config?.effort
     sentEffort = typeof requestEffort === 'string' && isEffortLevel(requestEffort) ? requestEffort : undefined
     sentPerTurnEffort = perTurn?.turnEffort
+    sentMessages = params.messages
     return params
   }
 
@@ -2992,6 +2994,7 @@ async function* queryModel(
         yield getAssistantMessageFromError(error, errorModel, {
           messages,
           messagesForAPI,
+          sentMessages,
         })
         releaseStreamResources()
         return
@@ -3050,6 +3053,7 @@ async function* queryModel(
       yield getAssistantMessageFromError(error, errorModel, {
         messages,
         messagesForAPI,
+        sentMessages,
       })
       releaseStreamResources()
       return

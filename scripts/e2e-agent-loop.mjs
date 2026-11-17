@@ -18,9 +18,9 @@ const artifacts = resolve(option('--artifacts') || mkdtempSync(join(tmpdir(), 'n
 mkdirSync(artifacts, { recursive: true });
 const model = 'claude-sonnet-4-6';
 // A 200k-window model, so a gateway naming a 1M model in its responses offers a "larger window".
-const modelFor = scenario => option('--model') || (scenario === 'gateway-model-name' ? 'claude-haiku-4-5' : scenario === 'preserved-thinking' ? 'claude-opus-5-5' : scenario === 'opus-1m-cache-off' ? 'claude-opus-4-6[1m]' : scenario === 'mandatory-thinking' ? 'kimi/k3.1-pro' : scenario === 'agent-effort-plan' ? 'opusplan' : scenario.startsWith('openai-responses') ? 'gpt-6.1-sol' : model);
+const modelFor = scenario => option('--model') || (scenario === 'gateway-model-name' ? 'claude-haiku-4-5' : scenario === 'preserved-thinking' ? 'claude-opus-5-5' : scenario === 'opus-1m-cache-off' ? 'claude-opus-4-6[1m]' : scenario === 'mandatory-thinking' ? 'kimi/k3.1-pro' : (scenario === 'agent-effort-plan' || scenario === 'plan-compact-overflow') ? 'opusplan' : scenario.startsWith('openai-responses') ? 'gpt-6.1-sol' : model);
 const sentinel = 'KEEP_IDENTIFIER=loop-sentinel-42';
-const cases = ['agent-nested', 'agent-budget', 'agent-budget-resume', 'agent-stop-pending', 'agent-owned-results', 'agent-owned-auto', 'auto-plan-race', 'auto-stage2-error', 'agent-cascade-stop', 'agent-schema', 'agent-schema-bg', 'hook-output', 'hook-output-null', 'blocking-limit', 'image-error', 'small-window-overflow', 'read', 'read-repeat', 'large-output', 'max-turns', 'malformed', 'empty', 'alternating', 'fallback', 'provider-quota', 'refusal', 'refusal-repeat', 'truncated', 'tool-input-streaming', 'tool-input-nonstream', 'stale-signature', 'budget-streaming', 'budget-nonstream', 'permission-deny', 'deny-rule', 'mode-auto', 'mode-bypass', 'mode-bypass-off', 'hook-block', 'compact-resume', 'task-crud', 'task-metadata-race', 'task-dependency-race', 'goal-child-usage', 'agent-custom-fork', 'agent-bypass-blocked', 'agent-bypass-auto', 'agent-effort', 'agent-effort-plan', 'hook-composition', 'tombstone-resume', 'concurrency-streaming', 'concurrency-nonstream', 'background-deadline', 'monitor', 'monitor-timeout', 'monitor-persistent', 'cron', 'cron-disabled', 'cron-durable', 'cron-wakeup', 'cron-resume', 'cron-resume-compact', 'cron-resume-missed', 'cron-wrapper', 'openai-overflow', 'openai-usage', 'openai-usage-nonstream', 'openai-tools', 'openai-max-tokens-cap', 'openai-max-tokens-vllm', 'openai-responses', 'openai-responses-effort', 'bedrock-overflow', 'bedrock-bare-overflow', 'bedrock-media-overflow', 'opus-1m-cache-off', 'field-reject', 'gateway-model-name', 'preserved-thinking', 'mandatory-thinking'].filter(name => !option('--case') || name === option('--case')).filter((_, i) => {
+const cases = ['agent-nested', 'agent-budget', 'agent-budget-resume', 'agent-stop-pending', 'agent-owned-results', 'agent-owned-auto', 'auto-plan-race', 'auto-stage2-error', 'agent-cascade-stop', 'agent-schema', 'agent-schema-bg', 'hook-output', 'hook-output-null', 'blocking-limit', 'image-error', 'small-window-overflow', 'read', 'read-repeat', 'large-output', 'max-turns', 'malformed', 'empty', 'alternating', 'fallback', 'provider-quota', 'refusal', 'refusal-repeat', 'truncated', 'tool-input-streaming', 'tool-input-nonstream', 'stale-signature', 'budget-streaming', 'budget-nonstream', 'permission-deny', 'deny-rule', 'mode-auto', 'mode-bypass', 'mode-bypass-off', 'hook-block', 'compact-resume', 'task-crud', 'task-metadata-race', 'task-dependency-race', 'goal-child-usage', 'agent-custom-fork', 'agent-bypass-blocked', 'agent-bypass-auto', 'agent-effort', 'agent-effort-plan', 'hook-composition', 'tombstone-resume', 'concurrency-streaming', 'concurrency-nonstream', 'background-deadline', 'monitor', 'monitor-timeout', 'monitor-persistent', 'cron', 'cron-disabled', 'cron-durable', 'cron-wakeup', 'cron-resume', 'cron-resume-compact', 'cron-resume-missed', 'cron-wrapper', 'openai-overflow', 'openai-usage', 'openai-usage-nonstream', 'openai-tools', 'openai-max-tokens-cap', 'openai-max-tokens-vllm', 'openai-responses', 'openai-responses-effort', 'bedrock-overflow', 'bedrock-bare-overflow', 'bedrock-media-overflow', 'request-body-overflow', 'request-body-with-media-overflow', 'plan-compact-overflow', 'pdf-batch-reject', 'opus-1m-cache-off', 'field-reject', 'gateway-model-name', 'preserved-thinking', 'mandatory-thinking'].filter(name => !option('--case') || name === option('--case')).filter((_, i) => {
   // --shard K/N runs every Nth case starting at K, so CI can split the suite across runners.
   const shard = option('--shard')?.match(/^(\d+)\/(\d+)$/);
   return !shard || i % Number(shard[2]) === Number(shard[1]) - 1;
@@ -80,6 +80,15 @@ const server = createServer(async (req, res) => {
       res.writeHead(status, { 'content-type': 'application/json', 'retry-after': '0', 'x-should-retry': status === 529 ? 'true' : 'false' });
       res.end(JSON.stringify({ type: 'error', error: { type, message } }));
     };
+    if (active.case === 'pdf-batch-reject' && active.phase !== 'reattach') {
+      for (const [mi, m] of body.messages.entries()) {
+        if (!Array.isArray(m.content)) continue;
+        const ci = m.content.findIndex(b => b.type === 'document' && b.source.data === active.rejectedPdf);
+        if (ci >= 0) return error(400, 'invalid_request_error', active.phase === 'ambiguous'
+          ? 'The PDF specified was not valid'
+          : `messages.${mi}.content.${ci}: The PDF specified was not valid`);
+      }
+    }
     if (active.case === 'mandatory-thinking' && (!body.thinking || body.thinking.type === 'disabled')) {
       error(400, 'invalid_request_error', 'K3.1 Pro does not support disabled thinking mode. Please enable thinking and try again');
       return;
@@ -153,6 +162,10 @@ const server = createServer(async (req, res) => {
     // a byte overflow (strip the media) with one.
     if ((active.case === 'bedrock-bare-overflow' || active.case === 'bedrock-media-overflow') && !summary && n === 2) {
       error(400, 'invalid_request_error', 'Input is too long.');
+      return;
+    }
+    if (!summary && ((active.case === 'request-body-overflow' && n === 2) || (active.case === 'request-body-with-media-overflow' && n === 3))) {
+      error(413, 'request_too_large', 'Request body too large');
       return;
     }
     if(active.case==='provider-quota'){error(403,'permission_error',"You've reached your weekly (7-day) usage limit. Your quota will reset when the current 7-day window ends.");return;}
@@ -418,6 +431,15 @@ const server = createServer(async (req, res) => {
       content = n === 1
         ? [{ type: 'tool_use', id: 'monitor_start', name: 'Monitor', input: start }]
         : [{ type: 'tool_use', id: 'monitor_wait', name: 'Bash', input: { command: active.case === 'monitor-persistent' ? 'sleep 5' : 'sleep 4', description: 'Wait for monitor events' } }]; stop = 'tool_use';
+    } else if (active.case === 'request-body-with-media-overflow' && n === 2) {
+      content = [{ type: 'tool_use', id: 'recent_image', name: 'Read', input: { file_path: join(active.dir, 'fixture.png') } }];
+      stop = 'tool_use';
+    } else if (active.case === 'pdf-batch-reject' && lastText.includes('Reattach the same PDF.')) {
+      content = [{ type: 'tool_use', id: 'pdf_reattach', name: 'Read', input: { file_path: join(active.dir, 'rejected.pdf') } }];
+      stop = 'tool_use';
+    } else if (active.case === 'pdf-batch-reject' && (n === 1 || lastText.includes('Read a fresh batch.'))) {
+      content = ['rejected', 'valid'].map(name => ({ type: 'tool_use', id: `pdf_${name}`, name: 'Read', input: { file_path: join(active.dir, `${name}.pdf`) } }));
+      stop = 'tool_use';
     } else if (active.case === 'max-turns' || (active.case === 'read-repeat' && n <= 2) || ((active.case === 'read' || active.case.startsWith('mode-') || active.case.startsWith('openai-usage') || active.case === 'openai-tools' || active.case.startsWith('openai-max-tokens') || active.case.startsWith('openai-responses') || active.case.endsWith('-overflow') || active.case.startsWith('hook-')) && n === 1) || (active.case === 'compact-resume' && n <= 3) || (active.case === 'field-reject' && n === 2)) {
       content = [
         ...(active.case === 'compact-resume' ? [{ type: 'text', text: 'prior-context '.repeat(5000) }] : []),
@@ -430,7 +452,7 @@ const server = createServer(async (req, res) => {
     }
     // gateway-model-name: the gateway names another model than requested and reports a near-full context.
     const gateway = active.case === 'gateway-model-name';
-    const msg = { id: `msg_${active.requests.length}`, type: 'message', role: 'assistant', model: gateway ? 'claude-opus-5-5' : body.model, content, stop_reason: stop, stop_sequence: null, usage: active.spend ? (active.spend=false,{input_tokens:100000,output_tokens:1}) : child ? {input_tokens:1,output_tokens:1,cache_read_input_tokens:5000,cache_creation_input_tokens:4000} : harness ? {input_tokens:1,output_tokens:1} : gateway && n === 1 && !summary ? {input_tokens:190000,output_tokens:10} : {input_tokens:100,output_tokens:10} };
+    const msg = { id: `msg_${active.requests.length}`, type: 'message', role: 'assistant', model: gateway ? 'claude-opus-5-5' : body.model, content, stop_reason: stop, stop_sequence: null, usage: active.spend ? (active.spend=false,{input_tokens:100000,output_tokens:1}) : child ? {input_tokens:1,output_tokens:1,cache_read_input_tokens:5000,cache_creation_input_tokens:4000} : harness ? {input_tokens:1,output_tokens:1} : (gateway || active.case === 'plan-compact-overflow') && n === 1 && !summary ? {input_tokens:190000,output_tokens:10} : {input_tokens:100,output_tokens:10} };
     if (responses) {
       // Sign in with ChatGPT transport: every turn opens with an encrypted
       // reasoning item, which the next request must replay.
@@ -516,6 +538,7 @@ async function run(executable, scenario, extra = [], input = 'Run the local loop
   const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => ['PATH', 'HOME', 'TMPDIR', 'USER', 'LOGNAME', 'SHELL', 'LANG', 'LC_ALL', 'NOA_CLAUDE_SIMPLE_SYSTEM_PROMPT'].includes(k)));
   Object.assign(env, {
     ...(scenario==='blocking-limit' && {DISABLE_AUTO_COMPACT:'1'}),
+    ...(scenario === 'plan-compact-overflow' && { CLAUDE_AUTOCOMPACT_PCT_OVERRIDE: '10' }),
     // [1m] is a real opt-in on Opus 4.6 (inert, and stripped, on newer Opus).
     ...(scenario==='opus-1m-cache-off' && {DISABLE_PROMPT_CACHING_OPUS:'1', ANTHROPIC_DEFAULT_OPUS_MODEL:'claude-opus-4-6'}),
     ...(scenario === 'agent-bypass-blocked' && { CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: '1' }),
@@ -532,7 +555,7 @@ async function run(executable, scenario, extra = [], input = 'Run the local loop
     ...(scenario === 'openai-responses-effort' && { CLAUDE_CODE_EFFORT_LEVEL: 'xhigh' }),
     // A local base URL is not first party, so effort is only sent when forced on.
     ...(scenario.startsWith('agent-effort') && { CLAUDE_CODE_ALWAYS_ENABLE_EFFORT: '1' }),
-    ...(scenario === 'agent-effort-plan' && { ANTHROPIC_DEFAULT_OPUS_MODEL: 'claude-opus-4-6' }),
+    ...((scenario === 'agent-effort-plan' || scenario === 'plan-compact-overflow') && { ANTHROPIC_DEFAULT_OPUS_MODEL: 'claude-opus-4-6' }),
     CLAUDE_CODE_TASK_LIST_ID: 'harness-probe', NOA_CLAUDE_STREAMING_TOOL_EXECUTION: ['budget-nonstream', 'concurrency-nonstream'].includes(scenario) ? '0' : '1', FALLBACK_FOR_ALL_PRIMARY_MODELS: '1', CLAUDE_CODE_EAGER_FLUSH: '1',
   });
   if (scenario.startsWith('openai-responses')) {
@@ -546,8 +569,8 @@ async function run(executable, scenario, extra = [], input = 'Run the local loop
   // Hooks are off under --bare, so the hook scenario runs the full startup path.
   // --bare drops run_in_background, so the deadline scenario needs the full startup path too.
   // --bare also keeps only the simple tools, so openai-tools runs it to keep WebFetch and ToolSearch.
-  const command = [...(scenario.startsWith('hook-') || scenario.startsWith('mode-') || scenario === 'auto-plan-race' || scenario === 'auto-stage2-error' || scenario.startsWith('concurrency-') ||scenario.startsWith('tool-input-') || scenario === 'background-deadline' || scenario.startsWith('monitor') || scenario.startsWith('cron') || scenario === 'openai-tools' || scenario.startsWith('openai-responses') || harness ? [] : ['--bare']), '--print', '--verbose', '--output-format', 'stream-json', '--model', modelFor(scenario), '--strict-mcp-config', '--setting-sources', '', '--permission-mode', 'dontAsk', '--tools', harness ? (scenario==='agent-custom-fork'?'Read,Bash,Task,SendMessage':scenario.startsWith('agent-bypass-')?'Task,SendMessage,Write':scenario.startsWith('agent-effort')?'Task':scenario==='goal-child-usage'?'Read,Task,goal':scenario==='agent-nested'||scenario.startsWith('agent-owned-')||scenario.startsWith('agent-schema')?'Task':scenario==='agent-cascade-stop'||scenario==='agent-stop-pending'?'Task,Bash,TaskStop':scenario==='agent-budget'?'Task,Bash':scenario==='agent-budget-resume'?'Task,Bash,SendMessage':'TaskCreate,TaskUpdate,TaskGet,TaskList') : scenario.startsWith('tool-input-') ? 'Read,Bash,Write' : scenario.startsWith('monitor') ? 'Bash,Monitor' : scenario.startsWith('cron') ? 'Read,CronCreate,CronDelete,CronList,ScheduleWakeup' : scenario === 'openai-tools' ? 'Read,Bash,WebFetch,ToolSearch' : scenario.startsWith('openai-responses') ? 'Read,Bash,TaskUpdate' : scenario.startsWith('mode-') ? 'Read,Bash,Edit,Write,Glob,Grep' : scenario === 'auto-plan-race' ? 'Read,Bash,Write' : 'Read,Bash', '--max-turns', harness ? '8' : scenario === 'compact-resume' ? '6' : scenario === 'read-repeat' ? '3' : scenario === 'stale-signature' ? '3' : scenario === 'preserved-thinking' ? '5' : scenario === 'background-deadline' || scenario.startsWith('monitor') || scenario === 'small-window-overflow' ? '4' : scenario === 'auto-stage2-error' || scenario.startsWith('cron') ? '6' : '2'];
-  if (!scenario.startsWith('tool-input-') && scenario !== 'compact-resume' && scenario !== 'tombstone-resume' && scenario !== 'stale-signature' && scenario!=='agent-custom-fork' && !scenario.startsWith('agent-bypass-') && scenario!=='agent-budget-resume' && scenario!=='goal-child-usage' && !scenario.startsWith('cron-resume')) command.push('--no-session-persistence');
+  const command = [...(scenario === 'pdf-batch-reject' || scenario.startsWith('hook-') || scenario.startsWith('mode-') || scenario === 'auto-plan-race' || scenario === 'auto-stage2-error' || scenario.startsWith('concurrency-') ||scenario.startsWith('tool-input-') || scenario === 'background-deadline' || scenario.startsWith('monitor') || scenario.startsWith('cron') || scenario === 'openai-tools' || scenario.startsWith('openai-responses') || harness ? [] : ['--bare']), '--print', '--verbose', '--output-format', 'stream-json', '--model', modelFor(scenario), '--strict-mcp-config', '--setting-sources', '', '--permission-mode', 'dontAsk', '--tools', harness ? (scenario==='agent-custom-fork'?'Read,Bash,Task,SendMessage':scenario.startsWith('agent-bypass-')?'Task,SendMessage,Write':scenario.startsWith('agent-effort')?'Task':scenario==='goal-child-usage'?'Read,Task,goal':scenario==='agent-nested'||scenario.startsWith('agent-owned-')||scenario.startsWith('agent-schema')?'Task':scenario==='agent-cascade-stop'||scenario==='agent-stop-pending'?'Task,Bash,TaskStop':scenario==='agent-budget'?'Task,Bash':scenario==='agent-budget-resume'?'Task,Bash,SendMessage':'TaskCreate,TaskUpdate,TaskGet,TaskList') : scenario.startsWith('tool-input-') ? 'Read,Bash,Write' : scenario.startsWith('monitor') ? 'Bash,Monitor' : scenario.startsWith('cron') ? 'Read,CronCreate,CronDelete,CronList,ScheduleWakeup' : scenario === 'openai-tools' ? 'Read,Bash,WebFetch,ToolSearch' : scenario.startsWith('openai-responses') ? 'Read,Bash,TaskUpdate' : scenario.startsWith('mode-') ? 'Read,Bash,Edit,Write,Glob,Grep' : scenario === 'auto-plan-race' ? 'Read,Bash,Write' : 'Read,Bash', '--max-turns', harness ? '8' : scenario === 'compact-resume' ? '6' : scenario === 'read-repeat' ? '3' : scenario === 'stale-signature' ? '3' : scenario === 'preserved-thinking' ? '5' : scenario === 'background-deadline' || scenario.startsWith('monitor') || scenario === 'small-window-overflow' || scenario === 'request-body-with-media-overflow' ? '4' : scenario === 'auto-stage2-error' || scenario.startsWith('cron') ? '6' : '2'];
+  if (!scenario.startsWith('tool-input-') && scenario !== 'compact-resume' && scenario !== 'pdf-batch-reject' && scenario !== 'tombstone-resume' && scenario !== 'stale-signature' && scenario!=='agent-custom-fork' && !scenario.startsWith('agent-bypass-') && scenario!=='agent-budget-resume' && scenario!=='goal-child-usage' && !scenario.startsWith('cron-resume')) command.push('--no-session-persistence');
   if (scenario.startsWith('tool-input-')) command.push('--allowedTools', 'Write');
   if (scenario === 'fallback') command.push('--fallback-model', 'claude-haiku-4-5');
   // An allow rule that the narrower deny rule must still beat.
@@ -560,7 +583,7 @@ async function run(executable, scenario, extra = [], input = 'Run the local loop
   if (scenario === 'agent-owned-auto' || scenario === 'auto-plan-race' || scenario === 'auto-stage2-error') command[command.indexOf('dontAsk')] = 'auto';
   if (scenario === 'auto-plan-race' || scenario === 'auto-stage2-error') command.push('--settings', JSON.stringify({ skipAutoPermissionPrompt: true }));
   // opusplan runs Opus in plan mode, so an inherit subagent shares the main loop's model.
-  if (scenario === 'agent-effort-plan') command[command.indexOf('dontAsk')] = 'plan';
+  if (scenario === 'agent-effort-plan' || scenario === 'plan-compact-overflow') command[command.indexOf('dontAsk')] = 'plan';
   if (scenario === 'mode-auto' || scenario.startsWith('mode-bypass')) command[command.indexOf('dontAsk')] = scenario === 'mode-auto' ? 'auto' : 'bypassPermissions';
   if (scenario.startsWith('mode-bypass')) command.push('--dangerously-skip-permissions');
   if (scenario==='hook-output' || scenario==='hook-output-null') command.push('--settings',JSON.stringify({hooks:{PostToolUse:[{matcher:'Read',hooks:[{type:'command',command:`echo '${JSON.stringify({hookSpecificOutput:{hookEventName:'PostToolUse',updatedToolOutput:scenario==='hook-output-null'?null:'HOOK_REDACTED',updatedMCPToolOutput:'LEGACY_MUST_NOT_WIN'}})}'`}]}]}}));
@@ -660,6 +683,28 @@ try {
           runResult = await run(executable, scenario, ['--resume', seed.result.session_id], 'Continue the prior task.');
           assert.equal(runResult.code, 0); assert.equal(runResult.result.result, 'AUDIT_OK');
           assert.ok(!JSON.stringify(active.requests.at(-1).body.messages).includes('Calling a tool now.'), 'tombstoned response returned on resume');
+        } else if (scenario === 'pdf-batch-reject') {
+          const pdf = marker => `%PDF-1.4\n%${marker}\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n2 0 obj\n<< /Type /Pages /Count 1 /Kids [3 0 R] >>\nendobj\n3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 72 72] >>\nendobj\ntrailer\n<< /Root 1 0 R >>\n%%EOF\n`;
+          for (const name of ['rejected', 'valid']) writeFileSync(join(dir, `${name}.pdf`), pdf(name));
+          active.rejectedPdf = Buffer.from(pdf('rejected')).toString('base64');
+          const valid = Buffer.from(pdf('valid')).toString('base64');
+          const seed = await run(executable, scenario);
+          assert.equal(seed.code, 1, 'the fixture must hit a PDF rejection');
+          const rejectedRequest = JSON.stringify(active.requests.at(-1).body.messages);
+          assert.ok(rejectedRequest.includes(active.rejectedPdf) && rejectedRequest.includes(valid), 'the fixture did not send both PDFs');
+          runResult = await run(executable, scenario, ['--resume', seed.result.session_id], 'Continue using the valid PDF.');
+          assert.equal(runResult.code, 0, runResult.result?.result);
+          const retry = JSON.stringify(active.requests.at(-1).body.messages);
+          assert.ok(!retry.includes(active.rejectedPdf), 'the rejected PDF was resent');
+          assert.ok(retry.includes(valid), 'the valid PDF was stripped');
+          active.phase = 'reattach';
+          const reattached = await run(executable, scenario, ['--resume', seed.result.session_id], 'Reattach the same PDF.');
+          assert.equal(reattached.code, 0, reattached.result?.result);
+          assert.ok(JSON.stringify(active.requests.at(-1).body.messages).includes(active.rejectedPdf), 'the past rejection stripped a fresh read');
+          active.phase = 'ambiguous';
+          const ambiguous = await run(executable, scenario, [], 'Read a fresh batch.');
+          assert.equal(ambiguous.code, 1);
+          assert.match(ambiguous.result?.result ?? '', /did not identify which PDF was rejected.*one PDF at a time/);
         } else if (scenario === 'compact-resume') {
           active.phase = 'seed';
           const seed = await run(executable, scenario, [], `PROJECT_CONSTRAINT: ${sentinel}. Read the fixture three times, then pause.`);
@@ -833,8 +878,16 @@ try {
             assert.equal(runResult.code, 0, `overflow surfaced as: ${runResult.result.result}`); assert.equal(runResult.result.result, 'AUDIT_OK');
             if (scenario === 'openai-overflow') assert.ok(active.requests.every(r => r.path.includes('/chat/completions')), 'request left the OpenAI-compatible transport');
             assert.equal(active.summaries, 1, 'context overflow did not trigger reactive compact');
-            assert.equal(count, scenario==='small-window-overflow'?5:4);
+            assert.equal(count, ['small-window-overflow', 'request-body-with-media-overflow'].includes(scenario) ? 5 : scenario === 'plan-compact-overflow' ? 3 : 4);
+            if (scenario === 'plan-compact-overflow') {
+              assert.ok(active.requests[1].summary, 'expected proactive compaction before the second answer');
+              assert.deepEqual([...new Set(active.requests.map(r => r.body.model))], ['claude-opus-4-6']);
+            }
             assert.ok(JSON.stringify(active.requests.at(-1).body.messages).includes(sentinel), 'retry after compaction lost the original constraint');
+            if (scenario === 'request-body-with-media-overflow') {
+              assert.ok(JSON.stringify(active.requests[2].body.messages).includes('"type":"image"'), 'fixture image never reached the rejected request');
+              assert.ok(JSON.stringify(main.at(-1).body.messages).includes('"type":"image"'), 'generic 413 stripped a small recent image');
+            }
             if (scenario === 'bedrock-media-overflow') {
               assert.ok(JSON.stringify(active.requests[1].body.messages).includes('"type":"image"'), 'fixture image never reached the request');
               assert.ok(active.requests.slice(2).every(r => !JSON.stringify(r.body.messages).includes('"type":"image"')), 'image was not stripped after the byte overflow');

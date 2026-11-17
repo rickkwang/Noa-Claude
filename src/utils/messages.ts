@@ -13,7 +13,7 @@ import type {
   ToolUseBlock,
   ToolUseBlockParam,
 } from '@anthropic-ai/sdk/resources/index.mjs'
-import { randomUUID, type UUID } from 'crypto'
+import { createHash, randomUUID, type UUID } from 'crypto'
 import isObject from 'lodash-es/isObject.js'
 import isEqual from 'lodash-es/isEqual.js'
 import last from 'lodash-es/last.js'
@@ -41,9 +41,6 @@ import {
 } from '../services/analytics/growthbook.js'
 import {
   getImageTooLargeErrorMessage,
-  getPdfInvalidErrorMessage,
-  getPdfPasswordProtectedErrorMessage,
-  getPdfTooLargeErrorMessage,
   getRequestTooLargeErrorMessage,
 } from '../services/api/errors.js'
 import type { AnyObject, Progress } from '../Tool.js'
@@ -2143,6 +2140,11 @@ function relocateToolReferenceSiblings(
   return result
 }
 
+export function getPdfSourceDigest(block: unknown): string | undefined {
+  if (!block || typeof block !== 'object' || !('type' in block) || block.type !== 'document' || !('source' in block) || block.source == null) return undefined
+  return createHash('sha256').update(JSON.stringify(block.source)).digest('hex')
+}
+
 export function normalizeMessagesForAPI(
   messages: Message[],
   tools: Tools = [],
@@ -2159,9 +2161,6 @@ export function normalizeMessagesForAPI(
 
   // Build a map from error text → which block types to strip from the preceding user message.
   const errorToBlockTypes: Record<string, Set<string>> = {
-    [getPdfTooLargeErrorMessage()]: new Set(['document']),
-    [getPdfPasswordProtectedErrorMessage()]: new Set(['document']),
-    [getPdfInvalidErrorMessage()]: new Set(['document']),
     [getImageTooLargeErrorMessage()]: new Set(['image']),
     [getRequestTooLargeErrorMessage()]: new Set(['document', 'image']),
     [getRequestTooLargeErrorMessage(null)]: new Set(['document', 'image']),
@@ -2170,11 +2169,17 @@ export function normalizeMessagesForAPI(
   // Walk the reordered messages to build a targeted strip map:
   // userMessageUUID → set of block types to strip from that message.
   const stripTargets = new Map<string, Set<string>>()
+  const rejectedPdfs = new Map<string, number>()
+  const pdfCarrierPositions = new Map<string, number>()
   for (let i = 0; i < reorderedMessages.length; i++) {
     const msg = reorderedMessages[i]!
     if (!isSyntheticApiErrorMessage(msg)) {
+      if (msg.type === 'user' && Array.isArray(msg.message.content) && msg.message.content.some(block =>
+        block.type === 'document' || (block.type === 'tool_result' && Array.isArray(block.content) && block.content.some(item => item.type === 'document')),
+      )) pdfCarrierPositions.set(msg.uuid, i)
       continue
     }
+    if (msg.rejectedPdfSource) rejectedPdfs.set(msg.rejectedPdfSource, i)
     // Determine which error this is
     const errorText =
       Array.isArray(msg.message.content) &&
@@ -2266,6 +2271,23 @@ export function normalizeMessagesForAPI(
               message,
               availableToolNames,
             )
+          }
+
+          const pdfPosition = rejectedPdfs.size ? pdfCarrierPositions.get(normalizedMessage.uuid) : undefined
+          if (pdfPosition !== undefined && Array.isArray(normalizedMessage.message.content)) {
+            const rejected = (block: unknown) => (rejectedPdfs.get(getPdfSourceDigest(block) ?? '') ?? -1) > pdfPosition
+            const original = normalizedMessage.message.content
+            const content = original.filter(block => !rejected(block)).map(block => {
+              if (block.type !== 'tool_result' || !Array.isArray(block.content)) return block
+              const kept = block.content.filter(item => !rejected(item))
+              return kept.length === block.content.length ? block : {
+                ...block, content: kept.length ? kept : '[PDF rejected by API]',
+              }
+            })
+            if (!content.length && original.length) return
+            if (content.length !== original.length || content.some((b, i) => b !== original[i])) {
+              normalizedMessage = { ...normalizedMessage, message: { ...normalizedMessage.message, content } }
+            }
           }
 
           // Strip document/image blocks from the specific meta user message that
