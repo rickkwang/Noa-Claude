@@ -483,8 +483,8 @@ export type CronJitterConfig = {
 }
 
 export const DEFAULT_CRON_JITTER_CONFIG: CronJitterConfig = {
-  recurringFrac: 0.1,
-  recurringCapMs: 15 * 60 * 1000,
+  recurringFrac: 0.5,
+  recurringCapMs: 30 * 60 * 1000,
   oneShotMaxMs: 90 * 1000,
   oneShotFloorMs: 0,
   oneShotMinuteMod: 30,

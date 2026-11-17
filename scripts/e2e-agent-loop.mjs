@@ -591,7 +591,7 @@ async function run(executable, scenario, extra = [], input = 'Run the local loop
   }
   let stdout = '', stderr = '', pending = '', result;
   let budgetObservation;
-  // An every-minute cron fires at most ~66s after creation (6s recurring jitter).
+  // An every-minute cron fires at most ~90s after creation (30s recurring jitter).
   const timeout = setTimeout(() => process.kill(-child.pid, 'SIGKILL'), scenario === 'cron' || scenario === 'cron-wakeup' ? 150000 : 20000);
   child.stdout.on('data', chunk => {
     const s = chunk.toString(); stdout += s; pending += s;
