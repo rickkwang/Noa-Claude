@@ -6,7 +6,7 @@
 
 - `verify:ports` / `verify:harness` are manual and skip without an upstream binary; `verify:harness` also needs `compile`.
 - `e2e:background` / `e2e:startup` need tmux; `e2e:install` needs network; `e2e:sandbox` skips where sandboxing is unsupported.
-- `lint` = typecheck + docs check (no eslint). `compile` → `dist/cli`; `build` is baseline features only.
+- `build` is baseline features only.
 
 ## Testing
 
@@ -32,7 +32,6 @@ Path-scoped rules in `.claude/rules/` (symlinked as `.noa/rules/`) load automati
 - Skill hooks, task status, transcripts, Ink `Text` → `skill-hooks.md`, `task-status.md`, `transcripts.md`, `ink-text.md`
 - Writing or deleting tests (preload, isolated tests) → `testing.md`; editing CI workflows → `ci.md`
 - Verifying the model-capability tables against the upstream binary → `docs/upstream-binary.md`
-- Directory map: README.
 
 ## Conventions
 
