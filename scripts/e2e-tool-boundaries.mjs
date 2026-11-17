@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { spawn, execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -24,9 +24,15 @@ const toolResult = body => (body.messages || []).flatMap(m => Array.isArray(m.co
 const textOf = result => typeof result.content === 'string' ? result.content : JSON.stringify(result.content);
 
 const cases = [
+  { name: 'doctor-prompt', tool: 'Read', doctor: 'doctor' },
+  { name: 'checkup-prompt', tool: 'Read', doctor: 'checkup' },
   ...['streaming', 'nonstreaming'].flatMap(mode => [
+    { name: 'auto-parse-failure', tool: 'Write', auto: 'parse-failure' },
+    { name: 'auto-blocked', tool: 'Write', auto: 'blocked' },
+    { name: 'auto-allowed', tool: 'Write', auto: 'allowed' },
     { name: 'read-control' },
     { name: 'read-denied-control', denied: true },
+    { name: 'write-denied-control', tool: 'Write', denied: true },
     { name: 'hook-valid-denied', denied: true, hook: true },
     { name: 'hook-malformed-denied', denied: true, hook: true, unknown: true },
     { name: 'hook-invalid-limit', hook: true, invalid: true },
@@ -35,7 +41,7 @@ const cases = [
     { name: 'write-hook-malformed', hook: true, invalid: true, tool: 'Write' },
     { name: 'write-hook-unknown-key', hook: true, unknown: true, tool: 'Write' },
   ].map(c => ({ tool: 'Read', ...c, mode, name: `${c.name}-${mode}` }))),
-  ...['Grep', 'Glob'].flatMap(tool => [0, 1, 2, 3, 137, 'segv', 'partial', 'buffer'].map(code => ({
+  ...['Grep', 'Glob'].flatMap(tool => [0, 1, 2, 3, 137, 'segv', 'partial', 'buffer', 'denial-spoof'].map(code => ({
     name: `${tool.toLowerCase()}-${code}`, tool, code,
   }))),
 ].filter(c => !option('--case') || c.name === option('--case'));
@@ -53,10 +59,14 @@ const server = createServer(async (req, res) => {
     }
     const body = JSON.parse(raw);
     active.requests.push({ path: req.url, body });
-    const call = body.tools?.some(t => t.name === active.tool) && !toolResult(body);
+    const classifier = active.auto && !body.tools?.some(t => t.name === active.tool);
+    const call = !classifier && !active.doctor && body.tools?.some(t => t.name === active.tool) && !toolResult(body);
+    const verdict = active.auto === 'parse-failure' ? 'not a classifier verdict'
+      : active.auto === 'blocked' ? '<block>yes</block><severity>100</severity><reason>Fixture blocked this action.</reason>'
+      : '<block>no</block><severity>0</severity>';
     const content = call
       ? [{ type: 'tool_use', id: 'boundary_tool', name: active.tool, input: active.input }]
-      : [{ type: 'text', text: 'BOUNDARY_DONE' }];
+      : [{ type: 'text', text: classifier ? verdict : 'BOUNDARY_DONE' }];
     const message = { id: `msg_${active.requests.length}`, type: 'message', role: 'assistant', model: body.model,
       content, stop_reason: call ? 'tool_use' : 'end_turn', stop_sequence: null, usage: { input_tokens: 100, output_tokens: 10 } };
     if (!body.stream) {
@@ -91,7 +101,7 @@ async function run(scenario) {
   const fixture = join(dir, 'fixture.txt');
   const secret = join(dir, 'secret.txt');
   const rewritten = join(dir, 'rewritten.txt');
-  const newFile = join(dir, 'new.txt');
+  const newFile = scenario.auto ? `${dir}-new.txt` : join(dir, 'new.txt');
   writeFileSync(fixture, `${READ_MARKER}\n`);
   writeFileSync(secret, `${DENIED_MARKER}\n`);
   writeFileSync(rewritten, 'REWRITTEN_READ_42\n');
@@ -105,10 +115,12 @@ async function run(scenario) {
   Object.assign(env, { CLAUDE_CONFIG_DIR: join(dir, 'config'), ANTHROPIC_API_KEY: 'isolated-dummy',
     ANTHROPIC_BASE_URL: `http://127.0.0.1:${server.address().port}`, DISABLE_AUTOUPDATER: '1',
     NOA_CLAUDE_STREAMING_TOOL_EXECUTION: scenario.mode === 'nonstreaming' ? '0' : '1' });
-  const command = ['--print', 'Exercise the fixture tool once.', '--verbose', '--output-format', 'stream-json',
-    '--model', 'claude-sonnet-4-6', '--strict-mcp-config', '--setting-sources', '', '--permission-mode', 'dontAsk',
-    '--tools', scenario.tool, '--allowedTools', scenario.tool, '--max-turns', '2', '--no-session-persistence'];
-  if (scenario.denied) command.push('--disallowedTools', `Read(/${secret})`);
+  const command = ['--print', scenario.doctor ? `/${scenario.doctor} DOCTOR_SCOPE_FIXTURE: report only, do not edit.` : 'Exercise the fixture tool once.', '--verbose', '--output-format', 'stream-json',
+    '--model', 'claude-haiku-5-5', '--strict-mcp-config', '--setting-sources', '', '--permission-mode', scenario.auto ? 'auto' : 'dontAsk',
+    '--tools', scenario.tool, '--max-turns', '2'];
+  if (!scenario.auto) command.push('--allowedTools', scenario.tool);
+  // Write and Edit share the Edit filesystem permission rules.
+  if (scenario.denied) command.push('--disallowedTools', `${scenario.tool === 'Write' ? 'Edit' : 'Read'}(/${scenario.tool === 'Write' ? newFile : secret})`);
   if (scenario.hook) {
     const updatedInput = scenario.tool === 'Write' ? { file_path: newFile, content: scenario.invalid ? 42 : 'HOOK_WRITE' }
       : { file_path: scenario.denied ? secret : rewritten, ...(scenario.invalid && { limit: -1 }) };
@@ -126,10 +138,12 @@ async function run(scenario) {
     env.BOUNDARY_RG_LOG = join(dir, 'rg-invocations.txt');
     env.BOUNDARY_RG_MATCH = scenario.tool === 'Grep' ? `fixture.txt:1:${SEARCH_MARKER}` : fixture;
     const output = scenario.code === 0 || scenario.code === 'partial' ? 'printf "%s\\n" "$BOUNDARY_RG_MATCH"\n' : '';
-    const failure = scenario.code === 1 || scenario.code === 0 ? '' : 'echo BOUNDARY_RG_FAILURE >&2\n';
+    const failure = scenario.code === 'denial-spoof'
+      ? 'echo "Permission to use Bash requires approval" >&2\n'
+      : scenario.code === 1 || scenario.code === 0 ? '' : 'echo BOUNDARY_RG_FAILURE >&2\n';
     const ending = scenario.code === 'buffer' ? "head -c 21000000 /dev/zero | tr '\\000' x"
       : scenario.code === 'segv' ? 'ulimit -c 0\nkill -SEGV $$'
-      : `exit ${scenario.code === 'partial' ? 3 : scenario.code}`;
+      : `exit ${scenario.code === 'partial' || scenario.code === 'denial-spoof' ? 3 : scenario.code}`;
     writeFileSync(join(bin, 'rg'), `#!/bin/sh\nprintf '%s\\n' "$*" >> "$BOUNDARY_RG_LOG"\ncase "$*" in *--version*) echo 'ripgrep 14.1.0'; exit 0;; esac\n${output}${failure}${ending}\n`);
     chmodSync(join(bin, 'rg'), 0o755);
     env.PATH = `${bin}:${env.PATH}`;
@@ -152,8 +166,38 @@ async function run(scenario) {
   assert.equal(exit.signal, null, `CLI terminated: ${stderr.slice(0, 300)}`);
   assert.equal(exit.code, 0, `CLI exit ${exit.code}: ${stderr.slice(0, 300)}`);
   assert.equal(active.serverError, undefined);
+  if (scenario.doctor) {
+    const text = active.requests.flatMap(request => request.body.messages)
+      .flatMap(message => Array.isArray(message.content) ? message.content.filter(block => block.type === 'text').map(block => block.text) : [message.content]).join('\n');
+    assert.ok(text.includes('# Noa Claude Doctor'), '/doctor must expand through the real command dispatcher');
+    assert.ok(text.includes('DOCTOR_SCOPE_FIXTURE: report only, do not edit.'), 'extra user instructions must survive expansion');
+    assert.ok(text.includes('toolDenialKind'), 'the dispatched doctor must use the persisted denial protocol');
+    assert.ok(text.includes('CLAUDE_CONFIG_DIR'), 'custom config homes must not be mistaken for the default home');
+    assert.ok(!text.includes('npm -g uninstall @anthropic-ai/claude-code'), 'doctor must not suggest uninstalling the independent upstream CLI');
+    return { dir, observed: 'doctor dispatched with isolated config and no tool execution' };
+  }
   const result = observed.toolResult;
   assert.ok(result, 'tool result must reach the API follow-up');
+  const projectDir = join(env.CLAUDE_CONFIG_DIR, 'projects');
+  const transcriptEntries = readdirSync(projectDir, { recursive: true })
+    .filter(file => file.endsWith('.jsonl'))
+    .flatMap(file => readFileSync(join(projectDir, file), 'utf8').trim().split('\n').filter(Boolean).map(line => JSON.parse(line)));
+  const persistedResult = transcriptEntries.find(message => message.type === 'user' &&
+    Array.isArray(message.message?.content) && message.message.content.some(block => block.type === 'tool_result' && block.tool_use_id === 'boundary_tool'));
+  assert.ok(persistedResult, 'tool result must be persisted for doctor');
+  if (scenario.auto) {
+    assert.ok(active.requests.some(request => !request.body.tools?.some(tool => tool.name === scenario.tool)), 'the real classifier must be called');
+    const expectedKind = scenario.auto === 'parse-failure' ? 'automode-parsing-error'
+      : scenario.auto === 'blocked' ? 'automode-blocked' : undefined;
+    assert.equal(persistedResult.toolDenialKind, expectedKind, 'classifier faults must not become authorization evidence');
+    assert.equal(result.is_error === true, scenario.auto !== 'allowed');
+    assert.equal(existsSync(newFile), scenario.auto === 'allowed', 'only a valid allow verdict may write the file');
+  } else if (scenario.denied || scenario.invalid) {
+    assert.equal(persistedResult.toolDenialKind, 'permission-rule', 'doctor needs a CLI-stamped permission/hook denial, not tool-authored error text');
+  } else {
+    assert.equal(persistedResult.toolDenialKind, undefined, 'successes and tool failures are not permission denials');
+  }
+  assert.ok(active.requests.every(request => request.body.messages.every(message => !('toolDenialKind' in message))), 'local denial metadata must not reach the model');
   if (scenario.code !== undefined) {
     assert.ok(existsSync(env.BOUNDARY_RG_LOG), 'fixture rg must be invoked');
     if (scenario.code === 0) {
@@ -164,15 +208,16 @@ async function run(scenario) {
       assert.match(textOf(result), /No (files|matches) found/);
     } else {
       assert.equal(result.is_error, true, `search failure reported as success: ${textOf(result)}`);
+      if (scenario.code === 'denial-spoof') assert.ok(textOf(result).includes('Permission to use Bash requires approval'), 'spoofed denial must reach the tool result without becoming trusted metadata');
     }
-  } else if (scenario.denied || scenario.invalid) {
+  } else if (scenario.denied || scenario.invalid || (scenario.auto && scenario.auto !== 'allowed')) {
     assert.equal(result.is_error, true, `invalid/denied input executed: ${textOf(result)}`);
     assert.ok(!textOf(result).includes(DENIED_MARKER));
     assert.ok(!existsSync(newFile), 'rejected Write must not create a file');
   } else {
     assert.ok(!result.is_error, textOf(result));
     // Keys a hook adds outside the schema are dropped; the rest of the rewrite runs.
-    if (scenario.tool === 'Write') assert.equal(readFileSync(newFile, 'utf8'), 'HOOK_WRITE');
+    if (scenario.tool === 'Write') assert.equal(readFileSync(newFile, 'utf8'), scenario.auto ? 'BOUNDARY_WRITE' : 'HOOK_WRITE');
     else assert.ok(textOf(result).includes(scenario.hook ? 'REWRITTEN_READ_42' : READ_MARKER));
   }
   return { dir, observed: result };

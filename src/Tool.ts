@@ -100,6 +100,7 @@ export type ValidationResult =
       result: false
       message: string
       errorCode: number
+      toolDenialKind?: 'permission-rule'
     }
 
 export type SetToolJSXFn = (

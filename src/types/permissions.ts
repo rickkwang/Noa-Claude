@@ -44,6 +44,15 @@ export const PERMISSION_MODES = INTERNAL_PERMISSION_MODES
 
 export type PermissionBehavior = 'allow' | 'deny' | 'ask'
 
+export type ToolDenialKind =
+  | 'user-rejected'
+  | 'permission-rule'
+  | 'automode-blocked'
+  | 'automode-unavailable'
+  | 'automode-parsing-error'
+  | 'interrupted'
+  | 'cancelled'
+
 // ============================================================================
 // Permission Rules
 // ============================================================================
@@ -202,6 +211,7 @@ export type PermissionAskDecision<
 > = {
   behavior: 'ask'
   message: string
+  toolDenialKind?: ToolDenialKind
   updatedInput?: Input
   decisionReason?: PermissionDecisionReason
   suggestions?: PermissionUpdate[]
@@ -238,6 +248,7 @@ export type PermissionAskDecision<
 export type PermissionDenyDecision = {
   behavior: 'deny'
   message: string
+  toolDenialKind?: ToolDenialKind
   decisionReason: PermissionDecisionReason
   toolUseID?: string
 }

@@ -184,6 +184,7 @@ export const FileEditTool = buildTool({
         message:
           'File is in a directory that is denied by your permission settings.',
         errorCode: 2,
+        toolDenialKind: 'permission-rule',
       }
     }
 

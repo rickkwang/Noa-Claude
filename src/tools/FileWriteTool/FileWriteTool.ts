@@ -190,6 +190,7 @@ export const FileWriteTool = buildTool({
         message:
           'File is in a directory that is denied by your permission settings.',
         errorCode: 1,
+        toolDenialKind: 'permission-rule',
       }
     }
 

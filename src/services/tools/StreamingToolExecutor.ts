@@ -216,6 +216,7 @@ export class StreamingToolExecutor {
             },
           ],
           toolUseResult: TURN_ENDED_FOR_MESSAGE_TOOL_RESULT,
+          toolDenialKind: 'cancelled',
           sourceToolAssistantUUID: assistantMessage.uuid,
         })
       }
@@ -229,6 +230,7 @@ export class StreamingToolExecutor {
           },
         ],
         toolUseResult: 'User rejected tool use',
+        toolDenialKind: 'interrupted',
         sourceToolAssistantUUID: assistantMessage.uuid,
       })
     }
@@ -411,9 +413,22 @@ export class StreamingToolExecutor {
       let hasToolResult = false
 
       for await (const update of generator) {
-        // Check if we were discarded or interrupted by the user.
+        const isToolResult =
+          update.message.type === 'user' &&
+          Array.isArray(update.message.message.content) &&
+          update.message.message.content.some(_ => _.type === 'tool_result')
+        const isPermissionRejection =
+          isToolResult &&
+          update.message.type === 'user' &&
+          (update.message.toolDenialKind === 'user-rejected' ||
+            update.message.toolDenialKind === 'cancelled')
+        // A permission rejection aborts before yielding its authoritative result.
         const abortReason = this.getAbortReason(tool)
-        if (abortReason && !hasToolResult) {
+        if (
+          abortReason &&
+          !hasToolResult &&
+          (abortReason === 'streaming_fallback' || !isPermissionRejection)
+        ) {
           messages.push(
             this.createSyntheticErrorMessage(
               tool.id,
@@ -424,13 +439,7 @@ export class StreamingToolExecutor {
           break
         }
 
-        if (
-          update.message.type === 'user' &&
-          Array.isArray(update.message.message.content) &&
-          update.message.message.content.some(_ => _.type === 'tool_result')
-        ) {
-          hasToolResult = true
-        }
+        if (isToolResult) hasToolResult = true
 
         if (update.message) {
           // Progress messages go to pendingProgress for immediate yielding

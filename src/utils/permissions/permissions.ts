@@ -1076,6 +1076,7 @@ export const hasPermissionsToUseTool: CanUseToolFn = async (
                 classifier: 'auto-mode',
                 reason: transcriptReason,
               },
+              toolDenialKind: 'automode-unavailable',
               message: compactPending
                 ? `${toolName} was not reviewed and did not run: the conversation is too long for auto mode's classifier, and no permission prompt is raised for this tool. This is not a judgment that the action is unsafe. Claude Code will try to compact the conversation before the next request; if this action is still needed after that, issue it again.`
                 : `${toolName} was not reviewed: the auto mode classifier transcript exceeded its context window, and no permission prompt is raised for this tool. This is not a judgment that the action is unsafe; the same call will hit the same limit until the conversation is shorter.`,
@@ -1096,6 +1097,7 @@ export const hasPermissionsToUseTool: CanUseToolFn = async (
                 classifier: 'auto-mode',
                 reason: transcriptReason,
               },
+              toolDenialKind: 'automode-unavailable',
               message: `${toolName} was not reviewed and did not run: the conversation is too long for auto mode's classifier. Claude Code will try to compact the conversation before the next request; if this action is still needed after that, issue it again and it will be reviewed normally.`,
             }
           }
@@ -1123,6 +1125,7 @@ export const hasPermissionsToUseTool: CanUseToolFn = async (
               classifier: 'auto-mode',
               reason: 'Classifier unavailable',
             },
+            toolDenialKind: 'automode-unavailable',
             message: buildClassifierUnavailableMessage(
               tool.name,
               classifierResult.model,
@@ -1156,6 +1159,7 @@ export const hasPermissionsToUseTool: CanUseToolFn = async (
               classifier: 'auto-mode',
               reason: classifierResult.reason,
             },
+            toolDenialKind: 'automode-unavailable',
             message: buildClassifierRefusalMessage(classifierResult.reason),
           }
         }
@@ -1192,6 +1196,9 @@ export const hasPermissionsToUseTool: CanUseToolFn = async (
             classifier: 'auto-mode',
             reason: classifierResult.reason,
           },
+          toolDenialKind: classifierResult.parseFailure
+            ? 'automode-parsing-error'
+            : 'automode-blocked',
           message: buildYoloRejectionMessage(
             classifierResult.reason,
             tool.isMcp || shouldAllowManagedPermissionRulesOnly()

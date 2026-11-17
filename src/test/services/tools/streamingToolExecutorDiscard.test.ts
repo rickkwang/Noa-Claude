@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { z } from 'zod'
 import type { ToolUseContext } from '../../../Tool.js'
+import type { UserMessage } from '../../../types/message.js'
 import { StreamingToolExecutor } from '../../../services/tools/StreamingToolExecutor.js'
 import { createAssistantMessage } from '../../../utils/messages.js'
 
@@ -91,7 +92,13 @@ function makeTool(name: string, body: () => Promise<void>) {
 }
 
 function toolUseBlock(id: string, name: string) {
-  return { type: 'tool_use' as const, id, name, input: {} }
+  return {
+    type: 'tool_use' as const,
+    id,
+    name,
+    input: {},
+    caller: { type: 'direct' as const },
+  }
 }
 
 function assistantWith(id: string, name: string) {
@@ -100,6 +107,53 @@ function assistantWith(id: string, name: string) {
   })
   return msg
 }
+
+describe('StreamingToolExecutor permission rejection', () => {
+  test.each(['user-rejected', 'cancelled'] as const)(
+    'preserves %s when the permission dialog aborts the turn',
+    async toolDenialKind => {
+      let calls = 0
+      const tool = makeTool('RejectedTool', async () => { calls += 1 })
+      const { context, inProgress } = createContext([
+        tool,
+      ] as unknown as ToolUseContext['options']['tools'])
+      const executor = new StreamingToolExecutor(
+        context.options.tools,
+        async (_tool, _input, childContext) => {
+          childContext.abortController.abort()
+          return {
+            behavior: 'ask',
+            message: 'Permission dialog rejected this action',
+            contentBlocks: [{ type: 'text', text: 'Keep the original file.' }],
+            toolDenialKind,
+          }
+        },
+        context,
+      )
+      executor.addTool(
+        toolUseBlock('rejected-1', tool.name),
+        assistantWith('rejected-1', tool.name),
+      )
+      executor.addTool(
+        toolUseBlock('queued-2', tool.name),
+        assistantWith('queued-2', tool.name),
+      )
+      const results: UserMessage[] = []
+      for await (const update of executor.getRemainingResults()) {
+        if (update.message?.type === 'user') results.push(update.message)
+      }
+      expect(context.abortController.signal.aborted).toBe(true)
+      expect(calls).toBe(0)
+      expect(results).toHaveLength(2)
+      expect(results[0]!.toolDenialKind).toBe(toolDenialKind)
+      expect(results[1]!.toolDenialKind).toBe('interrupted')
+      expect(JSON.stringify(results[0]!.message.content)).toContain(
+        'Keep the original file.',
+      )
+      expect(inProgress.size).toBe(0)
+    },
+  )
+})
 
 describe('StreamingToolExecutor.discard', () => {
   test('releases in-progress marks and does not start queued tools', async () => {

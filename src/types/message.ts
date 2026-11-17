@@ -8,6 +8,7 @@ import type { APIError } from '@anthropic-ai/sdk'
 import type { SDKAssistantMessageErrorSchema } from '../entrypoints/sdk/coreSchemas.js'
 import type { Attachment } from '../utils/attachments.js'
 import type { EffortLevel } from '../utils/effort.js'
+import type { ToolDenialKind } from './permissions.js'
 import type { UUID } from 'crypto'
 
 type SDKAssistantMessageError = z.infer<
@@ -99,6 +100,7 @@ export type UserMessage = MessageBase & {
     content: string | ContentBlockParam[]
   }
   imagePasteIds?: number[]
+  toolDenialKind?: ToolDenialKind
 }
 
 export type NormalizedUserMessage = UserMessage

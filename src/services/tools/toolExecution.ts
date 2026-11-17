@@ -483,6 +483,7 @@ export async function* runToolUse(
         message: createUserMessage({
           content: [content],
           toolUseResult: cancelText,
+          toolDenialKind: 'cancelled',
           sourceToolAssistantUUID: assistantMessage.uuid,
         }),
       }
@@ -775,6 +776,7 @@ async function checkPermissionsAndCallTool(
             },
           ],
           toolUseResult: `Error: ${isValidCall.message}`,
+          toolDenialKind: isValidCall.toolDenialKind,
           sourceToolAssistantUUID: assistantMessage.uuid,
         }),
       },
@@ -1123,6 +1125,12 @@ async function checkPermissionsAndCallTool(
         content: messageContent,
         imagePasteIds: rejectImageIds,
         toolUseResult: `Error: ${errorMessage}`,
+        toolDenialKind:
+          permissionDecision.toolDenialKind ??
+          (permissionDecision.decisionReason?.type === 'classifier' &&
+          permissionDecision.decisionReason.classifier === 'auto-mode'
+            ? 'automode-blocked'
+            : 'permission-rule'),
         sourceToolAssistantUUID: assistantMessage.uuid,
       }),
     })
@@ -1847,6 +1855,7 @@ async function checkPermissionsAndCallTool(
             },
           ],
           toolUseResult: `Error: ${content}`,
+          toolDenialKind: isInterrupt ? 'interrupted' : undefined,
           mcpMeta: toolUseContext.agentId
             ? undefined
             : error instanceof

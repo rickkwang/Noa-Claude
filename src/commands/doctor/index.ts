@@ -8,10 +8,6 @@ import { DOCTOR_PROMPT } from './doctorPrompt.js'
 // skills/MCP servers/plugins, bloated or duplicated memory files, slow hooks,
 // context-heavy extensions, version, permission-mode + allowlist tuning) and
 // then proposes fixes gated behind confirmation.
-//
-// The read-only installation-diagnostics *screen* (Doctor.tsx) still ships as
-// the terminal `noa doctor` subcommand; Check 0 of this prompt replicates its
-// findings and turns each into an actionable fix.
 const doctor: Command = {
   type: 'prompt',
   name: 'doctor',

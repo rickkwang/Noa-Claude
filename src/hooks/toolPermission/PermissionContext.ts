@@ -170,7 +170,12 @@ function createPermissionContext(
         )
         toolUseContext.abortController.abort()
       }
-      return { behavior: 'ask', message, contentBlocks }
+      return {
+        behavior: 'ask',
+        message,
+        contentBlocks,
+        toolDenialKind: isAbort ? 'cancelled' : 'user-rejected',
+      }
     },
     ...(feature('BASH_CLASSIFIER')
       ? {
