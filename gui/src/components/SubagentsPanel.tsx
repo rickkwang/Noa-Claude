@@ -22,7 +22,7 @@ export function SubagentsPanel({ tasks, selectedId, onSelect, onStopTask }: {
   const done = tasks.filter(task => task.status !== "running" && task.status !== "unknown")
   return <div className="scrollbar-on-scroll noa-scroll-fade [--edge-fade-distance:24px] min-h-0 flex-1 overflow-y-auto px-3 py-5 text-chat-sm">
     {[{ title: "Active", items: active }, { title: "Done", items: done }].map(({ title, items }) => <section key={title} className={title === "Done" ? "mt-6" : ""}>
-      <h2 className="mb-2 flex items-center gap-1 px-2 text-chat-sm font-normal text-[var(--text-tertiary)]">{title} · {items.length}</h2>
+      <h2 className="mb-2 flex items-center gap-1 ps-[9px] pe-2 text-chat-sm font-normal text-[var(--text-tertiary)]">{title} · {items.length}</h2>
       {!items.length && title === "Active" && <p className="m-0 px-2 py-1 text-[var(--text-tertiary)]">No active subagents</p>}
       <div className="flex flex-col gap-1">
         {items.map(task => <button key={task.id} type="button" onClick={() => onSelect(task.id)} className="flex min-h-8 w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left hover:bg-[var(--fill-hover)]">

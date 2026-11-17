@@ -15,7 +15,7 @@ interface NewTabTool {
 export function NewTabPage({ tools, onSelect, onOpenBottomTerminal, suggested = [], onOpenUrl, onDismissUrl, shortcuts = defaultShortcuts }: { shortcuts?: ShortcutBindings; tools: NewTabTool[]; onSelect: (id: string) => void; onOpenBottomTerminal: () => void; suggested?: string[]; onOpenUrl?: (url: string) => void; onDismissUrl?: (url: string) => void }) {
   const [menu, setMenu] = useState<{ anchor: PopupMenuAnchor; trigger: Element }>()
   return (
-    <div className="noa-new-tab-page @container h-full min-h-0 overflow-y-auto px-2 py-8 select-none">
+    <div className="noa-new-tab-page @container h-full min-h-0 overflow-y-auto px-3 py-8 select-none">
       <section className="mx-auto flex w-full max-w-3xl flex-col gap-4">
         <h3 className="m-0 ps-2 text-[length:var(--text-chat-sm)] font-medium text-[var(--text-primary,#2D2D2B)]">Tools</h3>
         <div className="grid grid-cols-1 gap-1 @md:grid-cols-2">

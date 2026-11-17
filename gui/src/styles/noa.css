@@ -409,11 +409,6 @@ body {
     rgb(0 0 0 / 0) calc(100% - var(--noa-fade-right, 0) * 0px);
   -webkit-mask-image: linear-gradient(to right, var(--noa-fade-ramp));
   mask-image: linear-gradient(to right, var(--noa-fade-ramp));
-  animation-name: noa-fade-left-in, noa-fade-right-out;
-  animation-timing-function: linear;
-  animation-fill-mode: both;
-  animation-timeline: scroll(self inline), scroll(self inline);
-  animation-range: 0px 28px, calc(100% - 28px) 100%;
   scroll-padding-inline: 28px;
 }
 
@@ -1359,11 +1354,11 @@ html[data-translucent-sidebar="enabled"] [data-sidebar-container] .noa-sidebar-t
 .noa-panel-body { flex: 1; min-width: 0; min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
 /* A code or diff view keeps an overlay scrollbar in the app's thumb colour; it takes no width, so line colours reach the panel edge. */
 .noa-panel-body.is-code { scrollbar-gutter: auto; scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
-.noa-file-root { padding-top: 8px; padding-bottom: 0; padding-left: 16px; }
+.noa-file-root { padding-top: 8px; padding-bottom: 0; padding-left: 20px; }
 .noa-file-root-chip { display: inline-flex; min-width: 0; max-width: 70%; align-items: center; gap: 5px; height: 26px; padding: 0; border-radius: 8px; color: var(--text-primary); }
 .noa-file-root-chip > svg { color: var(--sidebar-text-muted); }
 .noa-file-root-chip > svg { flex-shrink: 0; }
-.noa-file-search { display: flex; flex-shrink: 0; align-items: center; gap: 4px; padding: 8px 8px 4px; }
+.noa-file-search { display: flex; flex-shrink: 0; align-items: center; gap: 4px; padding: 8px 8px 4px 12px; }
 .noa-file-search-field { display: flex; min-width: 0; flex: 1; align-items: center; gap: 5px; height: 30px; padding: 0 7px; border: 1px solid var(--border-default); border-radius: 8px; background: transparent; color: var(--sidebar-text-muted); transition: border-color 120ms; }
 .noa-file-search-field:focus-within { border-color: var(--border-strong); }
 .noa-file-search-field input { min-width: 0; flex: 1; border: 0; outline: 0; background: transparent; font: inherit; font-size: 13px; color: var(--text-primary); }
@@ -1372,7 +1367,7 @@ html[data-translucent-sidebar="enabled"] [data-sidebar-container] .noa-sidebar-t
 .noa-file-search-field svg { flex-shrink: 0; }
 .noa-file-root-chip > svg, .noa-file-search-field > svg { margin-inline: 1px; }
 /* No right padding: the scroll body already reserves an 8px scrollbar strip there, which makes the gap match the left. */
-.noa-file-tree { padding: 4px 0 8px 8px; font-size: 13px; }
+.noa-file-tree { padding: 4px 0 8px 12px; font-size: 13px; }
 .noa-file-row { position: relative; display: flex; align-items: center; gap: 5px; height: 28px; width: 100%; padding: 0 8px; border-radius: 6px; text-align: left; color: var(--sidebar-text); }
 .noa-file-icon { display: flex; flex-shrink: 0; align-items: center; justify-content: center; width: 16px; color: var(--sidebar-text-muted); }
 .noa-file-icon > svg { transition: transform 120ms ease; }
@@ -1389,11 +1384,11 @@ html[data-translucent-sidebar="enabled"] [data-sidebar-container] .noa-sidebar-t
 .noa-files-main { display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; }
 .noa-files-tree { position: relative; display: flex; flex-shrink: 0; flex-direction: column; min-width: 0; min-height: 0; border-left: 1px solid var(--border-light, var(--divider-subtle)); }
 /* The file header and the tree's filter share one 42px row; only the file column has a rule under it. */
-.noa-files-head { min-height: 42px; padding-left: 16px; border-bottom: 1px solid var(--border-light, var(--divider-subtle)); }
+.noa-files-head { min-height: 42px; padding-left: 20px; border-bottom: 1px solid var(--border-light, var(--divider-subtle)); }
 .noa-files-head > .noa-file-root-chip { flex-shrink: 1; }
 /* The file column can be 220px wide, so its menus open rightwards over the tree instead of past the pane's left edge. */
 .noa-files-head .noa-review-menu-content { right: auto; left: 0; }
-.noa-files-tree > .noa-file-search { min-height: 42px; padding: 6px 8px; }
+.noa-files-tree > .noa-file-search { min-height: 42px; padding: 6px 8px 6px 12px; }
 .noa-files-resize { position: absolute; inset-block: 0; left: -3px; z-index: 30; width: 6px; cursor: col-resize; touch-action: none; }
 .noa-files-placeholder { display: flex; height: 100%; flex-direction: column; align-items: center; justify-content: center; gap: 4px; }
 .noa-files-placeholder > p { margin: 0; color: var(--text-primary); }
@@ -1623,7 +1618,7 @@ kbd.noa-review-menu-hint { font-family: inherit; }
 [data-theme="dark"] .noa-code-view.is-diff .noa-code-line.is-empty .noa-code-number { background: color-mix(in lab, var(--surface-page) 98.5%, #fff); }
 .noa-code-view.is-diff .noa-code-line.is-empty code { background: repeating-linear-gradient(-45deg, transparent, transparent calc(3px * 1.414), var(--diff-buffer) calc(3px * 1.414), var(--diff-buffer) calc(4px * 1.414)) 5px 0 / 8px 8px fixed; }
 /* Panel alignment grid: leading icons and text sit 16px from the panel edge in every tab. */
-.noa-panel-title { padding-left: 8px; }
+.noa-panel-title { padding-left: 13px; }
 /* A leading icon button (Back) centres on the 24px icon column too. */
 .noa-panel-toolbar > .noa-panel-button:first-child:not(.is-text) { margin-left: 4px; }
 /* The title after it starts on the 37px label column (the file header's 2px gap plus this pulls it back 1px). */
