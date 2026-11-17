@@ -1937,7 +1937,7 @@ function runHeadlessStreaming(
   // setTimeout(0) yields to the event loop so pending stdin messages
   // (interrupts, user messages) are processed before the tick fires.
   const scheduleProactiveTick =
-    feature('PROACTIVE') || feature('KAIROS')
+    feature('KAIROS')
       ? () => {
           setTimeout(() => {
             if (
@@ -2588,7 +2588,7 @@ function runHeadlessStreaming(
 
     // Proactive tick: if proactive is active and queue is empty, inject a tick
     if (
-      (feature('PROACTIVE') || feature('KAIROS')) &&
+      feature('KAIROS') &&
       proactiveModule?.isProactiveActive() &&
       !proactiveModule.isProactivePaused()
     ) {
@@ -4351,7 +4351,7 @@ function runHeadlessStreaming(
             }
           })()
         } else if (
-          (feature('PROACTIVE') || feature('KAIROS')) &&
+          feature('KAIROS') &&
           (message.request as { subtype: string }).subtype === 'set_proactive'
         ) {
           const req = message.request as unknown as {

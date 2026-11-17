@@ -6,7 +6,7 @@ import { SLEEP_TOOL_NAME } from '../tools/SleepTool/prompt.js'
 // Dead code elimination: conditional imports for feature-gated modules
 /* eslint-disable @typescript-eslint/no-require-imports */
 const proactiveModule =
-  feature('PROACTIVE') || feature('KAIROS')
+  feature('KAIROS')
     ? require('../proactive/index.js')
     : null
 
@@ -23,8 +23,8 @@ const briefToolModule =
     : null
 /* eslint-enable @typescript-eslint/no-require-imports */
 
-export function isProactivePromptActive(): boolean {
-  if (!(feature('PROACTIVE') || feature('KAIROS'))) return false
+function isProactivePromptActive(): boolean {
+  if (!feature('KAIROS')) return false
   return proactiveModule?.isProactiveActive() ?? false
 }
 

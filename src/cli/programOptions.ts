@@ -291,7 +291,7 @@ export function configureProgramOptions(program: CommanderCommand): void {
   if (feature('AUTO_MODE')) {
     program.addOption(new Option('--enable-auto-mode', 'Opt in to auto mode').hideHelp());
   }
-  if (feature('PROACTIVE') || feature('KAIROS')) {
+  if (feature('KAIROS')) {
     program.addOption(new Option('--proactive', 'Start in proactive autonomous mode'));
   }
   if (feature('KAIROS') || feature('KAIROS_BRIEF')) {
