@@ -14,7 +14,6 @@ import {
   getGitStatus,
   getSystemContext,
   getUserContext,
-  setSystemPromptInjection,
 } from '../../context.js'
 import { clearFileSuggestionCaches } from '../../hooks/fileSuggestions.js'
 import { clearAllPendingCallbacks } from '../../hooks/useSwarmPermissionPoller.js'
@@ -59,8 +58,6 @@ export function clearSessionCaches(
   clearCommandsCache()
 
   if (!hasPreserved) resetPromptCacheBreakDetection()
-
-  setSystemPromptInjection(null)
 
   setLastEmittedDate(null)
 

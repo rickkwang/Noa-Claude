@@ -185,7 +185,6 @@ export type AppState = DeepImmutable<{
   foregroundedTaskId?: string
   // Task ID of in-process teammate whose transcript is being viewed (undefined = leader's view)
   viewingAgentTaskId?: string
-  // TODO (ashwin): see if we can use utility-types DeepReadonly for this
   mcp: {
     clients: MCPServerConnection[]
     tools: Tool[]

@@ -1988,7 +1988,7 @@ async function run(): Promise<CommanderCommand> {
     // Coordinator mode has its own system prompt and filters out Sleep, so
     // the generic proactive prompt would tell it to call a tool it can't
     // access and conflict with delegation instructions.
-    if ((feature('PROACTIVE') || feature('KAIROS')) && ((options as {
+    if (feature('KAIROS') && ((options as {
       proactive?: boolean;
     }).proactive || isEnvTruthy(process.env.CLAUDE_CODE_PROACTIVE)) && !coordinatorModeModule?.isCoordinatorMode()) {
       /* eslint-disable @typescript-eslint/no-require-imports */
@@ -4346,7 +4346,7 @@ async function logTenguInit({
   }
 }
 function maybeActivateProactive(options: unknown): void {
-  if ((feature('PROACTIVE') || feature('KAIROS')) && ((options as {
+  if (feature('KAIROS') && ((options as {
     proactive?: boolean;
   }).proactive || isEnvTruthy(process.env.CLAUDE_CODE_PROACTIVE))) {
     // eslint-disable-next-line @typescript-eslint/no-require-imports

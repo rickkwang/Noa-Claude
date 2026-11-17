@@ -591,10 +591,6 @@ export function getDirectConnectServerUrl(): string | undefined {
   return STATE.directConnectServerUrl
 }
 
-export function setDirectConnectServerUrl(url: string): void {
-  STATE.directConnectServerUrl = url
-}
-
 export function addToTotalDurationState(
   duration: number,
   durationWithoutRetries: number,

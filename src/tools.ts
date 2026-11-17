@@ -13,7 +13,7 @@ import { TaskStopTool } from './tools/TaskStopTool/TaskStopTool.js'
 import { BriefTool } from './tools/BriefTool/BriefTool.js'
 /* eslint-disable custom-rules/no-process-env-top-level, @typescript-eslint/no-require-imports */
 const SleepTool =
-  feature('PROACTIVE') || feature('KAIROS')
+  feature('KAIROS')
     ? require('./tools/SleepTool/SleepTool.js').SleepTool
     : null
 const cronTools = feature('AGENT_TRIGGERS')

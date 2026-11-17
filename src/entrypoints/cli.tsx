@@ -13,18 +13,6 @@ if (process.env.CLAUDE_CODE_REMOTE === 'true') {
   process.env.NODE_OPTIONS = existing ? `${existing} --max-old-space-size=8192` : '--max-old-space-size=8192';
 }
 
-// Harness-science L0 ablation baseline. Inlined here (not init.ts) because
-// BashTool/AgentTool/PowerShellTool capture DISABLE_BACKGROUND_TASKS into
-// module-level consts at import time — init() runs too late. feature() gate
-// DCEs this entire block from external builds.
-// eslint-disable-next-line custom-rules/no-top-level-side-effects, custom-rules/no-process-env-top-level
-if (feature('ABLATION_BASELINE') && process.env.CLAUDE_CODE_ABLATION_BASELINE) {
-  for (const k of ['CLAUDE_CODE_SIMPLE', 'CLAUDE_CODE_DISABLE_THINKING', 'DISABLE_INTERLEAVED_THINKING', 'DISABLE_COMPACT', 'DISABLE_AUTO_COMPACT', 'CLAUDE_CODE_DISABLE_AUTO_MEMORY', 'CLAUDE_CODE_DISABLE_BACKGROUND_TASKS']) {
-    // eslint-disable-next-line custom-rules/no-top-level-side-effects, custom-rules/no-process-env-top-level
-    process.env[k] ??= '1';
-  }
-}
-
 /**
  * Bootstrap entrypoint - checks for special flags before loading the full CLI.
  * All imports are dynamic to minimize module evaluation for fast paths.
@@ -70,38 +58,6 @@ export async function bootstrapCli(): Promise<void> {
     profileCheckpoint
   } = await import('../utils/startupProfiler.js');
   profileCheckpoint('cli_entry');
-
-  // Fast-path for --dump-system-prompt: output the rendered system prompt and exit.
-  // Used by prompt sensitivity evals to extract the system prompt at a specific commit.
-  // Ant-only: eliminated from external builds via feature flag.
-  if (feature('DUMP_SYSTEM_PROMPT') && args[0] === '--dump-system-prompt') {
-    profileCheckpoint('cli_dump_system_prompt_path');
-    const {
-      enableConfigs
-    } = await import('../utils/config.js');
-    enableConfigs();
-    const {
-      getMainLoopModel
-    } = await import('../utils/model/model.js');
-    const modelIdx = args.indexOf('--model');
-    const model = modelIdx !== -1 && args[modelIdx + 1] || getMainLoopModel();
-    const {
-      getSystemPrompt
-    } = await import('../constants/prompts.js');
-    const prompt = await getSystemPrompt([], model);
-    // biome-ignore lint/suspicious/noConsole:: intentional console output
-    console.log(prompt.join('\n'));
-    return;
-  }
-  // Fast-path for `--daemon-worker=<kind>` (internal — supervisor spawns this).
-  // Must come before the daemon subcommand check: spawned per-worker, so
-  // perf-sensitive. No enableConfigs(), no analytics sinks at this layer —
-  // workers are lean. If a worker kind needs configs/auth (assistant will),
-  // it calls them inside its run() fn.
-  if (feature('DAEMON') && args[0] === '--daemon-worker') {
-    const { cliError } = await import('../cli/exit.js');
-    cliError('Daemon worker is not available in this build.');
-  }
 
   // Fast-path for `claude remote-control` (also accepts legacy `claude remote` / `claude sync` / `claude bridge`):
   // serve local machine as bridge environment.
@@ -157,27 +113,6 @@ export async function bootstrapCli(): Promise<void> {
     }
     await bridgeMain(args.slice(1));
     return;
-  }
-
-  // Fast-path for `claude daemon [subcommand]`: long-running supervisor.
-  if (feature('DAEMON') && args[0] === 'daemon') {
-    const { cliError } = await import('../cli/exit.js');
-    cliError('Daemon mode is not available in this build.');
-  }
-
-  // Fast-path for `claude environment-runner`: headless BYOC runner.
-  // feature() must stay inline for build-time dead code elimination.
-  if (feature('BYOC_ENVIRONMENT_RUNNER') && args[0] === 'environment-runner') {
-    const { cliError } = await import('../cli/exit.js');
-    cliError('Environment runner is not available in this build.');
-  }
-
-  // Fast-path for `claude self-hosted-runner`: headless self-hosted-runner
-  // targeting the SelfHostedRunnerWorkerService API. feature() must stay
-  // inline for build-time dead code elimination.
-  if (feature('SELF_HOSTED_RUNNER') && args[0] === 'self-hosted-runner') {
-    const { cliError } = await import('../cli/exit.js');
-    cliError('Self-hosted runner is not available in this build.');
   }
 
   // Fast-path for --worktree --tmux: exec into tmux before loading full CLI

@@ -412,7 +412,6 @@ export function registerRemoteAgentTask(options: {
   // Ultraplan lifecycle is owned by startDetachedPoll in ultraplan.tsx. Generic
   // polling still runs so session.log populates for the detail view's progress
   // counts; the result-lookup guard below prevents early completion.
-  // TODO(#23985): fold ExitPlanModeScanner into this poller, drop startDetachedPoll.
   const stopPolling = startRemoteSessionPolling(taskId, context);
   return {
     taskId,
