@@ -154,8 +154,7 @@ Runtime behavior:
 - budget-limited goals resume only when the same objective is set with a larger `--budget`
 - session restore replays transcript evidence to recover goal status, usage, verify command, auto-continue count, and stop reason
 
-For tasks with clear acceptance conditions, use `/goal <objective> --verify "python3 independent_check.py"`. Keep that check independent of model-generated tests. A public test passing covers its assertions, not every requirement; completion reports should identify checks run and requirements still unverified. The small opt-in real-model checks in `scripts/evals/coding/README.md` grade finished artifacts separately from the agent's report.
-
+For tasks with clear acceptance conditions, use `/goal <objective> --verify "python3 independent_check.py"`. Keep that check independent of model-generated tests. A public test passing covers its assertions, not every requirement; completion reports should identify checks run and requirements still unverified.
 The model cannot create, pause, resume, clear, or complete a goal. `/goal` sets and controls it, and the independent evaluator decides completion.
 
 ### Background replies and recovery
