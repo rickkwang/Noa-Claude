@@ -475,7 +475,7 @@ describe('max output tokens for provider profile models', () => {
     process.env = { ...SAVED }
   })
 
-  test('k3 uses the documented 131k default and 1M ceiling, not the 32k/64k fallback', async () => {
+  test('k3 uses the documented 131k default and 1M ceiling, not the 32k/128k fallback', async () => {
     const { getModelMaxOutputTokens } = await import('../../utils/context.js')
 
     expect(getModelMaxOutputTokens('k3')).toEqual({
@@ -489,7 +489,7 @@ describe('max output tokens for provider profile models', () => {
 
     expect(getModelMaxOutputTokens('k3-256k')).toEqual({
       default: 32_000,
-      upperLimit: 64_000,
+      upperLimit: 128_000,
     })
   })
 

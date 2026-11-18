@@ -222,11 +222,13 @@ describe('query loop recovery', () => {
     expect(appState.goal.status === 'paused' || appState.goal.retryAt !== null).toBe(true)
   }, 5000)
 
-  test('max_output_tokens: withholds the error, injects a resume prompt, and retries', async () => {
+  test('max_output_tokens: retries at a higher cap before injecting a resume prompt', async () => {
     const callMessages: Message[][] = []
-    const deps = makeDeps(async function* ({ messages }) {
+    const outputCaps: (number | undefined)[] = []
+    const deps = makeDeps(async function* ({ messages, options }) {
       callMessages.push(messages)
-      if (callMessages.length === 1) {
+      outputCaps.push(options.maxOutputTokensOverride)
+      if (callMessages.length <= 2) {
         yield maxOutputTokensError()
         return
       }
@@ -235,9 +237,9 @@ describe('query loop recovery', () => {
 
     const { events, terminal } = await drain({ deps })
 
-    expect(callMessages.length).toBe(2)
-    // The retry prompt is the last message the model sees on attempt 2.
-    const retryPrompt = callMessages[1]!.at(-1)!
+    expect(outputCaps).toEqual([undefined, 128_000, 128_000])
+    expect(callMessages[1]).toEqual(callMessages[0]!)
+    const retryPrompt = callMessages[2]!.at(-1)!
     expect(retryPrompt.type).toBe('user')
     expect(String(retryPrompt.message?.content)).toContain(
       'Output token limit hit',
@@ -256,8 +258,8 @@ describe('query loop recovery', () => {
 
     const { events, terminal } = await drain({ deps })
 
-    // Initial attempt + MAX_OUTPUT_TOKENS_RECOVERY_LIMIT (3) recoveries.
-    expect(calls).toBe(4)
+    // Initial attempt, one cap escalation, then three continuation attempts.
+    expect(calls).toBe(5)
     // Only the final, unrecoverable error surfaces to the consumer.
     expect(yieldedMaxOutputTokensErrors(events)).toHaveLength(1)
     expect(terminal).toMatchObject({ reason: 'api_error' })

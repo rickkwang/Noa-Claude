@@ -291,9 +291,11 @@ async function run(name) {
     mkdirSync(env.CLAUDE_CONFIG_DIR, { recursive: true });
     writeFileSync(join(env.CLAUDE_CONFIG_DIR, 'settings.json'), JSON.stringify(scenario.userSettings));
   }
-  const command = ['--print', scenario.prompt ?? 'Say SAFE_OK.', '--output-format', 'json', '--model', scenario.model ?? 'claude-opus-5-5', ...(scenario.flags ?? [])];
+  // Large prompts exceed Linux's per-argument size limit.
+  const command = ['--print', ...(scenario.prompt ? [] : ['Say SAFE_OK.']), '--output-format', 'json', '--model', scenario.model ?? 'claude-opus-5-5', ...(scenario.flags ?? [])];
   const [bin, binArgs] = entry.endsWith('.js') ? ['bun', [entry, ...command]] : [entry, command];
-  const child = spawn(bin, binArgs, { cwd: workspace, env, stdio: ['ignore', 'pipe', 'pipe'] });
+  const child = spawn(bin, binArgs, { cwd: workspace, env, stdio: [scenario.prompt ? 'pipe' : 'ignore', 'pipe', 'pipe'] });
+  if (scenario.prompt) child.stdin.end(scenario.prompt);
   let stdout = '', stderr = '';
   child.stdout.on('data', chunk => { stdout += chunk; });
   child.stderr.on('data', chunk => { stderr += chunk; });
