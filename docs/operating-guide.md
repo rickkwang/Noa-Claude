@@ -15,7 +15,7 @@ Runtime behavior switches are driven by environment variables:
 - `NOA_CLAUDE_DISABLE_MOUSE_CLICKS` keeps mouse tracking but ignores clicks and drags
 - Tools start while the model response is still streaming. `NOA_CLAUDE_STREAMING_TOOL_EXECUTION=0` waits for the full response instead — use it to bisect a suspected tool-execution regression.
 
-Fork subagents are intentionally unavailable in this build. `/fork` remains a conversation-branch command, not an implicit subagent launcher.
+Fork subagents are on by default in interactive sessions and off in `--print` and coordinator mode; `NOA_CLAUDE_FORK_SUBAGENT` overrides. `/fork` remains a conversation-branch command, not a subagent launcher.
 
 ### `--bare` and Provider Profiles
 

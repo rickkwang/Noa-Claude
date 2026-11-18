@@ -2,15 +2,14 @@
 
 Last updated: 2026-10-13
 
-This document replaces the separate command surface, feature gap, and roadmap notes with one product-facing control surface.
+This document replaces the separate command surface and feature gap notes with one product-facing control surface.
 
 ## Scope
 
-This page covers three related concerns:
+This page covers two related concerns:
 
 - command visibility and status
 - current capability gaps
-- near-term product direction
 
 ## Command Surface
 
@@ -130,10 +129,6 @@ Startup modes are not slash commands and are tracked under "Runtime Modes Outsid
 - the approval gate for settings, git and tool-configuration writes relies on the existing `ask` safety checks (`checkPathSafetyForAutoEdit`), not a dedicated restricted-mode approval path
 
 `--safe-mode` is a troubleshooting profile, not a command surface, and does not change the buckets above.
-
-## Roadmap
-
-The implementation roadmap is in this document.
 
 ## Operating Principles
 

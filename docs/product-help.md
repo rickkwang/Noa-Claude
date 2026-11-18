@@ -13,7 +13,7 @@ This document is the default local help hub for Noa Claude.
 - Review commands before running them.
 - Keep untrusted repositories and files isolated.
 - Prefer the docs in this repository over external product pages for default workflows.
-- Fork subagents are not available in this build; use `/fork` for conversation branching.
+- Fork subagents are on by default in interactive sessions (off in `--print`; `NOA_CLAUDE_FORK_SUBAGENT` overrides); `/fork` branches the conversation.
 
 ## Release Notes
 

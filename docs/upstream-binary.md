@@ -1,18 +1,37 @@
 # Upstream binary and model catalog
 
+The upstream Claude Code binary lives at `~/.local/share/claude/versions/<version>` (a single Bun executable, ~200MB; a new version may land daily). It embeds the full JS bundle **uncompressed**, plus a baked model catalog. The catalog is the ground truth for checking Noa's model-capability tables, and it is newer than the cached table in the `claude-api` skill.
 
-上游 Claude Code 二进制装在 `~/.local/share/claude/versions/<version>`（Bun 单文件产物，~200MB，每天可能新增一版）。里面**未压缩**嵌着完整 JS bundle 和一份 baked model catalog —— 后者是核对 Noa 模型能力表的 ground truth，比 `claude-api` skill 的缓存表新。
+## Extracting the JS bundle
 
-抽取方法：扫描二进制里长度 >= 100000 的可打印字节连续段（`9<=b<=13 or 32<=b<=126 or b>=128`），拼起来约 25MB JS。**catalog 不在这些大段里**，要按 marker（如 `advisor_rank`、`supports_1m_beta`、`schema_version`）在原始 buffer 里直接搜。真正的 catalog 是一簇密集连续命中；散落在别处的零星命中是读取 catalog 的代码，不是数据。**不要记硬编码偏移**，每个版本都会变。
+Scan the binary for printable byte runs of at least 100000 bytes (`9<=b<=13 or 32<=b<=126 or b>=128`) and concatenate them: about 25MB of JS.
 
-大段扫描会漏掉 TUI/懒加载 chunk（粘贴处理、imagePaste、imageResizer 等）：源码被零散控制字节切成小段，>=100KB 规则抓不到。做法：取原始 buffer，把 `[\x00-\x08\x0e-\x1f\x7f]+` 替换成分隔符再 grep；每个 chunk 以 `// @bun @bytecode` 开头、`export{...}` 结尾，按 `import{...}from"/$bunfs/root/chunk-xxx.js"` 追依赖。更靠前的命中是字节码常量表，只有字符串没有逻辑。
+This misses lazy-loaded and TUI chunks (paste handling, imagePaste, imageResizer, …): stray control bytes split their source into short runs that the 100KB rule drops. To recover them, take the raw buffer, replace `[\x00-\x08\x0e-\x1f\x7f]+` with a separator, then grep.
 
-注意 minifier 按 chunk 复用标识符，`dc`/`hg`/`Rm` 这类短名在不同 region 含义不同 —— 必须在同一 region 内解析。（2.1.319 的二进制里 `function dc` 出现多次，指向不同函数，印证这一点。）
+- Each chunk starts with `// @bun @bytecode` and ends with `export{...}`.
+- Follow dependencies through `import{...}from"/$bunfs/root/chunk-xxx.js"`.
+- Earlier hits are bytecode constant tables: strings only, no logic.
 
-catalog 大致形如 `{schema_version, pricing_tiers, models:[{id, family, provider_ids, context, max_output_tokens, pricing, capabilities, advisor_rank}], aliases}`。**字段名会随版本漂移**（例如 `context` 的子字段），每次核对都要重新读结构，不要照抄这里的字段名。
+## Finding the catalog
 
-上游代码通过 `dc(id)` / `hg(id,capability)` 查这张表，Noa 把同一张表拆成了散落的 `.includes()` 链（`src/utils/thinking.ts`、`effort.ts`、`betas.ts`、`context.ts`、`modelCost.ts`、`advisor.ts`），这是模型能力漂移的根源。`dc`/`hg` 的具体签名未经本次核对确认，使用前在当前版本里重新确认。
+The catalog is **not** in the large runs. Search the raw buffer for markers such as `advisor_rank`, `supports_1m_beta` and `schema_version`. The real catalog is a dense cluster of consecutive hits; scattered hits elsewhere are the code that reads it, not the data. Never hard-code offsets; they change every version.
 
-关键：catalog 不是唯一真相 —— 上游对若干模型有 by-name 短路，而 `hg()` 返回 `true|undefined` 从不返回 `false`，所以调用方常有 fall-through 兜底。**只看 capabilities 数组会得出错误结论，必须连消费函数一起读。**
+Rough shape:
 
-上游另有一层 Noa 完全没有的能力：400 错误分类 + 剥字段重试 + 会话内 latch。这是上游敢"乐观发送"、不需要保守白名单的原因；Noa 没有这层，所以白名单必须保持准确。
+```
+{schema_version, pricing_tiers, models: [{id, family, provider_ids, context,
+ max_output_tokens, pricing, capabilities, advisor_rank}], aliases}
+```
+
+Field names drift between versions (for example the sub-fields of `context`). Re-read the structure on every check instead of copying names from here.
+
+## Reading it correctly
+
+- **Minified names are per-chunk.** The minifier reuses short identifiers (`dc`, `hg`, `Rm`, …) with different meanings in different regions, so resolve them within one region. In 2.1.319, `function dc` appears several times and points at different functions.
+- **The catalog is not the only truth.** Upstream short-circuits some models by name, and `hg()` returns `true|undefined`, never `false`, so callers often fall through to a default. Reading only the `capabilities` array gives wrong answers; read the consuming function too.
+- **Lookup functions are unconfirmed.** Upstream appears to query the table through `dc(id)` / `hg(id, capability)`, but their exact signatures were not verified. Confirm them in the current version before relying on them.
+
+## How Noa differs
+
+- Noa splits the same table into scattered `.includes()` chains in `src/utils/thinking.ts`, `effort.ts`, `betas.ts`, `context.ts`, `modelCost.ts` and `advisor.ts`. This is the source of model-capability drift.
+- Upstream has a layer Noa lacks entirely: 400-error classification, retry with the offending field stripped, and an in-session latch. That is why upstream can send optimistically with no conservative allowlist. Noa has no such layer, so its allowlists must stay accurate.
