@@ -123,6 +123,41 @@ export function shouldBypassProxy(
   }
 }
 
+const PROXY_CONNECT_TIMEOUT_MS = 25_000
+
+/**
+ * Bound proxy TCP/TLS tunnel establishment so stalled proxies fail fast
+ * instead of hanging plugin or marketplace requests indefinitely.
+ */
+export function withProxyConnectTimeout<T extends HttpsProxyAgent<string>>(
+  agent: T,
+  timeoutMs: number = PROXY_CONNECT_TIMEOUT_MS,
+): T {
+  const originalConnect = agent.connect.bind(agent)
+  agent.connect = async (req, opts) => {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), timeoutMs)
+    if (typeof timer === 'object' && 'unref' in timer) timer.unref?.()
+    agent.connectOpts = { ...agent.connectOpts, signal: controller.signal }
+    try {
+      return await originalConnect(req, opts)
+    } catch (err) {
+      if (controller.signal.aborted) {
+        throw Object.assign(
+          new Error(
+            'Timed out connecting through the proxy set in HTTPS_PROXY or ALL_PROXY. Check that the proxy is running and can reach the destination server. You can also add that server to NO_PROXY.',
+          ),
+          { code: 'ETIMEDOUT' },
+        )
+      }
+      throw err
+    } finally {
+      clearTimeout(timer)
+    }
+  }
+  return agent
+}
+
 /**
  * Create an HttpsProxyAgent with optional mTLS configuration
  * Skips local DNS resolution to let the proxy handle it
@@ -152,7 +187,9 @@ function createHttpsProxyAgent(
     }
   }
 
-  return new HttpsProxyAgent(proxyUrl, { ...agentOptions, ...extra })
+  return withProxyConnectTimeout(
+    new HttpsProxyAgent(proxyUrl, { ...agentOptions, ...extra }),
+  )
 }
 
 /**
