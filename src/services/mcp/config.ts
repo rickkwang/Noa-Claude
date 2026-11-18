@@ -2,7 +2,7 @@
 import { feature } from 'bun:bundle'
 import { isDeepStrictEqual } from 'node:util'
 import { existsSync } from 'fs'
-import { chmod, mkdir, open, rename, stat, unlink } from 'fs/promises'
+import { chmod, mkdir, open, readFile, rename, stat, unlink } from 'fs/promises'
 import mapValues from 'lodash-es/mapValues.js'
 import memoize from 'lodash-es/memoize.js'
 import { dirname, join, parse } from 'path'
@@ -134,12 +134,47 @@ function addScopeToServers(
   return scopedServers
 }
 
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/**
+ * Read existing `.mcp.json` top-level object so writes preserve unknown top-level
+ * fields (e.g. `$schema`) and refuse to overwrite unexpected file structures.
+ */
+async function readProjectMcpTopLevel(
+  configPath: string | null,
+): Promise<Record<string, unknown>> {
+  if (!configPath) return {}
+  let raw: string
+  try {
+    raw = await readFile(configPath, 'utf8')
+  } catch (e: unknown) {
+    if (getErrnoCode(e) === 'ENOENT') return {}
+    throw e
+  }
+  const parsed = safeParseJSON(raw, false)
+  if (!isPlainRecord(parsed)) {
+    throw new Error(
+      `Refusing to modify ${configPath}: expected a JSON object at top level.`,
+    )
+  }
+  if (parsed.mcpServers !== undefined && !isPlainRecord(parsed.mcpServers)) {
+    throw new Error(
+      `Refusing to modify ${configPath}: expected "mcpServers" to be a JSON object.`,
+    )
+  }
+  return parsed
+}
+
 /**
  * Internal utility: Write MCP config to .mcp.json file.
  * Preserves file permissions and flushes to disk before rename.
  * Uses the original path for rename (does not follow symlinks).
  */
-async function writeMcpjsonFile(config: McpJsonConfig): Promise<void> {
+async function writeMcpjsonFile(
+  config: McpJsonConfig & Record<string, unknown>,
+): Promise<void> {
   const mcpJsonPath = getPrimaryProjectMcpPath(getCwd())
   await mkdir(dirname(mcpJsonPath), { recursive: true })
 
@@ -744,6 +779,7 @@ export async function addMcpConfig(
           getProjectMcpConfigsFromCwd(false)
         if (errors.length) throw new Error(errors.map(error => error.message).join('\n'))
 
+        const existingTopLevel = await readProjectMcpTopLevel(configPath)
         const mcpServers: Record<string, McpServerConfig> = {}
         for (const [serverName, serverConfig] of Object.entries(
           existingServers,
@@ -754,7 +790,7 @@ export async function addMcpConfig(
         checkRevision?.(mcpServers)
         if (!replace && mcpServers[name]) throw new Error(`MCP server ${name} already exists in ${configPath ?? 'project MCP config'}`)
         mcpServers[name] = validatedConfig
-        const mcpConfig = { mcpServers }
+        const mcpConfig = { ...existingTopLevel, mcpServers }
 
         // Write back to the product project MCP config path.
         try {
@@ -817,6 +853,7 @@ export async function removeMcpConfig(
           )
         }
 
+        const existingTopLevel = await readProjectMcpTopLevel(configPath)
         // Strip scope information when writing back to the product project MCP config.
         const mcpServers: Record<string, McpServerConfig> = {}
         for (const [serverName, serverConfig] of Object.entries(
@@ -827,7 +864,7 @@ export async function removeMcpConfig(
         }
         checkRevision?.(mcpServers)
         delete mcpServers[name]
-        const mcpConfig = { mcpServers }
+        const mcpConfig = { ...existingTopLevel, mcpServers }
         try {
           await writeMcpjsonFile(mcpConfig)
         } catch (error) {

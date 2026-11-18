@@ -84,6 +84,37 @@ import { commandBelongsToServer, excludeStalePluginClients } from './utils.js'
 const MAX_RECONNECT_ATTEMPTS = 5
 const INITIAL_BACKOFF_MS = 1000
 const MAX_BACKOFF_MS = 30000
+const REMOTE_HTTPS_RETRY_WINDOW_MS = 24 * 60 * 60 * 1000
+const REMOTE_HTTPS_MAX_BACKOFF_MS = 5 * 60 * 1000
+
+const LOOPBACK_HOSTNAMES = new Set([
+  'localhost',
+  '127.0.0.1',
+  '::1',
+  '[::1]',
+  '0.0.0.0',
+])
+
+/**
+ * True for remote HTTPS MCP servers addressed by a non-loopback hostname,
+ * which retry in the background for up to ~1 day instead of giving up after 5 attempts.
+ */
+export function isRemoteHttpsHostnameConfig(config: {
+  type?: string
+  url?: string
+}): boolean {
+  if ((config.type !== 'http' && config.type !== 'sse') || !config.url) {
+    return false
+  }
+  try {
+    const parsed = new URL(config.url)
+    if (parsed.protocol !== 'https:') return false
+    const host = parsed.hostname.toLowerCase()
+    return !LOOPBACK_HOSTNAMES.has(host) && !host.endsWith('.localhost')
+  } catch {
+    return false
+  }
+}
 
 /**
  * Create a unique key for a plugin error to enable deduplication
@@ -398,12 +429,15 @@ export function useManageMCPConnections(
               const serverGen = gen
 
               // Attempt reconnection with exponential backoff
+              const longRetry = isRemoteHttpsHostnameConfig(client.config)
+              const retryDeadline = longRetry
+                ? Date.now() + REMOTE_HTTPS_RETRY_WINDOW_MS
+                : undefined
+              const maxBackoffMs = longRetry
+                ? REMOTE_HTTPS_MAX_BACKOFF_MS
+                : MAX_BACKOFF_MS
               const reconnectWithBackoff = async () => {
-                for (
-                  let attempt = 1;
-                  attempt <= MAX_RECONNECT_ATTEMPTS;
-                  attempt++
-                ) {
+                for (let attempt = 1; ; attempt++) {
                   // Check if the generation has changed — a newer onclose fired
                   // (e.g., user toggled the server), so abort this loop.
                   if (
@@ -429,10 +463,17 @@ export function useManageMCPConnections(
                     ...client,
                     type: 'pending',
                     reconnectAttempt: attempt,
-                    maxReconnectAttempts: MAX_RECONNECT_ATTEMPTS,
+                    ...(longRetry
+                      ? undefined
+                      : { maxReconnectAttempts: MAX_RECONNECT_ATTEMPTS }),
                   })
 
                   const reconnectStartTime = Date.now()
+                  const isFinalAttempt = () =>
+                    retryDeadline !== undefined
+                      ? Date.now() >= retryDeadline
+                      : attempt >= MAX_RECONNECT_ATTEMPTS
+
                   try {
                     const result = await reconnectMcpServerImpl(
                       client.name,
@@ -459,10 +500,10 @@ export function useManageMCPConnections(
                     )
 
                     // On final attempt, update state with the result
-                    if (attempt === MAX_RECONNECT_ATTEMPTS) {
+                    if (isFinalAttempt()) {
                       logMCPDebug(
                         client.name,
-                        `Max reconnection attempts (${MAX_RECONNECT_ATTEMPTS}) reached, giving up`,
+                        `Max reconnection ${longRetry ? 'window (24h)' : `attempts (${MAX_RECONNECT_ATTEMPTS})`} reached, giving up`,
                       )
                       reconnectTimersRef.current.delete(client.name)
                       reconnectGenerationRef.current.delete(client.name)
@@ -477,10 +518,10 @@ export function useManageMCPConnections(
                     )
 
                     // On final attempt, mark as failed
-                    if (attempt === MAX_RECONNECT_ATTEMPTS) {
+                    if (isFinalAttempt()) {
                       logMCPDebug(
                         client.name,
-                        `Max reconnection attempts (${MAX_RECONNECT_ATTEMPTS}) reached, giving up`,
+                        `Max reconnection ${longRetry ? 'window (24h)' : `attempts (${MAX_RECONNECT_ATTEMPTS})`} reached, giving up`,
                       )
                       reconnectTimersRef.current.delete(client.name)
                       reconnectGenerationRef.current.delete(client.name)
@@ -498,7 +539,7 @@ export function useManageMCPConnections(
                   // Schedule next retry with exponential backoff
                   const backoffMs = Math.min(
                     INITIAL_BACKOFF_MS * Math.pow(2, attempt - 1),
-                    MAX_BACKOFF_MS,
+                    maxBackoffMs,
                   )
                   logMCPDebug(
                     client.name,

@@ -328,14 +328,30 @@ export async function mcpGetHandler(name: string): Promise<void> {
   await gracefulShutdown(0);
 }
 
+async function readJsonFromStdin(): Promise<string> {
+  if (process.stdin.isTTY) {
+    throw new Error('Missing JSON argument. Pass a JSON string or pipe it via stdin.')
+  }
+  const chunks: Buffer[] = []
+  for await (const chunk of process.stdin) {
+    chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk)
+  }
+  const text = Buffer.concat(chunks).toString('utf8').trim()
+  if (!text) {
+    throw new Error('No JSON received from stdin.')
+  }
+  return text
+}
+
 // mcp add-json (lines 4801–4870)
-export async function mcpAddJsonHandler(name: string, json: string, options: {
+export async function mcpAddJsonHandler(name: string, json: string | undefined, options: {
   scope?: string;
   clientSecret?: true;
 }): Promise<void> {
   try {
     const scope = ensureConfigScope(options.scope);
-    const parsedJson = safeParseJSON(json);
+    const rawJson = json === undefined || json === '-' ? await readJsonFromStdin() : json;
+    const parsedJson = safeParseJSON(rawJson);
 
     // Read secret before writing config so cancellation doesn't leave partial state
     const needsSecret = options.clientSecret && parsedJson && typeof parsedJson === 'object' && 'type' in parsedJson && (parsedJson.type === 'sse' || parsedJson.type === 'http') && 'url' in parsedJson && typeof parsedJson.url === 'string' && 'oauth' in parsedJson && parsedJson.oauth && typeof parsedJson.oauth === 'object' && 'clientId' in parsedJson.oauth;
