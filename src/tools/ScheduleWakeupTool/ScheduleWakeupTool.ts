@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { z } from 'zod/v4'
 import { setScheduledTasksEnabled } from '../../bootstrap/state.js'
 import type { ValidationResult } from '../../Tool.js'
@@ -127,8 +126,9 @@ export const ScheduleWakeupTool = buildTool({
       }
     }
     const armed = scheduleLoopWakeup(
-      delaySeconds,
-      prompt,
+      // validateInput rejects missing delaySeconds/prompt when stop is not true.
+      delaySeconds!,
+      prompt!,
       DEFAULT_CRON_JITTER_CONFIG.recurringMaxAgeMs,
     )
     if (!armed) {
