@@ -238,6 +238,7 @@ export interface TurnDiffActionResult {
 
 export type Envelope =
   | { kind: "interrupt" }
+  | { kind: "send-result"; id: string; accepted: boolean }
   | { kind: "attached"; runtimeId: string; mode?: PermissionMode }
   // Another Noa process (usually a terminal) is writing this task; the GUI only follows it.
   | { kind: "external"; pid: number; status?: string }
@@ -264,7 +265,7 @@ export type Outgoing =
   | { type: "user"; message: { role: "user"; content: UserContent }; parent_tool_use_id: null; uuid?: string; delivery?: "queue" | "steer" }
   | { type: "queue_remove"; id: string }
   | { type: "queue_move"; id: string; toIndex: number }
-  | { type: "queue_update"; id: string; content: UserContent }
+  | { type: "queue_update"; id: string; content: UserContent; requestId?: string }
   | { type: "queue_steer"; id: string }
   | { type: "queue_pause"; paused: boolean }
   | { type: "queue_run" }

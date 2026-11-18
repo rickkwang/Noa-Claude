@@ -22,7 +22,7 @@ writeFileSync(join(extraCwd, "shared.txt"), "ADDED_SOURCE_CONTENT\n")
 writeFileSync(
   join(config, "settings.json"),
   JSON.stringify({
-    model: "claude-sonnet-4-6",
+    model: "claude-haiku-5-5",
     permissions: { defaultMode: "default" },
     enableAllProjectMcpServers: true,
     hooks: { PreToolUse: [{ matcher: "^NeverMatchesSettingsFixture$", hooks: [{ type: "command", command: "printf CLI_CONFIG_HOOK" }] }] },
@@ -234,41 +234,38 @@ if (process.env.NOA_GUI_BROWSER_FIXTURE === "1") {
 const reservation = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Response() })
 const port = reservation.port!
 reservation.stop(true)
+const fixtureEnv = {
+  ...process.env,
+  // The launcher lets the product dir win; the bridge has to read the same one.
+  CLAUDE_CONFIG_DIR: join(directory, "unused-config"),
+  CLAUDE_CODE_PRODUCT_DIR: config,
+  CLAUDE_CODE_CACHE_DIR: join(directory, "cache"),
+  CLAUDE_CODE_USE_OPENAI: "",
+  CLAUDE_CODE_USE_BEDROCK: "",
+  CLAUDE_CODE_USE_VERTEX: "",
+  CLAUDE_CODE_USE_FOUNDRY: "",
+  NOA_CLAUDE_OPENAI_AUTH: "",
+  OPENAI_BASE_URL: "",
+  OPENAI_API_KEY: "",
+  OPENAI_MODEL: "",
+  ANTHROPIC_AUTH_TOKEN: "",
+  ANTHROPIC_DEFAULT_OPUS_MODEL: "",
+  ANTHROPIC_DEFAULT_SONNET_MODEL: "",
+  ANTHROPIC_DEFAULT_HAIKU_MODEL: "",
+  ANTHROPIC_DEFAULT_FABLE_MODEL: "",
+  NOA_CLAUDE_PROVIDER_MODELS: "",
+  NOA_CLAUDE_PROVIDER_CONTEXT_WINDOWS: "",
+  NOA_CLAUDE_PROVIDER_EFFORT_LEVELS: "",
+  NOA_CLAUDE_PROVIDER_MAX_OUTPUT_TOKENS: "",
+  ANTHROPIC_API_KEY: "",
+  ANTHROPIC_BASE_URL: "",
+  ANTHROPIC_MODEL: "claude-haiku-5-5",
+  CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
+  ENABLE_TOOL_SEARCH: "false",
+}
 const bridge = Bun.spawn([process.execPath, "run", bridgeEntry], {
   cwd: join(runtimeRoot, "gui"),
-  env: {
-    ...process.env,
-    NOA_GUI_PORT: String(port),
-    NOA_GUI_INSECURE: "1",
-    NOA_GUI_TOKEN: "",
-    NOA_GUI_DEFAULT_CWD: cwd,
-    // The launcher lets the product dir win; the bridge has to read the same one.
-    CLAUDE_CONFIG_DIR: join(directory, "unused-config"),
-    CLAUDE_CODE_PRODUCT_DIR: config,
-    CLAUDE_CODE_CACHE_DIR: join(directory, "cache"),
-    CLAUDE_CODE_USE_OPENAI: "",
-    CLAUDE_CODE_USE_BEDROCK: "",
-    CLAUDE_CODE_USE_VERTEX: "",
-    CLAUDE_CODE_USE_FOUNDRY: "",
-    NOA_CLAUDE_OPENAI_AUTH: "",
-    OPENAI_BASE_URL: "",
-    OPENAI_API_KEY: "",
-    OPENAI_MODEL: "",
-    ANTHROPIC_AUTH_TOKEN: "",
-    ANTHROPIC_DEFAULT_OPUS_MODEL: "",
-    ANTHROPIC_DEFAULT_SONNET_MODEL: "",
-    ANTHROPIC_DEFAULT_HAIKU_MODEL: "",
-    ANTHROPIC_DEFAULT_FABLE_MODEL: "",
-    NOA_CLAUDE_PROVIDER_MODELS: "",
-    NOA_CLAUDE_PROVIDER_CONTEXT_WINDOWS: "",
-    NOA_CLAUDE_PROVIDER_EFFORT_LEVELS: "",
-    NOA_CLAUDE_PROVIDER_MAX_OUTPUT_TOKENS: "",
-    ANTHROPIC_API_KEY: "",
-    ANTHROPIC_BASE_URL: "",
-    ANTHROPIC_MODEL: "claude-sonnet-4-6",
-    CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
-    ENABLE_TOOL_SEARCH: "false",
-  },
+  env: { ...fixtureEnv, NOA_GUI_PORT: String(port), NOA_GUI_INSECURE: "1", NOA_GUI_TOKEN: "", NOA_GUI_DEFAULT_CWD: cwd },
   stdout: "pipe",
   stderr: "pipe",
 })
@@ -408,7 +405,13 @@ try {
   first.send({ type: "user", message: { role: "user", content: "remove this" }, parent_tool_use_id: null })
   await wait(() => first.events.some((e) => e.kind === "queue" && e.messages.length === 2), "queue")
   const queued = first.events.filter((e) => e.kind === "queue").at(-1) as Extract<Envelope, { kind: "queue" }>
-  first.send({ type: "queue_update", id: queued.messages[0]!.id, content: "second updated" })
+  const editRequest = crypto.randomUUID()
+  const staleEditRequest = crypto.randomUUID()
+  first.send({ type: "queue_update", id: queued.messages[0]!.id, content: "second updated", requestId: editRequest })
+  first.send({ type: "queue_update", id: crypto.randomUUID(), content: "stale edit", requestId: staleEditRequest })
+  await wait(() => first.events.some(e => e.kind === "send-result" && e.id === editRequest && e.accepted)
+    && first.events.some(e => e.kind === "send-result" && e.id === staleEditRequest && !e.accepted), "queue edit acceptance and stale rejection")
+  console.log("PASS the bridge confirms a queue edit and rejects an edit to a missing item")
   await wait(
     () => first.events.some((e) => e.kind === "queue" && e.messages[0]?.content === "second updated"),
     "queue update",
@@ -455,8 +458,8 @@ try {
 
   // A terminal (another parent process) holding the task: the GUI follows its transcript read-only,
   // then attaches its own CLI once the terminal exits.
-  const terminal = Bun.spawn([process.execPath, join(runtimeRoot, "run-noa.js"), "-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--model", "claude-sonnet-4-6", "--resume", titledId], {
-    cwd, env: { ...process.env, CLAUDE_CONFIG_DIR: config, ANTHROPIC_API_KEY: "local-fixture", ANTHROPIC_BASE_URL: `http://127.0.0.1:${provider.port}` }, stdin: "pipe", stdout: "ignore", stderr: "ignore",
+  const terminal = Bun.spawn([process.execPath, join(runtimeRoot, "run-noa.js"), "-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--model", "claude-haiku-5-5", "--resume", titledId], {
+    cwd, env: { ...fixtureEnv, ANTHROPIC_API_KEY: "local-fixture", ANTHROPIC_BASE_URL: `http://127.0.0.1:${provider.port}` }, stdin: "pipe", stdout: "ignore", stderr: "ignore",
   })
   const holderPid = () => existsSync(join(config, "sessions")) ? readdirSync(join(config, "sessions")).filter((file) => /^\d+\.json$/.test(file)).map((file) => JSON.parse(readFileSync(join(config, "sessions", file), "utf8"))).find((entry) => entry.sessionId === titledId && entry.pid === terminal.pid)?.pid as number | undefined : undefined
   try {
@@ -844,18 +847,31 @@ try {
   const crashSession = crashing.events.find(
     (e) => e.kind === "agent" && e.message.type === "system" && e.message.subtype === "init",
   ) as any
+  const observerRuntime = crypto.randomUUID()
+  const crashObserver = connect(observerRuntime, crashSession.message.session_id)
+  assert.equal((await crashObserver.initialize()).pid, crashInit.pid)
   process.kill(crashInit.pid, "SIGTERM")
   await wait(() => crashing.events.some((e) => e.kind === "exit"), "CLI crash")
   const crashHistory = await fetch(`http://127.0.0.1:${port}/api/sessions/${crashSession.message.session_id}?${new URLSearchParams({ cwd })}`).then(r => r.json())
   assert.ok(crashHistory.some((item: any) => item.kind === "turn-duration" && item.error?.includes("exited")), "Unexpected exit survives history reload")
   crashing.socket.close()
-  const recovered = connect(crashRuntime, crashSession.message.session_id)
-  await recovered.initialize()
+  await wait(() => crashObserver.events.some(e => e.kind === "exit"), "observer sees CLI exit")
+  crashObserver.socket.close()
+  const recovered = connect(observerRuntime, crashSession.message.session_id)
+  const recoveredInit = await recovered.initialize()
+  const recoveredOwner = connect(crashRuntime, crashSession.message.session_id)
+  assert.equal((await recoveredOwner.initialize()).pid, recoveredInit.pid)
   const recoveredQueue = recovered.events.filter((e) => e.kind === "queue").at(-1) as Extract<Envelope, { kind: "queue" }> | undefined
   assert.equal(recoveredQueue?.messages[0]?.content, "queued across crash")
+  const ownerQueue = recoveredOwner.events.filter(e => e.kind === "queue").at(-1) as typeof recoveredQueue
+  assert.deepEqual(ownerQueue?.messages, recoveredQueue?.messages)
   recovered.send({ type: "queue_run" })
-  await wait(() => recovered.results().length === 1, "queued turn after crash")
-  console.log("PASS unexpected CLI exit retains and resumes queued follow-ups")
+  await wait(() => recovered.results().length === 1 && recoveredOwner.results().length === 1, "queued turn after crash")
+  for (const client of [recovered, recoveredOwner]) {
+    assert.equal(client.events.filter(e => e.kind === "user" && e.content === "queued across crash").length, 1)
+  }
+  recoveredOwner.socket.close()
+  console.log("PASS both clients recover the same queue after CLI exit and the follow-up runs once")
   const blank = connect(crypto.randomUUID())
   const blankInit = await blank.initialize()
   blank.socket.close()
@@ -901,7 +917,7 @@ try {
   assert.ok(JSON.stringify(restoredCompact).includes("No messages to compact"), JSON.stringify(restoredCompact))
   emptyCompact.socket.close()
   console.log("PASS a failed /compact restores with its error")
-  await commandRun.request({ subtype: "set_model", model: "claude-sonnet-4-6" })
+  await commandRun.request({ subtype: "set_model", model: "claude-haiku-5-5" })
   commandRun.send({ type: "user", message: { role: "user", content: "Flush the model switch into transcript history" }, parent_tool_use_id: null })
   await wait(() => commandRun.results().length === 2, "turn after model switch")
   const restoredModelSwitch = await fetch(`http://127.0.0.1:${port}/api/sessions/${commandResult.message.session_id}?${new URLSearchParams({cwd})}`).then((r) => r.json())
@@ -950,7 +966,7 @@ try {
   })
   await wait(() => commandRun.results().length === 3, "skill slash turn")
   assert.ok(sawSkillWithImage)
-  assert.deepEqual([...observedModels], ["claude-sonnet-4-6"])
+  assert.deepEqual([...observedModels], ["claude-haiku-5-5"])
   const restoredSkill = await fetch(`http://127.0.0.1:${port}/api/sessions/${commandResult.message.session_id}?${new URLSearchParams({cwd})}`).then((r) => r.json())
   assert.ok(JSON.stringify(restoredSkill).includes("/gui-slash custom argument"), JSON.stringify(restoredSkill))
   const cached = connect(crypto.randomUUID(), (commandRun.results()[2] as any).message.session_id)
@@ -1051,7 +1067,7 @@ try {
   assert.ok(existsSync(join(cwd, "turn-diff.txt")))
   rmSync(join(cwd, "turn-diff.txt"))
   mkdirSync(join(cwd, "turn-diff.txt"))
-  await assert.rejects(diffRun.request({ subtype: "session_action", action: "rewind", user_message_id: writeUser.id, mode: "both" }), /Could not restore/)
+  await assert.rejects(diffRun.request({ subtype: "session_action", action: "rewind", user_message_id: writeUser.id, mode: "both" }), /No files could be restored/)
   assert.ok(!diffRun.events.some(event => event.kind === "history" && !JSON.stringify(event).includes("GUI_WRITE")), "Failed file restoration must not trim conversation")
   rmSync(join(cwd, "turn-diff.txt"), { recursive: true })
   writeFileSync(join(cwd, "turn-diff.txt"), "one\ntwo\n")

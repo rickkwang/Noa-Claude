@@ -88,12 +88,17 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
   const contextTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const contextRefreshAfterRef = useRef<"summary" | "full" | undefined>(undefined)
   const authCompletedRef = useRef(false)
+  const pendingSends = useRef(new Map<string, (accepted: boolean) => void>())
 
   const write = useCallback((message: Outgoing) => {
     const socket = socketRef.current
     if (socket?.readyState !== WebSocket.OPEN) return false
-    socket.send(JSON.stringify(message))
-    return true
+    try {
+      socket.send(JSON.stringify(message))
+      return true
+    } catch {
+      return false
+    }
   }, [])
 
   const control = useCallback(
@@ -178,6 +183,9 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
     socketRef.current = socket
     // Under StrictMode the effect runs twice; events from a replaced socket are ignored.
     const isCurrent = () => socketRef.current === socket
+    const failSends = () => {
+      for (const finish of pendingSends.current.values()) finish(false)
+    }
     let initializationTimer: ReturnType<typeof setTimeout> | undefined
     const clearInitializationTimer = () => {
       if (initializationTimer !== undefined) clearTimeout(initializationTimer)
@@ -226,6 +234,9 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
       switch (envelope.kind) {
         case "interrupt":
           dispatch({ type: "interrupt-requested" })
+          break
+        case "send-result":
+          pendingSends.current.get(envelope.id)?.(envelope.accepted)
           break
         case "attached":
           if (envelope.mode) modeRef.current = envelope.mode
@@ -308,6 +319,7 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
           dispatch({ type: "log", text: envelope.text })
           break
         case "exit":
+          failSends()
           for (const pending of requestsRef.current.values()) {
             clearTimeout(pending.timer)
             pending.reject(new Error("Noa exited before the request completed. Reconnect to continue."))
@@ -321,6 +333,7 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
 
     socket.onclose = (event) => {
       clearInitializationTimer()
+      if (isCurrent()) failSends()
       if (isCurrent() && event.code === 4000) {
         setFollowEnded(n => n + 1)
         return
@@ -476,16 +489,25 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
       contextTimerRef.current = undefined
       clearTimeout(mcpTimerRef.current)
       mcpTimerRef.current = undefined
+      failSends()
       socketRef.current = null
       socket.close()
     }
   }, [cwd, resume, sessionKey, runtimeId, control, followEnded])
 
-  const sendMessage = useCallback(
-    (content: UserContent, delivery?: "queue" | "steer") =>
-      write({ type: "user", message: { role: "user", content }, parent_tool_use_id: null, ...(delivery ? { delivery } : {}) }),
-    [write],
-  )
+  const sendWithConfirmation = useCallback((message: Extract<Outgoing, { type: "user" | "queue_update" }>) => new Promise<boolean>(resolve => {
+    const id = crypto.randomUUID()
+    const finish = (accepted: boolean) => {
+      clearTimeout(timer)
+      pendingSends.current.delete(id)
+      resolve(accepted)
+    }
+    const timer = setTimeout(() => finish(false), 10000)
+    pendingSends.current.set(id, finish)
+    if (!write(message.type === "user" ? { ...message, uuid: id } : { ...message, requestId: id })) finish(false)
+  }), [write])
+  const sendMessage = useCallback((content: UserContent, delivery?: "queue" | "steer") =>
+    sendWithConfirmation({ type: "user", message: { role: "user", content }, parent_tool_use_id: null, delivery }), [sendWithConfirmation])
 
   const interrupt = useCallback(() => {
     dispatch({ type: "interrupt-requested" })
@@ -622,7 +644,7 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
   }, [write])
   const removeQueued = useCallback((id: string) => { write({ type: "queue_remove", id }) }, [write])
   const moveQueued = useCallback((id: string, toIndex: number) => { write({ type: "queue_move", id, toIndex }) }, [write])
-  const updateQueued = useCallback((id: string, content: UserContent) => write({ type: "queue_update", id, content }), [write])
+  const updateQueued = useCallback((id: string, content: UserContent) => sendWithConfirmation({ type: "queue_update", id, content }), [sendWithConfirmation])
   const steerQueued = useCallback((id: string) => { write({ type: "queue_steer", id }) }, [write])
   const setQueuePaused = useCallback((paused: boolean) => { write({ type: "queue_pause", paused }) }, [write])
   const runQueued = useCallback(() => { write({ type: "queue_run" }) }, [write])

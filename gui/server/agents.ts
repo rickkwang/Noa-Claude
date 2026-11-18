@@ -747,16 +747,16 @@ function spawnRun(opts: SpawnOptions, root: string, previous?: AgentRun): AgentR
 export function attachAgent(ws: ServerWebSocket<SocketData>, root: string) {
   const targetCwd = canonicalCwd(ws.data.cwd)
   let run = runs.get(ws.data.runtimeId)
-  if (!run && ws.data.resume)
-    run = [...runs.values()].find(
+  if (!run && ws.data.resume) {
+    const matches = [...runs.values()].filter(r => r.sessionId === ws.data.resume && canonicalCwd(r.cwd) === targetCwd)
+    run = matches.find(
       (r) =>
-        canonicalCwd(r.cwd) === targetCwd &&
-        r.sessionId === ws.data.resume &&
         !r.exited &&
         // A replacement can start while the previous CLI finalizes; the
         // workspace operation queue orders its snapshot after the old one.
         (r.restarting || r.clients.size > 0 || (r.busy && !r.turn?.finalizing) || r.queue.length > 0 || r.waiting.size > 0 || r.activeTasks.size > 0),
-    )
+    ) ?? matches.find(r => r.exited && r.queue.length > 0)
+  }
   if (run?.restarting) {
     ws.close(1012, "Noa is restarting. Reconnect to continue.")
     return
@@ -773,7 +773,8 @@ export function attachAgent(ws: ServerWebSocket<SocketData>, root: string) {
     }
     // A project's coordinator is named before its first message, so it starts under that id.
     const fresh = ws.data.resume && runHooks.coordinator?.(ws.data.cwd, ws.data.resume) && !existsSync(transcriptPath(ws.data.cwd, ws.data.resume))
-    run = spawnRun(fresh ? { ...ws.data, resume: undefined, sessionId: ws.data.resume } : ws.data, root, run)
+    const opts = { ...ws.data, runtimeId: run?.id ?? ws.data.runtimeId }
+    run = spawnRun(fresh ? { ...opts, resume: undefined, sessionId: ws.data.resume } : opts, root, run)
   }
   ws.data.run = run
   const current = run
@@ -864,6 +865,7 @@ export async function agentMessage(ws: ServerWebSocket<SocketData>, raw: string 
         ).slice(0, 80) || "Image task"
     const queued = enqueue(run, content, message.delivery === "steer")
     if (message.delivery === "steer" && run.busy && run.turn && !run.turn.finalizing) steerQueued(run, queued.id)
+    if (message.uuid) ws.send(JSON.stringify({ kind: "send-result", id: message.uuid, accepted: true }))
   } else if (message.type === "queue_remove") {
     run.queue = run.queue.filter((m) => m.id !== message.id)
     emit(run, queueEnvelope(run))
@@ -879,10 +881,12 @@ export async function agentMessage(ws: ServerWebSocket<SocketData>, raw: string 
     }
   } else if (message.type === "queue_update") {
     const item = run.queue.find((candidate) => candidate.id === message.id)
-    if (item) {
+    const accepted = !!item && item.id !== run.startingMessageId
+    if (accepted) {
       item.content = message.content
       emit(run, queueEnvelope(run))
     }
+    if (message.requestId) ws.send(JSON.stringify({ kind: "send-result", id: message.requestId, accepted }))
   } else if (message.type === "queue_steer") {
     steerQueued(run, message.id)
   } else if (message.type === "queue_pause") {
@@ -962,10 +966,13 @@ function steerQueued(run: AgentRun, id: string) {
   const index = run.queue.findIndex((item) => item.id === id)
   const item = index === -1 ? undefined : run.queue[index]
   if (!item || !run.busy || !run.turn || run.turn.finalizing) return
+  if (!write(run, { type: "user", message: { role: "user", content: item.content }, parent_tool_use_id: null, uuid: item.id })) {
+    emit(run, queueEnvelope(run))
+    return
+  }
   run.queue.splice(index, 1)
   emit(run, queueEnvelope(run))
   emit(run, { kind: "user", id: item.id, content: item.content, at: item.at ?? Date.now() })
-  write(run, { type: "user", message: { role: "user", content: item.content }, parent_tool_use_id: null, uuid: item.id })
 }
 
 export function detachAgent(ws: ServerWebSocket<SocketData>) {

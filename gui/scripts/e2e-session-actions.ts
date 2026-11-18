@@ -49,7 +49,37 @@ app.whenReady().then(async () => {
   try {
     await win.loadURL(url)
     await wait(() => !!document.querySelector('textarea') && !/Starting|disconnected/.test(document.querySelector('textarea').placeholder))
-    await send('GUI_SESSION_KEEP')
+    await evaluate(() => {
+      const original = WebSocket.prototype.send
+      WebSocket.prototype.send = function(data) {
+        if (JSON.parse(data).message?.content === 'GUI_SESSION_KEEP') {
+          WebSocket.prototype.send = original
+          this.close()
+          return
+        }
+        return original.call(this, data)
+      }
+      const input = document.querySelector('textarea')
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(input, 'GUI_SESSION_KEEP')
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await click('Run task')
+    await wait(() => document.body.textContent.includes('Noa did not confirm this message') && document.querySelector('textarea')?.value === 'GUI_SESSION_KEEP')
+    await textButton('Reconnect')
+    await wait(() => document.querySelector('textarea')?.value === 'GUI_SESSION_KEEP' && !/Starting|disconnected/.test(document.querySelector('textarea').placeholder))
+    await click('Run task')
+    await evaluate(async () => {
+      const deadline = Date.now() + 5000
+      while (document.querySelector('textarea')?.value !== '') {
+        if (Date.now() > deadline) throw new Error('Acknowledged draft did not clear')
+        await new Promise(requestAnimationFrame)
+      }
+      if (Object.keys(localStorage).some(key => key.startsWith('noa-agent.draft:') && localStorage.getItem(key) === 'GUI_SESSION_KEEP')) {
+        throw new Error('The acknowledged draft is still in storage and would reappear on remount')
+      }
+    })
+    await wait(() => !!document.querySelector('[aria-label="Task actions"]') && !document.querySelector('[aria-label="Task actions"]').disabled)
+    console.log('PASS a dropped send keeps the draft through reconnect; acknowledged send clears it')
     await send('GUI_SESSION_REMOVE')
     const original = await evaluate(() => JSON.parse(localStorage.getItem('noa-agent.current')).resume)
     await click('Task actions')
@@ -151,6 +181,34 @@ app.whenReady().then(async () => {
     await textButton('Done')
     await wait(() => !document.querySelector('[role=dialog]') && [...document.querySelectorAll('[data-virtual-turn-id]')].some(element => element.textContent.includes('GUI_WRITE')) && document.body.textContent.includes('A rewind restored these files'))
     console.log('PASS restoring only files confirms it in the dialog and keeps the chat')
+    await evaluate(() => document.querySelector('button[aria-label^="Project actions for "]').click())
+    await textButton('Coordinator')
+    await wait(fork => JSON.parse(localStorage.getItem('noa-agent.current')).resume !== fork && !/Starting|disconnected/.test(document.querySelector('textarea').placeholder), fork)
+    await wait(() => [...document.querySelectorAll('button')].some(button => button.getAttribute('aria-label') === 'Run task'))
+    await send('GUI_COORDINATOR_READY')
+    await wait(() => [...document.querySelectorAll('[data-virtual-turn-id]')].some(element => element.textContent.includes('GUI_COORDINATOR_READY')))
+    const question = '/btw keep the draft until acknowledgment'
+    await evaluate(() => {
+      const original = WebSocket.prototype.send
+      WebSocket.prototype.send = function(data) {
+        if (JSON.parse(data).message?.content?.startsWith?.('Side question:')) {
+          WebSocket.prototype.send = original
+          this.close()
+          return
+        }
+        return original.call(this, data)
+      }
+    })
+    await evaluate(() => document.querySelector('textarea').focus())
+    await draft(question)
+    await evaluate(() => { const e = document.querySelector('textarea'); e.setSelectionRange(e.value.length, e.value.length); e.dispatchEvent(new Event('select', { bubbles: true })) })
+    await click('Run task')
+    await wait(question => document.body.textContent.includes('Noa did not confirm this message') && document.querySelector('textarea')?.value === question, question)
+    await textButton('Reconnect')
+    await wait(question => document.querySelector('textarea')?.value === question && !/Starting|disconnected/.test(document.querySelector('textarea').placeholder), question)
+    await click('Run task')
+    await wait(() => document.querySelector('textarea')?.value === '' && [...document.querySelectorAll('[data-virtual-turn-id]')].some(element => element.textContent.includes('Side question: keep the draft until acknowledgment')))
+    console.log('PASS project /btw keeps an unconfirmed draft and clears it after acceptance')
     fs.writeFileSync(output + '/result.json', JSON.stringify({ pass: true, original, fork }))
     app.quit()
   } catch (error) {

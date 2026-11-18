@@ -725,13 +725,16 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
       },
     }
   })
-  function sendComposer(content: UserContent) {
+  async function sendComposer(content: UserContent) {
     const steer = state.busy && settings.composer.followUpMode === "steer"
-    const sent = queueEditId ? updateQueued(queueEditId, content) : sendMessage(content, steer ? "steer" : undefined)
-    if (!sent) return false
-    if (!queueEditId) markActiveSessionBusy()
-    setQueueEditId(undefined)
-    setEditDraft(undefined)
+    if (queueEditId) {
+      if (!await updateQueued(queueEditId, content)) return false
+      setQueueEditId(current => current === queueEditId ? undefined : current)
+    } else {
+      if (!await sendMessage(content, steer ? "steer" : undefined)) return false
+      markActiveSessionBusy()
+    }
+    setEditDraft(current => current === editDraft ? undefined : current)
     return true
   }
   const hasTurns = state.turns.length > 0
@@ -771,7 +774,7 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
     onWorktree: useEvent((on: boolean) => toggleWorktree(on)),
     onSend: useEvent((content: UserContent) => sendComposer(content)),
     onCommand: useEvent((action: string, value?: string) => {
-      if (action === "btw" && inCoordinator && value) sendComposer(`Side question: ${value}\n\nAnswer it in a new thread so the threads already running are not interrupted.`)
+      if (action === "btw" && inCoordinator && value) return sendComposer(`Side question: ${value}\n\nAnswer it in a new thread so the threads already running are not interrupted.`)
       else if (action === "fork") {
         if (inCoordinator) void confirm({ title: "Open a thread to fork it", description: "/fork starts a new thread from the thread you are in. In the project chat, describe the new work instead.", confirmLabel: "OK", cancelLabel: "Close" })
         else if (!activeId) void confirm({ title: "Nothing to fork yet", description: "Send a message first, then fork the task.", confirmLabel: "OK", cancelLabel: "Close" })

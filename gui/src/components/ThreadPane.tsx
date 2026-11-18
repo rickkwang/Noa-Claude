@@ -14,10 +14,20 @@ export function ThreadPane({ thread, onOpenFull }: { thread: { id: string; cwd: 
   const [composing, setComposing] = useState(false)
   const drafts = useRef(new Map<string, unknown>())
   const ready = state.connection === "ready"
-  function submit() {
+  const sending = useRef(false)
+  const [sendUnconfirmed, setSendUnconfirmed] = useState(false)
+  async function submit() {
     const message = text.trim()
-    if (!message || !ready) return
-    if (sendMessage(message)) setText("")
+    if (!message || !ready || sending.current) return
+    sending.current = true
+    let confirmed: boolean
+    try {
+      confirmed = await sendMessage(message)
+    } finally {
+      sending.current = false
+    }
+    setSendUnconfirmed(!confirmed)
+    if (confirmed) setText(current => current === text ? "" : current)
   }
   return (
     <div role="group" aria-label="Thread" className="flex h-full min-h-0 flex-col font-ui">
@@ -49,6 +59,7 @@ export function ThreadPane({ thread, onOpenFull }: { thread: { id: string; cwd: 
             {state.elicitations.map((request) => <ElicitationCard key={request.requestId} request={request} onAnswer={answerElicitation} draft={drafts.current.get(request.requestId) as never} onDraftChange={(draft) => drafts.current.set(request.requestId, draft)} />)}
           </div>
         )}
+        {sendUnconfirmed && <p role="status" className="text-caption">Noa did not confirm this message. Check the thread before resending.</p>}
         <div className="noa-agent-input relative flex items-end">
           <textarea
             value={text}

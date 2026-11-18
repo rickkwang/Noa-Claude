@@ -73,8 +73,8 @@ interface ComposerProps {
   model?: string
   mode?: PermissionMode
   commands: SlashCommand[]
-  onSend: (content: UserContent) => boolean
-  onCommand: (action: GuiCommandAction, value?: string) => void
+  onSend: (content: UserContent) => Promise<boolean>
+  onCommand: (action: GuiCommandAction, value?: string) => Promise<boolean> | void
   onInterrupt: () => void
   onModel: (model: string) => void
   onMode: (mode: PermissionMode) => void
@@ -306,6 +306,8 @@ export const Composer = memo(function Composer({
   // The draft is saved shortly after typing pauses rather than on every keystroke. A pending save
   // is flushed when the draft key changes, on unmount, and when the window is closed.
   const pendingDraft = useRef<{ key: string; text: string } | null>(null)
+  const latestDraft = useRef({ key: draftKey, text })
+  useLayoutEffect(() => { latestDraft.current = { key: draftKey, text } }, [draftKey, text])
   useEffect(() => {
     const previous = pendingDraft.current
     if (previous && previous.key !== draftKey) persistDraft(previous)
@@ -559,6 +561,45 @@ export const Composer = memo(function Composer({
   }, [sendWhenReady, connection, disabled, forking, loadingImages, imagesLoaded])
 
   const empty = !text.trim() && !images.length && !files.length
+  const sending = useRef(false)
+  const mounted = useRef(true)
+  useEffect(() => {
+    mounted.current = true
+    return () => { mounted.current = false }
+  }, [])
+  function replaceAcknowledgedText(next: string) {
+    const latest = latestDraft.current
+    if (!mounted.current || latest.text !== text) {
+      if ((!mounted.current || latest.key !== draftKey) && localStorage.getItem(draftKey) === text) persistDraft({ key: draftKey, text: "" })
+      if (pendingDraft.current?.key === draftKey && pendingDraft.current.text === text) pendingDraft.current = null
+      return
+    }
+    if (latest.key !== draftKey && localStorage.getItem(draftKey) === text) persistDraft({ key: draftKey, text: "" })
+    const updated = { key: latest.key, text: next }
+    persistDraft(updated)
+    pendingDraft.current = updated
+    latestDraft.current = updated
+    setText(next)
+  }
+  async function send(submit: () => Promise<boolean> | void, accepted: () => void) {
+    if (sending.current) return
+    sending.current = true
+    persistDraft({ key: draftKey, text })
+    let confirmed: boolean | void
+    try {
+      confirmed = await submit()
+    } finally {
+      sending.current = false
+    }
+    if (confirmed === false) {
+      if (mounted.current) {
+        setAttachmentError("Noa did not confirm this message. Check the conversation before resending.")
+      }
+      return
+    }
+    if (mounted.current) setAttachmentError(undefined)
+    accepted()
+  }
   function submit() {
     const trimmed = text.trim()
     if (!trimmed && !images.length && !files.length) return
@@ -568,7 +609,7 @@ export const Composer = memo(function Composer({
     if (parsed) {
       const command = findComposerCommand(allCommands, parsed[1]!)
       if (!command) { setAttachmentError(`Unknown command /${parsed[1]}. Use /help to browse available commands.`); return }
-      if (command.action) { runGuiCommand(command, parsed[2]?.trim() ?? ""); return }
+      if (command.action) { runGuiCommand(command, parsed[2]?.trim() ?? "", true); return }
     } else if (trimmed === "/") { setMenuDismissed(false); return }
     const prompt = [
       trimmed,
@@ -579,15 +620,15 @@ export const Composer = memo(function Composer({
       ...images.map((image) => ({ type: "image" as const, source: { type: "base64" as const, media_type: image.dataUrl.slice(5, image.dataUrl.indexOf(";")), data: image.dataUrl.slice(image.dataUrl.indexOf(",") + 1) } })),
       ...(prompt ? [{ type: "text" as const, text: prompt }] : []),
     ] : prompt
-    if (!onSend(content)) { setAttachmentError("Message was not sent. Reconnect and try again."); return }
-    setAttachmentError(undefined)
-    setImages([])
-    setText("")
-    setReferences([])
-    setFiles([])
+    void send(() => onSend(content), () => {
+      setImages(current => current.filter(image => !images.includes(image)))
+      replaceAcknowledgedText("")
+      setReferences(current => current.filter(path => !references.includes(path)))
+      setFiles(current => current.filter(path => !files.includes(path)))
+    })
   }
 
-  function runGuiCommand(command: ComposerCommand, value: string) {
+  function runGuiCommand(command: ComposerCommand, value: string, submitted = false) {
     if (editDraft?.queued) {
       setAttachmentError("This command cannot be queued. Cancel editing to run it.")
       return
@@ -613,9 +654,14 @@ export const Composer = memo(function Composer({
       setBrowserSearch(""); setBrowserOpen(true); setBrowserAction(undefined); setMenuDismissed(false); if (slash) replaceSlash(""); textareaRef.current?.focus(); return
     } else {
       if (value && action !== "btw" && action !== "fork") { setAttachmentError(`/${command.name} does not take arguments.`); return }
-      onCommand(action, value)
+      if (action === "btw" && value) {
+        void send(() => onCommand(action, value), () => {
+          if (submitted) replaceAcknowledgedText("")
+          else if (slash) replaceAcknowledgedText(text.slice(0, slash.start) + text.slice(slash.end))
+        })
+      } else onCommand(action, value)
     }
-    if (slash) replaceSlash("")
+    if (slash && !(action === "btw" && value)) replaceSlash("")
     setBrowserOpen(false); setBrowserAction(undefined); setBrowserSearch(""); setMenuDismissed(true)
   }
 
@@ -624,8 +670,9 @@ export const Composer = memo(function Composer({
     if (command.value !== undefined) { runGuiCommand(command, command.value); return }
     if (command.action && !completeOnly) { runGuiCommand(command, ""); return }
     if (command.type === "local" && !command.argumentHint && !completeOnly) {
-      if (!onSend(`/${command.name}`)) { setAttachmentError("Message was not sent. Reconnect and try again."); return }
-      if (slash) replaceSlash("")
+      void send(() => onSend(`/${command.name}`), () => {
+        if (slash) replaceAcknowledgedText(text.slice(0, slash.start) + text.slice(slash.end))
+      })
     } else if (slash) replaceSlash(`/${command.name} `)
     else setText(`/${command.name} `)
     setBrowserOpen(false); setBrowserAction(undefined); setBrowserFilter(undefined); setBrowserSearch(""); setMenuDismissed(false)
@@ -1132,7 +1179,7 @@ export const Composer = memo(function Composer({
                     type="button"
                     disabled={busy || disabled}
                     title={busy ? "Available when Claude finishes this turn" : undefined}
-                    onClick={() => { if (onSend("/compact")) setContextOpen(false) }}
+                    onClick={() => void send(() => onSend("/compact"), () => setContextOpen(false))}
                     className="self-start rounded-md px-2 py-1 text-[var(--text-primary)] transition-colors hover:bg-[var(--fill-hover)] disabled:opacity-40 disabled:hover:bg-transparent"
                   >
                     Compact
