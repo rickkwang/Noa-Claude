@@ -456,7 +456,8 @@ export const NotebookEditTool = buildTool({
         }
       }
       const IPYNB_INDENT = 1
-      const updatedContent = jsonStringify(notebook, null, IPYNB_INDENT)
+      const serialized = jsonStringify(notebook, null, IPYNB_INDENT)
+      const updatedContent = content.endsWith('\n') ? `${serialized}\n` : serialized
       const writtenAt = writeTextContent(
         fullPath,
         updatedContent,

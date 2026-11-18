@@ -354,6 +354,10 @@ export const GrepTool = buildTool({
       args.push('-i')
     }
 
+    // Sort by path so paginated content/count results (offset + head_limit) are
+    // deterministic across invocations and never duplicate or skip entries.
+    args.push('--sort', 'path')
+
     if (output_mode === 'files_with_matches') {
       args.push('-l')
     } else if (output_mode === 'count') {
