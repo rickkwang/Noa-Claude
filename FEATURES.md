@@ -1,6 +1,6 @@
 # Features Audit
 
-Last updated: 2026-11-07
+Last updated: 2026-11-16
 
 This file is the single availability audit for this repository: build profiles, feature-flag unlock status, and command/runtime availability.
 

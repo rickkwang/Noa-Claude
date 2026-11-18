@@ -23,7 +23,7 @@ export const LAUNCHER_MACRO: {
   FEEDBACK_CHANNEL: string
   ISSUES_EXPLAINER: string
   PACKAGE_URL: string
-  NATIVE_PACKAGE_URL: string
+  NATIVE_PACKAGE_URL: string | undefined
   DISTRIBUTION: string
 }
 
@@ -33,6 +33,9 @@ export function getResolvedLauncherConfig(options?: {
   apiBaseUrl: string | undefined
   apiKey: string | undefined
   authToken: string | undefined
+  apiBaseUrlSource: string
+  apiKeySource: string
+  authTokenSource: string
   model: string | undefined
   settings: unknown
   settingsEnv: Record<string, unknown>
