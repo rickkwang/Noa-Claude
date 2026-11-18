@@ -21,11 +21,18 @@ import {
   getURLMarkdownContent,
   isPreapprovedUrl,
   MAX_MARKDOWN_LENGTH,
+  MAX_URL_LENGTH,
 } from './utils.js'
 
 const inputSchema = lazySchema(() =>
   z.strictObject({
-    url: z.string().url().describe('The URL to fetch content from'),
+    url: z.string()
+      .refine(url => url.length <= MAX_URL_LENGTH, {
+        abort: true,
+        message: `URL is longer than ${MAX_URL_LENGTH} characters`,
+      })
+      .url()
+      .describe('The URL to fetch content from'),
     prompt: z.string().describe('The prompt to run on the fetched content'),
     offset: z.number().int().nonnegative().optional().describe(
       'Character position in the page text to start reading from. Use it to read on through a page too long for one call, with the value the previous result gave.',

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { spawn, execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, truncateSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -41,6 +41,10 @@ const cases = [
     { name: 'write-hook-malformed', hook: true, invalid: true, tool: 'Write' },
     { name: 'write-hook-unknown-key', hook: true, unknown: true, tool: 'Write' },
   ].map(c => ({ tool: 'Read', ...c, mode, name: `${c.name}-${mode}` }))),
+  { name: 'read-large-file-size', tool: 'Read', largeFile: true },
+  { name: 'read-notebook-without-metadata', tool: 'Read', notebook: true },
+  { name: 'edit-notebook-without-metadata', tool: 'NotebookEdit', notebook: true },
+  { name: 'webfetch-overlong-url', tool: 'WebFetch' },
   ...['Grep', 'Glob'].flatMap(tool => [0, 1, 2, 3, 137, 'segv', 'partial', 'buffer', 'denial-spoof'].map(code => ({
     name: `${tool.toLowerCase()}-${code}`, tool, code,
   }))),
@@ -64,8 +68,12 @@ const server = createServer(async (req, res) => {
     const verdict = active.auto === 'parse-failure' ? 'not a classifier verdict'
       : active.auto === 'blocked' ? '<block>yes</block><severity>100</severity><reason>Fixture blocked this action.</reason>'
       : '<block>no</block><severity>0</severity>';
+    const readBeforeEdit = call && active.tool === 'NotebookEdit' && !body.messages.some(m =>
+      Array.isArray(m.content) && m.content.some(b => b.type === 'tool_result' && b.tool_use_id === 'boundary_read'));
     const content = call
-      ? [{ type: 'tool_use', id: 'boundary_tool', name: active.tool, input: active.input }]
+      ? [readBeforeEdit
+        ? { type: 'tool_use', id: 'boundary_read', name: 'Read', input: { file_path: active.input.notebook_path } }
+        : { type: 'tool_use', id: 'boundary_tool', name: active.tool, input: active.input }]
       : [{ type: 'text', text: classifier ? verdict : 'BOUNDARY_DONE' }];
     const message = { id: `msg_${active.requests.length}`, type: 'message', role: 'assistant', model: body.model,
       content, stop_reason: call ? 'tool_use' : 'end_turn', stop_sequence: null, usage: { input_tokens: 100, output_tokens: 10 } };
@@ -103,10 +111,16 @@ async function run(scenario) {
   const rewritten = join(dir, 'rewritten.txt');
   const newFile = scenario.auto ? `${dir}-new.txt` : join(dir, 'new.txt');
   writeFileSync(fixture, `${READ_MARKER}\n`);
+  if (scenario.largeFile) truncateSync(fixture, 24 * 1024 * 1024);
+  const notebook = join(dir, 'fixture.ipynb');
+  if (scenario.notebook) writeFileSync(notebook, JSON.stringify({ nbformat: 4, nbformat_minor: 4,
+    cells: [{ cell_type: 'code', source: [READ_MARKER], outputs: [], execution_count: null, metadata: {} }] }));
   writeFileSync(secret, `${DENIED_MARKER}\n`);
   writeFileSync(rewritten, 'REWRITTEN_READ_42\n');
   active = { ...scenario, requests: [], input: scenario.tool === 'Read'
-    ? { file_path: scenario.denied && !scenario.hook ? secret : fixture }
+    ? { file_path: scenario.notebook ? notebook : scenario.denied && !scenario.hook ? secret : fixture }
+    : scenario.tool === 'NotebookEdit' ? { notebook_path: notebook, cell_id: 'cell-0', new_source: 'NOTEBOOK_EDITED' }
+    : scenario.tool === 'WebFetch' ? { url: 'https://example.invalid/'.padEnd(2001, 'x'), prompt: 'Summarize.' }
     : scenario.tool === 'Write' ? { file_path: newFile, content: 'BOUNDARY_WRITE' }
     : scenario.tool === 'Grep' ? { pattern: SEARCH_MARKER, path: dir, output_mode: 'content' }
     : { pattern: '*.txt', path: dir } };
@@ -117,8 +131,9 @@ async function run(scenario) {
     NOA_CLAUDE_STREAMING_TOOL_EXECUTION: scenario.mode === 'nonstreaming' ? '0' : '1' });
   const command = ['--print', scenario.doctor ? `/${scenario.doctor} DOCTOR_SCOPE_FIXTURE: report only, do not edit.` : 'Exercise the fixture tool once.', '--verbose', '--output-format', 'stream-json',
     '--model', 'claude-haiku-5-5', '--strict-mcp-config', '--setting-sources', '', '--permission-mode', scenario.auto ? 'auto' : 'dontAsk',
-    '--tools', scenario.tool, '--max-turns', '2'];
-  if (!scenario.auto) command.push('--allowedTools', scenario.tool);
+    '--tools', scenario.tool === 'NotebookEdit' ? 'Read,NotebookEdit' : scenario.tool,
+    '--max-turns', scenario.tool === 'NotebookEdit' ? '3' : '2'];
+  if (!scenario.auto) command.push('--allowedTools', scenario.tool === 'NotebookEdit' ? 'Read,NotebookEdit' : scenario.tool);
   // Write and Edit share the Edit filesystem permission rules.
   if (scenario.denied) command.push('--disallowedTools', `${scenario.tool === 'Write' ? 'Edit' : 'Read'}(/${scenario.tool === 'Write' ? newFile : secret})`);
   if (scenario.hook) {
@@ -198,7 +213,10 @@ async function run(scenario) {
     assert.equal(persistedResult.toolDenialKind, undefined, 'successes and tool failures are not permission denials');
   }
   assert.ok(active.requests.every(request => request.body.messages.every(message => !('toolDenialKind' in message))), 'local denial metadata must not reach the model');
-  if (scenario.code !== undefined) {
+  if (scenario.largeFile || scenario.tool === 'WebFetch') {
+    assert.equal(result.is_error, true, textOf(result));
+    assert.match(textOf(result), scenario.largeFile ? /File content \(24\s*MB\)/ : /URL is longer than 2000 characters/);
+  } else if (scenario.code !== undefined) {
     assert.ok(existsSync(env.BOUNDARY_RG_LOG), 'fixture rg must be invoked');
     if (scenario.code === 0) {
       assert.ok(!result.is_error, textOf(result));
@@ -218,7 +236,9 @@ async function run(scenario) {
     assert.ok(!result.is_error, textOf(result));
     // Keys a hook adds outside the schema are dropped; the rest of the rewrite runs.
     if (scenario.tool === 'Write') assert.equal(readFileSync(newFile, 'utf8'), scenario.auto ? 'BOUNDARY_WRITE' : 'HOOK_WRITE');
-    else assert.ok(textOf(result).includes(scenario.hook ? 'REWRITTEN_READ_42' : READ_MARKER));
+    else if (scenario.tool === 'NotebookEdit') {
+      assert.equal(JSON.parse(readFileSync(notebook, 'utf8')).cells[0].source, active.input.new_source);
+    } else assert.ok(textOf(result).includes(scenario.hook ? 'REWRITTEN_READ_42' : READ_MARKER));
   }
   return { dir, observed: result };
 }

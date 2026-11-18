@@ -406,7 +406,7 @@ export const NotebookEditTool = buildTool({
         }
       }
 
-      const language = notebook.metadata.language_info?.name ?? 'python'
+      const language = notebook.metadata?.language_info?.name ?? 'python'
       let new_cell_id = undefined
       if (
         notebook.nbformat > 4 ||

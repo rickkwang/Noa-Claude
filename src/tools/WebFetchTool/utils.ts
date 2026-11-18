@@ -147,7 +147,7 @@ export async function htmlToMarkdown(html: string): Promise<string> {
 // which provides a primary security boundary. In addition, Claude Code has
 // other data exfil channels, and this one does not seem relatively high risk,
 // so I'm removing that length restriction. -ab
-const MAX_URL_LENGTH = 2000
+export const MAX_URL_LENGTH = 2000
 
 // Per PSR:
 // "Implement resource consumption controls because setting limits on CPU,

@@ -118,6 +118,7 @@ export async function readFileInRange(
     maxLines,
     maxBytes,
     truncateOnByteLimit,
+    stats.isFile() ? stats.size : 0,
     signal,
   )
 }
@@ -206,6 +207,7 @@ type StreamState = {
   truncateOnByteLimit: boolean
   resolve: (value: ReadFileRangeResult) => void
   totalBytesRead: number
+  sizeOnDisk: number
   selectedBytes: number
   truncatedByBytes: boolean
   currentLineIndex: number
@@ -237,7 +239,7 @@ function streamOnData(this: StreamState, chunk: string): void {
     this.totalBytesRead > this.maxBytes
   ) {
     this.stream.destroy(
-      new FileTooLargeError(this.totalBytesRead, this.maxBytes),
+      new FileTooLargeError(Math.max(this.sizeOnDisk, this.totalBytesRead), this.maxBytes),
     )
     return
   }
@@ -348,6 +350,7 @@ function readFileInRangeStreaming(
   maxLines: number | undefined,
   maxBytes: number | undefined,
   truncateOnByteLimit: boolean,
+  sizeOnDisk: number,
   signal?: AbortSignal,
 ): Promise<ReadFileRangeResult> {
   return new Promise((resolve, reject) => {
@@ -363,6 +366,7 @@ function readFileInRangeStreaming(
       truncateOnByteLimit,
       resolve,
       totalBytesRead: 0,
+      sizeOnDisk,
       selectedBytes: 0,
       truncatedByBytes: false,
       currentLineIndex: 0,
