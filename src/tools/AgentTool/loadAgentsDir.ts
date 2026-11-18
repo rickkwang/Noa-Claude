@@ -314,7 +314,10 @@ export const getAgentDefinitionsWithOverrides = memoize(
 
       const failedFiles: Array<{ path: string; error: string }> = []
       const customAgents = markdownFiles
-        .map(({ filePath, baseDir, frontmatter, content, source }) => {
+        .map(({ filePath, baseDir, frontmatter, frontmatterProblem, content, source }) => {
+          if (frontmatterProblem) {
+            failedFiles.push({ path: filePath, error: frontmatterProblem })
+          }
           const agent = parseAgentFromMarkdown(
             filePath,
             baseDir,

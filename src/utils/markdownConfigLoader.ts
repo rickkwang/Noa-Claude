@@ -46,6 +46,7 @@ export type MarkdownFile = {
   filePath: string
   baseDir: string
   frontmatter: FrontmatterData
+  frontmatterProblem?: string
   content: string
   source: SettingSource
 }
@@ -593,13 +594,7 @@ async function loadMarkdownFiles(dir: string): Promise<
     files.map(async filePath => {
       try {
         const rawContent = await readFile(filePath, { encoding: 'utf-8' })
-        const { frontmatter, content } = parseFrontmatter(rawContent, filePath)
-
-        return {
-          filePath,
-          frontmatter,
-          content,
-        }
+        return { filePath, ...parseFrontmatter(rawContent, filePath) }
       } catch (error) {
         const errorMessage =
           error instanceof Error ? error.message : String(error)

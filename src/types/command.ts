@@ -224,6 +224,7 @@ export type CommandBase = {
   userFacingName?: () => string
   /** Absolute/virtual markdown path for skills/commands loaded from files. */
   sourceFilePath?: string
+  frontmatterProblem?: string
 }
 
 export type Command = CommandBase &

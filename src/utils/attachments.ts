@@ -2414,7 +2414,7 @@ async function processAtMentionedFiles(
   input: string,
   toolUseContext: ToolUseContext,
 ): Promise<Attachment[]> {
-  const files = extractAtMentionedFiles(input)
+  const files = extractAtMentionedFiles(input).slice(0, 100)
   if (files.length === 0) return []
 
   const appState = toolUseContext.getAppState()

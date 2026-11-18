@@ -1,10 +1,14 @@
 // @ts-nocheck
 import chalk from 'chalk';
 import * as React from 'react';
+import stripAnsi from 'strip-ansi';
 import { color } from '../ink.js';
 import type { MCPServerConnection } from '../services/mcp/types.js';
+import { getSkillDirCommands } from '../skills/loadSkillsDir.js';
+import { getAgentDefinitionsWithOverrides } from '../tools/AgentTool/loadAgentsDir.js';
 import { getAccountInformation, getActiveApiKeyHelperFailure, isClaudeAISubscriber } from './auth.js';
 import { getLargeMemoryFiles, getMemoryFiles, MAX_MEMORY_CHARACTER_COUNT } from './claudemd.js';
+import { getCwd } from './cwd.js';
 import { getDoctorDiagnostic } from './doctorDiagnostic.js';
 import { getAWSRegion, getDefaultVertexRegion, isEnvTruthy } from './envUtils.js';
 import { getDisplayPath } from './file.js';
@@ -13,7 +17,9 @@ import { getClaudeAiUserDefaultModelDescription, modelDisplayString } from './mo
 import { getAPIProvider } from './model/providers.js';
 import { getMTLSConfig } from './mtls.js';
 import { checkInstall } from './nativeInstaller/index.js';
+import { getPluginSkills } from './plugins/loadPluginCommands.js';
 import { getProxyUrl } from './proxy.js';
+import { SandboxManager } from './sandbox/sandbox-adapter.js';
 import { getSettingsWithAllErrors } from './settings/allErrors.js';
 import { getEnabledSettingSources, getSettingSourceDisplayNameCapitalized } from './settings/constants.js';
 import { getManagedFileSettingsPresence, getPolicySettingsOrigin, getSettingsForSource } from './settings/settings.js';
@@ -116,16 +122,45 @@ export async function buildInstallationDiagnostics(): Promise<Diagnostic[]> {
   return installWarnings.map(warning => warning.message);
 }
 export async function buildInstallationHealthDiagnostics(): Promise<Diagnostic[]> {
-  const diagnostic = await getDoctorDiagnostic();
-  const items: Diagnostic[] = [];
-  const {
-    errors: validationErrors
-  } = getSettingsWithAllErrors();
-  if (validationErrors.length > 0) {
-    const invalidFiles = Array.from(new Set(validationErrors.map(error => error.file)));
-    const fileList = invalidFiles.join(', ');
-    items.push(`Found invalid settings files: ${fileList}. They will be ignored.`);
+  const cwd = getCwd();
+  const [diagnostic, agents, skills, pluginSkills] = await Promise.all([
+    getDoctorDiagnostic(),
+    getAgentDefinitionsWithOverrides(cwd).catch(() => undefined),
+    getSkillDirCommands(cwd).catch(() => []),
+    getPluginSkills().catch(() => []),
+  ]);
+  const setupWarnings: string[] = [];
+  const sandboxReason = SandboxManager.getSandboxUnavailableReason();
+  if (sandboxReason) setupWarnings.push(`Sandbox not running: ${sandboxReason}`);
+  const { errors: validationErrors } = getSettingsWithAllErrors();
+  for (const { file, path, message } of validationErrors) {
+    setupWarnings.push(`${[file && getDisplayPath(file), path].filter(Boolean).join(': ') || 'Settings'}: ${message}`);
   }
+  for (const source of getEnabledSettingSources()) {
+    for (const [event, matchers] of Object.entries(getSettingsForSource(source)?.hooks ?? {})) {
+      for (const { matcher } of matchers ?? []) {
+        if (!matcher || matcher === '*') continue;
+        try {
+          new RegExp(matcher);
+        } catch {
+          setupWarnings.push(`${getSettingSourceDisplayNameCapitalized(source)}: ${event} hook matcher ${JSON.stringify(matcher)} is not a valid regular expression`);
+        }
+      }
+    }
+  }
+  for (const { path, error } of agents?.failedFiles ?? []) {
+    setupWarnings.push(`Agent ${getDisplayPath(path)} not loaded: ${error}`);
+  }
+  for (const skill of [...skills, ...pluginSkills]) {
+    if (skill.frontmatterProblem) {
+      setupWarnings.push(`Skill /${skill.name}: ${skill.frontmatterProblem}`);
+    }
+  }
+  const warnings = [...new Set(setupWarnings.map(warning => stripAnsi(warning).replace(/[\x00-\x1f\x7f-\x9f\u202a-\u202e\u2066-\u2069]/g, ' ')))];
+  const items: Diagnostic[] = warnings.slice(0, 10).map(warning =>
+    warning.length > 300 ? `${warning.slice(0, 299)}…` : warning,
+  );
+  if (warnings.length > 10) items.push(`${warnings.length - 10} more setup warnings.`);
 
   // Add warnings from doctor diagnostic (includes leftover installations, config mismatches, etc.)
   diagnostic.warnings.forEach(warning => {

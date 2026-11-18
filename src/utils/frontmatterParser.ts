@@ -63,6 +63,7 @@ export type FrontmatterData = {
 
 export type ParsedMarkdown = {
   frontmatter: FrontmatterData
+  frontmatterProblem?: string
   content: string
 }
 
@@ -148,6 +149,7 @@ export function parseFrontmatter(
   const content = markdown.slice(match[0].length)
 
   let frontmatter: FrontmatterData = {}
+  let frontmatterProblem: string | undefined
   try {
     const parsed = parseYaml(frontmatterText) as FrontmatterData | null
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
@@ -162,6 +164,7 @@ export function parseFrontmatter(
         frontmatter = parsed
       }
     } catch (retryError) {
+      frontmatterProblem = 'Invalid YAML frontmatter'
       // Still failed - log for debugging so users can diagnose broken frontmatter
       const location = sourcePath ? ` in ${sourcePath}` : ''
       logForDebugging(
@@ -173,6 +176,7 @@ export function parseFrontmatter(
 
   return {
     frontmatter,
+    ...(frontmatterProblem && { frontmatterProblem }),
     content,
   }
 }

@@ -43,6 +43,7 @@ type PluginMarkdownFile = {
   filePath: string
   baseDir: string
   frontmatter: FrontmatterData
+  frontmatterProblem?: string
   content: string
 }
 
@@ -324,6 +325,7 @@ function createPluginCommand(
         repository: sourceName,
       },
       sourceFilePath: file.filePath,
+      ...(file.frontmatterProblem && { frontmatterProblem: file.frontmatterProblem }),
       isHidden: !userInvocable,
       progressMessage: isSkill || config.isSkillMode ? 'loading' : 'running',
       userFacingName(): string {
@@ -723,18 +725,12 @@ async function loadSkillsFromDirectory(
       return skills
     }
     try {
-      const { frontmatter, content: markdownContent } = parseFrontmatter(
-        directSkillContent,
-        directSkillPath,
-      )
-
       const skillName = `${pluginName}:${basename(skillsPath)}`
 
       const file: PluginMarkdownFile = {
         filePath: directSkillPath,
         baseDir: dirname(directSkillPath),
-        frontmatter,
-        content: markdownContent,
+        ...parseFrontmatter(directSkillContent, directSkillPath),
       }
 
       const skill = createPluginCommand(
@@ -803,18 +799,12 @@ async function loadSkillsFromDirectory(
       }
 
       try {
-        const { frontmatter, content: markdownContent } = parseFrontmatter(
-          content,
-          skillFilePath,
-        )
-
         const skillName = `${pluginName}:${entry.name}`
 
         const file: PluginMarkdownFile = {
           filePath: skillFilePath,
           baseDir: dirname(skillFilePath),
-          frontmatter,
-          content: markdownContent,
+          ...parseFrontmatter(content, skillFilePath),
         }
 
         const skill = createPluginCommand(

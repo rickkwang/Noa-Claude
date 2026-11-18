@@ -305,6 +305,7 @@ export function createSkillCommand({
   effort,
   shell,
   sourceFilePath,
+  frontmatterProblem,
 }: {
   skillName: string
   displayName: string | undefined
@@ -330,6 +331,7 @@ export function createSkillCommand({
   effort: EffortValue | undefined
   shell: FrontmatterShell | undefined
   sourceFilePath?: string
+  frontmatterProblem?: string
 }): Command {
   return {
     type: 'prompt',
@@ -358,6 +360,7 @@ export function createSkillCommand({
     source,
     loadedFrom,
     sourceFilePath,
+    ...(frontmatterProblem && { frontmatterProblem }),
     hooks,
     skillRoot: baseDir,
     async getPromptForCommand(args, toolUseContext) {
@@ -463,7 +466,7 @@ async function loadSkillsFromSkillsDir(
           return null
         }
 
-        const { frontmatter, content: markdownContent } = parseFrontmatter(
+        const { frontmatter, frontmatterProblem, content: markdownContent } = parseFrontmatter(
           content,
           skillFilePath,
         )
@@ -486,6 +489,11 @@ async function loadSkillsFromSkillsDir(
             loadedFrom: 'skills',
             paths,
             sourceFilePath: skillFilePath,
+            frontmatterProblem: frontmatterProblem ?? (frontmatter.hooks && !parsed.hooks
+              ? 'Invalid hooks in frontmatter'
+              : frontmatter.effort !== undefined && parsed.effort === undefined
+                ? 'Invalid effort in frontmatter'
+                : undefined),
           }),
           filePath: skillFilePath,
         }
