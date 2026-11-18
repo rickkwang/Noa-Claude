@@ -64,8 +64,33 @@ export type DiffStats =
       filesChanged?: string[]
       insertions: number
       deletions: number
+      unverifiedCount?: number
     }
   | undefined
+
+export class RewindNoFilesRestoredError extends Error {
+  readonly skippedFiles: string[]
+  constructor(skippedFiles: string[]) {
+    super(
+      `No files could be restored (${skippedFiles.join(', ')}). Run with --debug for details.`,
+    )
+    this.name = 'RewindNoFilesRestoredError'
+    this.skippedFiles = skippedFiles
+  }
+}
+
+export class RewindPartialRestoreError extends Error {
+  readonly restoredCount: number
+  readonly skippedFiles: string[]
+  constructor(restoredFiles: string[], skippedFiles: string[]) {
+    super(
+      `Restored ${restoredFiles.length} ${restoredFiles.length === 1 ? 'file' : 'files'}, but skipped ${skippedFiles.length} (${skippedFiles.join(', ')}). Skipped files were left untouched — run with --debug for the paths.`,
+    )
+    this.name = 'RewindPartialRestoreError'
+    this.restoredCount = restoredFiles.length
+    this.skippedFiles = skippedFiles
+  }
+}
 
 export function fileHistoryEnabled(): boolean {
   if (getIsNonInteractiveSession()) {
@@ -451,6 +476,7 @@ export async function fileHistoryGetDiffStats(
     return undefined
   }
 
+  let unverifiedCount = 0
   const results = await Promise.all(
     Array.from(state.trackedFiles, async trackingPath => {
       try {
@@ -462,6 +488,7 @@ export async function fileHistoryGetDiffStats(
           : getBackupFileNameFirstVersion(trackingPath, state)
 
         if (backupFileName === undefined) {
+          unverifiedCount++
           // Error resolving the backup, so don't touch the file
           logError(
             new Error('FileHistory: Error finding the backup file to apply'),
@@ -486,6 +513,7 @@ export async function fileHistoryGetDiffStats(
         }
         return null
       } catch (error) {
+        unverifiedCount++
         logError(error)
         logEvent('tengu_file_history_rewind_restore_file_failed', {
           dryRun: true,
@@ -504,7 +532,12 @@ export async function fileHistoryGetDiffStats(
     insertions += r.stats?.insertions || 0
     deletions += r.stats?.deletions || 0
   }
-  return { filesChanged, insertions, deletions }
+  return {
+    filesChanged,
+    insertions,
+    deletions,
+    ...(unverifiedCount > 0 ? { unverifiedCount } : undefined),
+  }
 }
 
 /**
@@ -614,7 +647,12 @@ async function applySnapshot(
       })
     }
   }
-  if (failures.length) throw new Error(`Could not restore ${failures.join(", ")}. Other files may already have been restored.`)
+  if (failures.length > 0) {
+    if (filesChanged.length === 0) {
+      throw new RewindNoFilesRestoredError(failures)
+    }
+    throw new RewindPartialRestoreError(filesChanged, failures)
+  }
   return filesChanged
 }
 

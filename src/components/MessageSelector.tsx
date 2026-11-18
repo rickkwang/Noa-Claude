@@ -8,7 +8,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS, logEvent } from 'src/services/analytics/index.js';
 import { useAppState } from 'src/state/AppState.js';
 import { isCompactionUserAbort } from 'src/services/compact/compact.js';
-import { type DiffStats, fileHistoryCanRestore, fileHistoryEnabled, fileHistoryGetDiffStats } from 'src/utils/fileHistory.js';
+import { type DiffStats, RewindPartialRestoreError, fileHistoryCanRestore, fileHistoryEnabled, fileHistoryGetDiffStats } from 'src/utils/fileHistory.js';
 import { logError } from 'src/utils/log.js';
 import { useExitOnCtrlCDWithKeybindings } from '../hooks/useExitOnCtrlCDWithKeybindings.js';
 import { Box, Text } from '../ink.js';
@@ -243,7 +243,11 @@ export function MessageSelector({
     } else if (conversationError) {
       setError(`Failed to restore the conversation:\n${conversationError}`);
     } else if (codeError) {
-      setError(`Failed to restore the code:\n${codeError}`);
+      setError(
+        codeError instanceof RewindPartialRestoreError
+          ? codeError.message
+          : `Failed to restore the code:\n${codeError}`,
+      );
     } else {
       // Success - close the selector
       onClose();
@@ -342,6 +346,10 @@ export function MessageSelector({
               </Text>
             </Box>
             <RestoreOptionDescription selectedRestoreOption={selectedRestoreOption} canRestoreCode={!!canRestoreCode_0} diffStatsForRestore={diffStatsForRestore} />
+            {diffStatsForRestore?.unverifiedCount ? <Text dimColor color="warning">
+                {figures.warning} {diffStatsForRestore.unverifiedCount}{' '}
+                {diffStatsForRestore.unverifiedCount === 1 ? 'file' : 'files'} could not be checked for code changes.
+              </Text> : null}
             {isRestoring && isSummarizeOption(restoringOption) ? <Box flexDirection="row" gap={1}>
                 <Spinner />
                 <Text>Summarizing…</Text>
