@@ -8,7 +8,10 @@ import {
 } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import { checkWorktreeEscape } from '../../utils/worktreeEscape.js'
+import {
+  checkWorktreeEscape,
+  checkWorktreeEscapeForCommand,
+} from '../../utils/worktreeEscape.js'
 
 // `isolation: "worktree"` is only a real boundary if writes are held to it.
 // The agent runs under a cwd override (AgentTool wraps its execution in
@@ -140,6 +143,53 @@ describe('checkWorktreeEscape follows symlinks', () => {
         cwd: worktree,
         sharedCheckout: repo,
       }),
+    ).toBe(null)
+  })
+})
+
+describe('checkWorktreeEscapeForCommand shared git ref protection', () => {
+  const shared = '/repo'
+  const worktree = join(shared, '.noa', 'worktrees', 'agent-1234abcd')
+  const isolated = { cwd: worktree, sharedCheckout: shared }
+
+  test('blocks mutating shared git references', () => {
+    for (const cmd of [
+      'git update-ref refs/heads/main HEAD',
+      'FOO=1 git -c core.autocrlf=false branch -D main',
+      'git branch new-branch',
+      'git checkout -b feature',
+      'git switch -c feature',
+      'git tag v1.0.0',
+      'git push origin main',
+      'git symbolic-ref refs/heads/main refs/heads/other',
+      'git worktree remove ../other',
+      'git status && git update-ref refs/heads/x HEAD',
+    ]) {
+      const err = checkWorktreeEscapeForCommand(cmd, worktree, isolated)
+      expect(err).toMatch(/shared Git references/i)
+    }
+  })
+
+  test('allows read-only git ref queries and local worktree commits', () => {
+    for (const cmd of [
+      'git branch --show-current',
+      'git branch -a',
+      'git branch --list feature*',
+      'git tag -l',
+      'git symbolic-ref HEAD',
+      'git status',
+      'git diff HEAD',
+      'git add . && git commit -m "worktree commit"',
+      'git worktree list',
+      'git remote -v',
+    ]) {
+      expect(checkWorktreeEscapeForCommand(cmd, worktree, isolated)).toBe(null)
+    }
+  })
+
+  test('no-op when not in an isolated override', () => {
+    expect(
+      checkWorktreeEscapeForCommand('git update-ref refs/heads/main HEAD', shared, undefined),
     ).toBe(null)
   })
 })

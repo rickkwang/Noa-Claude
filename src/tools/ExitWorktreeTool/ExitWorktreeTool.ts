@@ -16,6 +16,7 @@ import { getAgentContext } from '../../utils/agentContext.js'
 import { asAgentId } from '../../types/ids.js'
 import { updateHooksConfigSnapshot } from '../../utils/hooks/hooksConfigSnapshot.js'
 import { lazySchema } from '../../utils/lazySchema.js'
+import { pathInWorkingPath } from '../../utils/permissions/filesystem.js'
 import { getPlansDirectory } from '../../utils/plans.js'
 import { setCwd } from '../../utils/Shell.js'
 import { readAgentMetadata, saveWorktreeState, writeAgentMetadata } from '../../utils/sessionStorage.js'
@@ -129,7 +130,7 @@ export const ExitWorktreeTool: Tool<InputSchema, Output> = buildTool({
   toAutoClassifierInput(input) {
     return input.action
   },
-  async validateInput(input) {
+  async validateInput(input, context) {
     // Only an explicit EnterWorktree call grants ownership of session exit.
     const session = getCurrentWorktreeSession()
     if (!session) {
@@ -145,6 +146,22 @@ export const ExitWorktreeTool: Tool<InputSchema, Output> = buildTool({
         result: false,
         message: 'Worktrees entered with path cannot be removed. Use action: "keep" to return to the original directory.',
         errorCode: 4,
+      }
+    }
+    if (input.action === 'remove') {
+      const runningInWorktree = Object.values(context.getAppState().tasks).filter(
+        task =>
+          task.status === 'running' &&
+          'cwd' in task &&
+          typeof task.cwd === 'string' &&
+          pathInWorkingPath(task.cwd, session.worktreePath),
+      )
+      if (runningInWorktree.length > 0) {
+        return {
+          result: false,
+          message: `Cannot remove worktree at ${session.worktreePath} while ${runningInWorktree.length === 1 ? 'a background task is' : `${runningInWorktree.length} background tasks are`} still running in it. Stop or wait for the running task${runningInWorktree.length === 1 ? '' : 's'} to finish, or use action: "keep" to preserve the worktree.`,
+          errorCode: 5,
+        }
       }
     }
 

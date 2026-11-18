@@ -16,6 +16,7 @@ import type { Message } from '../../types/message.js';
 import type { QueuedCommand } from '../../types/textInputTypes.js';
 import { createAbortController, createChildAbortController } from '../../utils/abortController.js';
 import { registerCleanup } from '../../utils/cleanupRegistry.js';
+import { getCwd } from '../../utils/cwd.js';
 import { getToolSearchOrReadInfo } from '../../utils/collapseReadSearch.js';
 import { enqueuePendingNotification, getCommandQueueSnapshot, readdressAgentNotifications, removeByFilter } from '../../utils/messageQueueManager.js';
 import { sleep } from '../../utils/sleep.js';
@@ -152,6 +153,7 @@ export type LocalAgentTaskState = TaskStateBase & {
   // Agent whose Agent tool call spawned this one; undefined = main thread.
   // Routes the completion notification and scopes cascade stops.
   ownerAgentId?: string;
+  cwd?: string;
   // Messages queued via SendMessage, drained at tool boundaries and before stopping
   pendingMessages: (PendingAgentMessage | string)[];
   // The query is closing; scoped cleanup may still hold the run's ID.
@@ -707,6 +709,7 @@ export function registerAsyncAgent({
     lastReportedTokenCount: 0,
     isBackgrounded: true,
     ownerAgentId,
+    cwd: getCwd(),
     pendingMessages: [],
     retain: false,
     diskLoaded: false
@@ -784,6 +787,7 @@ export function registerAgentForeground({
     isBackgrounded: false,
     canBackground,
     ownerAgentId,
+    cwd: getCwd(),
     pendingMessages: [],
     retain: false,
     diskLoaded: false

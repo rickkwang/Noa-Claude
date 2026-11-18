@@ -7,6 +7,7 @@ import type { LocalShellSpawnInput, SetAppState, Task, TaskContext, TaskHandle }
 import { createTaskStateBase } from '../../Task.js';
 import type { AgentId } from '../../types/ids.js';
 import { registerCleanup } from '../../utils/cleanupRegistry.js';
+import { getCwd } from '../../utils/cwd.js';
 import { tailFile } from '../../utils/fsOperations.js';
 import { logError } from '../../utils/log.js';
 import { enqueuePendingNotification } from '../../utils/messageQueueManager.js';
@@ -251,6 +252,7 @@ export async function spawnShellTask(input: LocalShellSpawnInput & {
     lastReportedTotalLines: 0,
     isBackgrounded: true,
     agentId,
+    cwd: input.cwd ?? getCwd(),
     kind
   };
   registerTask(taskState, setAppState);
@@ -330,7 +332,8 @@ export function registerForeground(input: LocalShellSpawnInput & {
     lastReportedTotalLines: 0,
     isBackgrounded: false,
     // Not yet backgrounded - running in foreground
-    agentId
+    agentId,
+    cwd: input.cwd ?? getCwd(),
   };
   registerTask(taskState, setAppState);
   return taskId;

@@ -63,7 +63,11 @@ const api = createServer(async (req, res) => {
     block = { type: 'text', text: raw.includes('TAIL_MARK') ? 'SECONDARY_TAIL' : 'SECONDARY_HEAD' };
   } else if (child) {
     active.childCalls++;
-    if (active.name.startsWith('agent-switch') || active.name === 'agent-isolation-resume') {
+    if (active.name === 'agent-worktree-refs') {
+      const commands = ['git update-ref refs/heads/fixture-shared HEAD', 'git branch --show-current'];
+      const command = commands[active.childCalls - 1];
+      block = command ? { type: 'tool_use', id: `ref_${active.childCalls}`, name: 'Bash', input: { command } } : { type: 'text', text: 'PARITY_CHILD_DONE' };
+    } else if (active.name.startsWith('agent-switch') || active.name === 'agent-isolation-resume') {
       const children = readdirSync(join(active.dir, '.noa', 'worktrees')).filter(n => n !== 'b');
       const old = active.name === 'agent-switch-plain' ? active.dir : active.name === 'agent-switch-resume' ? join(active.dir, 'src') : join(active.dir, '.noa', 'worktrees', children[0] || 'missing');
       active.oldAgentWorktree = old;
@@ -114,7 +118,7 @@ const api = createServer(async (req, res) => {
       const input = { description: 'Parity child fixture', prompt: 'PARITY_CHILD: use the fixture tools and complete.', subagent_type: 'general-purpose' };
       if (active.name === 'agent-sync' || active.name.startsWith('agent-switch') || active.name === 'agent-isolation-resume') input.run_in_background = false;
       if (active.name === 'agent-model') input.model = 'fable';
-      if (['agent-switch', 'agent-switch-nested', 'agent-isolation-resume'].includes(active.name)) input.isolation = 'worktree';
+      if (['agent-switch', 'agent-switch-nested', 'agent-isolation-resume', 'agent-worktree-refs'].includes(active.name)) input.isolation = 'worktree';
       block = { type: 'tool_use', id: 'parent_1', name: 'Agent', input };
     } else if (active.name.startsWith('agent-')) {
       if (!active.childDone) block = { type: 'tool_use', id: 'await_' + active.parentCalls, name: 'Bash', input: { command: 'sleep 0.2', description: 'Await fixture notification' } };
@@ -155,12 +159,13 @@ async function runCli(args, env, dir) {
   return { code, stdout, stderr };
 }
 try {
-  for (const name of ['worktree', 'worktree-resume', 'worktree-dot', 'worktree-nested-dot', 'webfetch', 'agent-default', 'agent-sync', 'agent-disabled', 'agent-model', 'agent-parent-cd', 'agent-switch', 'agent-switch-nested', 'agent-switch-plain', 'agent-switch-resume', 'agent-isolation-resume']) {
+  for (const name of ['worktree-running-task', 'agent-worktree-refs', 'worktree', 'worktree-resume', 'worktree-dot', 'worktree-nested-dot', 'webfetch', 'agent-default', 'agent-sync', 'agent-disabled', 'agent-model', 'agent-parent-cd', 'agent-switch', 'agent-switch-nested', 'agent-switch-plain', 'agent-switch-resume', 'agent-isolation-resume']) {
+    if (process.env.NOA_PARITY_CASE && name !== process.env.NOA_PARITY_CASE) continue;
     const dir = join(artifacts, name); mkdirSync(dir, { recursive: true });
     active = { name, dir, requests: [], steps: [], parentCalls: 0, childCalls: 0, childDone: false, secondary: [], pageReads: 0 };
     writeFileSync(join(dir, 'file.txt'), 'PARITY_READ_SENTINEL\n');
     if (name === 'agent-parent-cd' || name === 'agent-switch-resume') mkdirSync(join(dir, 'src'));
-    if (name.startsWith('worktree') || name.startsWith('agent-switch') || name === 'agent-isolation-resume') {
+    if (name.startsWith('worktree') || name.startsWith('agent-switch') || name === 'agent-isolation-resume' || name === 'agent-worktree-refs') {
       const gitRoot = name === 'worktree-nested-dot' ? join(dir, '..project') : dir;
       mkdirSync(gitRoot, { recursive: true }); writeFileSync(join(gitRoot, 'file.txt'), 'PARITY_READ_SENTINEL\n');
       git(gitRoot, 'init', '-b', 'main'); git(gitRoot, 'config', 'user.name', 'Fixture'); git(gitRoot, 'config', 'user.email', 'fixture@example.invalid');
@@ -178,14 +183,20 @@ try {
         { name: 'Bash', input: { command: 'pwd' } },
         { name: 'EnterWorktree', input: { name: 'invalid', path: active.b } },
       ];
+      if (name === 'worktree-running-task') active.steps = [
+        { name: 'EnterWorktree', input: { name: 'live-task' } },
+        { name: 'Bash', input: { command: 'sleep 5', description: 'Keep fixture task running', run_in_background: true } },
+        { name: 'ExitWorktree', input: { action: 'remove' } },
+        { name: 'ExitWorktree', input: { action: 'keep' } },
+      ];
       if (name === 'worktree-resume') active.steps = [{ name: 'EnterWorktree', input: { path: active.b } }];
     }
     if (name === 'webfetch') active.steps = [0, 100000, 200000, -1].map(offset => ({ name: 'WebFetch', input: { url: 'https://fixture.example/page', prompt: 'Report the marker in this fragment.', offset } }));
     const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => ['PATH', 'HOME', 'TMPDIR', 'USER', 'LOGNAME', 'SHELL', 'LANG'].includes(key)));
-    Object.assign(env, { CLAUDE_CONFIG_DIR: join(dir, 'config'), ANTHROPIC_API_KEY: 'fixture-dummy', ANTHROPIC_BASE_URL: `http://127.0.0.1:${api.address().port}`, ANTHROPIC_MODEL: 'claude-sonnet-4-6', CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1', DISABLE_AUTOUPDATER: '1', HTTPS_PROXY: `http://127.0.0.1:${proxy.address().port}`, NO_PROXY: '127.0.0.1,localhost', NODE_EXTRA_CA_CERTS: cert, SSL_CERT_FILE: cert });
+    Object.assign(env, { CLAUDE_CONFIG_DIR: join(dir, 'config'), ANTHROPIC_API_KEY: 'fixture-dummy', ANTHROPIC_BASE_URL: `http://127.0.0.1:${api.address().port}`, ANTHROPIC_MODEL: (process.env.NOA_PARITY_MODEL || 'claude-sonnet-4-6'), CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1', DISABLE_AUTOUPDATER: '1', HTTPS_PROXY: `http://127.0.0.1:${proxy.address().port}`, NO_PROXY: '127.0.0.1,localhost', NODE_EXTRA_CA_CERTS: cert, SSL_CERT_FILE: cert });
     if (name === 'agent-disabled') env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS = '1';
     if (name === 'agent-model') { env.CLAUDE_CODE_SUBAGENT_MODEL = 'claude-haiku-4-5'; env.ANTHROPIC_DEFAULT_FABLE_MODEL = 'claude-fable-5-1'; }
-    const args = ['--print', '--verbose', '--output-format', 'stream-json', '--model', 'claude-sonnet-4-6', '--strict-mcp-config', '--setting-sources', '', '--permission-mode', 'dontAsk', '--allowedTools', 'Agent,Read,Write,Bash,EnterWorktree,ExitWorktree,WebFetch', '--max-turns', '30', '--no-session-persistence', '--settings', JSON.stringify({ worktree: { baseRef: 'head' } })];
+    const args = ['--print', '--verbose', '--output-format', 'stream-json', '--model', (process.env.NOA_PARITY_MODEL || 'claude-sonnet-4-6'), '--strict-mcp-config', '--setting-sources', '', '--permission-mode', 'dontAsk', '--allowedTools', 'Agent,Read,Write,Bash,EnterWorktree,ExitWorktree,WebFetch', '--max-turns', '30', '--no-session-persistence', '--settings', JSON.stringify({ worktree: { baseRef: 'head' } })];
     if (['worktree-resume', 'agent-switch-resume', 'agent-isolation-resume'].includes(name)) args.splice(args.indexOf('--no-session-persistence'), 1);
     const { code, stdout, stderr } = await runCli(args, env, dir);
     writeFileSync(join(dir, 'stdout.jsonl'), stdout); writeFileSync(join(dir, 'stderr.txt'), stderr);
@@ -203,7 +214,22 @@ try {
     const parent = active.requests.filter(b => b.tools?.length && !text(b.messages.find(m => m.role === 'user')?.content).includes('PARITY_CHILD'));
     const blocks = parent.flatMap(resultBlocks);
     const get = id => blocks.find(b => b.tool_use_id === id);
-    if (name.startsWith('worktree') && name !== 'worktree-resume') {
+    if (name === 'worktree-running-task') {
+      assert.match(text(get('step_2')?.content), /running in background/i);
+      assert.equal(get('step_3')?.is_error, true);
+      assert.match(text(get('step_3')?.content), /running task/i);
+      assert.equal(get('step_4')?.is_error, undefined);
+      assert.ok(existsSync(join(dir, '.noa', 'worktrees', 'live-task')));
+    } else if (name === 'agent-worktree-refs') {
+      const childResults = active.requests.flatMap(resultBlocks);
+      const rejected = childResults.find(b => b.tool_use_id === 'ref_1');
+      assert.equal(rejected?.is_error, true);
+      assert.match(text(rejected?.content), /shared Git references/i);
+      const allowed = childResults.find(b => b.tool_use_id === 'ref_2');
+      assert.ok(!allowed?.is_error);
+      assert.ok(text(allowed?.content).trim());
+      assert.equal(git(dir, 'branch', '--list', 'fixture-shared'), '');
+    } else if (name.startsWith('worktree') && name !== 'worktree-resume') {
       assert.equal(get('step_1')?.is_error, undefined); assert.equal(get('step_2')?.is_error, undefined);
       assert.equal(get('step_3')?.is_error, true); assert.equal(get('step_4')?.is_error, true);
       assert.ok(text(get('step_5')?.content).includes(active.b)); assert.ok(text(get('step_7')?.content).includes(dir));

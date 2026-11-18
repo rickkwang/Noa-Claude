@@ -92,6 +92,7 @@ export type LocalShellSpawnInput = {
   timeout?: number
   toolUseId?: string
   agentId?: AgentId
+  cwd?: string
   /** UI display variant: description-as-label, dialog title, status bar pill. */
   kind?: 'bash' | 'monitor'
 }
