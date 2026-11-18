@@ -45,14 +45,14 @@ Path-scoped rules in `.claude/rules/` (symlinked as `.noa/rules/`) load automati
 ## Commit and push
 
 - Commit messages must not describe work as an upstream port.
-- 只有用户在当前请求里明确说"提交"才 git commit；做完改动后停在未提交状态，汇报并等用户决定。之前的授权不延续。
-- 提交直接在当前 master 上 commit，不建 feature 分支（单人仓库，历史提交都在 master）。
-- 不 push，除非用户要求。
-- 工作区常有其他会话并发改动，甚至会抢先 commit。push 前必须核对 `git log origin/master..HEAD` 只包含用户本次授权推送的提交。
-- commit 与 push 用 `&&` 串起来：commit 失败（如 nothing to commit）就停下来问，不要继续 push。
-- 提交前看 `git status` 是否意外 ahead、目标文件是否已无 diff；有异常先报告。
+- Only run `git commit` when the user explicitly says "commit" in the current request. After making changes, stop uncommitted, report, and wait; earlier authorization does not carry over.
+- Commit directly on the current `master`; don't create feature branches (single-person repo, all history is on master).
+- Don't push unless the user asks.
+- The working tree often has concurrent changes from other sessions, which may even commit first. Before pushing, verify that `git log origin/master..HEAD` contains only the commits the user authorized for this push.
+- Chain commit and push with `&&`: if the commit fails (e.g. nothing to commit), stop and ask; don't continue to push.
+- Before committing, check `git status` for an unexpected ahead state and whether the target files still have a diff; report anything unusual first.
 
-**Why:** 三次事故：用户说过一次"先提交"，我把它套用到了后续任务，用户说没让提交就别提交；用户说不需要 branch，我却多建了分支；另一会话已把待推送的测试文件连同未审查改动提交为 ecbda55a，我的 commit 失败后 push 仍执行，把整条提交推上了远端。
+**Why:** three incidents: the user once said "commit first" and I applied it to later tasks, and the user said not to commit without being asked; the user said no branch was needed and I created one anyway; another session had already committed the pending test files together with unreviewed changes as ecbda55a, my commit failed, yet the push still ran and pushed that whole commit to the remote.
 
 Since 2026-11-03 a GitHub ruleset ("master requires ci-ok", id 26493676) requires the `ci-ok` aggregate job of PR Quality Gate on master. Repository admins bypass it, so direct pushes to master still work and print "Bypassed rule violations ... ci-ok". That bypass skips the gate: say so before pushing to master, and after pushing, check the ci-ok result on that commit instead of reporting the push as CI-green.
 
