@@ -1,19 +1,71 @@
 // @ts-nocheck
 import { toJSONSchema } from 'zod/v4'
+import memoize from 'lodash-es/memoize.js'
 import { SettingsSchema } from '../../utils/settings/types.js'
 import { jsonStringify } from '../../utils/slowOperations.js'
 import { registerBundledSkill } from '../bundledSkills.js'
 
+const ALL_SETTINGS_SUMMARY_MAX_LEN = 80
+
 /**
- * Generate JSON Schema from the settings Zod schema.
- * This keeps the skill prompt in sync with the actual types.
+ * Generate JSON Schema from the settings Zod schema, flattening top-level
+ * union branches (like `attribution`) so per-key reference files stay concise.
  */
-function generateSettingsSchema(): string {
+const getSettingsJsonSchema = memoize((): Record<string, unknown> => {
   const jsonSchema = toJSONSchema(SettingsSchema(), {
     io: 'input',
     unrepresentable: 'any',
+  }) as Record<string, unknown>
+  const props = jsonSchema.properties as Record<string, unknown> | undefined
+  const attribution = props?.attribution
+  if (props && attribution && typeof attribution === 'object' && 'anyOf' in attribution && Array.isArray(attribution.anyOf)) {
+    const objectBranch = attribution.anyOf.find(
+      (branch): branch is Record<string, unknown> =>
+        !!branch && typeof branch === 'object' && 'type' in branch && branch.type === 'object',
+    )
+    if (objectBranch) {
+      props.attribution = {
+        description: 'description' in attribution ? attribution.description : undefined,
+        ...objectBranch,
+      }
+    }
+  }
+  return jsonSchema
+})
+
+function buildSettingsSchemaFiles(schema: Record<string, unknown>): Record<string, string> {
+  const props = (schema.properties ?? {}) as Record<string, unknown>
+  return Object.fromEntries(
+    Object.entries(props).map(([key, prop]) => [
+      `schema/${key}.json`,
+      jsonStringify(prop, null, 2),
+    ]),
+  )
+}
+
+function formatSettingsSummary(schema: Record<string, unknown>): string {
+  const props = (schema.properties ?? {}) as Record<string, unknown>
+  const lines = Object.entries(props).map(([key, prop]) => {
+    const raw =
+      prop && typeof prop === 'object'
+        ? 'description' in prop && typeof prop.description === 'string'
+          ? prop.description
+          : 'properties' in prop && prop.properties && typeof prop.properties === 'object'
+            ? Object.keys(prop.properties).join(', ')
+            : ''
+        : ''
+    const summary = raw.replace(/\s+/g, ' ').trim()
+    const clipped =
+      summary.length > ALL_SETTINGS_SUMMARY_MAX_LEN
+        ? `${summary.slice(0, ALL_SETTINGS_SUMMARY_MAX_LEN - 1)}…`
+        : summary
+    return `- ${key}: ${clipped}`
   })
-  return jsonStringify(jsonSchema, null, 2)
+  return (
+    `\n\n## All Settings\n\n` +
+    `Every top-level key of settings.json, with the start of its description. Before you write a key whose exact shape is not shown above, Read \`schema/<key>.json\` in this skill's base directory (for example \`schema/sandbox.json\`): it holds the key's full description and JSON schema, nested keys included. Read only the keys you need. The directory does not survive a resume: if a Read fails, load this skill again for a new one.\n\n` +
+    lines.join('\n')
+  )
 }
 
 const SETTINGS_EXAMPLES_DOCS = `## Settings File Locations
@@ -454,6 +506,7 @@ export function registerUpdateConfigSkill(): void {
       'Use this skill to configure the Noa Claude harness via settings.json. Automated behaviors ("from now on when X", "each time X", "whenever X", "before/after X") require hooks configured in settings.json - the harness executes these, not Noa Claude, so memory/preferences cannot fulfill them. Also use for: permissions ("allow X", "add permission", "move permission to"), env vars ("set X=Y"), hook troubleshooting, or any changes to settings.json/settings.local.json files. Examples: "allow npm commands", "add bq permission to global settings", "move permission to user settings", "set DEBUG=true", "when Noa stops show X". For simple settings like theme/model, suggest the /config command.',
     allowedTools: ['Read'],
     userInvocable: true,
+    files: () => buildSettingsSchemaFiles(getSettingsJsonSchema()),
     async getPromptForCommand(args) {
       if (args.startsWith('[hooks-only]')) {
         const req = args.slice('[hooks-only]'.length).trim()
@@ -464,11 +517,7 @@ export function registerUpdateConfigSkill(): void {
         return [{ type: 'text', text: prompt }]
       }
 
-      // Generate schema dynamically to stay in sync with types
-      const jsonSchema = generateSettingsSchema()
-
-      let prompt = UPDATE_CONFIG_PROMPT
-      prompt += `\n\n## Full Settings JSON Schema\n\n\`\`\`json\n${jsonSchema}\n\`\`\``
+      let prompt = UPDATE_CONFIG_PROMPT + formatSettingsSummary(getSettingsJsonSchema())
 
       if (args) {
         prompt += `\n\n## User Request\n\n${args}`
