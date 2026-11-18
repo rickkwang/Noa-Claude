@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { promises as fsp } from 'fs'
-import { getSdkAgentProgressSummariesEnabled } from '../../bootstrap/state.js'
+import { getOriginalCwd, getSdkAgentProgressSummariesEnabled } from '../../bootstrap/state.js'
 import { getSystemPrompt } from '../../constants/prompts.js'
 import { isCoordinatorMode } from '../../coordinator/coordinatorMode.js'
 import type { CanUseToolFn } from '../../hooks/useCanUseTool.js'
@@ -25,6 +25,10 @@ import {
   createUserMessage,
 } from '../../utils/messages.js'
 import { getAgentModel } from '../../utils/model/agent.js'
+import type { ModelAlias } from '../../utils/model/aliases.js'
+import type { EffortValue } from '../../utils/effort.js'
+import { loadAllPlugins } from '../../utils/plugins/pluginLoader.js'
+import { getAgentDefinitionsWithOverrides } from './loadAgentsDir.js'
 import { getQuerySourceForAgent } from '../../utils/promptCategory.js'
 import { AbortError } from '../../utils/errors.js'
 import { assertBudgetAllowsAgentStart } from '../../utils/task/sessionBudget.js'
@@ -155,9 +159,20 @@ async function resumeAgentBackgroundInner({
   // Skip filterDeniedAgents re-gating — original spawn already passed permission checks
   let selectedAgent: AgentDefinition
   let isResumedFork = false
-  const configuredAgent = toolUseContext.options.agentDefinitions.activeAgents.find(
+  let configuredAgent = toolUseContext.options.agentDefinitions.activeAgents.find(
     a => a.agentType === meta?.agentType,
   )
+  if (
+    !configuredAgent &&
+    meta?.agentType &&
+    meta.agentType !== FORK_AGENT.agentType &&
+    meta.agentType !== GENERAL_PURPOSE_AGENT.agentType
+  ) {
+    // Wait for plugins to finish loading on background/restarted resume before falling back.
+    await loadAllPlugins().catch(() => {})
+    const refreshedDefs = await getAgentDefinitionsWithOverrides(getOriginalCwd()).catch(() => null)
+    configuredAgent = refreshedDefs?.activeAgents.find(a => a.agentType === meta.agentType)
+  }
   if (configuredAgent) {
     selectedAgent = configuredAgent
   } else if (meta?.agentType === FORK_AGENT.agentType) {
@@ -203,11 +218,14 @@ async function resumeAgentBackgroundInner({
     }
   }
 
+  const startupModel =
+    !isResumedFork && meta?.model ? (meta.model as ModelAlias) : undefined
+
   // Resolve model for analytics metadata (runAgent resolves its own internally)
   const resolvedAgentModel = getAgentModel(
     selectedAgent.model,
     toolUseContext.options.mainLoopModel,
-    undefined,
+    startupModel,
     permissionMode,
   )
 
@@ -320,13 +338,17 @@ async function resumeAgentBackgroundInner({
       selectedAgent.agentType,
       isBuiltInAgent(selectedAgent),
     ),
-    model: undefined,
+    model: startupModel,
     // Fork resume: pass parent's system prompt (cache-identical prefix).
     // Non-fork: undefined → runAgent recomputes under wrapWithCwd so
     // getCwd() sees resumedWorktreePath.
-    override: isResumedFork
-      ? { systemPrompt: forkParentSystemPrompt }
-      : undefined,
+    override:
+      isResumedFork || meta?.effort !== undefined
+        ? {
+            ...(isResumedFork && { systemPrompt: forkParentSystemPrompt }),
+            ...(meta?.effort !== undefined && { effort: meta.effort as EffortValue }),
+          }
+        : undefined,
     availableTools: workerTools,
     // Transcript already contains the parent context slice from the
     // original fork. Re-supplying it would cause duplicate tool_use IDs.

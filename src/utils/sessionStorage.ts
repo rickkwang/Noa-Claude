@@ -340,6 +340,10 @@ export type AgentMetadata = {
   /** Display-only personality name for generic worker agents. Persisted so
    * resume and transcript replay can keep the same label across restarts. */
   personalityName?: string
+  /** Resolved model used at launch, so resume preserves it even after /model. */
+  model?: string
+  /** Resolved effort used at launch, so resume does not inherit another agent's effort. */
+  effort?: string | number
 }
 
 /**

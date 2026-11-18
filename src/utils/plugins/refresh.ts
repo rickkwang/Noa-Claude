@@ -23,7 +23,10 @@ import type { Command } from '../../commands.js'
 import { reinitializeLspServerManager } from '../../services/lsp/manager.js'
 import type { AppState } from '../../state/AppState.js'
 import type { AgentDefinitionsResult } from '../../tools/AgentTool/loadAgentsDir.js'
-import { getAgentDefinitionsWithOverrides } from '../../tools/AgentTool/loadAgentsDir.js'
+import {
+  getActiveAgentsFromList,
+  getAgentDefinitionsWithOverrides,
+} from '../../tools/AgentTool/loadAgentsDir.js'
 import type { PluginError } from '../../types/plugin.js'
 import { logForDebugging } from '../debug.js'
 import { errorMessage } from '../errors.js'
@@ -132,22 +135,41 @@ export async function refreshActivePlugins(
   const mcp_count = mcpCounts.reduce((sum, n) => sum + n, 0)
   const lsp_count = lspCounts.reduce((sum, n) => sum + n, 0)
 
-  setAppState(prev => ({
-    ...prev,
-    plugins: {
-      ...prev.plugins,
-      enabled,
-      disabled,
-      commands: pluginCommands,
-      errors: mergePluginErrors(prev.plugins.errors, errors),
-      needsRefresh: false,
-    },
-    agentDefinitions,
-    mcp: {
-      ...prev.mcp,
-      pluginReconnectKey: prev.mcp.pluginReconnectKey + 1,
-    },
-  }))
+  setAppState(prev => {
+    // Preserve CLI-supplied --agents (source === 'flagSettings') across plugin reloads.
+    const cliAgents = prev.agentDefinitions.allAgents.filter(
+      a => a.source === 'flagSettings',
+    )
+    const mergedAllAgents =
+      cliAgents.length > 0
+        ? [...agentDefinitions.allAgents, ...cliAgents]
+        : agentDefinitions.allAgents
+    const mergedAgentDefinitions =
+      cliAgents.length > 0
+        ? {
+            ...agentDefinitions,
+            allAgents: mergedAllAgents,
+            activeAgents: getActiveAgentsFromList(mergedAllAgents),
+          }
+        : agentDefinitions
+
+    return {
+      ...prev,
+      plugins: {
+        ...prev.plugins,
+        enabled,
+        disabled,
+        commands: pluginCommands,
+        errors: mergePluginErrors(prev.plugins.errors, errors),
+        needsRefresh: false,
+      },
+      agentDefinitions: mergedAgentDefinitions,
+      mcp: {
+        ...prev.mcp,
+        pluginReconnectKey: prev.mcp.pluginReconnectKey + 1,
+      },
+    }
+  })
 
   // Re-initialize LSP manager so newly-loaded plugin LSP servers are picked
   // up. No-op if LSP was never initialized (headless subcommand path).

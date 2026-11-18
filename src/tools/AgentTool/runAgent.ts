@@ -62,7 +62,7 @@ import { registerFrontmatterHooks } from '../../utils/hooks/registerFrontmatterH
 import { addFunctionHook, clearSessionHooks } from '../../utils/hooks/sessionHooks.js'
 import { executeSubagentStartHooks } from '../../utils/hooks.js'
 import { createUserMessage } from '../../utils/messages.js'
-import { getEffortModelKey } from '../../utils/effort.js'
+import { type EffortValue, getEffortModelKey } from '../../utils/effort.js'
 import { getAgentModel } from '../../utils/model/agent.js'
 import { getRuntimeMainLoopModel } from '../../utils/model/model.js'
 import type { ModelAlias } from '../../utils/model/aliases.js'
@@ -320,6 +320,7 @@ export async function* runAgent({
     systemPrompt?: SystemPrompt
     abortController?: AbortController
     agentId?: AgentId
+    effort?: EffortValue
   }
   model?: ModelAlias
   maxTurns?: number
@@ -539,22 +540,25 @@ export async function* runAgent({
         }
       }
 
-      // The agent's own effort wins. Otherwise the session's effort carries
-      // over only on the same model; a different model resolves its own
-      // saved effort or its default (undefined → resolveAppliedEffort).
+      // The agent's own effort wins, then an explicit override (e.g. resumed
+      // startup effort). Otherwise the session's effort carries over only on
+      // the same model; a different model resolves its own saved effort or its
+      // default (undefined → resolveAppliedEffort).
       const effortValue =
         agentDefinition.effort !== undefined
           ? agentDefinition.effort
-          : getEffortModelKey(resolvedAgentModel) ===
-              getEffortModelKey(
-                // The model the main loop runs now (opusplan → Opus in plan mode).
-                getRuntimeMainLoopModel({
-                  permissionMode,
-                  mainLoopModel: toolUseContext.options.mainLoopModel,
-                }),
-              )
-            ? state.effortValue
-            : undefined
+          : override?.effort !== undefined
+            ? override.effort
+            : getEffortModelKey(resolvedAgentModel) ===
+                getEffortModelKey(
+                  // The model the main loop runs now (opusplan → Opus in plan mode).
+                  getRuntimeMainLoopModel({
+                    permissionMode,
+                    mainLoopModel: toolUseContext.options.mainLoopModel,
+                  }),
+                )
+              ? state.effortValue
+              : undefined
 
       if (
         toolPermissionContext === state.toolPermissionContext &&
@@ -776,14 +780,9 @@ export async function* runAgent({
       debug: toolUseContext.options.debug,
       verbose: toolUseContext.options.verbose,
       mainLoopModel: resolvedAgentModel,
-      // An agent's autoCompactWindow is a ceiling on the window it inherits.
-      autoCompactWindow:
-        agentDefinition.autoCompactWindow !== undefined
-          ? {
-              inner: toolUseContext.options.autoCompactWindow,
-              ceiling: agentDefinition.autoCompactWindow,
-            }
-          : toolUseContext.options.autoCompactWindow,
+      // Subagents compact using their own model's context window (or their
+      // definition's ceiling), never inheriting the main agent's window override.
+      autoCompactWindow: agentDefinition.autoCompactWindow,
       // For fork children (useExactTools), inherit thinking config to match the
       // parent's API request prefix for prompt cache hits. For regular
       // sub-agents, disable thinking to control output token costs.
@@ -882,6 +881,12 @@ export async function* runAgent({
     )
     // Finish the initial metadata write before this run can clear it on exit.
     const agentContext = getAgentContext()
+    const persistedEffort =
+      agentDefinition.effort !== undefined
+        ? agentDefinition.effort
+        : override?.effort !== undefined
+          ? override.effort
+          : agentGetAppState().effortValue
     await writeAgentMetadata(agentId, {
       agentType: agentDefinition.agentType,
       depth: agentContext?.agentType === 'subagent' ? agentContext.depth : undefined,
@@ -889,6 +894,8 @@ export async function* runAgent({
       cwdIsolated: getCwdOverride()?.isolated ?? false,
       isolationRoot: getCwdOverride()?.isolationRoot,
       worktreeSession: getCwdOverride()?.worktreeSession,
+      model: resolvedAgentModel,
+      ...(persistedEffort !== undefined && { effort: persistedEffort }),
       ...(worktreePath && { worktreePath }),
       ...(description && { description }),
       ...(personalityName && { personalityName }),
