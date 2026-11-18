@@ -2449,6 +2449,94 @@ function findLatestMessage<T extends { timestamp: string }>(
   return latest
 }
 
+const TIMESTAMP_FALLBACK_WINDOW_MS = 5000
+
+type TimedSideEntries = {
+  timedEntries: Array<{ time: number; entry: TranscriptMessage }>
+  previousCandidate: Int32Array
+}
+
+type TimestampFallbackState = {
+  entriesBySide: Map<boolean | undefined, TranscriptMessage[]> | undefined
+  timedSides: Map<boolean | undefined, TimedSideEntries>
+}
+
+function findTimestampFallback(
+  state: TimestampFallbackState,
+  messages: Map<UUID, TranscriptMessage>,
+  currentMsg: TranscriptMessage,
+  seen: Set<UUID>,
+): TranscriptMessage | undefined {
+  const targetTime = currentMsg.timestamp
+    ? new Date(currentMsg.timestamp).getTime()
+    : Number.NaN
+  if (Number.isNaN(targetTime)) return undefined
+
+  let side = state.timedSides.get(currentMsg.isSidechain)
+  if (!side) {
+    if (!state.entriesBySide) {
+      state.entriesBySide = new Map<
+        boolean | undefined,
+        TranscriptMessage[]
+      >()
+      for (const entry of messages.values()) {
+        const list = state.entriesBySide.get(entry.isSidechain)
+        if (list) list.push(entry)
+        else state.entriesBySide.set(entry.isSidechain, [entry])
+      }
+    }
+    const timedEntries: Array<{ time: number; entry: TranscriptMessage }> = []
+    for (const entry of state.entriesBySide.get(currentMsg.isSidechain) ?? []) {
+      if (seen.has(entry.uuid)) continue
+      const time = entry.timestamp ? new Date(entry.timestamp).getTime() : Number.NaN
+      if (!Number.isNaN(time)) {
+        timedEntries.push({ time, entry })
+      }
+    }
+    // Reverse before sorting so equal timestamps preserve latest-written first
+    // when walking backward from upper-bound index.
+    timedEntries.reverse().sort((a, b) => a.time - b.time)
+    side = {
+      timedEntries,
+      previousCandidate: Int32Array.from(timedEntries.keys()),
+    }
+    state.timedSides.set(currentMsg.isSidechain, side)
+  }
+
+  let lo = 0
+  let hi = side.timedEntries.length
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1
+    if (side.timedEntries[mid]!.time <= targetTime) lo = mid + 1
+    else hi = mid
+  }
+
+  let idx = hi - 1
+  while (idx >= 0) {
+    const prev = side.previousCandidate[idx]!
+    if (prev !== idx) {
+      idx = prev
+    } else if (seen.has(side.timedEntries[idx]!.entry.uuid)) {
+      side.previousCandidate[idx] = idx - 1
+      idx -= 1
+    } else {
+      break
+    }
+  }
+
+  let walk = hi - 1
+  while (walk > idx) {
+    const prev = side.previousCandidate[walk]!
+    side.previousCandidate[walk] = idx
+    walk = prev
+  }
+
+  const match = idx >= 0 ? side.timedEntries[idx] : undefined
+  return match && targetTime - match.time <= TIMESTAMP_FALLBACK_WINDOW_MS
+    ? match.entry
+    : undefined
+}
+
 /**
  * Builds a conversation chain from a leaf message to root
  * @param messages Map of all messages
@@ -2465,6 +2553,10 @@ export function buildConversationChain(
 ): TranscriptMessage[] {
   const transcript: TranscriptMessage[] = []
   const seen = new Set<UUID>()
+  const fallbackState: TimestampFallbackState = {
+    entriesBySide: undefined,
+    timedSides: new Map(),
+  }
   let currentMsg: TranscriptMessage | undefined = leafMessage
   while (currentMsg) {
     if (seen.has(currentMsg.uuid)) {
@@ -2478,9 +2570,16 @@ export function buildConversationChain(
     }
     seen.add(currentMsg.uuid)
     transcript.push(currentMsg)
-    currentMsg = currentMsg.parentUuid
-      ? messages.get(currentMsg.parentUuid)
-      : undefined
+    const parentUuid = currentMsg.parentUuid
+    if (!parentUuid) break
+    let nextMsg = messages.get(parentUuid)
+    if (!nextMsg || seen.has(nextMsg.uuid)) {
+      nextMsg = findTimestampFallback(fallbackState, messages, currentMsg, seen)
+      if (nextMsg) {
+        logEvent('tengu_chain_timestamp_fallback', {})
+      }
+    }
+    currentMsg = nextMsg
   }
   transcript.reverse()
   const chain = recoverOrphanedParallelToolResults(messages, transcript, seen)
@@ -4266,7 +4365,11 @@ export async function loadTranscriptFile(
         if (entry.parentUuid && progressBridge.has(entry.parentUuid)) {
           entry.parentUuid = progressBridge.get(entry.parentUuid) ?? null
         }
-        messages.set(entry.uuid, entry)
+        // Guard against a corrupt/re-emitted duplicate UUID creating a self-loop
+        // that would overwrite an earlier valid message and sever its ancestors.
+        if (!(messages.has(entry.uuid) && entry.parentUuid === entry.uuid)) {
+          messages.set(entry.uuid, entry)
+        }
         // Compact boundary: prior marble-origami-commit entries reference
         // messages that won't be in the post-boundary chain. The >5MB
         // backward-scan path discards them naturally by never reading the
