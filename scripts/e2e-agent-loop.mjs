@@ -18,9 +18,9 @@ const artifacts = resolve(option('--artifacts') || mkdtempSync(join(tmpdir(), 'n
 mkdirSync(artifacts, { recursive: true });
 const model = 'claude-sonnet-4-6';
 // A 200k-window model, so a gateway naming a 1M model in its responses offers a "larger window".
-const modelFor = scenario => option('--model') || (scenario === 'gateway-model-name' ? 'claude-haiku-4-5' : scenario === 'preserved-thinking' ? 'claude-opus-5-5' : scenario === 'opus-1m-cache-off' ? 'claude-opus-4-6[1m]' : scenario === 'mandatory-thinking' ? 'kimi/k3.1-pro' : (scenario === 'agent-effort-plan' || scenario === 'plan-compact-overflow') ? 'opusplan' : scenario.startsWith('openai-responses') ? 'gpt-6.1-sol' : model);
+const modelFor = scenario => option('--model') || (scenario === 'gateway-model-name' ? 'claude-haiku-4-5' : scenario === 'preserved-thinking' || scenario === 'mode-bypass-opus55' ? 'claude-opus-5-5' : scenario === 'opus-1m-cache-off' ? 'claude-opus-4-6[1m]' : scenario === 'mandatory-thinking' ? 'kimi/k3.1-pro' : (scenario === 'agent-effort-plan' || scenario === 'plan-compact-overflow') ? 'opusplan' : scenario.startsWith('openai-responses') ? 'gpt-6.1-sol' : model);
 const sentinel = 'KEEP_IDENTIFIER=loop-sentinel-42';
-const cases = ['agent-nested', 'agent-budget', 'agent-budget-resume', 'agent-stop-pending', 'agent-owned-results', 'agent-owned-auto', 'auto-plan-race', 'auto-stage2-error', 'agent-cascade-stop', 'agent-schema', 'agent-schema-bg', 'hook-output', 'hook-output-null', 'blocking-limit', 'image-error', 'small-window-overflow', 'read', 'read-repeat', 'large-output', 'max-turns', 'malformed', 'empty', 'alternating', 'fallback', 'provider-quota', 'refusal', 'refusal-repeat', 'truncated', 'tool-input-streaming', 'tool-input-nonstream', 'stale-signature', 'budget-streaming', 'budget-nonstream', 'permission-deny', 'deny-rule', 'mode-auto', 'mode-bypass', 'mode-bypass-off', 'hook-block', 'compact-resume', 'task-crud', 'task-metadata-race', 'task-dependency-race', 'goal-child-usage', 'agent-custom-fork', 'agent-bypass-blocked', 'agent-bypass-auto', 'agent-effort', 'agent-effort-plan', 'hook-composition', 'tombstone-resume', 'concurrency-streaming', 'concurrency-nonstream', 'background-deadline', 'monitor', 'monitor-timeout', 'monitor-persistent', 'cron', 'cron-disabled', 'cron-durable', 'cron-wakeup', 'cron-resume', 'cron-resume-compact', 'cron-resume-missed', 'cron-wrapper', 'openai-overflow', 'openai-usage', 'openai-usage-nonstream', 'openai-tools', 'openai-max-tokens-cap', 'openai-max-tokens-vllm', 'openai-responses', 'openai-responses-effort', 'bedrock-overflow', 'bedrock-bare-overflow', 'bedrock-media-overflow', 'request-body-overflow', 'request-body-with-media-overflow', 'plan-compact-overflow', 'pdf-batch-reject', 'opus-1m-cache-off', 'field-reject', 'gateway-model-name', 'preserved-thinking', 'mandatory-thinking'].filter(name => !option('--case') || name === option('--case')).filter((_, i) => {
+const cases = ['agent-nested', 'agent-budget', 'agent-budget-resume', 'agent-stop-pending', 'agent-owned-results', 'agent-owned-auto', 'auto-plan-race', 'auto-stage2-error', 'agent-cascade-stop', 'agent-schema', 'agent-schema-bg', 'hook-output', 'hook-output-null', 'blocking-limit', 'image-error', 'small-window-overflow', 'read', 'read-repeat', 'large-output', 'max-turns', 'malformed', 'empty', 'alternating', 'fallback', 'provider-quota', 'refusal', 'refusal-repeat', 'truncated', 'tool-input-streaming', 'tool-input-nonstream', 'stale-signature', 'budget-streaming', 'budget-nonstream', 'permission-deny', 'deny-rule', 'mode-auto', 'mode-bypass', 'mode-bypass-off', 'mode-bypass-opus55', 'hook-block', 'compact-resume', 'task-crud', 'task-metadata-race', 'task-dependency-race', 'goal-child-usage', 'agent-custom-fork', 'agent-bypass-blocked', 'agent-bypass-auto', 'agent-effort', 'agent-effort-plan', 'hook-composition', 'tombstone-resume', 'concurrency-streaming', 'concurrency-nonstream', 'background-deadline', 'monitor', 'monitor-timeout', 'monitor-persistent', 'cron', 'cron-disabled', 'cron-durable', 'cron-wakeup', 'cron-resume', 'cron-resume-compact', 'cron-resume-missed', 'cron-wrapper', 'openai-overflow', 'openai-usage', 'openai-usage-nonstream', 'openai-tools', 'openai-max-tokens-cap', 'openai-max-tokens-vllm', 'openai-responses', 'openai-responses-effort', 'bedrock-overflow', 'bedrock-bare-overflow', 'bedrock-media-overflow', 'request-body-overflow', 'request-body-with-media-overflow', 'plan-compact-overflow', 'pdf-batch-reject', 'opus-1m-cache-off', 'field-reject', 'gateway-model-name', 'preserved-thinking', 'mandatory-thinking'].filter(name => !option('--case') || name === option('--case')).filter((_, i) => {
   // --shard K/N runs every Nth case starting at K, so CI can split the suite across runners.
   const shard = option('--shard')?.match(/^(\d+)\/(\d+)$/);
   return !shard || i % Number(shard[2]) === Number(shard[1]) - 1;
@@ -545,7 +545,9 @@ async function run(executable, scenario, extra = [], input = 'Run the local loop
     ...(scenario === 'agent-bypass-blocked' && { CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: '1' }),
     ...(scenario === 'mode-bypass-off' && { NOA_CLAUDE_BASH_FIRST: '0' }),
     ...(scenario === 'cron-disabled' && { CLAUDE_CODE_DISABLE_CRON: '1' }),
-    ...(scenario === 'mode-bypass' && { NOA_CLAUDE_BASH_FIRST_VARIANT: 'relaxed' }),
+    ...(scenario === 'mode-bypass' && { NOA_CLAUDE_BASH_FIRST: '1', NOA_CLAUDE_BASH_FIRST_VARIANT: 'relaxed' }),
+    // The upstream identity policy trusts the local base URL's model id, so Opus 5.5 gets the default steer with no override.
+    ...(scenario === 'mode-bypass-opus55' && { NOA_CLAUDE_THIRD_PARTY_PROMPT_POLICY: 'upstream' }),
     // Size-based microcompact fires on the second large tool result here.
     ...(scenario==='preserved-thinking' && {CLAUDE_CODE_SIZE_MICROCOMPACT_PCT:'1', CLAUDE_CODE_SIZE_MICROCOMPACT_KEEP:'1'}),
     ...(scenario==='mandatory-thinking' && {NOA_CLAUDE_PROVIDER_THINKING_MODELS:'kimi/k3.1-pro', NOA_CLAUDE_PROVIDER_REJECTS_DISABLED_THINKING_MODELS:'kimi/k3.1-pro', CLAUDE_CODE_DISABLE_THINKING:'1'}),
@@ -1010,20 +1012,20 @@ try {
             const firstTurn = JSON.stringify(main[0].body.messages);
             const followUp = JSON.stringify(main[1].body.messages.at(-1).content);
             if (scenario === 'mode-auto') {
-              // NOA_CLAUDE_SIMPLE_SYSTEM_PROMPT=1 runs the suite on the lean prompt, which sends the steer-only form with the relaxed Bash steer.
+              // NOA_CLAUDE_SIMPLE_SYSTEM_PROMPT=1 runs the suite on the lean prompt, which sends the steer-only form; a lean head alone adds no attachment.
               if (['1', 'true', 'yes', 'on'].includes((process.env.NOA_CLAUDE_SIMPLE_SYSTEM_PROMPT || '').toLowerCase().trim())) {
-                assert.ok(firstTurn.includes('While auto mode is active:'));
                 assert.ok(!firstTurn.includes('## Auto Mode Active'));
-                assert.ok(firstTurn.includes('You can do much of your work through the Bash tool'));
               } else {
                 assert.ok(firstTurn.includes('## Auto Mode Active'));
                 assert.ok(firstTurn.includes('Bias toward working without stopping'));
-                assert.ok(firstTurn.includes('Do your work through the Bash tool'));
               }
+              // A local base URL is an untrusted identity, so the Bash-first steer stays off.
+              assert.ok(!firstTurn.includes('through the Bash tool'));
               assert.ok(!firstTurn.includes('The user chose continuous, autonomous execution'));
-            } else if (scenario === 'mode-bypass') {
+            } else if (scenario === 'mode-bypass' || scenario === 'mode-bypass-opus55') {
               assert.ok(firstTurn.includes('While bypass permissions mode is active:'));
               assert.ok(firstTurn.includes('You can do much of your work through the Bash tool'));
+              assert.ok(!firstTurn.includes('Do your work through the Bash tool wherever'));
             } else {
               assert.ok(!firstTurn.includes('While bypass permissions mode is active:'));
             }

@@ -8,6 +8,7 @@ import {
   getActionCautionSection,
   getCompactHeadSection,
   hasFableMitigations,
+  hasOpus55PromptBundle,
   hasOpus5PromptBundle,
   shouldUseCompactSystemPrompt,
 } from '../../constants/systemPromptCompact.js'
@@ -387,6 +388,21 @@ describe('compact system prompt gate', () => {
 
     expect(hasOpus5PromptBundle('claude-opus-4-5')).toBe(false)
     expect(hasOpus5PromptBundle(undefined)).toBe(false)
+  })
+
+  test('the Opus 5.5 prompt bundle is Opus 5.5 only and respects third-party identity policy', () => {
+    expect(hasOpus55PromptBundle('claude-opus-5-5')).toBe(true)
+    expect(hasOpus55PromptBundle('claude-opus-5-5[1m]')).toBe(true)
+    expect(hasOpus55PromptBundle('claude-opus-5')).toBe(false)
+    expect(hasOpus55PromptBundle('claude-fable-5-1')).toBe(false)
+    expect(hasOpus55PromptBundle(undefined)).toBe(false)
+
+    process.env.ANTHROPIC_BASE_URL = 'https://proxy.example.com/anthropic'
+    expect(hasOpus55PromptBundle('claude-opus-5-5')).toBe(false)
+
+    process.env.NOA_CLAUDE_THIRD_PARTY_PROMPT_POLICY = 'upstream'
+    expect(hasOpus55PromptBundle('claude-opus-5-5')).toBe(true)
+    expect(hasOpus55PromptBundle('claude-opus-5')).toBe(false)
   })
 
   test('the 1M suffix does not make an unrelated model match the pin', () => {

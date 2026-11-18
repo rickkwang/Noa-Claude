@@ -79,11 +79,11 @@ const BUILT_IN_PROMPT_CAPABILITIES: Record<
     haiku55EarlyStopping: false,
   },
   // Opus 5.5 declares `lean_prompt` plus its own `opus_5_5_prompt_bundle`
-  // not Opus 5's bundle. Every section that bundle switches on is
-  // harness behaviour (silent-turn reminder, hook-notice visibility, Bash
-  // steering variant) with no ported counterpart here, so the row carries no
-  // bundle bit. Listed explicitly so the third-party "upstream" policy treats
-  // it as a known manifest row rather than an unknown future model.
+  // not Opus 5's bundle. That bundle switches on harness behaviour only
+  // (silent-turn reminder, hook-notice visibility, Bash-first steering); the
+  // one part Noa ports is read through hasOpus55PromptBundle(), so the row
+  // carries no bundle bit. Listed explicitly so the third-party "upstream"
+  // policy treats it as a known manifest row rather than an unknown future model.
   'claude-opus-5-5': {
     leanPrompt: true,
     opus5PromptBundle: false,
@@ -274,8 +274,9 @@ const MODELS_WITH_TODO_TOOLS = new Set([
 ])
 
 /**
- * Upstream keeps the tools when the model id is unknown or an inference
- * profile.
+ * Upstream keeps the tools when no model resolves or the id is an inference
+ * profile; any other id outside the list, third-party models included, drops
+ * them.
  */
 export function modelNeedsTodoTools(model: string | undefined): boolean {
   if (!model) return true
@@ -427,6 +428,22 @@ export function hasFableMitigations(model: string | undefined): boolean {
   }
   if (untrustedIdentity) return false
   return getBuiltInPromptCapabilities(model).fable5Mitigations
+}
+
+/**
+ * Whether the model carries upstream's `opus_5_5_prompt_bundle` capability,
+ * which Opus 5.5 alone declares. Noa reads it only for the Bash-first steer
+ * (on, relaxed variant). Untrusted identities resolve to false, as the other
+ * bundle gates do, unless the operator opts into the upstream policy. A
+ * per-model capability declaration is not read: the bundle belongs to one
+ * first-party model, so a gateway cannot claim it for another id.
+ */
+export function hasOpus55PromptBundle(model: string | undefined): boolean {
+  if (!model) return false
+  if (isUntrustedModelIdentity() && !trustsThirdPartyModelIdentity()) {
+    return false
+  }
+  return getCanonicalName(model) === 'claude-opus-5-5'
 }
 
 /**

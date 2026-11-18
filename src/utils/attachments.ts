@@ -234,7 +234,11 @@ import {
   MAX_OUTPUT_STYLE_NAME_LENGTH,
 } from '../constants/outputStyles.js'
 import { getLocalISODate } from '../constants/common.js'
-import { shouldUseCompactSystemPrompt } from '../constants/systemPromptCompact.js'
+import {
+  hasFable51PromptBundle,
+  hasOpus55PromptBundle,
+  shouldUseCompactSystemPrompt,
+} from '../constants/systemPromptCompact.js'
 import { getPDFPageCount } from './pdf.js'
 import { PDF_AT_MENTION_INLINE_THRESHOLD } from '../constants/apiLimits.js'
 import { isAgentSwarmsEnabled } from './agentSwarmsEnabled.js'
@@ -1733,10 +1737,15 @@ function getLatestAutoModeAttachment(messages: Message[]) {
   return null
 }
 
-function isBashFirstEnabled(): boolean {
+// Upstream forces the Bash-first steer only for models whose manifest declares
+// `opus_5_5_prompt_bundle` or `fable_5_1_prompt_bundle`; its Opus 5 cohort is a
+// GrowthBook rollout that defaults off. Every other model, including untrusted
+// third-party identities, gets no steer unless the env override asks for it.
+function isBashFirstEnabled(model: string | undefined): boolean {
   const override =
     process.env.NOA_CLAUDE_BASH_FIRST ?? process.env.CLAUDE_CODE_THRIFTY_SONIC
-  return override === undefined ? true : isEnvTruthy(override)
+  if (override !== undefined) return isEnvTruthy(override)
+  return hasOpus55PromptBundle(model) || hasFable51PromptBundle(model)
 }
 
 function getBashFirstSteer(model: string | undefined): 'strict' | 'relaxed' {
@@ -1744,7 +1753,7 @@ function getBashFirstSteer(model: string | undefined): 'strict' | 'relaxed' {
     process.env.NOA_CLAUDE_BASH_FIRST_VARIANT ??
     process.env.CLAUDE_CODE_COZY_TEAPOT
   if (override === 'strict' || override === 'relaxed') return override
-  return shouldUseCompactSystemPrompt(model) ? 'relaxed' : 'strict'
+  return hasOpus55PromptBundle(model) ? 'relaxed' : 'strict'
 }
 
 async function getAutoModeAttachments(
@@ -1759,7 +1768,7 @@ async function getAutoModeAttachments(
   const steerOnly = bypass || shouldUseCompactSystemPrompt(model)
   const tools = toolUseContext.options.tools
   const bashFirst =
-    isBashFirstEnabled() &&
+    isBashFirstEnabled(model) &&
     tools.some(tool => toolMatchesName(tool, BASH_TOOL_NAME)) &&
     tools.some(
       tool =>
