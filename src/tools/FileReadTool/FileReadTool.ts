@@ -577,6 +577,10 @@ export const FileReadTool = buildTool({
         } else if (similarFilename) {
           message += ` Did you mean ${similarFilename}?`
         }
+        if (/[/\\]tasks[/\\][a-z0-9]+\.output$/i.test(fullFilePath)) {
+          message +=
+            ' If this is a subagent output file that is no longer available after compaction, use SendMessage to ask the subagent for its result.'
+        }
         throw new Error(message)
       }
       throw error

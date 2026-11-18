@@ -186,6 +186,54 @@ export function getCompactPrompt(
   return prompt
 }
 
+function findTagEnd(lower: string, tagName: string, from: number): number {
+  const open = `<${tagName}`
+  let pos = from
+  while (pos < lower.length) {
+    const idx = lower.indexOf(open, pos)
+    if (idx === -1) return -1
+    const nextChar = lower[idx + open.length]
+    if (nextChar === '>' || nextChar === ' ' || nextChar === '\t' || nextChar === '\n' || nextChar === '\r') {
+      const gt = lower.indexOf('>', idx + open.length)
+      if (gt !== -1) return idx
+      return -1
+    }
+    pos = idx + open.length
+  }
+  return -1
+}
+
+function stripTagBlocks(text: string, tagName: string, firstOnly: boolean): string {
+  const closeTag = `</${tagName}>`
+  const lower = text.toLowerCase()
+  let out = ''
+  let cursor = 0
+  while (cursor < text.length) {
+    const start = findTagEnd(lower, tagName, cursor)
+    if (start === -1) break
+    const openGt = lower.indexOf('>', start + tagName.length + 1)
+    if (openGt === -1) break
+    const closeIdx = lower.indexOf(closeTag, openGt + 1)
+    if (closeIdx === -1) break
+    out += text.slice(cursor, start)
+    cursor = closeIdx + closeTag.length
+    if (firstOnly) break
+  }
+  return out + text.slice(cursor)
+}
+
+function extractTagBlock(text: string, tagName: string): string | null {
+  const closeTag = `</${tagName}>`
+  const lower = text.toLowerCase()
+  const start = findTagEnd(lower, tagName, 0)
+  if (start === -1) return null
+  const openGt = lower.indexOf('>', start + tagName.length + 1)
+  if (openGt === -1) return null
+  const closeIdx = lower.indexOf(closeTag, openGt + 1)
+  if (closeIdx === -1) return null
+  return text.slice(openGt + 1, closeIdx)
+}
+
 /**
  * Did the reply contain the summary envelope the prompt asks for? Mirrors
  * upstream: a closed <summary> block after the leading analysis block, or a
@@ -193,12 +241,9 @@ export function getCompactPrompt(
  * FOR_REPLY_ONLY_INSTRUCTION) instead of being accepted as a summary.
  */
 export function hasSummaryBlock(text: string): boolean {
-  const withoutAnalysis = text.replace(
-    /<analysis\b[^>]*>[\s\S]*?<\/analysis>/i,
-    '',
-  )
+  const withoutAnalysis = stripTagBlocks(text, 'analysis', true)
   return (
-    /<summary\b[^>]*>[\s\S]*?<\/summary>/i.test(withoutAnalysis) ||
+    extractTagBlock(withoutAnalysis, 'summary') !== null ||
     /^[ \t]*<summary\b/m.test(withoutAnalysis)
   )
 }
@@ -210,27 +255,18 @@ export function hasSummaryBlock(text: string): boolean {
  * @returns The formatted summary with analysis stripped and summary tags replaced by headers
  */
 export function formatCompactSummary(summary: string): string {
-  let formattedSummary = summary
-
   // Drop the leading analysis block before looking for <summary>, so a
   // "<summary>" mentioned while drafting can't open the match early. First
   // block only: a later "<analysis>" is quoted text inside the summary itself.
-  const summaryMatch = formattedSummary
-    .replace(/<analysis\b[^>]*>[\s\S]*?<\/analysis>/i, '')
-    .match(/<summary\b[^>]*>([\s\S]*?)<\/summary>/i)
-  if (summaryMatch) {
-    // Assemble from the capture rather than a string replacement: `$&`, `$'`,
-    // `$1` or `$$` in the model's summary would be expanded as patterns.
-    const content = summaryMatch[1] || ''
-    return `Summary:\n${content.trim()}`.trim()
+  const withoutLeadingAnalysis = stripTagBlocks(summary, 'analysis', true)
+  const summaryContent = extractTagBlock(withoutLeadingAnalysis, 'summary')
+  if (summaryContent !== null) {
+    return `Summary:\n${summaryContent.trim()}`.trim()
   }
 
   // Strip analysis section — it's a drafting scratchpad that improves summary
   // quality but has no informational value once the summary is written.
-  formattedSummary = formattedSummary.replace(
-    /<analysis\b[^>]*>[\s\S]*?<\/analysis>/gi,
-    '',
-  )
+  let formattedSummary = stripTagBlocks(summary, 'analysis', false)
 
   // Clean up extra whitespace between sections
   formattedSummary = formattedSummary.replace(/\n\n+/g, '\n\n')

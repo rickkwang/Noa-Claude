@@ -115,7 +115,7 @@ import {
   tokenCountWithEstimation,
 } from './utils/tokens.js'
 import { roughTokenCountEstimationForMessages } from './services/tokenEstimation.js'
-import { ESCALATED_MAX_TOKENS } from './utils/context.js'
+import { ESCALATED_MAX_TOKENS, getModelMaxOutputTokens } from './utils/context.js'
 import { getStopHookBlockCap, isEnvTruthy } from './utils/envUtils.js'
 import { getFeatureValue_CACHED_MAY_BE_STALE } from './services/analytics/growthbook.js'
 import { SLEEP_TOOL_NAME } from './tools/SleepTool/prompt.js'
@@ -635,20 +635,30 @@ async function* queryLoop(
       : { ...toolUseContext, options: { ...toolUseContext.options, mainLoopModel: compactModel } }
 
     queryCheckpoint('query_autocompact_start')
-    const { compactionResult, consecutiveFailures, rapidRefillTripped, consecutiveRapidRefills } = await deps.autocompact(
-      messagesForQuery,
-      compactContext,
-      {
-        systemPrompt,
-        userContext,
-        systemContext,
-        toolUseContext: compactContext,
-        forkContextMessages: messagesForQuery,
-      },
-      querySource,
-      tracking,
-      contextTokensFreed,
-    )
+    // Avoid compacting mid-recovery after max_output_tokens so partial tool
+    // calls and tool results are not summarized away before the retry turn.
+    const { compactionResult, consecutiveFailures, rapidRefillTripped, consecutiveRapidRefills } =
+      maxOutputTokensRecoveryCount > 0
+        ? {
+            compactionResult: undefined,
+            consecutiveFailures: tracking?.consecutiveFailures ?? 0,
+            rapidRefillTripped: undefined,
+            consecutiveRapidRefills: tracking?.consecutiveRapidRefills ?? 0,
+          }
+        : await deps.autocompact(
+            messagesForQuery,
+            compactContext,
+            {
+              systemPrompt,
+              userContext,
+              systemContext,
+              toolUseContext: compactContext,
+              forkContextMessages: messagesForQuery,
+            },
+            querySource,
+            tracking,
+            contextTokensFreed,
+          )
     queryCheckpoint('query_autocompact_end')
 
     // Rapid-refill breaker: autocompact refused to run because the context
@@ -1577,19 +1587,25 @@ async function* queryLoop(
           'tengu_otk_slot_v1',
           false,
         )
+        const modelLimits = getModelMaxOutputTokens(currentModel)
+        const escalatedMaxTokens = capEnabled
+          ? ESCALATED_MAX_TOKENS
+          : modelLimits.default <= 32_000 && modelLimits.upperLimit >= 128_000
+            ? 128_000
+            : undefined
         if (
-          capEnabled &&
+          escalatedMaxTokens !== undefined &&
           maxOutputTokensOverride === undefined &&
           !process.env.CLAUDE_CODE_MAX_OUTPUT_TOKENS
         ) {
           logEvent('tengu_max_tokens_escalate', {
-            escalatedTo: ESCALATED_MAX_TOKENS,
+            escalatedTo: escalatedMaxTokens,
           })
           state = nextState(state, {
             messages: messagesForQuery,
             toolUseContext,
             autoCompactTracking: tracking,
-            maxOutputTokensOverride: ESCALATED_MAX_TOKENS,
+            maxOutputTokensOverride: escalatedMaxTokens,
             transition: { reason: 'max_output_tokens_escalate' },
           })
           continue
@@ -1620,8 +1636,9 @@ async function* queryLoop(
             // again …). Caller-supplied overrides still reset (unchanged
             // pre-escalate behavior).
             maxOutputTokensOverride:
-              maxOutputTokensOverride === ESCALATED_MAX_TOKENS
-                ? ESCALATED_MAX_TOKENS
+              maxOutputTokensOverride === ESCALATED_MAX_TOKENS ||
+              maxOutputTokensOverride === 128_000
+                ? maxOutputTokensOverride
                 : undefined,
             transition: {
               reason: 'max_output_tokens_recovery',

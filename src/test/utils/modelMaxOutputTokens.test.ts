@@ -59,4 +59,11 @@ describe('getModelMaxOutputTokens', () => {
       upperLimit: 32_000,
     })
   })
+
+  test('unrecognized models default to 32k and can escalate up to 128k', () => {
+    expect(getModelMaxOutputTokens('custom-unknown-model-v1')).toEqual({
+      default: 32_000,
+      upperLimit: 128_000,
+    })
+  })
 })

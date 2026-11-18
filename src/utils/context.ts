@@ -316,7 +316,7 @@ export function getModelMaxOutputTokens(model: string): {
     upperLimit = 64_000
   } else {
     defaultTokens = MAX_OUTPUT_TOKENS_DEFAULT
-    upperLimit = MAX_OUTPUT_TOKENS_UPPER_LIMIT
+    upperLimit = 128_000
   }
 
   const cap = getModelCapability(model)

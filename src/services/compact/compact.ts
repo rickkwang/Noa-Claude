@@ -1,4 +1,5 @@
 import { feature } from 'bun:bundle'
+import { stat } from 'fs/promises'
 import { createSessionCronCarry } from '../../utils/cronResume.js'
 import type { UUID } from 'crypto'
 import uniqBy from 'lodash-es/uniqBy.js'
@@ -50,6 +51,7 @@ import {
   cacheToObject,
   restoreCacheFromObject,
   type FileState,
+  type FileStateCache,
 } from '../../utils/fileStateCache.js'
 import {
   type CacheSafeParams,
@@ -1125,6 +1127,10 @@ export async function compactConversation(
         context,
         callSite: 'compact_full',
       })
+    await restoreUnchangedReadFileState(
+      preCompactContextState.readFileState,
+      context.readFileState,
+    )
 
     context.onCompactProgress?.({
       type: 'hooks_start',
@@ -1612,6 +1618,10 @@ export async function partialCompactConversation(
         preservedMessages: messagesToKeep,
         callSite: 'compact_partial',
       })
+    await restoreUnchangedReadFileState(
+      preCompactContextState.readFileState,
+      context.readFileState,
+    )
 
     context.onCompactProgress?.({
       type: 'hooks_start',
@@ -2151,6 +2161,29 @@ export async function createPostCompactFileAttachments(
     }
     return false
   })
+}
+
+/**
+ * Preserve edit eligibility for files read before compaction whose contents on
+ * disk have not changed (even if they were outside the top-N re-announced files).
+ */
+async function restoreUnchangedReadFileState(
+  preCompactReadFileState: Record<string, FileState>,
+  currentReadFileState: FileStateCache,
+): Promise<void> {
+  await Promise.all(
+    Object.entries(preCompactReadFileState).map(async ([filename, entry]) => {
+      if (entry.isPartialView || currentReadFileState.get(filename)) return
+      try {
+        const fileStat = await stat(filename)
+        if (Math.floor(fileStat.mtimeMs) === entry.timestamp) {
+          currentReadFileState.set(filename, entry)
+        }
+      } catch {
+        // File vanished or unreadable; require an explicit Read before editing.
+      }
+    }),
+  )
 }
 
 export async function createPostCompactContextAttachments({

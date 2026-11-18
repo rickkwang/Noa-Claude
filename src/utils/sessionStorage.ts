@@ -4150,7 +4150,12 @@ export async function loadTranscriptFile(
     if (!isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_PRECOMPACT_SKIP)) {
       const { size } = await stat(filePath)
       if (size > SKIP_PRECOMPACT_THRESHOLD) {
-        const scan = await readTranscriptForLoad(filePath, size)
+        let scan = await readTranscriptForLoad(filePath, size)
+        // If a concurrent flush or transient short read returned an empty
+        // slice on a non-empty large transcript, retry the scan once.
+        if (scan.postBoundaryBuf.length === 0) {
+          scan = await readTranscriptForLoad(filePath, (await stat(filePath)).size)
+        }
         buf = scan.postBoundaryBuf
         hasPreservedSegment = scan.hasPreservedSegment
         // >0 means we truncated pre-boundary bytes and must recover
