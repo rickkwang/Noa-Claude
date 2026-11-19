@@ -128,6 +128,7 @@ declare global {
       };
       notifications?: {
         configure: (settings: AppSettings['notifications']) => Promise<void>;
+        previewSound?: (sound: string) => Promise<void>;
       };
     };
   }

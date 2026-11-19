@@ -408,6 +408,10 @@ ipcMain.handle('noa:configure-notifications', (event, settings) => {
   if (!win || event.sender !== win.webContents) return
   notifier.configure(settings)
 })
+ipcMain.handle('noa:preview-notification-sound', (event, sound) => {
+  if (!win || event.sender !== win.webContents) return
+  notifier.previewSound(sound)
+})
 // What a file card in the composer shows: whether the path is a folder, and its system thumbnail if it has one.
 ipcMain.handle('noa:file-info', async (event, filePath) => {
   if (!win || event.sender !== win.webContents || typeof filePath !== 'string' || !path.isAbsolute(filePath)) return

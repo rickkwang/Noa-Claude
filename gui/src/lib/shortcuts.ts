@@ -1,3 +1,5 @@
+import type { AppSettings } from '../types';
+
 // Customizable global shortcuts. A binding is "+"-joined modifiers then a KeyboardEvent.code, e.g. "mod+KeyN".
 // "mod" is Command on macOS and Ctrl elsewhere; "ctrl" is always the Control key. An empty string means unbound.
 
@@ -80,6 +82,40 @@ export function formatBinding(binding: string): string[] {
 // Compact label for menus and hints: "⌘N" on macOS, "Ctrl N" elsewhere; empty when unbound.
 export function shortcutHint(binding: string): string {
   return formatBinding(binding).join(isMac ? '' : ' ')
+}
+
+export interface ComposerShortcutRow {
+  label: string;
+  keys: string[];
+  description?: string;
+}
+
+export function composerShortcutRows(
+  sendShortcut: AppSettings['composer']['sendShortcut'],
+  mac = isMac,
+): ComposerShortcutRow[] {
+  const mod = mac ? '⌘' : 'Ctrl';
+  const alt = mac ? '⌥' : 'Alt';
+  const runRow: ComposerShortcutRow =
+    sendShortcut === 'enter'
+      ? { label: 'Run instruction', keys: ['Enter'] }
+      : sendShortcut === 'modifier-enter'
+        ? { label: 'Run instruction', keys: [mod, 'Enter'] }
+        : {
+            label: 'Run instruction',
+            keys: [mod, 'Enter'],
+            description: `Enter sends single-line prompts; ${mod} Enter sends multiline prompts.`,
+          };
+  const newLineRow: ComposerShortcutRow = {
+    label: 'New line',
+    keys: sendShortcut === 'modifier-enter' ? ['Enter'] : ['Shift', 'Enter'],
+  };
+  return [
+    runRow,
+    newLineRow,
+    { label: 'Reorder task', keys: [alt, '↑/↓'] },
+    { label: 'Stop agent', keys: ['Esc'] },
+  ];
 }
 
 export function findShortcutConflict(bindings: ShortcutBindings, id: ShortcutId, binding: string): ShortcutId | null {

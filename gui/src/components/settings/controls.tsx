@@ -3,7 +3,19 @@ import { ChevronDown } from "../../lib/icons"
 import { PopupMenu, anchorBelow, type PopupMenuAnchor } from "../PopupMenu"
 
 export const actionButton =
-  "h-7 shrink-0 rounded-[10px] border border-[var(--border-default)] px-3 text-body hover:bg-[var(--settings-fill-hover)] disabled:opacity-40"
+  "inline-flex h-7 shrink-0 items-center justify-center gap-1.5 rounded-[10px] border border-[var(--border-default)] bg-[var(--bg-card)] px-3 text-body text-[var(--text-primary)] transition-colors enabled:hover:bg-[var(--settings-fill-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-color)]/35 disabled:cursor-default disabled:opacity-40"
+
+export const iconActionButton =
+  "inline-flex size-8 shrink-0 items-center justify-center rounded-[10px] border border-[var(--border-default)] bg-[var(--bg-card)] text-[var(--text-primary)] transition-colors enabled:hover:bg-[var(--settings-fill-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-color)]/35 disabled:cursor-default disabled:opacity-40"
+
+export const primaryButton =
+  "inline-flex h-7 shrink-0 items-center justify-center gap-1.5 rounded-[10px] border border-transparent bg-[var(--text-primary)] px-3 text-body font-medium text-[var(--bg-card)] transition-opacity enabled:hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-color)]/45 disabled:cursor-default disabled:opacity-40"
+
+export const dangerButton =
+  "inline-flex h-7 shrink-0 items-center justify-center gap-1.5 rounded-[10px] border border-[var(--border-default)] bg-[var(--bg-card)] px-3 text-body text-[var(--text-danger)] transition-colors enabled:hover:border-[var(--text-danger)]/40 enabled:hover:bg-[var(--text-danger)]/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--text-danger)]/35 disabled:cursor-default disabled:opacity-40"
+
+export const fieldInput =
+  "w-full min-w-0 rounded-[10px] border border-[var(--border-default)] bg-[var(--bg-card)] px-3 text-body text-[var(--text-primary)] outline-none transition-colors placeholder:text-[var(--sidebar-text-muted)] focus:border-[var(--accent-color)] focus:ring-2 focus:ring-[var(--accent-color)]/20 disabled:opacity-50"
 
 export function Section({ title, children }: { title?: string; children: ReactNode }) {
   const rows = Children.toArray(children)
@@ -23,7 +35,7 @@ export function Section({ title, children }: { title?: string; children: ReactNo
   )
 }
 
-export function Row({ label, description, icon, children }: { label: string; description?: string; icon?: ReactNode; children?: ReactNode }) {
+export function Row({ label, description, icon, children }: { label: string; description?: ReactNode; icon?: ReactNode; children?: ReactNode }) {
   return (
     <div data-settings-label={label} className="flex items-center justify-between gap-6 px-4 py-3">
       <div className="flex min-w-0 flex-1 items-center gap-3">
@@ -42,11 +54,13 @@ export function NumberField({
   value,
   min,
   max,
+  label,
   onChange,
 }: {
   value: number
   min: number
   max: number
+  label?: string
   onChange: (value: number) => void
 }) {
   // Local draft so intermediate typing ("1" on the way to "12") is not rejected by the controlled value.
@@ -67,6 +81,7 @@ export function NumberField({
         min={min}
         max={max}
         step={1}
+        aria-label={label}
         inputMode="numeric"
         onChange={(e) => {
           setDraft(e.target.value)
@@ -76,7 +91,7 @@ export function NumberField({
         }}
         onBlur={commit}
         onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
-        className="h-8 w-16 rounded-lg border border-[var(--border-default)] bg-[var(--bg-card)] px-2 text-body tabular-nums text-[var(--text-primary)] outline-none focus:border-[var(--accent-color)]"
+        className="h-7 w-16 rounded-[10px] border border-[var(--border-default)] bg-[var(--bg-card)] px-2 text-body tabular-nums text-[var(--text-primary)] outline-none transition-colors focus:border-[var(--accent-color)] focus:ring-2 focus:ring-[var(--accent-color)]/20"
       />
       <span className="text-caption text-[var(--sidebar-text-muted)]">px</span>
     </div>
@@ -97,7 +112,7 @@ export function TextField({ value, placeholder, label, onChange }: { value: stri
       onChange={(e) => setDraft(e.target.value)}
       onBlur={() => { if (draft.trim() !== value) onChange(draft.trim()) }}
       onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
-      className="h-8 w-48 shrink-0 rounded-lg border border-[var(--border-default)] bg-[var(--bg-card)] px-2 text-body text-[var(--text-primary)] outline-none placeholder:text-[var(--text-tertiary)]"
+      className="h-7 w-48 shrink-0 rounded-[10px] border border-[var(--border-default)] bg-[var(--bg-card)] px-2.5 text-body text-[var(--text-primary)] outline-none transition-colors placeholder:text-[var(--text-tertiary)] focus:border-[var(--accent-color)] focus:ring-2 focus:ring-[var(--accent-color)]/20"
     />
   )
 }
@@ -120,22 +135,40 @@ export function Slider({ value, label, onChange }: { value: number; label: strin
   )
 }
 
+export type SelectOption =
+  | [string, string]
+  | { value: string; label: string; leading?: ReactNode; searchText?: string }
+
+function normalizeOption(option: SelectOption): { value: string; label: string; leading?: ReactNode; searchText?: string } {
+  return Array.isArray(option)
+    ? { value: option[0], label: option[1] }
+    : option
+}
+
 export function Select({
   value,
   options,
   onChange,
   disabled,
   label,
+  searchable,
+  searchPlaceholder,
+  triggerLeading,
 }: {
   value: string
-  options: [string, string][]
+  options: SelectOption[]
   onChange: (value: string) => void
   disabled?: boolean
   label?: string
+  searchable?: boolean
+  searchPlaceholder?: string
+  triggerLeading?: ReactNode
 }) {
   const triggerRef = useRef<HTMLButtonElement>(null)
   const [menu, setMenu] = useState<{ anchor: PopupMenuAnchor; minWidth: number }>()
-  const selectedLabel = options.find(([v]) => v === value)?.[1] ?? options[0]?.[1] ?? ""
+  const normalized = options.map(normalizeOption)
+  const selected = normalized.find((opt) => opt.value === value) ?? normalized[0]
+  const selectedLabel = selected?.label ?? ""
 
   const toggle = () => {
     if (disabled) return
@@ -147,7 +180,7 @@ export function Select({
     if (!el) return
     setMenu({
       anchor: anchorBelow(el),
-      minWidth: Math.max(140, Math.round(el.getBoundingClientRect().width)),
+      minWidth: Math.max(searchable ? 220 : 140, Math.round(el.getBoundingClientRect().width)),
     })
   }
 
@@ -161,8 +194,9 @@ export function Select({
         aria-expanded={Boolean(menu)}
         disabled={disabled}
         onClick={toggle}
-        className="flex h-7 max-w-52 items-center justify-between gap-1.5 rounded-[10px] border border-[var(--border-default)] bg-[var(--bg-card)] pr-2.5 pl-3 text-left text-body text-[var(--text-primary)] outline-none transition-colors hover:bg-[var(--settings-fill-hover)] disabled:pointer-events-none disabled:opacity-40"
+        className="flex h-7 max-w-52 items-center justify-between gap-1.5 rounded-[10px] border border-[var(--border-default)] bg-[var(--bg-card)] pr-2.5 pl-3 text-left text-body text-[var(--text-primary)] outline-none transition-colors enabled:hover:bg-[var(--settings-fill-hover)] focus-visible:border-[var(--accent-color)] focus-visible:ring-2 focus-visible:ring-[var(--accent-color)]/25 disabled:cursor-default disabled:opacity-40"
       >
+        {triggerLeading}
         <span className="truncate">{selectedLabel}</span>
         <ChevronDown size={14} className="shrink-0 text-[var(--sidebar-text-muted)]" />
       </button>
@@ -172,13 +206,17 @@ export function Select({
           trigger={triggerRef.current}
           label={label ?? "Select option"}
           scrollable
+          searchable={searchable}
+          searchPlaceholder={searchPlaceholder}
           minWidth={menu.minWidth}
           onClose={() => setMenu(undefined)}
-          entries={options.map(([v, optionLabel]) => ({
-            key: v,
-            label: optionLabel,
-            checked: v === value,
-            onSelect: () => onChange(v),
+          entries={normalized.map((opt) => ({
+            key: opt.value,
+            label: opt.label,
+            leading: opt.leading,
+            searchText: opt.searchText ?? opt.label,
+            checked: opt.value === value,
+            onSelect: () => onChange(opt.value),
           }))}
         />
       )}
@@ -214,11 +252,12 @@ export function Segmented({ value, options, onChange }: { value: string; options
       {options.map(([v, label, icon]) => (
         <button
           key={v}
+          type="button"
           onClick={() => onChange(v)}
           aria-pressed={value === v}
           aria-label={icon ? label : undefined}
           title={icon ? label : undefined}
-          className={`relative z-[1] inline-flex items-center justify-center rounded-[9px] ${icon ? "aspect-square" : "px-2.5"} ${
+          className={`relative z-[1] inline-flex items-center justify-center rounded-[9px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-color)]/40 ${icon ? "aspect-square" : "px-2.5"} ${
             value === v ? "text-[var(--text-primary)]" : "text-[var(--sidebar-text-muted)] hover:text-[var(--text-primary)]"
           }`}
         >
@@ -232,12 +271,13 @@ export function Segmented({ value, options, onChange }: { value: string; options
 export function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (checked: boolean) => void; label?: string }) {
   return (
     <button
+      type="button"
       role="switch"
       aria-checked={checked}
       aria-label={label}
       title={label}
       onClick={() => onChange(!checked)}
-      className={`relative inline-flex h-5 w-8 shrink-0 items-center rounded-full transition-colors duration-150 ease-[cubic-bezier(0,0,0.2,1)] ${checked ? "bg-[var(--accent-color)]" : "bg-[var(--settings-switch-off,#D8D6CF)]"}`}
+      className={`relative inline-flex h-5 w-8 shrink-0 items-center rounded-full transition-colors duration-150 ease-[cubic-bezier(0,0,0.2,1)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-color)]/40 ${checked ? "bg-[var(--accent-color)]" : "bg-[var(--settings-switch-off,#D8D6CF)]"}`}
     >
       <span
         aria-hidden="true"

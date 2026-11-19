@@ -1,8 +1,12 @@
+import { useEffect, useRef, useState } from "react"
 import type { AppSettings } from "../../types"
 import type { AccountInfo, ModelInfo } from "../../agent/protocol"
+import { ChevronDown } from "../../lib/icons"
+import { loadFontFamilies } from "../../lib/localFonts"
 import { outputStyleOptions } from "../../lib/outputStyles"
-import { useConfirm } from "../ConfirmDialog"
 import { previewStreamSound } from "../../lib/streamSound"
+import { useConfirm } from "../ConfirmDialog"
+import { PopupMenu, anchorBelow, type PopupMenuAnchor } from "../PopupMenu"
 import { actionButton, Row, Section, Segmented, Select, Slider, TextField, Toggle } from "./controls"
 
 type DefaultMode = AppSettings["agent"]["permissionDefault"]
@@ -40,6 +44,18 @@ export function GeneralPage({
   onSignIn: () => void
 }) {
   const { confirm, dialog } = useConfirm()
+  const [monoFonts, setMonoFonts] = useState<string[]>([])
+  const [fontMenu, setFontMenu] = useState<PopupMenuAnchor>()
+  const fontPickerRef = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    let cancelled = false
+    loadFontFamilies()
+      .then((families) => {
+        if (!cancelled) setMonoFonts(families.filter((f) => f.monospaced).map((f) => f.family))
+      })
+      .catch(() => { if (!cancelled) setMonoFonts([]) })
+    return () => { cancelled = true }
+  }, [])
   const permissionMode = settings.agent.permissionDefault
   const modifierLabel = navigator.platform.includes("Mac") ? "⌘" : "Ctrl"
   const providerLabel = account?.apiProvider ? providerDisplayName(account.apiProvider) : undefined
@@ -48,6 +64,16 @@ export function GeneralPage({
     onChange({ ...settings, composer: { ...settings.composer, streamSound: { ...sound, ...next } } })
   const setPermission = (permissionDefault: DefaultMode) =>
     onChange({ ...settings, agent: { ...settings.agent, permissionDefault } })
+  const notificationsDisabled =
+    settings.notifications.turnMode === "off" &&
+    !settings.notifications.permissions &&
+    !settings.notifications.questions
+  const previewNotificationSound = window.noaDesktop?.notifications?.previewSound
+  const signInLabel = account?.email
+    ? "Sign in again"
+    : providerLabel && account?.apiProvider !== "firstParty"
+      ? "Sign in to Anthropic"
+      : "Sign in"
 
   return (
     <>
@@ -62,8 +88,8 @@ export function GeneralPage({
                 : "Sign in to use Anthropic through this desktop session."
           }
         >
-          <button type="button" onClick={onSignIn} className={`${actionButton} bg-[var(--bg-card)] text-[var(--text-primary)]`}>
-            {account?.email ? "Sign in again" : "Sign in"}
+          <button type="button" onClick={onSignIn} className={actionButton}>
+            {signInLabel}
           </button>
         </Row>
       </Section>
@@ -200,19 +226,67 @@ export function GeneralPage({
             }
           />
         </Row>
-        <Row label="Font" description="An installed font, such as a Nerd Font. Empty uses the code font.">
-          <TextField
-            value={settings.terminal.fontFamily}
-            placeholder="Code font"
-            label="Terminal font"
-            onChange={(fontFamily) => onChange({ ...settings, terminal: { ...settings.terminal, fontFamily } })}
-          />
+        <Row label="Terminal font" description="An installed font, such as a Nerd Font. Empty uses the code font.">
+          <div className="flex shrink-0 items-center gap-1.5">
+            <TextField
+              value={settings.terminal.fontFamily}
+              placeholder="Code font"
+              label="Terminal font"
+              onChange={(fontFamily) => onChange({ ...settings, terminal: { ...settings.terminal, fontFamily } })}
+            />
+            {monoFonts.length > 0 && (
+              <>
+                <button
+                  ref={fontPickerRef}
+                  type="button"
+                  aria-label="Pick installed terminal font"
+                  title="Pick installed font"
+                  aria-haspopup="menu"
+                  aria-expanded={Boolean(fontMenu)}
+                  onClick={() => {
+                    if (fontMenu) setFontMenu(undefined)
+                    else if (fontPickerRef.current) setFontMenu(anchorBelow(fontPickerRef.current))
+                  }}
+                  className="inline-flex size-7 shrink-0 items-center justify-center rounded-[10px] border border-[var(--border-default)] bg-[var(--bg-card)] text-[var(--sidebar-text-muted)] transition-colors hover:bg-[var(--settings-fill-hover)] hover:text-[var(--text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-color)]/35"
+                >
+                  <ChevronDown size={14} />
+                </button>
+                {fontMenu && (
+                  <PopupMenu
+                    anchor={fontMenu}
+                    trigger={fontPickerRef.current}
+                    label="Pick installed terminal font"
+                    scrollable
+                    searchable
+                    searchPlaceholder="Search monospace fonts…"
+                    minWidth={220}
+                    onClose={() => setFontMenu(undefined)}
+                    entries={[
+                      {
+                        key: "",
+                        label: "Use code font",
+                        checked: settings.terminal.fontFamily === "",
+                        onSelect: () => onChange({ ...settings, terminal: { ...settings.terminal, fontFamily: "" } }),
+                      },
+                      ...monoFonts.map((family) => ({
+                        key: family,
+                        label: family,
+                        checked: settings.terminal.fontFamily === family,
+                        onSelect: () => onChange({ ...settings, terminal: { ...settings.terminal, fontFamily: family } }),
+                      })),
+                    ]}
+                  />
+                )}
+              </>
+            )}
+          </div>
         </Row>
       </Section>
       <Section title="Notifications">
         <Row label="Turn notifications" description="When to notify that a turn finished.">
           <Select
             value={settings.notifications.turnMode}
+            label="Turn notifications"
             options={[
               ["off", "Off"],
               ["unfocused", "When Noa is in the background"],
@@ -226,22 +300,38 @@ export function GeneralPage({
             }
           />
         </Row>
-        <Row label="Notification sound" description="Sound played with desktop notifications.">
-          <Select
-            value={settings.notifications.sound}
-            options={[
-              ["default", "Default"],
-              ["classic", "Classic"],
-              ["none", "None"],
-              ["Basso", "Basso"],
-              ["Glass", "Glass"],
-              ["Ping", "Ping"],
-              ["Pop", "Pop"],
-              ["Purr", "Purr"],
-              ["Tink", "Tink"],
-            ]}
-            onChange={(sound) => onChange({ ...settings, notifications: { ...settings.notifications, sound } })}
-          />
+        <Row
+          label="Notification sound"
+          description={`Sound played with desktop notifications.${notificationsDisabled ? " (Desktop notifications are currently off.)" : ""}`}
+        >
+          <div className="flex shrink-0 items-center gap-2">
+            {previewNotificationSound && (
+              <button
+                type="button"
+                disabled={settings.notifications.sound === "none"}
+                className={actionButton}
+                onClick={() => void previewNotificationSound(settings.notifications.sound)}
+              >
+                Preview
+              </button>
+            )}
+            <Select
+              value={settings.notifications.sound}
+              label="Notification sound"
+              options={[
+                ["default", "Default"],
+                ["classic", "Classic"],
+                ["none", "None"],
+                ["Basso", "Basso"],
+                ["Glass", "Glass"],
+                ["Ping", "Ping"],
+                ["Pop", "Pop"],
+                ["Purr", "Purr"],
+                ["Tink", "Tink"],
+              ]}
+              onChange={(sound) => onChange({ ...settings, notifications: { ...settings.notifications, sound } })}
+            />
+          </div>
         </Row>
         <Row label="Permission requests" description="Notify when a tool needs your approval.">
           <Toggle

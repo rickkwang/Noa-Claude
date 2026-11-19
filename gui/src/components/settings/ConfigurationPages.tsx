@@ -1,6 +1,6 @@
 import type { AgentState } from "../../agent/reducer"
 import type { PermissionMode } from "../../agent/protocol"
-import { ChevronDown, RefreshCcw } from "../../lib/icons"
+import { ChevronDown } from "../../lib/icons"
 import { findModel } from "../../lib/models"
 import { outputStyleDescription, outputStyleOptions } from "../../lib/outputStyles"
 import { Row, Section, Select, actionButton } from "./controls"
@@ -20,23 +20,20 @@ export const sourceLabels: Record<string, string> = {
   policySettings: "Managed",
 }
 
-export function RefreshBar({ agent, onRefresh }: { agent: AgentState; onRefresh: () => void }) {
+export function RefreshBar({ agent }: { agent: AgentState }) {
   const disconnected = agent.connection !== "ready"
+  if (!disconnected && !agent.error) return null
   return (
-    <>
-      <div className="flex items-center justify-between gap-4 text-body text-[var(--sidebar-text-muted)]">
-        <span>{disconnected ? "Connect Noa to load settings." : "Review settings for this workspace."}</span>
-        <button type="button" disabled={disconnected || agent.mcpPending} className={actionButton} onClick={onRefresh}>
-          <RefreshCcw size={14} className="mr-1 inline" />
-          Refresh
-        </button>
-      </div>
+    <div className="flex flex-col gap-2">
+      {disconnected && (
+        <p className="m-0 text-body text-[var(--sidebar-text-muted)]">Connect Noa to load settings.</p>
+      )}
       {agent.error && (
-        <p role="alert" className="text-body text-[#C24444]">
+        <p role="alert" className="m-0 rounded-xl border border-[var(--text-danger)]/40 bg-[var(--text-danger)]/10 px-3 py-2 text-caption text-[var(--text-danger)]">
           {agent.error}
         </p>
       )}
-    </>
+    </div>
   )
 }
 
@@ -146,7 +143,7 @@ export function ConfigurationPage({
             const label = { allow: "Allow", ask: "Ask", deny: "Deny" }[kind]
             return rules.length ? (
               <details key={kind} data-permission-kind={kind} className="group">
-                <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-4 py-3 text-body">
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-4 py-3 text-body focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--accent-color)]/35">
                   <span className="font-medium">{label}</span>
                   <span className="flex items-center gap-2 text-caption text-[var(--sidebar-text-muted)]">
                     {rules.length} {rules.length === 1 ? "rule" : "rules"}
@@ -174,6 +171,26 @@ export function ConfigurationPage({
   )
 }
 
+function mcpStatusDisplay(status: string): { label: string; dotClass: string } {
+  switch (status) {
+    case "connected":
+      return { label: "Connected", dotClass: "bg-emerald-500" }
+    case "failed":
+      return { label: "Failed", dotClass: "bg-[var(--text-danger)]" }
+    case "needs-auth":
+      return { label: "Needs authentication", dotClass: "bg-amber-500" }
+    case "pending":
+      return { label: "Connecting…", dotClass: "bg-[var(--accent-color)]" }
+    case "disabled":
+      return { label: "Disabled", dotClass: "bg-[var(--sidebar-text-muted)]/50" }
+    default:
+      return {
+        label: status ? status.charAt(0).toUpperCase() + status.slice(1) : "Unknown",
+        dotClass: "bg-[var(--sidebar-text-muted)]/50",
+      }
+  }
+}
+
 export function McpPage({ agent, onChangeMcp }: { agent: AgentState; onChangeMcp: (name: string, enabled?: boolean) => void }) {
   const locked = agent.connection !== "ready" || agent.busy
   return (
@@ -181,28 +198,40 @@ export function McpPage({ agent, onChangeMcp }: { agent: AgentState; onChangeMcp
       {!agent.mcpServers?.length ? (
         <Row label={agent.mcpServers ? "No MCP servers connected" : "Loading…"} />
       ) : (
-        agent.mcpServers.map((server) => (
-          <Row key={server.name} label={server.name} description={server.status}>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                disabled={locked || agent.mcpPending || server.status === "disabled" || server.status === "pending"}
-                className={actionButton}
-                onClick={() => onChangeMcp(server.name)}
-              >
-                Reconnect
-              </button>
-              <button
-                type="button"
-                disabled={locked || agent.mcpPending || server.status === "pending"}
-                className={actionButton}
-                onClick={() => onChangeMcp(server.name, server.status === "disabled")}
-              >
-                {server.status === "disabled" ? "Enable" : "Disable"}
-              </button>
-            </div>
-          </Row>
-        ))
+        agent.mcpServers.map((server) => {
+          const status = mcpStatusDisplay(server.status)
+          return (
+            <Row
+              key={server.name}
+              label={server.name}
+              description={
+                <span className="inline-flex items-center gap-1.5">
+                  <span aria-hidden="true" className={`size-1.5 shrink-0 rounded-full ${status.dotClass}`} />
+                  <span>{status.label}</span>
+                </span>
+              }
+            >
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  disabled={locked || agent.mcpPending || server.status === "disabled" || server.status === "pending"}
+                  className={actionButton}
+                  onClick={() => onChangeMcp(server.name)}
+                >
+                  Reconnect
+                </button>
+                <button
+                  type="button"
+                  disabled={locked || agent.mcpPending || server.status === "pending"}
+                  className={actionButton}
+                  onClick={() => onChangeMcp(server.name, server.status === "disabled")}
+                >
+                  {server.status === "disabled" ? "Enable" : "Disable"}
+                </button>
+              </div>
+            </Row>
+          )
+        })
       )}
     </Section>
   )
@@ -228,10 +257,10 @@ export function HooksPage({ agent }: { agent: AgentState }) {
       ) : (
         hooks.items.map((hook, index) => (
           <details key={index} className="group">
-            <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-4 py-3 text-body">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-4 py-3 text-body focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--accent-color)]/35">
               <span className="font-medium">{hook.event}</span>
               <span className="flex items-center gap-2 text-caption text-[var(--sidebar-text-muted)]">
-                {hook.source} · {hook.type}
+                {sourceLabels[hook.source] ?? hook.source} · {hook.type}
                 <ChevronDown size={14} className="transition-transform group-open:rotate-180" />
               </span>
             </summary>

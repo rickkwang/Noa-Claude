@@ -32,5 +32,6 @@ contextBridge.exposeInMainWorld('noaDesktop', {
   },
   notifications: {
     configure: (settings) => ipcRenderer.invoke('noa:configure-notifications', settings),
+    previewSound: (sound) => ipcRenderer.invoke('noa:preview-notification-sound', sound),
   },
 })

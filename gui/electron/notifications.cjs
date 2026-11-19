@@ -1,6 +1,7 @@
 // Desktop notifications for Noa's runs. The main process polls the bridge's run list, so tasks that
 // finish or wait for input while another task is on screen still notify.
-const { Notification, app } = require('electron')
+const { Notification, app, shell } = require('electron')
+const { execFile } = require('child_process')
 const { diffRuns } = require('./runNotices.cjs')
 
 const NAMED_SOUNDS = new Set(['Basso', 'Glass', 'Ping', 'Pop', 'Purr', 'Tink'])
@@ -25,6 +26,7 @@ function createNotifier({ listRuns, getWindow }) {
   let previous = null
   let timer = null
   let polling = false
+  let previewProcess = null
 
   function announce(notice) {
     // Wait kinds without copy (e.g. 'other') are not announced; throwing here would drop the rest of the poll.
@@ -87,6 +89,21 @@ function createNotifier({ listRuns, getWindow }) {
       }
       if (!settings.dot) clearBadge()
     },
+    previewSound(sound) {
+      if (sound === 'none' || !['default', 'classic', ...NAMED_SOUNDS].includes(sound)) return
+      if (previewProcess) {
+        previewProcess.kill()
+        previewProcess = null
+      }
+      if (process.platform === 'darwin' && NAMED_SOUNDS.has(sound)) {
+        const child = execFile('/usr/bin/afplay', ['/System/Library/Sounds/' + sound + '.aiff'], () => {
+          if (previewProcess === child) previewProcess = null
+        })
+        previewProcess = child
+      } else {
+        shell.beep()
+      }
+    },
     start() {
       if (timer) return
       timer = setInterval(poll, POLL_MS)
@@ -94,6 +111,10 @@ function createNotifier({ listRuns, getWindow }) {
     stop() {
       clearInterval(timer)
       timer = null
+      if (previewProcess) {
+        previewProcess.kill()
+        previewProcess = null
+      }
     },
     clearBadge,
   }

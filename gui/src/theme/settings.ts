@@ -1,5 +1,7 @@
+import { clampContrast } from '../lib/contrast'
 import { SYSTEM_DEFAULT_FONT, CONTENT_SAME_AS_UI } from '../lib/fontFamily'
-import type { AppSettings, ThemeFonts } from '../types'
+import { activeTranslucency } from '../lib/translucency'
+import type { AppSettings, ChromeThemeConfig, ThemeFonts } from '../types'
 import { defaultShortcuts } from '../lib/shortcuts'
 
 const defaultFonts = (): ThemeFonts => ({
@@ -32,3 +34,50 @@ export const defaultSettings: AppSettings = {
   },
   notifications: { turnMode: 'unfocused', sound: 'default', permissions: true, questions: true, dot: true },
 };
+
+function isDefaultChromeFonts(fonts: Partial<ThemeFonts> | undefined): boolean {
+  if (!fonts) return true;
+  return (
+    (!fonts.ui || fonts.ui === SYSTEM_DEFAULT_FONT) &&
+    !fonts.uiFace &&
+    (!fonts.content || fonts.content === CONTENT_SAME_AS_UI) &&
+    !fonts.contentFace &&
+    (!fonts.code || fonts.code === SYSTEM_DEFAULT_FONT) &&
+    !fonts.codeFace
+  );
+}
+
+function isDefaultChromeTheme(chrome: ChromeThemeConfig | undefined): boolean {
+  if (!chrome) return true;
+  return (
+    (!chrome.presetId || chrome.presetId === 'noa') &&
+    !chrome.surface &&
+    !chrome.ink &&
+    !chrome.accent &&
+    (!chrome.codeThemeId || chrome.codeThemeId === 'codex') &&
+    !chrome.semanticColors &&
+    isDefaultChromeFonts(chrome.fonts)
+  );
+}
+
+export function isDefaultAppearance(appearance: AppSettings['appearance']): boolean {
+  const def = defaultSettings.appearance;
+  return (
+    appearance.theme === def.theme &&
+    clampContrast(appearance.contrast?.light, 'light') === def.contrast.light &&
+    clampContrast(appearance.contrast?.dark, 'dark') === def.contrast.dark &&
+    appearance.maxWidth === def.maxWidth &&
+    appearance.usePointerCursors === def.usePointerCursors &&
+    activeTranslucency(appearance.translucentSidebar, false) === def.translucentSidebar.light &&
+    activeTranslucency(appearance.translucentSidebar, true) === def.translucentSidebar.dark &&
+    appearance.motion === def.motion &&
+    appearance.uiFontSize === def.uiFontSize &&
+    appearance.codeFontSize === def.codeFontSize &&
+    appearance.transcriptTextSize === def.transcriptTextSize &&
+    appearance.transcriptView === def.transcriptView &&
+    appearance.fontSmoothing === def.fontSmoothing &&
+    isDefaultChromeFonts(appearance.fonts) &&
+    isDefaultChromeTheme(appearance.lightChromeTheme) &&
+    isDefaultChromeTheme(appearance.darkChromeTheme)
+  );
+}

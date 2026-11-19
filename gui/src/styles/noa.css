@@ -1526,6 +1526,10 @@ kbd.noa-review-menu-hint { font-family: inherit; }
   mask-image: linear-gradient(to bottom, var(--noa-fade-ramp));
 }
 .noa-popup-menu-scroll::-webkit-scrollbar { display: none; }
+.noa-popup-menu-scroll.is-searchable { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--text-primary) 18%, transparent) transparent; }
+.noa-popup-menu-scroll.is-searchable::-webkit-scrollbar { display: block; width: 6px; }
+.noa-popup-menu-scroll.is-searchable::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--text-primary) 18%, transparent); border-radius: 9999px; }
+.noa-popup-menu-scroll.is-searchable::-webkit-scrollbar-track { background: transparent; }
 .noa-popup-menu .noa-context-menu-entry > button { display: flex; width: 100%; max-width: none; min-height: 28px; align-items: center; font-size: 12px; line-height: calc(1.25 / 0.875); gap: 6px; padding: 5px 8px; border-radius: 12px; color: var(--text-primary); text-align: left; white-space: nowrap; }
 .noa-popup-menu .noa-context-menu-entry > button:hover,
 .noa-popup-menu .noa-context-menu-entry > button:focus-visible,

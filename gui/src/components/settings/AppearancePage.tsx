@@ -2,7 +2,7 @@ import { useEffect, useState } from "react"
 import type { AppSettings, SemanticColors, ThemeFontFace, ThemeFonts } from "../../types"
 import { SYSTEM_DEFAULT_FONT, CONTENT_SAME_AS_UI } from "../../lib/fontFamily"
 import { faceStyle, isRegularFace, loadFontFamilies, type LocalFontFamily } from "../../lib/localFonts"
-import { DEFAULT_CODE_THEME_ID, getCodeThemeOptions } from "../../lib/codeThemes"
+import { DEFAULT_CODE_THEME_ID, getCodeThemeOptions, resolveCodeTheme } from "../../lib/codeThemes"
 import { clampContrast } from "../../lib/contrast"
 import { activeTranslucency, supportsSidebarTranslucency } from "../../lib/translucency"
 import {
@@ -19,8 +19,9 @@ import {
   resolveVariantFonts,
 } from "../../lib/themePalette"
 import { useIsDark } from "../../hooks/useIsDark"
-import { defaultSettings } from "../../theme/settings"
-import { NumberField, Row, Section, Segmented, Select, Slider, Toggle, actionButton } from "./controls"
+import { defaultSettings, isDefaultAppearance } from "../../theme/settings"
+import { useConfirm } from "../ConfirmDialog"
+import { NumberField, Row, Section, Segmented, Select, Slider, Toggle, actionButton, dangerButton, fieldInput, primaryButton, type SelectOption } from "./controls"
 
 // Icon-only theme choices, drawn from a 1000-unit grid.
 const themeIcon = (d: string) => (
@@ -33,6 +34,20 @@ const THEME_ICONS = {
 }
 
 type Theme = AppSettings["appearance"]["theme"]
+
+function ColorDots({ colors }: { colors: string[] }) {
+  return (
+    <span className="inline-flex shrink-0 items-center -space-x-1" aria-hidden="true">
+      {colors.map((color, index) => (
+        <span
+          key={`${color}-${index}`}
+          className="size-2.5 rounded-full ring-1 ring-inset ring-black/15 dark:ring-white/20"
+          style={{ backgroundColor: color }}
+        />
+      ))}
+    </span>
+  )
+}
 
 function ColorSwatchPill({
   ariaLabel,
@@ -88,15 +103,31 @@ export function AppearancePage({
   const [importDraft, setImportDraft] = useState("")
   const [importError, setImportError] = useState<string | null>(null)
   const [copiedTheme, setCopiedTheme] = useState(false)
+  const { confirm, dialog } = useConfirm()
 
   const change = (patch: Partial<AppSettings["appearance"]>) =>
     onChange({ ...settings, appearance: { ...appearance, ...patch } })
   const resolvedTheme = resolveChromeTheme(appearance, isDark)
   const resolvedCodeThemeId = resolveCodeThemeId(appearance, isDark)
+  const resolvedCodeColors = resolveCodeTheme(resolvedCodeThemeId, variant).colors
   const resolvedSemantics = resolveSemanticColors(appearance, isDark)
   const defaultSemantics = DEFAULT_SEMANTIC_COLORS[variant]
-  const presetOptions: [string, string][] = presetsForVariant(variant).map((preset) => [preset.id, preset.label])
-  const codeThemeOptions = getCodeThemeOptions(variant)
+  const presetOptions: SelectOption[] = presetsForVariant(variant).map((preset) => {
+    const tokens = getPresetTokens(preset.id, variant)
+    return {
+      value: preset.id,
+      label: preset.label,
+      leading: <ColorDots colors={[tokens.surface, tokens.ink, tokens.accent]} />,
+    }
+  })
+  const codeThemeOptions: SelectOption[] = getCodeThemeOptions(variant).map(([id, label]) => {
+    const c = resolveCodeTheme(id, variant).colors
+    return {
+      value: id,
+      label,
+      leading: <ColorDots colors={[c.keyword, c.string, c.type]} />,
+    }
+  })
   const chromeKey = isDark ? "darkChromeTheme" : "lightChromeTheme"
   const activeChrome = appearance[chromeKey]
   const presetBase = getPresetTokens(resolvedTheme.presetId, variant)
@@ -105,6 +136,7 @@ export function AppearancePage({
     activeChrome?.semanticColors &&
       (activeChrome.semanticColors.diffAdded || activeChrome.semanticColors.diffRemoved || activeChrome.semanticColors.skill),
   )
+  const isDefault = isDefaultAppearance(appearance)
 
   const selectPreset = (presetId: string) => {
     const pairedCodeThemeId = getPresetDefaultCodeThemeId(presetId, variant)
@@ -252,16 +284,26 @@ export function AppearancePage({
     <Select
       value={faceValue(family, face)}
       options={faceOptions(family, face, "Regular")}
-      disabled={family === SYSTEM_DEFAULT_FONT || family === CONTENT_SAME_AS_UI}
+      label={`${role} font style`}
       onChange={(postscriptName) => chooseFace(role, postscriptName)}
     />
   )
-  const fontPair = ({ role, family, face, options }: { role: "content" | "code"; family: string; face?: ThemeFontFace; options: [string, string][] }) => (
-    <div className="flex shrink-0 items-center gap-2">
-      <Select value={family} options={options} onChange={(next) => chooseFamily(role, next)} />
-      {faceSelect({ role, family, face })}
-    </div>
-  )
+  const fontPair = ({ role, label, family, face, options }: { role: "ui" | "content" | "code"; label: string; family: string; face?: ThemeFontFace; options: [string, string][] }) => {
+    const showFace = family !== SYSTEM_DEFAULT_FONT && family !== CONTENT_SAME_AS_UI && facesFor(family).length > 1
+    return (
+      <div className="flex shrink-0 items-center gap-2">
+        <Select
+          value={family}
+          options={options}
+          label={label}
+          searchable
+          searchPlaceholder="Search fonts…"
+          onChange={(next) => chooseFamily(role, next)}
+        />
+        {showFace && faceSelect({ role, family, face })}
+      </div>
+    )
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -273,6 +315,54 @@ export function AppearancePage({
 
   return (
     <>
+      <div className="flex flex-col gap-3 rounded-2xl border border-[var(--border-default)] bg-[color-mix(in_srgb,var(--bg-card,#FFFFFF)_30%,transparent)] p-4">
+        <div className="flex items-center justify-between text-caption text-[var(--sidebar-text-muted)]">
+          <span>Preview · {isDark ? "Dark" : "Light"}</span>
+          {appearance.theme === "system" && <span>Following system</span>}
+        </div>
+        <p
+          className="m-0 text-[var(--text-primary)]"
+          style={{ fontFamily: "var(--font-content)", fontSize: "var(--transcript-text-size)", lineHeight: 1.5 }}
+        >
+          Run <span className="font-medium" style={{ color: "var(--skill-color)" }}>/review</span> before merging —{" "}
+          <span className="font-medium" style={{ color: "var(--accent-color)" }}>2 files</span> updated cleanly.
+        </p>
+        <pre
+          className="m-0 overflow-x-auto rounded-xl border border-[var(--border-default)] bg-[var(--bg-primary)] px-3 py-2 leading-relaxed"
+          style={{ fontFamily: "var(--font-mono)", fontSize: "var(--code-font-size)" }}
+        >
+          <code className="block">
+            <span className="block" style={{ color: "var(--hljs-comment)", fontStyle: "var(--hljs-comment-style)" }}>
+              {"// Live theme & font preview"}
+            </span>
+            <span className="block">
+              <span style={{ color: "var(--hljs-keyword)" }}>const</span>{" "}
+              <span style={{ color: "var(--hljs-title)" }}>status</span> ={" "}
+              <span style={{ color: "var(--hljs-string)" }}>&quot;ready&quot;</span>;{" "}
+              <span style={{ color: "var(--hljs-number)" }}>42</span>
+            </span>
+            <span
+              className="mt-1 block rounded-[4px] px-1.5"
+              style={{
+                color: "var(--diff-removed)",
+                backgroundColor: "color-mix(in srgb, var(--diff-removed) 10%, transparent)",
+              }}
+            >
+              - timeoutMs: 3000
+            </span>
+            <span
+              className="block rounded-[4px] px-1.5"
+              style={{
+                color: "var(--diff-added)",
+                backgroundColor: "color-mix(in srgb, var(--diff-added) 10%, transparent)",
+              }}
+            >
+              + timeoutMs: 5000
+            </span>
+          </code>
+        </pre>
+      </div>
+
       <Section title="Visual style">
         <Row label="Mode" description="Follow the system or pick a fixed appearance.">
           <Segmented
@@ -286,10 +376,24 @@ export function AppearancePage({
           />
         </Row>
         <Row label="Theme" description={`Palette for ${variant} mode; light and dark keep separate presets.`}>
-          <Select value={resolvedTheme.presetId} options={presetOptions} onChange={selectPreset} />
+          <Select
+            value={resolvedTheme.presetId}
+            options={presetOptions}
+            label="Theme"
+            triggerLeading={<ColorDots colors={[resolvedTheme.surface, resolvedTheme.ink, resolvedTheme.accent]} />}
+            onChange={selectPreset}
+          />
         </Row>
         <Row label="Code theme" description={`Syntax highlighting theme for ${variant} mode.`}>
-          <Select value={resolvedCodeThemeId} options={codeThemeOptions} onChange={updateCodeTheme} />
+          <Select
+            value={resolvedCodeThemeId}
+            options={codeThemeOptions}
+            label="Code theme"
+            searchable
+            searchPlaceholder="Search code themes…"
+            triggerLeading={<ColorDots colors={[resolvedCodeColors.keyword, resolvedCodeColors.string, resolvedCodeColors.type]} />}
+            onChange={updateCodeTheme}
+          />
         </Row>
         <Row label="Accent" description={`Accent color for ${variant} mode.`}>
           <div className="flex shrink-0 items-center gap-2">
@@ -308,7 +412,7 @@ export function AppearancePage({
           </div>
         </Row>
         <Row label="Semantic colors" description={`Diff added, diff removed, and skill highlight colors for ${variant} mode.`}>
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
             {(
               [
                 ["diffAdded", "Added", resolvedSemantics.diffAdded],
@@ -331,37 +435,50 @@ export function AppearancePage({
             )}
           </div>
         </Row>
-        <Row label="Share theme" description="Export or import a Codex-compatible theme string.">
-          <div className="flex shrink-0 items-center gap-2">
-            <button type="button" className={actionButton} onClick={() => void copyTheme()}>
-              {copiedTheme ? "Copied" : "Export"}
-            </button>
-            <button
-              type="button"
-              className={actionButton}
-              onClick={() => { setImportOpen((open) => !open); setImportError(null) }}
-            >
-              {importOpen ? "Cancel" : "Import"}
-            </button>
-          </div>
-        </Row>
-        {importOpen && (
-          <div className="px-4 pb-3 pt-1">
-            <div className="flex items-center gap-2">
-              <input
-                type="text"
-                value={importDraft}
-                onChange={(e) => { setImportDraft(e.target.value); setImportError(null) }}
-                placeholder="Paste codex-theme-v1:{...}"
-                className="h-8 flex-1 rounded-lg border border-[var(--border-default)] bg-[var(--bg-card)] px-2.5 font-mono text-caption text-[var(--text-primary)] outline-none focus:border-[var(--accent-color)]"
-              />
-              <button type="button" className={actionButton} onClick={applyImport}>
-                Apply
+        <div>
+          <Row label="Share theme" description="Export or import a Codex-compatible theme string.">
+            <div className="flex shrink-0 items-center gap-2">
+              <button type="button" className={actionButton} onClick={() => void copyTheme()}>
+                {copiedTheme ? "Copied" : "Export"}
+              </button>
+              <button
+                type="button"
+                className={actionButton}
+                onClick={() => { setImportOpen((open) => !open); setImportError(null) }}
+              >
+                {importOpen ? "Cancel" : "Import"}
               </button>
             </div>
-            {importError && <p className="mt-1 text-caption text-[var(--text-danger)]">{importError}</p>}
-          </div>
-        )}
+          </Row>
+          {importOpen && (
+            <div className="px-4 pb-3 pt-1">
+              <div className="flex items-center gap-2">
+                <input
+                  autoFocus
+                  type="text"
+                  value={importDraft}
+                  onChange={(e) => { setImportDraft(e.target.value); setImportError(null) }}
+                  onKeyDown={(e) => {
+                    if (e.nativeEvent.isComposing || e.keyCode === 229) return
+                    if (e.key === "Enter" && importDraft.trim()) applyImport()
+                    else if (e.key === "Escape") {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      setImportOpen(false)
+                      setImportError(null)
+                    }
+                  }}
+                  placeholder="Paste codex-theme-v1:{...}"
+                  className={`${fieldInput} h-7 flex-1 font-mono text-caption`}
+                />
+                <button type="button" disabled={!importDraft.trim()} className={primaryButton} onClick={applyImport}>
+                  Apply
+                </button>
+              </div>
+              {importError && <p className="mt-1 text-caption text-[var(--text-danger)]">{importError}</p>}
+            </div>
+          )}
+        </div>
         {supportsSidebarTranslucency() && (
           <Row label="Translucent sidebar" description="Let the desktop material show behind the sidebar, per theme.">
             <Toggle
@@ -380,23 +497,20 @@ export function AppearancePage({
       </Section>
 
       <Section title="Text">
-        <Row label="UI font" description="Family for the interface.">
-          <Select value={activeFonts.ui} options={uiFamilyOptions} onChange={(family) => chooseFamily("ui", family)} />
+        <Row label="UI font" description={`Typeface for the interface in ${variant} mode.`}>
+          {fontPair({ role: "ui", label: "UI font", family: activeFonts.ui, face: activeFonts.uiFace, options: uiFamilyOptions })}
         </Row>
-        <Row label="UI font style" description="Face of the selected family.">
-          {faceSelect({ role: "ui", family: activeFonts.ui, face: activeFonts.uiFace })}
+        <Row label="Content font" description={`Typeface for messages and page content in ${variant} mode.`}>
+          {fontPair({ role: "content", label: "Content font", family: activeFonts.content, face: activeFonts.contentFace, options: contentFamilyOptions })}
         </Row>
-        <Row label="Content font" description="Typeface for messages and page content.">
-          {fontPair({ role: "content", family: activeFonts.content, face: activeFonts.contentFace, options: contentFamilyOptions })}
-        </Row>
-        <Row label="Code font" description="Typeface for code blocks and diffs, separate from the interface font.">
-          {fontPair({ role: "code", family: activeFonts.code, face: activeFonts.codeFace, options: codeFamilyOptions })}
+        <Row label="Code font" description={`Typeface for code blocks and diffs in ${variant} mode.`}>
+          {fontPair({ role: "code", label: "Code font", family: activeFonts.code, face: activeFonts.codeFace, options: codeFamilyOptions })}
         </Row>
         <Row label="UI font size" description="Base size for interface text (11–16 px).">
-          <NumberField value={appearance.uiFontSize} min={11} max={16} onChange={(uiFontSize) => change({ uiFontSize })} />
+          <NumberField label="UI font size" value={appearance.uiFontSize} min={11} max={16} onChange={(uiFontSize) => change({ uiFontSize })} />
         </Row>
         <Row label="Code font size" description="Size for code blocks (8–24 px).">
-          <NumberField value={appearance.codeFontSize} min={8} max={24} onChange={(codeFontSize) => change({ codeFontSize })} />
+          <NumberField label="Code font size" value={appearance.codeFontSize} min={8} max={24} onChange={(codeFontSize) => change({ codeFontSize })} />
         </Row>
         <Row label="Font smoothing" description="Smooth edges of text on screen.">
           <Toggle checked={appearance.fontSmoothing} onChange={(fontSmoothing) => change({ fontSmoothing })} />
@@ -450,8 +564,32 @@ export function AppearancePage({
         <Row label="Pointer cursors" description="Show a pointer over clickable controls.">
           <Toggle checked={appearance.usePointerCursors} onChange={(usePointerCursors) => change({ usePointerCursors })} />
         </Row>
-        <Row label="Reset appearance" description="Restore the default fonts, colors, and layout."><button type="button" className={actionButton} onClick={() => onChange({ ...settings, appearance: { ...defaultSettings.appearance } })}>Reset to default</button></Row>
       </Section>
+
+      <div data-settings-label="Reset appearance" className="flex items-center justify-between gap-4 px-1">
+        <div className="flex flex-col gap-0.5">
+          <span className="text-chat-sm leading-[18px] font-medium">Reset appearance</span>
+          <span className="text-caption leading-4 text-[var(--sidebar-text-muted)]">Restore the default fonts, colors, and layout.</span>
+        </div>
+        <button
+          type="button"
+          disabled={isDefault}
+          className={dangerButton}
+          onClick={async () => {
+            if (await confirm({
+              title: "Reset appearance to defaults?",
+              description: "This restores the default light and dark themes, custom colors, fonts, and layout.",
+              confirmLabel: "Reset",
+              danger: true,
+            })) {
+              onChange({ ...settings, appearance: { ...defaultSettings.appearance } })
+            }
+          }}
+        >
+          Reset to default
+        </button>
+      </div>
+      {dialog}
     </>
   )
 }

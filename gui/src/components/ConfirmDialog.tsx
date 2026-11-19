@@ -59,6 +59,8 @@ function ConfirmDialog({
   const cardRef = useRef<HTMLDivElement>(null)
   const confirmRef = useRef<HTMLButtonElement>(null)
   const cancelRef = useRef<HTMLButtonElement>(null)
+  const onCancelRef = useRef(onCancel)
+  onCancelRef.current = onCancel
 
   // Destructive dialogs start on Cancel, so Enter cannot discard work by reflex.
   useEffect(() => {
@@ -67,13 +69,18 @@ function ConfirmDialog({
     return () => { if (previous?.isConnected) previous.focus() }
   }, [danger])
 
-  function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
-    if (event.key === "Escape") {
+  useEffect(() => {
+    const onWindowKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== "Escape") return
       event.preventDefault()
-      event.stopPropagation()
-      onCancel()
-      return
+      event.stopImmediatePropagation()
+      onCancelRef.current()
     }
+    window.addEventListener("keydown", onWindowKeyDown, true)
+    return () => window.removeEventListener("keydown", onWindowKeyDown, true)
+  }, [])
+
+  function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     if (event.key !== "Tab") return
     const focusable = cardRef.current?.querySelectorAll<HTMLElement>(
       'button:not([disabled]), [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
@@ -93,7 +100,8 @@ function ConfirmDialog({
   // Portalled to body so a masked/overflow-hidden panel cannot clip the dialog.
   return createPortal(
     <div
-      className="noa-confirm-scrim fixed inset-0 z-50 flex items-center justify-center p-4"
+      data-confirm-dialog="true"
+      className="noa-confirm-scrim fixed inset-0 z-[70] flex items-center justify-center p-4"
       onClick={(event) => {
         if (event.target === event.currentTarget) onCancel()
       }}

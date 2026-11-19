@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ComponentType, type KeyboardEvent, type ReactNode } from "react"
 import { createPortal } from "react-dom"
-import { Check, ChevronRight } from "../lib/icons"
+import { Check, ChevronRight, Search, X } from "../lib/icons"
 
 // The sidebar and composer dropdown: optional leading icons, section headings,
 // a trailing check for the chosen option, and submenus that open beside their row.
@@ -9,6 +9,8 @@ type PopupMenuEntry =
       kind?: "item"
       key?: string
       label: ReactNode
+      leading?: ReactNode
+      searchText?: string
       icon?: ComponentType<{ size?: number; className?: string }>
       checked?: boolean
       disabled?: boolean
@@ -34,6 +36,8 @@ export function PopupMenu({
   trigger,
   scrollable,
   minWidth,
+  searchable,
+  searchPlaceholder,
 }: {
   anchor: PopupMenuAnchor
   entries: PopupMenuEntry[]
@@ -43,12 +47,27 @@ export function PopupMenu({
   trigger?: Element | null
   scrollable?: boolean
   minWidth?: number
+  searchable?: boolean
+  searchPlaceholder?: string
 }) {
   const root = useRef<HTMLDivElement>(null)
-  const [position, setPosition] = useState({ left: anchor.left, top: anchor.top })
+  const searchInputRef = useRef<HTMLInputElement>(null)
+  const [position, setPosition] = useState<{ left: number; top?: number; bottom?: number }>({ left: anchor.left, top: anchor.top })
   const [open, setOpen] = useState<number>()
+  const [query, setQuery] = useState("")
+  const queryRef = useRef("")
+  queryRef.current = query
   const closeRef = useRef(onClose)
   closeRef.current = onClose
+
+  const normalizedQuery = query.trim().toLowerCase()
+  const filteredEntries = searchable && normalizedQuery
+    ? entries.filter((entry) => {
+        if (entry.kind === "separator" || entry.kind === "heading") return false
+        const haystack = (entry.searchText ?? (typeof entry.label === "string" ? entry.label : "")).toLowerCase()
+        return haystack.includes(normalizedQuery)
+      })
+    : entries
 
   // Below the trigger when it fits, otherwise above it; never past the window's edges.
   useLayoutEffect(() => {
@@ -56,14 +75,17 @@ export function PopupMenu({
     if (!menu) return
     const { width, height } = menu.getBoundingClientRect()
     const below = anchor.top + height <= window.innerHeight - 8
-    setPosition({
-      left: Math.max(8, Math.min(anchor.left, window.innerWidth - width - 8)),
-      top: below ? anchor.top : Math.max(8, anchor.bottom - height),
-    })
+    const left = Math.max(8, Math.min(anchor.left, window.innerWidth - width - 8))
+    setPosition(
+      below
+        ? { left, top: anchor.top }
+        : { left, bottom: Math.max(8, window.innerHeight - anchor.bottom) },
+    )
     const checkedItem = menu.querySelector<HTMLElement>('[aria-checked="true"]')
-    if (scrollable && checkedItem) checkedItem.scrollIntoView({ block: "nearest" })
-    menu.querySelector<HTMLElement>('[role="menu"]')?.focus()
-  }, [anchor, scrollable])
+    if ((scrollable || searchable) && checkedItem) checkedItem.scrollIntoView({ block: "nearest" })
+    if (searchable) searchInputRef.current?.focus()
+    else menu.querySelector<HTMLElement>('[role="menu"]')?.focus()
+  }, [anchor, scrollable, searchable])
 
   useLayoutEffect(() => {
     const submenu = root.current?.querySelector<HTMLElement>(".is-submenu")
@@ -78,9 +100,14 @@ export function PopupMenu({
       if (!root.current?.contains(target) && !trigger?.contains(target)) closeRef.current()
     }
     const key = (event: globalThis.KeyboardEvent) => {
-      if (event.key !== "Escape") return
+      if (event.key !== "Escape" || event.isComposing || event.keyCode === 229) return
       event.preventDefault()
       event.stopPropagation()
+      if (searchable && queryRef.current) {
+        setQuery("")
+        searchInputRef.current?.focus()
+        return
+      }
       closeRef.current()
     }
     const close = () => closeRef.current()
@@ -94,10 +121,11 @@ export function PopupMenu({
       window.removeEventListener("blur", close)
       window.removeEventListener("resize", close)
     }
-  }, [trigger])
+  }, [trigger, searchable])
 
   const onKey = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return
+    if (searchable && document.activeElement === searchInputRef.current) return
     event.preventDefault()
     event.stopPropagation()
     const hasScrollContainer = !event.currentTarget.classList.contains("is-submenu") && !!event.currentTarget.querySelector(":scope > .noa-popup-menu-scroll")
@@ -106,6 +134,10 @@ export function PopupMenu({
       : ':scope > .noa-context-menu-entry > [role^="menuitem"]:not(:disabled)'
     const items = [...event.currentTarget.querySelectorAll<HTMLElement>(selector)]
     const index = items.indexOf(document.activeElement as HTMLElement)
+    if (searchable && event.key === "ArrowUp" && index === 0) {
+      searchInputRef.current?.focus()
+      return
+    }
     const step = event.key === "ArrowDown" ? 1 : items.length - 1
     items[index < 0 ? (event.key === "ArrowDown" ? 0 : items.length - 1) : (index + step) % items.length]?.focus()
   }
@@ -154,6 +186,7 @@ export function PopupMenu({
             }}
           >
             {Icon && <Icon size={16} className="noa-popup-menu-icon" />}
+            {entry.leading}
             <span className="noa-popup-menu-label">{entry.label}</span>
             {entry.checked && <Check size={14} className="noa-popup-menu-trailing" />}
             {hasSubmenu && <ChevronRight size={14} className="noa-popup-menu-trailing noa-popup-menu-chevron" />}
@@ -162,6 +195,8 @@ export function PopupMenu({
         </div>
       )
     })
+
+    const useScroll = !nested && (scrollable || searchable)
 
     return (
       <div
@@ -172,9 +207,57 @@ export function PopupMenu({
         className={`noa-context-menu noa-popup-menu noa-floating-panel${nested ? " is-submenu" : ""}`}
         onKeyDown={onKey}
       >
-        {!nested && scrollable ? (
-          <div className="noa-popup-menu-scroll">
-            {renderedItems}
+        {!nested && searchable && (
+          <div className="mb-1 flex items-center gap-1.5 border-b border-[var(--divider-subtle)] px-2 py-1.5">
+            <Search size={13} className="shrink-0 text-[var(--sidebar-text-muted)]" />
+            <input
+              ref={searchInputRef}
+              type="text"
+              value={query}
+              placeholder={searchPlaceholder ?? "Search…"}
+              aria-label={searchPlaceholder ?? "Search options"}
+              onChange={(event) => setQuery(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.nativeEvent.isComposing || event.keyCode === 229) return
+                if (event.key === "ArrowDown") {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  root.current?.querySelector<HTMLElement>('.noa-popup-menu-scroll > .noa-context-menu-entry > [role^="menuitem"]:not(:disabled)')?.focus()
+                } else if (event.key === "Enter") {
+                  const first = items.find(
+                    (entry): entry is Extract<PopupMenuEntry, { kind?: "item" }> =>
+                      entry.kind !== "separator" && entry.kind !== "heading" && !entry.disabled && !entry.submenu,
+                  )
+                  if (first) {
+                    event.preventDefault()
+                    event.stopPropagation()
+                    onClose()
+                    first.onSelect?.()
+                  }
+                }
+              }}
+              className="min-w-0 flex-1 bg-transparent text-caption text-[var(--text-primary)] outline-none placeholder:text-[var(--sidebar-text-muted)]"
+            />
+            {query && (
+              <button
+                type="button"
+                aria-label="Clear filter"
+                onClick={() => {
+                  setQuery("")
+                  searchInputRef.current?.focus()
+                }}
+                className="flex size-4 shrink-0 items-center justify-center rounded text-[var(--sidebar-text-muted)] hover:text-[var(--text-primary)]"
+              >
+                <X size={12} />
+              </button>
+            )}
+          </div>
+        )}
+        {useScroll ? (
+          <div className={`noa-popup-menu-scroll${searchable ? " is-searchable" : ""}`}>
+            {renderedItems.length ? renderedItems : (
+              <div className="px-2 py-2 text-caption text-[var(--sidebar-text-muted)]">No matches</div>
+            )}
           </div>
         ) : (
           renderedItems
@@ -185,7 +268,7 @@ export function PopupMenu({
 
   return createPortal(
     <div ref={root} className="noa-context-menu-root font-ui" style={position} onContextMenu={(event) => event.preventDefault()}>
-      {list(entries, false)}
+      {list(filteredEntries, false)}
     </div>,
     document.body,
   )

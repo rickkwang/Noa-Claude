@@ -2,15 +2,13 @@ import { useEffect, useRef, useState } from "react"
 import type { ControlRequest } from "../../agent/protocol"
 import { Edit2, Plus, Trash2, X } from "../../lib/icons"
 import { useConfirm } from "../ConfirmDialog"
-import { Row, Section, Select, actionButton } from "./controls"
+import { Row, Section, Select, actionButton, fieldInput, primaryButton } from "./controls"
 
 type Scope = "user" | "project" | "local"
 type Kind = "permissions" | "mcp"
 type Config = Record<string, any>
 type Snapshot = { value: Config; revision: string; path?: string }
 type ServerDraft = { name: string; original?: string; config: Config; args: string; env: string; headers: string }
-const field = "w-full min-w-0 rounded-lg border border-[var(--border-default)] bg-[var(--bg-card)] px-3 py-2 text-body outline-none focus:border-[var(--accent-color)] disabled:opacity-50"
-const primaryButton = `${actionButton} bg-[var(--text-primary)] text-[var(--bg-card)] hover:opacity-90`
 const scopeOptions: [string, string][] = [["local", "This project · private"], ["project", "This project · shared"], ["user", "All projects"]]
 const pairText = (pairs: Config | undefined) => Object.entries(pairs ?? {}).map(([key, value]) => `${key}=${value}`).join("\n")
 
@@ -72,6 +70,20 @@ export function ConfigurationEditor({ kind, disabled, request, onSaved, onDirtyC
   async function closeServer() {
     if (!pending && await mayDiscard()) { setServer(undefined); setError(undefined) }
   }
+  const closeServerRef = useRef(closeServer)
+  closeServerRef.current = closeServer
+  useEffect(() => {
+    if (!server) return
+    const onWindowKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented) return
+      if (document.querySelector('[data-confirm-dialog], .noa-context-menu-root')) return
+      event.preventDefault()
+      void closeServerRef.current()
+    }
+    window.addEventListener("keydown", onWindowKeyDown)
+    return () => window.removeEventListener("keydown", onWindowKeyDown)
+  }, [!!server])
+
   function editServer(name = "", config: Config = { type: "stdio", command: "", args: [] }) {
     setError(undefined)
     setServer({ name, original: name || undefined, config: structuredClone(config), args: (config.args ?? []).join("\n"), env: pairText(config.env), headers: pairText(config.headers) })
@@ -129,22 +141,54 @@ export function ConfigurationEditor({ kind, disabled, request, onSaved, onDirtyC
         <div className="flex flex-wrap items-center justify-between gap-2"><span className="text-body">Save to</span><Select label="Configuration scope" value={scope} options={scopeOptions} disabled={disabled || pending || !!server} onChange={async value => {
           if (await mayDiscard()) { setSnapshot(undefined); setScope(value as Scope); setNotice(undefined) }
         }} /></div>
-        <p className="text-caption text-[var(--text-secondary)]">{scope === "user" ? "Applies to all projects on this computer." : scope === "project" ? "Stored with this project and can be shared with your team." : "Applies only to this project on this computer."}</p>
-        {!snapshot && !error && <p role="status" className="text-caption text-[var(--text-secondary)]">Loading configuration…</p>}
+        <p className="m-0 text-caption text-[var(--sidebar-text-muted)]">{scope === "user" ? "Applies to all projects on this computer." : scope === "project" ? "Stored with this project and can be shared with your team." : "Applies only to this project on this computer."}</p>
+        {!snapshot && !error && <p role="status" className="m-0 text-caption text-[var(--sidebar-text-muted)]">Loading configuration…</p>}
         {snapshot && <fieldset disabled={disabled || pending} className="flex min-w-0 flex-col gap-3">
           {kind === "permissions" ? <>
-            <div className="grid gap-3 xl:grid-cols-3">{(["allow", "ask", "deny"] as const).map(key => <label key={key} className="flex min-w-0 flex-col gap-1.5 text-body"><span className="capitalize">{key}</span><textarea aria-label={`${key} rules`} value={rules[key]} rows={4} spellCheck={false} placeholder={key === "allow" ? "Bash(git status)\nRead" : key === "deny" ? "Read(.env)" : "Bash(git push:*)"} className={`${field} resize-y font-mono text-caption`} onChange={event => { setRules({ ...rules, [key]: event.target.value }); setNotice(undefined) }} /></label>)}</div>
-            <div className="flex flex-wrap items-center justify-between gap-3"><p className="text-caption text-[var(--text-secondary)]">One rule per line. Rules from other scopes remain in effect.</p><button type="button" disabled={!rulesDirty || pending} className={primaryButton} onClick={() => void save("save")}>{pending ? "Saving…" : "Save rules"}</button></div>
-            {snapshot.path && <details className="text-caption text-[var(--text-tertiary)]"><summary className="cursor-pointer">Configuration file</summary><p className="mt-1 break-all font-mono">{snapshot.path}</p></details>}
+            <div className="flex flex-col gap-3">
+              {(["allow", "ask", "deny"] as const).map(key => {
+                const count = rules[key].split("\n").map(line => line.trim()).filter(Boolean).length
+                return (
+                  <label key={key} className="flex min-w-0 flex-col gap-1.5 text-body">
+                    <span className="flex items-center gap-1.5 font-medium capitalize">
+                      <span>{key}</span>
+                      <span className="text-caption font-normal text-[var(--sidebar-text-muted)]">({count})</span>
+                    </span>
+                    <textarea
+                      aria-label={`${key} rules`}
+                      value={rules[key]}
+                      rows={3}
+                      spellCheck={false}
+                      placeholder={key === "allow" ? "Bash(git status)\nRead" : key === "deny" ? "Read(.env)" : "Bash(git push:*)"}
+                      className={`${fieldInput} resize-y py-2 font-mono text-caption`}
+                      onChange={event => { setRules({ ...rules, [key]: event.target.value }); setNotice(undefined) }}
+                    />
+                  </label>
+                )
+              })}
+            </div>
+            <div className="flex flex-wrap items-center justify-between gap-3"><p className="m-0 text-caption text-[var(--sidebar-text-muted)]">One rule per line. Rules from other scopes remain in effect.</p><button type="button" disabled={!rulesDirty || pending} className={primaryButton} onClick={() => void save("save")}>{pending ? "Saving…" : "Save rules"}</button></div>
+            {snapshot.path && <details className="text-caption text-[var(--sidebar-text-muted)]"><summary className="cursor-pointer">Configuration file</summary><p className="mt-1 break-all font-mono">{snapshot.path}</p></details>}
           </> : <>
-            {!Object.keys(snapshot.value).length && <p className="py-2 text-caption text-[var(--text-secondary)]">No custom servers in this scope.</p>}
-            {Object.entries(snapshot.value).map(([name, config]) => <div key={name} className="flex items-center gap-3 rounded-lg border border-[var(--border-default)] px-3 py-2"><div className="min-w-0 flex-1"><p className="truncate text-body font-medium">{name}</p><p className="truncate text-caption text-[var(--text-secondary)]">{config.type === "http" ? "HTTP" : config.type === "sse" ? "SSE" : "Local command"}{config.command ? ` · ${config.command}` : ""}</p></div><button type="button" aria-label={`Edit ${name}`} title={`Edit ${name}`} className="flex size-7 items-center justify-center rounded-md hover:bg-[var(--settings-fill-hover)]" onClick={() => editServer(name, config)}><Edit2 size={14} /></button><button type="button" aria-label={`Remove ${name}`} title={`Remove ${name}`} className="flex size-7 items-center justify-center rounded-md text-[var(--text-secondary)] hover:bg-[var(--settings-fill-hover)] hover:text-[var(--text-danger)]" onClick={() => void save("remove", name)}><Trash2 size={14} /></button></div>)}
-            <button type="button" className={`${actionButton} inline-flex items-center gap-1.5 self-start`} onClick={() => editServer()}><Plus size={14} />Add server</button>
+            {!Object.keys(snapshot.value).length && <p className="m-0 py-2 text-caption text-[var(--sidebar-text-muted)]">No custom servers in this scope.</p>}
+            {Object.entries(snapshot.value).map(([name, config]) => (
+              <div key={name} className="flex items-center gap-3 rounded-lg border border-[var(--border-default)] px-3 py-2">
+                <div className="min-w-0 flex-1">
+                  <p className="m-0 truncate text-body font-medium">{name}</p>
+                  <p className="m-0 truncate text-caption text-[var(--sidebar-text-muted)]">
+                    {config.type === "http" ? "HTTP" : config.type === "sse" ? "SSE" : "Local command"}{config.command ? ` · ${config.command}` : ""}
+                  </p>
+                </div>
+                <button type="button" aria-label={`Edit ${name}`} title={`Edit ${name}`} className="flex size-7 items-center justify-center rounded-md text-[var(--sidebar-text-muted)] hover:bg-[var(--settings-fill-hover)] hover:text-[var(--text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-color)]/35" onClick={() => editServer(name, config)}><Edit2 size={14} /></button>
+                <button type="button" aria-label={`Remove ${name}`} title={`Remove ${name}`} className="flex size-7 items-center justify-center rounded-md text-[var(--sidebar-text-muted)] hover:bg-[var(--settings-fill-hover)] hover:text-[var(--text-danger)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--text-danger)]/35" onClick={() => void save("remove", name)}><Trash2 size={14} /></button>
+              </div>
+            ))}
+            <button type="button" className={`${actionButton} self-start`} onClick={() => editServer()}><Plus size={14} />Add server</button>
           </>}
         </fieldset>}
         {!server && fieldError}
         {error && !server && <button type="button" disabled={pending || disabled} className={`${actionButton} self-start`} onClick={async () => { if (await mayDiscard()) { setError(undefined); setSnapshot(undefined) } }}>Reload configuration</button>}
-        {notice && <div role="status" className="flex flex-wrap items-center justify-between gap-2 text-caption text-[var(--text-secondary)]"><span>{notice}</span>{kind === "mcp" && <button type="button" className={actionButton} disabled={disabled || pending} onClick={() => void reconnect()}>{pending ? "Reconnecting…" : "Reconnect chat"}</button>}</div>}
+        {notice && <div role="status" className="flex flex-wrap items-center justify-between gap-2 text-caption text-[var(--sidebar-text-muted)]"><span>{notice}</span>{kind === "mcp" && <button type="button" className={actionButton} disabled={disabled || pending} onClick={() => void reconnect()}>{pending ? "Reconnecting…" : "Reconnect chat"}</button>}</div>}
       </div>}
     </Section>
     {server && <div data-config-server className="noa-confirm-scrim fixed inset-0 z-[60] flex items-center justify-center p-4" onClick={event => { if (event.target === event.currentTarget) void closeServer() }} onKeyDown={event => {
@@ -157,17 +201,17 @@ export function ConfigurationEditor({ kind, disabled, request, onSaved, onDirtyC
       }
     }}>
       <div ref={serverPanel} role="dialog" aria-modal="true" aria-label={server.original ? `Edit ${server.name}` : "Add MCP server"} className="noa-confirm-dialog flex max-h-[calc(100vh-32px)] w-full max-w-[520px] flex-col rounded-2xl bg-[var(--bg-card)] font-ui">
-        <header className="flex items-start justify-between gap-4 border-b border-[var(--divider-subtle)] p-5"><div><h2 className="text-body font-medium">{server.original ? "Edit MCP server" : "Add MCP server"}</h2><p className="mt-1 text-caption text-[var(--text-secondary)]">{scopeOptions.find(([value]) => value === scope)?.[1]}</p></div><button type="button" aria-label="Close server editor" disabled={pending} className="flex size-6 items-center justify-center rounded-md hover:bg-[var(--fill-hover)]" onClick={() => void closeServer()}><X size={14} /></button></header>
+        <header className="flex items-start justify-between gap-4 border-b border-[var(--divider-subtle)] p-5"><div><h2 className="m-0 text-body font-medium">{server.original ? "Edit MCP server" : "Add MCP server"}</h2><p className="m-0 mt-1 text-caption text-[var(--sidebar-text-muted)]">{scopeOptions.find(([value]) => value === scope)?.[1]}</p></div><button type="button" aria-label="Close server editor" disabled={pending} className="flex size-6 items-center justify-center rounded-md hover:bg-[var(--fill-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-color)]/35" onClick={() => void closeServer()}><X size={14} /></button></header>
         <fieldset disabled={disabled || pending} className="flex min-h-0 flex-col gap-3 overflow-y-auto p-5">
-          <label className="flex flex-col gap-1.5 text-body">Server name<input autoComplete="off" aria-label="Server name" value={server.name} disabled={!!server.original} className={field} onChange={event => setServer({ ...server, name: event.target.value })} /></label>
+          <label className="flex flex-col gap-1.5 text-body">Server name<input autoComplete="off" aria-label="Server name" value={server.name} disabled={!!server.original} className={`${fieldInput} h-8`} onChange={event => setServer({ ...server, name: event.target.value })} /></label>
           <div className="flex items-center justify-between gap-2 text-body"><span>Transport</span><Select label="Server transport" value={server.config.type ?? "stdio"} options={[["stdio", "Local command"], ["http", "HTTP"], ["sse", "SSE"]]} onChange={type => configField("type", type)} /></div>
           {(!server.config.type || server.config.type === "stdio") ? <>
-            <label className="flex flex-col gap-1.5 text-body">Command<input aria-label="Server command" value={server.config.command ?? ""} className={field} spellCheck={false} onChange={event => configField("command", event.target.value)} placeholder="npx" /></label>
-            <label className="flex flex-col gap-1.5 text-body">Arguments<textarea aria-label="Server arguments" value={server.args} rows={2} className={`${field} resize-y font-mono text-caption`} onChange={event => setServer({ ...server, args: event.target.value })} placeholder="One argument per line" /></label>
-            <label className="flex flex-col gap-1.5 text-body">Environment variables<textarea aria-label="Server environment" value={server.env} rows={2} spellCheck={false} className={`${field} resize-y font-mono text-caption`} onChange={event => setServer({ ...server, env: event.target.value })} placeholder="KEY=value, one per line" /></label>
+            <label className="flex flex-col gap-1.5 text-body">Command<input aria-label="Server command" value={server.config.command ?? ""} className={`${fieldInput} h-8`} spellCheck={false} onChange={event => configField("command", event.target.value)} placeholder="npx" /></label>
+            <label className="flex flex-col gap-1.5 text-body">Arguments<textarea aria-label="Server arguments" value={server.args} rows={2} className={`${fieldInput} resize-y py-2 font-mono text-caption`} onChange={event => setServer({ ...server, args: event.target.value })} placeholder="One argument per line" /></label>
+            <label className="flex flex-col gap-1.5 text-body">Environment variables<textarea aria-label="Server environment" value={server.env} rows={2} spellCheck={false} className={`${fieldInput} resize-y py-2 font-mono text-caption`} onChange={event => setServer({ ...server, env: event.target.value })} placeholder="KEY=value, one per line" /></label>
           </> : <>
-            <label className="flex flex-col gap-1.5 text-body">Server URL<input aria-label="Server URL" value={server.config.url ?? ""} className={field} spellCheck={false} onChange={event => configField("url", event.target.value)} placeholder="https://example.com/mcp" /></label>
-            <label className="flex flex-col gap-1.5 text-body">Headers<textarea aria-label="Server headers" value={server.headers} rows={3} spellCheck={false} className={`${field} resize-y font-mono text-caption`} onChange={event => setServer({ ...server, headers: event.target.value })} placeholder="KEY=value, one per line" /></label>
+            <label className="flex flex-col gap-1.5 text-body">Server URL<input aria-label="Server URL" value={server.config.url ?? ""} className={`${fieldInput} h-8`} spellCheck={false} onChange={event => configField("url", event.target.value)} placeholder="https://example.com/mcp" /></label>
+            <label className="flex flex-col gap-1.5 text-body">Headers<textarea aria-label="Server headers" value={server.headers} rows={3} spellCheck={false} className={`${fieldInput} resize-y py-2 font-mono text-caption`} onChange={event => setServer({ ...server, headers: event.target.value })} placeholder="KEY=value, one per line" /></label>
           </>}
           {fieldError}
         </fieldset>

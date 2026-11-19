@@ -77,6 +77,29 @@ export const ExternalLink = glyph("open-link");
 export const Globe = vectorIcon("globe");
 export const ArrowUpRight = glyph("arrow-up-right-md");
 export const Eye = glyph("eye");
+export function EyeOff({ size = 16, className, style }: IconProps) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width={size}
+      height={size}
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.3}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      style={style}
+      aria-hidden="true"
+    >
+      <path d="M6.59 6.59a2 2 0 0 0 2.82 2.82" />
+      <path d="M10.73 10.73A6.8 6.8 0 0 1 8 11.33C4.8 11.33 2.4 8.9 1.33 8a11.3 11.3 0 0 1 2.75-2.88" />
+      <path d="M6.4 4.82A6.5 6.5 0 0 1 8 4.67c3.2 0 5.6 2.43 6.67 3.33-.44.38-1.15 1.07-2.06 1.72" />
+      <path d="M2 2l12 12" />
+    </svg>
+  );
+}
 export const FileText = glyph("document-text");
 export const FileTypescript = glyph("file-ts");
 export const FileReact = glyph("file-react");
@@ -96,6 +119,7 @@ export const FolderPlus = glyph("folder-badge-plus");
 export const GitBranch = glyph("branch");
 export const Tag = glyph("tag");
 export const Code = glyph("code");
+export const Cloud = glyph("cloud");
 export const Terminal = glyph("terminal");
 export const Tool = glyph("wrench");
 // The note rail toggle: a stack of cards, since the rail holds more than the calendar.
