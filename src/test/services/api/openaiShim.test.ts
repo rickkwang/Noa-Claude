@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { APIUserAbortError } from '@anthropic-ai/sdk'
+import { getAttributionHeader } from '../../../constants/system.js'
+import { getAnthropicClient } from '../../../services/api/client.js'
 import { createOpenAIShimClient } from '../../../services/api/openaiShim.js'
 import { PROVIDER_EFFORT_LEVELS_ENV_KEY } from '../../../utils/model/providerModels.js'
 
@@ -993,5 +995,124 @@ describe('openaiShim user abort', () => {
     expect(events.some(e => e.type === 'content_block_delta')).toBe(true)
     // Incomplete, so no message_stop either.
     expect(events.some(e => e.type === 'message_stop')).toBe(false)
+  })
+})
+
+describe('openaiShim billing header and client header isolation', () => {
+  const HEADER_ENV_KEYS = [
+    'CLAUDE_CODE_USE_OPENAI',
+    'CLAUDE_CODE_USE_BEDROCK',
+    'CLAUDE_CODE_USE_VERTEX',
+    'CLAUDE_CODE_USE_FOUNDRY',
+    'NOA_CLAUDE_OPENAI_AUTH',
+    'OPENAI_API_KEY',
+    'OPENAI_BASE_URL',
+    'CLAUDE_CODE_ATTRIBUTION_HEADER',
+    'CLAUDE_CODE_ADDITIONAL_PROTECTION',
+    'CLAUDE_CODE_CONTAINER_ID',
+    'CLAUDE_CODE_REMOTE_SESSION_ID',
+    'CLAUDE_AGENT_SDK_CLIENT_APP',
+  ] as const
+
+  let savedEnv: Record<string, string | undefined> = {}
+
+  beforeEach(() => {
+    savedEnv = Object.fromEntries(HEADER_ENV_KEYS.map(k => [k, process.env[k]]))
+  })
+
+  afterEach(() => {
+    for (const k of HEADER_ENV_KEYS) {
+      if (savedEnv[k] === undefined) delete process.env[k]
+      else process.env[k] = savedEnv[k]
+    }
+  })
+
+  test('strips x-anthropic-billing-header blocks on /chat/completions and /responses', async () => {
+    const { client, captured } = captureClient()
+    await client.messages.create({
+      model: 'gpt-4o',
+      system: [
+        { type: 'text', text: 'x-anthropic-billing-header: cc_version=2.1.290.abc; cc_entrypoint=cli;' },
+        { type: 'text', text: 'You are helpful.' },
+      ],
+      messages: [{ role: 'user', content: 'hi' }],
+    })
+    const chatMessages = captured[0]?.body.messages as Array<{ role: string; content: string }>
+    expect(chatMessages[0]).toEqual({ role: 'system', content: 'You are helpful.' })
+
+    const responsesCaptured: CapturedRequest[] = []
+    const responsesClient = createOpenAIShimClient({
+      apiKey: 'test-key',
+      baseURL: 'https://api.example.test/v1',
+      defaultHeaders: {},
+      timeoutMs: 1000,
+      responsesApi: true,
+      fetchOverride: (async (url: string, init: RequestInit) => {
+        responsesCaptured.push({
+          url: typeof url === 'string' ? url : String(url),
+          body: JSON.parse(String(init.body ?? '{}')),
+        })
+        return new Response(
+          `data: ${JSON.stringify({ type: 'response.completed', response: { usage: { input_tokens: 1, output_tokens: 1 } } })}\n\n`,
+          { status: 200, headers: { 'content-type': 'text/event-stream' } },
+        )
+      }) as unknown as typeof fetch,
+    })
+    await responsesClient.messages.create({
+      model: 'gpt-5',
+      system: [
+        { type: 'text', text: 'x-anthropic-billing-header: cc_version=2.1.290.abc; cc_entrypoint=cli;' },
+        { type: 'text', text: 'Follow repo conventions.' },
+      ],
+      messages: [{ role: 'user', content: 'hi' }],
+    })
+    expect(responsesCaptured[0]?.body.instructions).toBe('Follow repo conventions.')
+  })
+
+  test('omits attribution header and CC client headers when CLAUDE_CODE_USE_OPENAI is set', async () => {
+    delete process.env.CLAUDE_CODE_USE_BEDROCK
+    delete process.env.CLAUDE_CODE_USE_VERTEX
+    delete process.env.CLAUDE_CODE_USE_FOUNDRY
+    delete process.env.NOA_CLAUDE_OPENAI_AUTH
+    process.env.CLAUDE_CODE_USE_OPENAI = '1'
+    process.env.OPENAI_API_KEY = 'test-key'
+    process.env.OPENAI_BASE_URL = 'https://api.example.test/v1'
+    process.env.CLAUDE_CODE_ATTRIBUTION_HEADER = '1'
+    process.env.CLAUDE_CODE_ADDITIONAL_PROTECTION = '1'
+    process.env.CLAUDE_CODE_CONTAINER_ID = 'ctr_123'
+    process.env.CLAUDE_CODE_REMOTE_SESSION_ID = 'rsess_123'
+    process.env.CLAUDE_AGENT_SDK_CLIENT_APP = 'my-app/1.0'
+
+    expect(getAttributionHeader('abc')).toBe('')
+
+    let observedHeaders: Headers | undefined
+    const fetchOverride = (async (_url: string, init: RequestInit) => {
+      observedHeaders = new Headers(init.headers)
+      return new Response(
+        JSON.stringify({
+          id: 'cmpl_test',
+          model: 'test-model',
+          choices: [{ message: { role: 'assistant', content: 'ok' }, finish_reason: 'stop' }],
+          usage: { prompt_tokens: 1, completion_tokens: 1 },
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      )
+    }) as unknown as typeof fetch
+
+    const client = await getAnthropicClient({ maxRetries: 0, fetchOverride })
+    await client.messages.create({
+      model: 'gpt-4o',
+      max_tokens: 10,
+      messages: [{ role: 'user', content: 'hi' }],
+    })
+
+    expect(observedHeaders?.get('user-agent')).toMatch(/^Noa-Claude\//)
+    expect(observedHeaders?.get('user-agent')).not.toContain('claude-cli/')
+    expect(observedHeaders?.get('x-app')).toBeNull()
+    expect(observedHeaders?.get('x-claude-code-session-id')).toBeNull()
+    expect(observedHeaders?.get('x-anthropic-additional-protection')).toBeNull()
+    expect(observedHeaders?.get('x-claude-remote-container-id')).toBeNull()
+    expect(observedHeaders?.get('x-claude-remote-session-id')).toBeNull()
+    expect(observedHeaders?.get('x-client-app')).toBeNull()
   })
 })

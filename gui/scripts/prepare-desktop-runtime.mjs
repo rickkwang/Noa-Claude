@@ -55,10 +55,10 @@ for (const file of readdirSync(join(repo, "dist")).filter((name) => name === "ma
 const install = spawnSync(bunPath(), ["install", "--production", "--frozen-lockfile", "--ignore-scripts"], { cwd: runtimeRepo, stdio: "inherit" })
 if (install.status !== 0) fail("production install of the repo runtime failed")
 
-// Packages dist/main.js imports at run time instead of bundling: the build's externals (native
-// modules). ws and node-fetch are built into Bun, and sharp falls back to macOS `sips` in
-// imageProcessor.ts. Everything else in node_modules is removed.
-const RUNTIME_PACKAGES = ["audio-capture-napi", "modifiers-napi", "url-handler-napi"]
+// Packages dist/main.js imports at run time instead of bundling: build.ts's only remaining external
+// (`sharp`) falls back to macOS `sips` in imageProcessor.ts, so no external runtime packages need
+// to be kept in node_modules besides the sandbox manifest below.
+const RUNTIME_PACKAGES = []
 // The bundle replaces sandbox-runtime with a stub and only reads its package.json for the version
 // that diagnostics report, so keep that one file.
 const SANDBOX_MANIFEST = join(runtimeRepo, "node_modules", "@anthropic-ai", "sandbox-runtime", "package.json")

@@ -65,6 +65,14 @@ export function getWebFetchUserAgent(): string {
   return `Noa-Claude/${MACRO.VERSION} (+${PRODUCT_URL})`
 }
 
+export function getNoaUserAgent(): string {
+  try {
+    return `Noa-Claude/${MACRO.VERSION}`
+  } catch {
+    return 'Noa-Claude/0.0.0'
+  }
+}
+
 export type AuthHeaders = {
   headers: Record<string, string>
   error?: string

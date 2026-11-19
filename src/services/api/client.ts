@@ -11,7 +11,7 @@ import {
   refreshAndGetAwsCredentials,
   refreshGcpCredentialsIfNeeded,
 } from 'src/utils/auth.js'
-import { getUserAgent } from 'src/utils/http.js'
+import { getNoaUserAgent, getUserAgent } from 'src/utils/http.js'
 import { getSmallFastModel } from 'src/utils/model/model.js'
 import {
   getAPIProvider,
@@ -154,22 +154,28 @@ export async function getAnthropicClient({
   fetchOverride?: ClientOptions['fetch']
   source?: string
 }): Promise<Anthropic> {
+  const openAICompatible = getAPIProvider() === 'openaiCompatible'
   const containerId = process.env.CLAUDE_CODE_CONTAINER_ID
   const remoteSessionId = process.env.CLAUDE_CODE_REMOTE_SESSION_ID
   const clientApp = process.env.CLAUDE_AGENT_SDK_CLIENT_APP
   const customHeaders = getCustomHeaders()
-  const defaultHeaders: { [key: string]: string } = {
-    'x-app': 'cli',
-    'User-Agent': getUserAgent(),
-    'X-Claude-Code-Session-Id': getSessionId(),
-    ...customHeaders,
-    ...(containerId ? { 'x-claude-remote-container-id': containerId } : {}),
-    ...(remoteSessionId
-      ? { 'x-claude-remote-session-id': remoteSessionId }
-      : {}),
-    // SDK consumers can identify their app/library for backend analytics
-    ...(clientApp ? { 'x-client-app': clientApp } : {}),
-  }
+  const defaultHeaders: { [key: string]: string } = openAICompatible
+    ? {
+        'User-Agent': getNoaUserAgent(),
+        ...customHeaders,
+      }
+    : {
+        'x-app': 'cli',
+        'User-Agent': getUserAgent(),
+        'X-Claude-Code-Session-Id': getSessionId(),
+        ...customHeaders,
+        ...(containerId ? { 'x-claude-remote-container-id': containerId } : {}),
+        ...(remoteSessionId
+          ? { 'x-claude-remote-session-id': remoteSessionId }
+          : {}),
+        // SDK consumers can identify their app/library for backend analytics
+        ...(clientApp ? { 'x-client-app': clientApp } : {}),
+      }
 
   // Log API client configuration for HFI debugging
   logForDebugging(
@@ -180,7 +186,7 @@ export async function getAnthropicClient({
   const additionalProtectionEnabled = isEnvTruthy(
     process.env.CLAUDE_CODE_ADDITIONAL_PROTECTION,
   )
-  if (additionalProtectionEnabled) {
+  if (!openAICompatible && additionalProtectionEnabled) {
     defaultHeaders['x-anthropic-additional-protection'] = 'true'
   }
 
@@ -190,7 +196,6 @@ export async function getAnthropicClient({
   // OAuth token. Running either step here would refresh a token this request
   // cannot use and copy an Anthropic Bearer into defaultHeadersForShim, which
   // the shim keeps whenever it has no key of its own (local endpoints).
-  const openAICompatible = getAPIProvider() === 'openaiCompatible'
 
   if (!thirdPartyAnthropicCompatible && !openAICompatible) {
     logForDebugging('[API:auth] OAuth token check starting')

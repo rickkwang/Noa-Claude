@@ -40,10 +40,4 @@ export function initBundledSkills(): void {
     /* eslint-enable @typescript-eslint/no-require-imports */
     registerLoopSkill()
   }
-  {
-    /* eslint-disable @typescript-eslint/no-require-imports */
-    const { registerScheduleRemoteAgentsSkill } = require('./scheduleRemoteAgents.js')
-    /* eslint-enable @typescript-eslint/no-require-imports */
-    registerScheduleRemoteAgentsSkill()
-  }
 }

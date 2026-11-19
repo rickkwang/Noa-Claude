@@ -134,9 +134,9 @@ export function normalizeLanguageForSTT(language: string | undefined): {
   return { code: DEFAULT_STT_LANGUAGE, fellBackFrom: language }
 }
 
-// Lazy-loaded voice module. We defer importing voice.ts (and its native
-// audio-capture-napi dependency) until voice input is actually activated.
-// On macOS, loading the native audio module can trigger a TCC microphone
+// Lazy-loaded voice module. We defer importing voice.ts until voice input is
+// actually activated.
+// On macOS, loading a native audio module can trigger a TCC microphone
 // permission prompt — we must avoid that until voice input is actually enabled.
 type VoiceModule = typeof import('../services/voice.js')
 let voiceModule: VoiceModule | null = null

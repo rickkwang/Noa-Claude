@@ -31,8 +31,8 @@ const dev = args.includes('--dev')
 // AUTO_MODE flag (below), which ships enabled in the baseline build so shift+tab
 // reaches auto mode. TRANSCRIPT_CLASSIFIER no longer gates anything.
 //
-// VOICE_MODE builds, but is omitted from both lists: its recorder
-// (audio-capture-napi) is an empty npm placeholder, so /voice throws, and its
+// VOICE_MODE builds, but is omitted from both lists: no native audio capture
+// recorder is shipped in this build, so /voice throws, and its
 // STT endpoint needs claude.ai OAuth. Its branches stay in source, inert.
 //
 // The remaining never-buildable flags (BG_SESSIONS, DIRECT_CONNECT,
@@ -261,9 +261,6 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const) {
 }
 
 const externals = [
-  'audio-capture-napi',
-  'modifiers-napi',
-  'url-handler-napi',
   'sharp',
 ]
 
@@ -304,7 +301,6 @@ if (features.length > 0) {
 // ── Bun plugin: stub missing optional modules ───────────────────────────────
 const reactPackageRoots = {
   react: realpathSync(resolve('./node_modules/react')),
-  reactDom: realpathSync(resolve('./node_modules/react-dom')),
   reactReconciler: realpathSync(resolve('./node_modules/react-reconciler')),
 }
 
@@ -327,14 +323,6 @@ function resolveReactAlias(specifier: string): string | null {
       join(reactPackageRoots.react, specifier.slice('react/'.length)),
     )
   }
-  if (specifier === 'react-dom') {
-    return join(reactPackageRoots.reactDom, 'index.js')
-  }
-  if (specifier.startsWith('react-dom/')) {
-    return resolveExistingFile(
-      join(reactPackageRoots.reactDom, specifier.slice('react-dom/'.length)),
-    )
-  }
   if (specifier === 'react-reconciler') {
     return join(reactPackageRoots.reactReconciler, 'index.js')
   }
@@ -353,7 +341,7 @@ const dedupeReactPlugin: BunPlugin = {
   name: 'dedupe-react-runtime',
   setup(build) {
     build.onResolve(
-      { filter: /^(react|react-dom|react-reconciler)(\/.*)?$/ },
+      { filter: /^(react|react-reconciler)(\/.*)?$/ },
       args => {
         const aliasedPath = resolveReactAlias(args.path)
         if (!aliasedPath) {
@@ -415,16 +403,6 @@ for (const [key, value] of Object.entries(defines)) {
   defineEntries[key] = value
 }
 
-// USER_TYPE is defined to "external", which leaves these comparisons in the
-// output as string-literal tests; they are rewritten after bundling.
-function patchUserType(content: string): string {
-  return content
-    .replace(/"external"\s*===\s*'ant'/g, 'true')
-    .replace(/'external'\s*===\s*"ant"/g, 'true')
-    .replace(/"external"\s*!==\s*'ant'/g, 'false')
-    .replace(/'external'\s*!==\s*"ant"/g, 'false')
-}
-
 const bundleOptions = {
   // The bootstrap, not main.tsx: its static import graph is empty, so the
   // bundler wraps everything behind it in lazy init functions and fast paths
@@ -477,18 +455,10 @@ try {
   chmodSync(expectedPath, 0o755)
   console.log(`Built ${outfile}`)
 
-  // Patch the bundled output before optional binary compilation.
+  // Append the launcher bootstrap before optional binary compilation.
   {
     const content = readFileSync(expectedPath, 'utf-8')
-    const patched = patchUserType(content)
-
-    if (patched === content) {
-      console.warn(
-        'Build patch: no USER_TYPE ant/external replacements found (may already be inlined by bundler)',
-      )
-    }
-
-    writeFileSync(expectedPath, patched + '\n' + getLauncherBootstrapCode())
+    writeFileSync(expectedPath, content + '\n' + getLauncherBootstrapCode())
     console.log(`Build complete: ${outfile}`)
   }
 
@@ -519,16 +489,10 @@ try {
     if (!splitEntry) {
       throw new Error('No split entry-point output found')
     }
-    for (const output of splitResult.outputs) {
-      if (!output.path.endsWith('.js')) continue
-      const patched = patchUserType(readFileSync(output.path, 'utf-8'))
-      writeFileSync(
-        output.path,
-        output === splitEntry
-          ? patched + '\n' + getLauncherBootstrapCode()
-          : patched,
-      )
-    }
+    writeFileSync(
+      splitEntry.path,
+      readFileSync(splitEntry.path, 'utf-8') + '\n' + getLauncherBootstrapCode(),
+    )
     compileSource = splitEntry.path
   }
 
@@ -538,8 +502,8 @@ try {
   // nothing measurable — the win is in the identifier table.
   //
   // It runs as a second pass rather than `minify: true` on the build above
-  // because the minifier would constant-fold `"external" === 'ant'` to false
-  // before the USER_TYPE patch could rewrite those comparisons to true.
+  // because getLauncherBootstrapCode() is appended after Pass 1 and calls bare
+  // `bootstrapCli()`, which minifying Pass 1 would rename before attachment.
   //
   // Dev builds stay unminified so stack traces keep their real names.
   if (!dev) {

@@ -124,12 +124,17 @@ function mapAnthropicEffortToOpenAI(
 
 function convertSystemPrompt(system: unknown): string {
   if (!system) return ''
-  if (typeof system === 'string') return system
+  if (typeof system === 'string') {
+    return system.startsWith('x-anthropic-billing-header:') ? '' : system
+  }
   if (Array.isArray(system)) {
     return system
-      .map((block: { type?: string; text?: string }) =>
-        block.type === 'text' ? block.text ?? '' : '',
-      )
+      .map((block: { type?: string; text?: string }) => {
+        if (block.type !== 'text') return ''
+        const text = block.text ?? ''
+        return text.startsWith('x-anthropic-billing-header:') ? '' : text
+      })
+      .filter(Boolean)
       .join('\n\n')
   }
   return String(system)

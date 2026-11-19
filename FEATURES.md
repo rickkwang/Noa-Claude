@@ -196,11 +196,11 @@ to a build profile fails at bundle resolve time (see the omission note above
   false; its branches are deeply woven into resume/session hot paths and are
   retained rather than excised.
 
-`VOICE_MODE` builds, but is off in every profile, including dev-full: its
-native recorder (`audio-capture-napi`) is an empty npm placeholder, so `/voice`
-throws, and the `voice_stream` STT endpoint needs claude.ai OAuth. Its branches
-stay in source, inert; re-add the flag to `build.ts` once a working recorder
-and STT path exist.
+`VOICE_MODE` builds, but is off in every profile, including dev-full: no
+native audio recorder is shipped in this build, so `/voice` throws, and the
+`voice_stream` STT endpoint needs claude.ai OAuth. Its branches stay in
+source, inert; re-add the flag to `build.ts` once a working recorder and STT
+path exist.
 
 Build-scope exclusions:
 
