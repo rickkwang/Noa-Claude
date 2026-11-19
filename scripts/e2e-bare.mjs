@@ -134,9 +134,15 @@ function check(name, { dir, exit, result }) {
   const { body } = active.requests[0];
   const chars = JSON.stringify(body).length;
   assert.ok(chars <= MAX_BODY_CHARS || name === 'add-dir', `first request is ${chars} chars, over ${MAX_BODY_CHARS}`);
-  // system[0] is the billing line, system[1] the identity prefix.
-  assert.equal(body.system.length, 3);
-  assert.match(body.system[2].text, /^CWD: .+\nDate: \d{4}-\d{2}-\d{2}$/, 'system prompt carries more than CWD and Date');
+  const direct = scenarios[name].route === 'direct';
+  assert.equal(body.system.length, direct ? 3 : 2);
+  if (direct) {
+    assert.match(body.system[0].text, /^x-anthropic-billing-header:/);
+  } else {
+    assert.ok(body.system.every(block => !block.text.startsWith('x-anthropic-billing-header:')), 'billing attribution leaked to the custom endpoint');
+    assert.ok(!('metadata' in body), 'request metadata leaked to the custom endpoint');
+  }
+  assert.match(body.system.at(-1).text, /^CWD: .+\nDate: \d{4}-\d{2}-\d{2}$/, 'system prompt carries more than CWD and Date');
   assert.deepEqual(Object.fromEntries(body.tools.map(t => [t.name, t.description])), TOOL_DESCRIPTIONS);
   const bash = body.tools.find(t => t.name === 'Bash');
   assert.ok(!('run_in_background' in bash.input_schema.properties), 'bare Bash schema offers run_in_background');
