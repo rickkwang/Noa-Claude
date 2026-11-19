@@ -26,6 +26,7 @@ import {
   getAPIProvider,
   isDirectFirstParty,
   isFirstPartyAnthropicBaseUrl,
+  isThirdPartyModelProvider,
 } from 'src/utils/model/providers.js'
 import {
   getAttributionHeader,
@@ -589,6 +590,14 @@ export function getAPIMetadata() {
         { level: 'error' },
       )
     }
+  }
+
+  // Non-Anthropic endpoints get only what the user opted into: the install's
+  // device ID and session ID would let them link sessions across machines.
+  if (isThirdPartyModelProvider()) {
+    return Object.keys(extra).length > 0
+      ? { user_id: jsonStringify(extra) }
+      : undefined
   }
 
   return {

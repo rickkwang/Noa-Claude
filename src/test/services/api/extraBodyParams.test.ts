@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import { getExtraBodyParams } from '../../../services/api/claude.js'
+import {
+  getAPIMetadata,
+  getExtraBodyParams,
+} from '../../../services/api/claude.js'
 
 const originalExtraBody = process.env.CLAUDE_CODE_EXTRA_BODY
 
@@ -52,5 +55,35 @@ describe('store is not sent on the Anthropic transport', () => {
         else process.env.ANTHROPIC_BASE_URL = previousBaseUrl
       }
     }
+  })
+})
+
+describe('getAPIMetadata on third-party endpoints', () => {
+  const keys = [
+    'ANTHROPIC_BASE_URL',
+    'CLAUDE_CODE_EXTRA_METADATA',
+    'CLAUDE_CODE_USE_OPENAI',
+    'ANTHROPIC_API_KEY',
+  ] as const
+  const saved = Object.fromEntries(keys.map(k => [k, process.env[k]]))
+  afterEach(() => {
+    for (const k of keys) {
+      if (saved[k] === undefined) delete process.env[k]
+      else process.env[k] = saved[k]
+    }
+  })
+
+  test('sends device and session IDs only to Anthropic', () => {
+    for (const k of keys) delete process.env[k]
+    process.env.ANTHROPIC_API_KEY = 'test-key'
+    const direct = JSON.parse(getAPIMetadata()!.user_id)
+    expect(direct.device_id).toBeTruthy()
+    expect(direct.session_id).toBeTruthy()
+
+    process.env.ANTHROPIC_BASE_URL = 'https://api.minimaxi.com/anthropic'
+    expect(getAPIMetadata()).toBeUndefined()
+
+    process.env.CLAUDE_CODE_EXTRA_METADATA = JSON.stringify({ team: 'core' })
+    expect(JSON.parse(getAPIMetadata()!.user_id)).toEqual({ team: 'core' })
   })
 })
