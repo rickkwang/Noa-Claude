@@ -118,6 +118,8 @@ try {
       const env = { ...secrets, PATH: process.env.PATH, HOME: home, CLAUDE_CONFIG_DIR: config, ANTHROPIC_API_KEY: 'local-dummy', ANTHROPIC_BASE_URL: url, DISABLE_TELEMETRY: '1', DISABLE_AUTOUPDATER: '1', CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1', CLAUDE_CODE_MAX_RETRIES: '0' };
       if (c.effortState) env.CLAUDE_CODE_ALWAYS_ENABLE_EFFORT = '1';
       if (c.latchUsage) env.CLAUDE_CODE_MAX_RETRIES = '2'
+      // Third-party endpoints only receive metadata the user opts into.
+      if (c.verifyKey || c.latchUsage) env.CLAUDE_CODE_EXTRA_METADATA = '{"team":"fixture"}';
       if (c.tmuxMode) Object.assign(env, { NOA_CLAUDE_BASH_FIRST: '1', NOA_CLAUDE_BASH_FIRST_VARIANT: 'relaxed' });
       if (c.verifyKey) {
         const probe = join(dir, 'verify-key.ts');
