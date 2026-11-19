@@ -1040,6 +1040,13 @@ describe('openaiShim billing header and client header isolation', () => {
     const chatMessages = captured[0]?.body.messages as Array<{ role: string; content: string }>
     expect(chatMessages[0]).toEqual({ role: 'system', content: 'You are helpful.' })
 
+    await client.messages.create({
+      model: 'gpt-4o',
+      metadata: { user_id: '{"device_id":"dev-1","account_uuid":"","session_id":"sess-1"}' },
+      messages: [{ role: 'user', content: 'hi' }],
+    })
+    expect(captured[1]?.body.metadata).toBeUndefined()
+
     const responsesCaptured: CapturedRequest[] = []
     const responsesClient = createOpenAIShimClient({
       apiKey: 'test-key',

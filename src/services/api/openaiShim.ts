@@ -912,7 +912,6 @@ class OpenAIShimMessages {
       ...(params.tool_choice !== undefined
         ? { tool_choice: convertToolChoice(params.tool_choice) }
         : {}),
-      ...(params.metadata ? { metadata: params.metadata } : {}),
       ...(reasoningEffort !== undefined ? { reasoning_effort: reasoningEffort } : {}),
     }
 
