@@ -553,6 +553,7 @@ async function run(executable, scenario, extra = [], input = 'Run the local loop
     ...(scenario==='mandatory-thinking' && {NOA_CLAUDE_PROVIDER_THINKING_MODELS:'kimi/k3.1-pro', NOA_CLAUDE_PROVIDER_REJECTS_DISABLED_THINKING_MODELS:'kimi/k3.1-pro', CLAUDE_CODE_DISABLE_THINKING:'1'}),
     CLAUDE_CONFIG_DIR: join(active.dir, 'config'), ANTHROPIC_API_KEY: 'local-e2e-dummy', ANTHROPIC_BASE_URL: baseUrl,
     ANTHROPIC_MODEL: modelFor(scenario), CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1', DISABLE_AUTOUPDATER: '1',
+    ...(scenario === 'field-reject' && { CLAUDE_CODE_EXTRA_METADATA: '{"team":"fixture"}' }),
     ...(scenario.startsWith('openai-') && { CLAUDE_CODE_USE_OPENAI: '1', OPENAI_BASE_URL: `${baseUrl}/v1`, OPENAI_API_KEY: 'local-e2e-dummy' }),
     ...(scenario.startsWith('openai-responses') && { NOA_CLAUDE_OPENAI_AUTH: 'chatgpt' }),
     ...(scenario === 'openai-responses-effort' && { CLAUDE_CODE_EFFORT_LEVEL: 'xhigh' }),
