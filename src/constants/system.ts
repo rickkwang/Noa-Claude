@@ -5,7 +5,10 @@ import { getApiClientVersion } from './apiClientVersion.js'
 import { getFeatureValue_CACHED_MAY_BE_STALE } from '../services/analytics/growthbook.js'
 import { logForDebugging } from '../utils/debug.js'
 import { isEnvDefinedFalsy } from '../utils/envUtils.js'
-import { getAPIProvider } from '../utils/model/providers.js'
+import {
+  getAPIProvider,
+  isThirdPartyModelProvider,
+} from '../utils/model/providers.js'
 import { getWorkload } from '../utils/workloadContext.js'
 
 const DEFAULT_PREFIX = `You are Noa Claude, an AI coding agent for software engineering tasks.`
@@ -51,7 +54,9 @@ export function getCLISyspromptPrefix(options?: {
  * Enabled by default, can be disabled via env var or GrowthBook killswitch.
  */
 function isAttributionHeaderEnabled(): boolean {
-  if (getAPIProvider() === 'openaiCompatible') {
+  // Billing attribution is read only by Anthropic's API; third-party
+  // endpoints would just receive the session fingerprint.
+  if (isThirdPartyModelProvider()) {
     return false
   }
   if (isEnvDefinedFalsy(process.env.CLAUDE_CODE_ATTRIBUTION_HEADER)) {

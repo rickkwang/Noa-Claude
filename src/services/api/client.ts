@@ -155,6 +155,8 @@ export async function getAnthropicClient({
   source?: string
 }): Promise<Anthropic> {
   const openAICompatible = getAPIProvider() === 'openaiCompatible'
+  const thirdPartyAnthropicCompatible =
+    isThirdPartyAnthropicCompatibleProvider()
   const containerId = process.env.CLAUDE_CODE_CONTAINER_ID
   const remoteSessionId = process.env.CLAUDE_CODE_REMOTE_SESSION_ID
   const clientApp = process.env.CLAUDE_AGENT_SDK_CLIENT_APP
@@ -164,7 +166,15 @@ export async function getAnthropicClient({
         'User-Agent': getNoaUserAgent(),
         ...customHeaders,
       }
-    : {
+    : thirdPartyAnthropicCompatible
+      ? {
+          // Keep the Claude Code client identity some vendors' coding plans
+          // check; session and app identifiers stay on Anthropic's endpoints.
+          'x-app': 'cli',
+          'User-Agent': getUserAgent(),
+          ...customHeaders,
+        }
+      : {
         'x-app': 'cli',
         'User-Agent': getUserAgent(),
         'X-Claude-Code-Session-Id': getSessionId(),
@@ -190,8 +200,6 @@ export async function getAnthropicClient({
     defaultHeaders['x-anthropic-additional-protection'] = 'true'
   }
 
-  const thirdPartyAnthropicCompatible =
-    isThirdPartyAnthropicCompatibleProvider()
   // The shim below resolves its own credential and never sends the Anthropic
   // OAuth token. Running either step here would refresh a token this request
   // cannot use and copy an Anthropic Bearer into defaultHeadersForShim, which
