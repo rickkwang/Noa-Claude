@@ -64,7 +64,6 @@ const voiceCommand = feature('VOICE_MODE')
 const clearSkillIndexCache = (
     require('./services/skillSearch/localSearch.js') as typeof import('./services/skillSearch/localSearch.js')
   ).clearSkillIndexCache
-const ultraplan = require('./commands/ultraplan.js').default
 const forkCmd = (
     require('./commands/fork/index.js') as typeof import('./commands/fork/index.js')
   ).default
@@ -164,7 +163,6 @@ export const INTERNAL_ONLY_COMMANDS = [
   commit,
   commitPushPr,
   version,
-  ...(ultraplan ? [ultraplan] : []),
 ]
 
 // Declared as a function so that we don't run this until getCommands is called,

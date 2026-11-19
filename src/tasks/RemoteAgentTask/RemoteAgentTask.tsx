@@ -19,7 +19,6 @@ import { registerTask, updateTaskState } from '../../utils/task/framework.js';
 import { fetchSession } from '../../utils/teleport/api.js';
 import { archiveRemoteSession, pollRemoteSessionEvents } from '../../utils/teleport.js';
 import type { TodoList } from '../../utils/todo/types.js';
-import type { UltraplanPhase } from '../../utils/ultraplan/ccrSession.js';
 export type RemoteAgentTaskState = TaskStateBase & {
   type: 'remote_agent';
   remoteTaskType: RemoteTaskType;
@@ -56,7 +55,7 @@ export type RemoteAgentTaskState = TaskStateBase & {
    * ExitPlanMode is awaiting browser approval. Surfaced in the pill badge
    * and detail dialog status line.
    */
-  ultraplanPhase?: Exclude<UltraplanPhase, 'running'>;
+  ultraplanPhase?: 'needs_input' | 'plan_ready';
 };
 const REMOTE_TASK_TYPES = ['remote-agent', 'ultraplan', 'ultrareview', 'autofix-pr', 'background-pr'] as const;
 export type RemoteTaskType = (typeof REMOTE_TASK_TYPES)[number];
