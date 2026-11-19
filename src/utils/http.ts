@@ -13,7 +13,6 @@ import {
 } from './auth.js'
 import { getApiClientVersion } from '../constants/apiClientVersion.js'
 import { PRODUCT_URL } from '../constants/product.js'
-import { getClaudeCodeUserAgent } from './userAgent.js'
 import { getWorkload } from './workloadContext.js'
 
 // WARNING: We rely on `claude-cli` in the user agent for log filtering.
@@ -56,13 +55,13 @@ export function getMCPUserAgent(): string {
     parts.push(`client-app/${process.env.CLAUDE_AGENT_SDK_CLIENT_APP}`)
   }
   const suffix = parts.length > 0 ? ` (${parts.join(', ')})` : ''
-  return `claude-code/${MACRO.VERSION}${suffix}`
+  return `${getNoaUserAgent()}${suffix}`
 }
 
 // User-Agent for WebFetch requests to arbitrary sites. Identifies Noa Claude
 // rather than Anthropic's server-side or Claude Code crawler.
 export function getWebFetchUserAgent(): string {
-  return `Noa-Claude/${MACRO.VERSION} (+${PRODUCT_URL})`
+  return `${getNoaUserAgent()} (+${PRODUCT_URL})`
 }
 
 export function getNoaUserAgent(): string {

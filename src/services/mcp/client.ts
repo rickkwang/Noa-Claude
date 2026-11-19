@@ -75,6 +75,7 @@ import {
   TelemetrySafeError_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
 } from '../../utils/errors.js'
 import { getMCPUserAgent } from '../../utils/http.js'
+import { getClaudeCodeUserAgent } from '../../utils/userAgent.js'
 import { maybeNotifyIDEConnected } from '../../utils/ide.js'
 import { resizeImageBlockOrPlaceholder } from '../../utils/imageResizer.js'
 import { logMCPDebug, logMCPError } from '../../utils/log.js'
@@ -970,7 +971,7 @@ export const connectToServer = memoize(
           requestInit: {
             ...proxyOptions,
             headers: {
-              'User-Agent': getMCPUserAgent(),
+              'User-Agent': getClaudeCodeUserAgent(),
               'X-Mcp-Client-Session-Id': getSessionId(),
             },
           },
