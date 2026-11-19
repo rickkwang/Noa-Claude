@@ -10,7 +10,6 @@ import {
   logEvent,
 } from '../../services/analytics/index.js'
 import { getSSLErrorHint } from '../../services/api/errorUtils.js'
-import { fetchAndStoreClaudeCodeFirstTokenDate } from '../../services/api/firstTokenDate.js'
 import {
   createAndStoreApiKey,
   fetchAndStoreUserRoles,
@@ -104,17 +103,13 @@ async function installOAuthTokensUnlocked(tokens: OAuthTokens): Promise<void> {
     })
   }
 
-  // Roles and first-token-date may fail for limited-scope tokens (e.g.
+  // Roles may fail for limited-scope tokens (e.g.
   // inference-only from setup-token). They're not required for core auth.
   await fetchAndStoreUserRoles(tokens.accessToken).catch(err =>
     logForDebugging(String(err), { level: 'error' }),
   )
 
-  if (isClaudeAiAuth) {
-    await fetchAndStoreClaudeCodeFirstTokenDate().catch(err =>
-      logForDebugging(String(err), { level: 'error' }),
-    )
-  } else {
+  if (!isClaudeAiAuth) {
     // API key creation is critical for Console users — let it throw.
     const apiKey = await createAndStoreApiKey(tokens.accessToken)
     if (!apiKey) {

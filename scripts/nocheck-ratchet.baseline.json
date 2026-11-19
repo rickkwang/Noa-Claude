@@ -831,7 +831,6 @@
     "src/services/api/errorUtils.ts",
     "src/services/api/errors.ts",
     "src/services/api/filesApi.ts",
-    "src/services/api/firstTokenDate.ts",
     "src/services/api/grove.ts",
     "src/services/api/logging.ts",
     "src/services/api/openaiShim.ts",

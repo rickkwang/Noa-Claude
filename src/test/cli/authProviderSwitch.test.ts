@@ -41,18 +41,16 @@ function runOAuthInstallScenario(
       import { mock } from 'bun:test'
       import { readFileSync } from 'fs'
 
-      mock.module('./src/services/api/firstTokenDate.js', () => ({
-        fetchAndStoreClaudeCodeFirstTokenDate: async () => {
-          if (${JSON.stringify(logoutTiming)} === 'during') await Bun.sleep(100)
-        },
-      }))
       mock.module('axios', () => ({
         default: {
-          get: async () => ({
-            status: 200,
-            statusText: 'OK',
-            data: { organization_role: 'user', workspace_role: 'user' },
-          }),
+          get: async () => {
+            if (${JSON.stringify(logoutTiming)} === 'during') await Bun.sleep(100)
+            return {
+              status: 200,
+              statusText: 'OK',
+              data: { organization_role: 'user', workspace_role: 'user' },
+            }
+          },
           post: async () => { throw new Error('not used') },
         },
       }))
