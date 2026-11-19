@@ -14,27 +14,9 @@ import {
   isBinaryContentType,
   persistBinaryContent,
 } from '../../utils/mcpOutputStorage.js'
-import { getSettings_DEPRECATED } from '../../utils/settings/settings.js'
 import { asSystemPrompt } from '../../utils/systemPromptType.js'
 import { isPreapprovedHost } from './preapproved.js'
 import { makeSecondaryModelPrompt } from './prompt.js'
-
-// Custom error classes for domain blocking
-class DomainBlockedError extends Error {
-  constructor(domain: string) {
-    super(`Noa Claude is unable to fetch from ${domain}`)
-    this.name = 'DomainBlockedError'
-  }
-}
-
-class DomainCheckFailedError extends Error {
-  constructor(domain: string) {
-    super(
-      `Unable to verify if domain ${domain} is safe to fetch. This may be due to network restrictions or enterprise security policies blocking claude.ai.`,
-    )
-    this.name = 'DomainCheckFailedError'
-  }
-}
 
 class EgressBlockedError extends Error {
   constructor(public readonly domain: string) {
@@ -70,18 +52,8 @@ const URL_CACHE = new LRUCache<string, CacheEntry>({
   ttl: CACHE_TTL_MS,
 })
 
-// Separate cache for preflight domain checks. URL_CACHE is URL-keyed, so
-// fetching two paths on the same domain triggers two identical preflight
-// HTTP round-trips to api.anthropic.com. This hostname-keyed cache avoids
-// that. Only 'allowed' is cached — blocked/failed re-check on next attempt.
-const DOMAIN_CHECK_CACHE = new LRUCache<string, true>({
-  max: 128,
-  ttl: 5 * 60 * 1000, // 5 minutes — shorter than URL_CACHE TTL
-})
-
 export function clearWebFetchCache(): void {
   URL_CACHE.clear()
-  DOMAIN_CHECK_CACHE.clear()
 }
 
 // Past these depths the markdown syntax is dropped and only the text is kept.
@@ -159,9 +131,6 @@ const MAX_HTTP_CONTENT_LENGTH = 10 * 1024 * 1024
 // Prevents hanging indefinitely on slow/unresponsive servers.
 const FETCH_TIMEOUT_MS = 60_000
 
-// Timeout for the domain blocklist preflight check (10 seconds).
-const DOMAIN_CHECK_TIMEOUT_MS = 10_000
-
 // Cap same-host redirect hops. Without this a malicious server can return
 // a redirect loop (/a → /b → /a …) and the per-request FETCH_TIMEOUT_MS
 // resets on every hop, hanging the tool until user interrupt. 10 matches
@@ -211,10 +180,8 @@ export function validateURL(url: string): boolean {
 
   // The hostname-shape check above passes any literal IP (169.254.169.254,
   // 10.0.0.1, 127.0.0.1 all split into >= 2 parts), so reject addresses in
-  // local/private ranges here. The domain blocklist preflight in
-  // getURLMarkdownContent would normally catch these, but it costs a network
-  // round-trip and users can disable it via settings.skipWebFetchPreflight —
-  // this check still holds then.
+  // local/private ranges here. validateURL() is WebFetch's synchronous gate
+  // against local and private network addresses.
   //
   // Scope: literal IPs, localhost variants and .local only. This is a purely
   // synchronous string/IP check — a hostname that *resolves* into a private
@@ -226,40 +193,6 @@ export function validateURL(url: string): boolean {
   }
 
   return true
-}
-
-type DomainCheckResult =
-  | { status: 'allowed' }
-  | { status: 'blocked' }
-  | { status: 'check_failed'; error: Error }
-
-export async function checkDomainBlocklist(
-  domain: string,
-): Promise<DomainCheckResult> {
-  if (DOMAIN_CHECK_CACHE.has(domain)) {
-    return { status: 'allowed' }
-  }
-  try {
-    const response = await axios.get(
-      `https://api.anthropic.com/api/web/domain_info?domain=${encodeURIComponent(domain)}`,
-      { timeout: DOMAIN_CHECK_TIMEOUT_MS },
-    )
-    if (response.status === 200) {
-      if (response.data.can_fetch === true) {
-        DOMAIN_CHECK_CACHE.set(domain, true)
-        return { status: 'allowed' }
-      }
-      return { status: 'blocked' }
-    }
-    // Non-200 status but didn't throw
-    return {
-      status: 'check_failed',
-      error: new Error(`Domain check returned status ${response.status}`),
-    }
-  } catch (e) {
-    logError(e)
-    return { status: 'check_failed', error: e as Error }
-  }
 }
 
 /**
@@ -433,11 +366,10 @@ export async function getURLMarkdownContent(
     }
   }
 
-  let parsedUrl: URL
   let upgradedUrl = url
 
   try {
-    parsedUrl = new URL(url)
+    const parsedUrl = new URL(url)
 
     // Upgrade http to https if needed
     if (parsedUrl.protocol === 'http:') {
@@ -447,23 +379,6 @@ export async function getURLMarkdownContent(
 
     const hostname = parsedUrl.hostname
 
-    // Check if the user has opted to skip the blocklist check
-    // This is for enterprise customers with restrictive security policies
-    // that prevent outbound connections to claude.ai
-    const settings = getSettings_DEPRECATED()
-    if (!settings.skipWebFetchPreflight) {
-      const checkResult = await checkDomainBlocklist(hostname)
-      switch (checkResult.status) {
-        case 'allowed':
-          // Continue with the fetch
-          break
-        case 'blocked':
-          throw new DomainBlockedError(hostname)
-        case 'check_failed':
-          throw new DomainCheckFailedError(hostname)
-      }
-    }
-
     if (process.env.USER_TYPE === 'ant') {
       logEvent('tengu_web_fetch_host', {
         hostname:
@@ -471,13 +386,6 @@ export async function getURLMarkdownContent(
       })
     }
   } catch (e) {
-    if (
-      e instanceof DomainBlockedError ||
-      e instanceof DomainCheckFailedError
-    ) {
-      // Expected user-facing failures - re-throw without logging as internal error
-      throw e
-    }
     logError(e)
   }
 

@@ -1,12 +1,14 @@
-import { describe, expect, test } from 'bun:test'
-import { validateURL } from '../../tools/WebFetchTool/utils.js'
+import { describe, expect, spyOn, test } from 'bun:test'
+import axios from 'axios'
+import {
+  clearWebFetchCache,
+  getURLMarkdownContent,
+  validateURL,
+} from '../../tools/WebFetchTool/utils.js'
 
-// validateURL is WebFetch's only synchronous gate. The domain blocklist
-// preflight that also catches private addresses is a network round-trip and
-// can be turned off via settings.skipWebFetchPreflight, so these assertions
-// are what stands between the tool and a private-range request in that
-// configuration. Removing the isLocalOrPrivateUrl call from validateURL
-// should fail here loudly rather than silently.
+// validateURL is WebFetch's synchronous gate against malformed URLs and
+// private/local addresses. Removing the isLocalOrPrivateUrl call from
+// validateURL should fail here loudly rather than silently.
 
 describe('validateURL — private and local addresses', () => {
   test.each([
@@ -49,5 +51,33 @@ describe('validateURL — pre-existing rules still hold', () => {
 
   test('rejects an unparseable URL', () => {
     expect(validateURL('not a url')).toBe(false)
+  })
+})
+
+describe('getURLMarkdownContent — no Anthropic domain_info preflight', () => {
+  test('fetches target URL directly without calling api.anthropic.com', async () => {
+    clearWebFetchCache()
+    const requestedUrls: string[] = []
+    const spy = spyOn(axios, 'get').mockImplementation((async (url: string) => {
+      requestedUrls.push(url)
+      return {
+        status: 200,
+        statusText: 'OK',
+        headers: { 'content-type': 'text/plain' },
+        data: Buffer.from('hello world'),
+      } as any
+    }) as any)
+
+    try {
+      const result = await getURLMarkdownContent(
+        'http://example.com/test',
+        new AbortController(),
+      )
+      expect(requestedUrls).toEqual(['https://example.com/test'])
+      expect('content' in result && result.content).toBe('hello world')
+    } finally {
+      spy.mockRestore()
+      clearWebFetchCache()
+    }
   })
 })
