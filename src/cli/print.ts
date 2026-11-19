@@ -264,11 +264,6 @@ import {
 import { setupVscodeSdkMcp } from 'src/services/mcp/vscodeSdkMcp.js'
 import { getAllMcpConfigs } from 'src/services/mcp/config.js'
 import {
-  hasMadeGroveChoice,
-  isQualifiedForGrove,
-  checkGroveForNonInteractive,
-} from 'src/services/api/grove.js'
-import {
   toInternalMessages,
   toSDKRateLimitInfo,
 } from 'src/utils/messages/mappers.js'
@@ -642,12 +637,6 @@ export async function runHeadless(
   // Start headless profiler for first turn
   headlessProfilerStartTurn()
   headlessProfilerCheckpoint('runHeadless_entry')
-
-  // Check Grove requirements for non-interactive consumer subscribers
-  if (!hasMadeGroveChoice() && (await isQualifiedForGrove())) {
-    await checkGroveForNonInteractive()
-  }
-  headlessProfilerCheckpoint('after_grove_check')
 
   // Initialize GrowthBook so feature flags take effect in headless mode.
   // Without this, the disk cache is empty and all flags fall back to defaults.

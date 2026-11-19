@@ -14,7 +14,6 @@ import type { RenderOptions, Root, TextProps } from './ink.js';
 import { KeybindingSetup } from './keybindings/KeybindingProviderSetup.js';
 import { startDeferredPrefetches } from './main.js';
 import { checkGate_CACHED_OR_BLOCKING, initializeGrowthBook, resetGrowthBook } from './services/analytics/growthbook.js';
-import { hasMadeGroveChoice, isQualifiedForGrove } from './services/api/grove.js';
 import { handleMcpjsonServerApprovals } from './services/mcpServerApproval.js';
 import { AppStateProvider } from './state/AppState.js';
 import { onChangeAppState } from './state/onChangeAppState.js';
@@ -190,17 +189,6 @@ export async function showSetupScreens(root: Root, permissionMode: PermissionMod
   // In normal mode, this happens after the trust dialog is accepted
   // This includes potentially dangerous environment variables from untrusted sources
   applyConfigEnvironmentVariables();
-  if (!hasMadeGroveChoice() && (await isQualifiedForGrove())) {
-    const {
-      GroveDialog
-    } = await import('src/components/grove/Grove.js');
-    const decision = await showSetupDialog<string>(root, done => <GroveDialog showIfAlreadyViewed={false} location={onboardingShown ? 'onboarding' : 'policy_update_modal'} onDone={done} />);
-    if (decision === 'escape') {
-      logEvent('tengu_grove_policy_exited', {});
-      gracefulShutdownSync(0);
-      return false;
-    }
-  }
 
   // Check for custom API key
   // On homespace, ANTHROPIC_API_KEY is preserved in process.env for child
