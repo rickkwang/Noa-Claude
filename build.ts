@@ -71,7 +71,6 @@ const fullExperimentalFeatures = [
   'MCP_RICH_OUTPUT',
   'MESSAGE_ACTIONS',
   'MONITOR_TOOL',
-  'NATIVE_CLIENT_ATTESTATION',
   'POWERSHELL_AUTO_MODE',
   'PROMPT_CACHE_BREAK_DETECTION',
   'QUICK_SEARCH',
@@ -269,9 +268,6 @@ const defines: Record<string, string> = {
   // Always defined: left unset, the bundler resolves React's NODE_ENV switch to
   // the development build.
   'process.env.NODE_ENV': JSON.stringify(dev ? 'development' : 'production'),
-  ...(dev
-    ? { 'process.env.CLAUDE_CODE_EXPERIMENTAL_BUILD': JSON.stringify('true') }
-    : {}),
   'process.env.CCR_FORCE_BUNDLE': JSON.stringify('true'),
   'MACRO.VERSION': JSON.stringify(version),
   'MACRO.DISPLAY_VERSION': JSON.stringify(pkg.version),
@@ -285,7 +281,7 @@ const defines: Record<string, string> = {
   'MACRO.VERSION_CHANGELOG': JSON.stringify(getBundledReleaseNotes()),
 }
 
-console.log('Building Claude Agent...')
+console.log('Building Noa Claude...')
 console.log(`Version: ${version}`)
 if (compile) {
   console.log(`Bundle output: ${bundleOutfile}`)
@@ -358,7 +354,6 @@ const stubPlugin: BunPlugin = {
   setup(build) {
     // Modules that may not be installed at build time
     const stubModules = [
-      '@anthropic-ai/sandbox-runtime',
       // ink pulls react-devtools-core in dev mode; not needed for prod bundle.
       'react-devtools-core',
     ]
@@ -377,20 +372,12 @@ const handler = {
   get(_, prop) {
     if (prop === '__esModule') return true;
     if (prop === 'default') return new Proxy({}, handler);
-    if (prop === 'SandboxRuntimeConfigSchema') return { parse: () => ({}) };
     return noop;
   }
 };
 const stub = new Proxy(noop, handler);
 export default stub;
 export const __stub = true;
-export const BROWSER_TOOLS = [];
-export const createClaudeForChromeMcpServer = noop;
-export const SandboxViolationStore = null;
-// Return undefined for SandboxManager properties so that
-// sandbox-adapter.ts callBaseSandboxMethod() falls back correctly.
-export const SandboxManager = new Proxy({}, { get: () => undefined });
-export const SandboxRuntimeConfigSchema = { parse: () => ({}) };
 `,
       loader: 'js',
     }))

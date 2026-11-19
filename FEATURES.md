@@ -159,7 +159,6 @@ Bridge/remote runtime modules can exist in source, but this build does not regis
 - `KAIROS_PUSH_NOTIFICATION` (requires notification-capable context)
 - `DOWNLOAD_USER_SETTINGS` (depends on first-party auth/settings sync path)
 - `UPLOAD_USER_SETTINGS` (depends on first-party auth/settings sync path)
-- `NATIVE_CLIENT_ATTESTATION` (platform/integration dependent)
 - `IS_LIBC_GLIBC` (platform-specific)
 - `IS_LIBC_MUSL` (platform-specific)
 - `HARD_FAIL` (runtime mode behavior gate)
