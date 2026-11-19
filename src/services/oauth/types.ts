@@ -61,33 +61,3 @@ export type UserRolesResponse = {
   workspace_role?: string
   organization_name?: string
 }
-
-export type ReferralCampaign = 'claude_code_guest_pass'
-
-export type ReferrerRewardInfo = {
-  currency: string
-  amount_minor_units: number
-}
-
-export type ReferralRedemption = {
-  [key: string]: unknown
-}
-
-export type ReferralCodeDetails = {
-  campaign?: ReferralCampaign
-  referral_link?: string
-}
-
-export type ReferralEligibilityResponse = {
-  eligible: boolean
-  referral_code_details?: ReferralCodeDetails
-  referrer_reward?: ReferrerRewardInfo | null
-  remaining_passes?: number | null
-  [key: string]: unknown
-}
-
-export type ReferralRedemptionsResponse = {
-  redemptions?: ReferralRedemption[]
-  limit?: number
-  [key: string]: unknown
-}

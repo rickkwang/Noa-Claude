@@ -4,7 +4,6 @@ import { homedir } from 'os';
 import * as React from 'react';
 import { Box, Text } from '../../ink.js';
 import type { Step } from '../../projectOnboardingState.js';
-import { formatCreditAmount, getCachedReferrerReward } from '../../services/api/referral.js';
 import type { LogOption } from '../../types/logs.js';
 import { getCwd } from '../../utils/cwd.js';
 import { formatRelativeTimeAgo } from '../../utils/format.js';
@@ -70,23 +69,5 @@ export function createProjectOnboardingFeed(steps: Step[]): FeedConfig {
   return {
     title: 'Tips for getting started',
     lines
-  };
-}
-export function createGuestPassesFeed(): FeedConfig {
-  const reward = getCachedReferrerReward();
-  const subtitle = reward ? `Share Noa Claude and earn ${formatCreditAmount(reward)} in usage credits` : 'Share Noa Claude with friends';
-  return {
-    title: '3 guest passes',
-    lines: [],
-    customContent: {
-      content: <>
-          <Box marginY={1}>
-            <Text color="claude">[✻] [✻] [✻]</Text>
-          </Box>
-          <Text dimColor>{subtitle}</Text>
-        </>,
-      width: 48
-    },
-    footer: '/passes'
   };
 }

@@ -21,7 +21,6 @@ import {
   getParentSessionId as getParentSessionIdFromState,
 } from '../../bootstrap/state.js'
 import { isEnvTruthy } from '../../utils/envUtils.js'
-import { isOfficialMcpUrl } from '../mcp/officialRegistry.js'
 import { isClaudeAISubscriber, getSubscriptionType } from '../../utils/auth.js'
 import { getRepoRemoteHash } from '../../utils/git.js'
 import {
@@ -95,8 +94,6 @@ export function isToolDetailsLoggingEnabled(): boolean {
  * MCP names are medium PII under the data taxonomy. We log them for:
  * - Cowork (entrypoint=local-agent) — no ZDR concept, log all MCPs
  * - claude.ai-proxied connectors — always official (from claude.ai's list)
- * - Servers whose URL matches the official MCP registry — directory
- *   connectors added via `noa mcp add`, not customer-specific config
  *
  * Custom/user-configured MCPs stay sanitized (toolName='mcp_tool').
  */
@@ -108,9 +105,6 @@ export function isAnalyticsToolDetailsLoggingEnabled(
     return true
   }
   if (mcpServerType === 'claudeai-proxy') {
-    return true
-  }
-  if (mcpServerBaseUrl && isOfficialMcpUrl(mcpServerBaseUrl)) {
     return true
   }
   return false

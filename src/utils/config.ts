@@ -10,10 +10,7 @@ import type { EffortLevel } from './effort.js'
 import { getAutoMemEntrypoint } from '../memdir/paths.js'
 import { logEvent } from '../services/analytics/index.js'
 import type { McpServerConfig } from '../services/mcp/types.js'
-import type {
-  BillingType,
-  ReferralEligibilityResponse,
-} from '../services/oauth/types.js'
+import type { BillingType } from '../services/oauth/types.js'
 import { getCwd } from '../utils/cwd.js'
 import { registerCleanup } from './cleanupRegistry.js'
 import { logForDebugging } from './debug.js'
@@ -327,12 +324,6 @@ export type GlobalConfig = {
     { hasAccess: boolean; hasAccessNotAsDefault?: boolean; timestamp: number }
   >
 
-  // Guest passes eligibility cache per org - key is org ID
-  passesEligibilityCache?: Record<
-    string,
-    ReferralEligibilityResponse & { timestamp: number }
-  >
-
   // Grove config cache per account - key is account UUID
   groveConfigCache?: Record<
     string,
@@ -340,11 +331,6 @@ export type GlobalConfig = {
   >
   // Account UUID -> when the server last confirmed a Grove choice; startup skips the dialog while recent
   groveChoiceSeenAt?: Record<string, number>
-
-  // Guest passes upsell tracking
-  passesUpsellSeenCount?: number // Number of times the guest passes upsell has been shown
-  hasVisitedPasses?: boolean // Whether the user has visited /passes command
-  passesLastSeenRemaining?: number // Last seen remaining_passes count — reset upsell when it increases
 
   // Overage credit grant upsell tracking (keyed by org UUID — multi-org users).
   // Inlined shape (not import()) because config.ts is in the SDK build surface

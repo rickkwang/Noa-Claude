@@ -10,12 +10,12 @@ import { truncate } from '../../utils/format.js';
 import { getDisplayPath } from '../../utils/file.js';
 import { AnimatedClawd, getClawdEntranceSequence } from './AnimatedClawd.js';
 import { FeedColumn } from './FeedColumn.js';
-import { createRecentActivityFeed, createWhatsNewFeed, createProjectOnboardingFeed, createGuestPassesFeed } from './feedConfigs.js';
+import { createRecentActivityFeed, createWhatsNewFeed, createProjectOnboardingFeed } from './feedConfigs.js';
 import { getGlobalConfig, saveGlobalConfig } from 'src/utils/config.js';
 import { resolveThemeSetting } from 'src/utils/systemTheme.js';
 import { getInitialSettings } from 'src/utils/settings/settings.js';
 import { isDebugMode, isDebugToStdErr, getDebugLogPath } from 'src/utils/debug.js';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { getSteps, shouldShowProjectOnboarding } from '../../projectOnboardingState.js';
 import { CondensedLogo } from './CondensedLogo.js';
 import { OffscreenFreeze } from '../OffscreenFreeze.js';
@@ -36,7 +36,6 @@ import { feature } from 'bun:bundle';
 const ChannelsNoticeModule = feature('KAIROS') || feature('KAIROS_CHANNELS') ? require('./ChannelsNotice.js') as typeof import('./ChannelsNotice.js') : null;
 /* eslint-enable @typescript-eslint/no-require-imports */
 import { SandboxManager } from 'src/utils/sandbox/sandbox-adapter.js';
-import { useShowGuestPassesUpsell, incrementGuestPassesSeenCount } from './GuestPassesUpsell.js';
 import { useShowOverageCreditUpsell, incrementOverageCreditUpsellSeenCount, createOverageCreditFeed } from './OverageCreditUpsell.js';
 import { plural } from '../../utils/stringUtils.js';
 import { useAppState } from '../../state/AppState.js';
@@ -86,7 +85,6 @@ export function LogoV2() {
     t1 = $[1];
   }
   const showSandboxStatus = t1;
-  const showGuestPassesUpsell = useShowGuestPassesUpsell();
   const showOverageCreditUpsell = useShowOverageCreditUpsell();
   const agent = useAppState(_temp);
   const effortValue = useAppState(_temp2);
@@ -115,49 +113,16 @@ export function LogoV2() {
     }
     saveGlobalConfig(_temp3);
   }, [config, hasReleaseNotes]);
-  let t4;
-  if ($[5] === Symbol.for("react.memo_cache_sentinel")) {
-    t4 = !hasReleaseNotes && !showOnboarding && !isEnvTruthy(process.env.CLAUDE_CODE_FORCE_FULL_LOGO);
-    $[5] = t4;
-  } else {
-    t4 = $[5];
-  }
-  const isCondensedMode = t4;
-  let t5;
-  let t6;
-  if ($[6] !== showGuestPassesUpsell) {
-    t5 = () => {
-      if (showGuestPassesUpsell && !showOnboarding && !isCondensedMode) {
-        incrementGuestPassesSeenCount();
-      }
-    };
-    t6 = [showGuestPassesUpsell, showOnboarding, isCondensedMode];
-    $[6] = showGuestPassesUpsell;
-    $[7] = t5;
-    $[8] = t6;
-  } else {
-    t5 = $[7];
-    t6 = $[8];
-  }
-  useEffect(t5, t6);
-  let t7;
-  let t8;
-  if ($[9] !== showGuestPassesUpsell || $[10] !== showOverageCreditUpsell) {
-    t7 = () => {
-      if (showOverageCreditUpsell && !showOnboarding && !showGuestPassesUpsell && !isCondensedMode) {
-        incrementOverageCreditUpsellSeenCount();
-      }
-    };
-    t8 = [showOverageCreditUpsell, showOnboarding, showGuestPassesUpsell, isCondensedMode];
-    $[9] = showGuestPassesUpsell;
-    $[10] = showOverageCreditUpsell;
-    $[11] = t7;
-    $[12] = t8;
-  } else {
-    t7 = $[11];
-    t8 = $[12];
-  }
-  useEffect(t7, t8);
+  const isCondensedMode = !hasReleaseNotes && !showOnboarding && !isEnvTruthy(process.env.CLAUDE_CODE_FORCE_FULL_LOGO);
+  const layoutMode = getLayoutMode(columns);
+  const showOverageCreditFeed = !isCondensedMode && layoutMode === "horizontal" && !hasReleaseNotes && !showOnboarding && showOverageCreditUpsell;
+  const hasCountedOverageCreditFeed = useRef(false);
+  useEffect(() => {
+    if (showOverageCreditFeed && !hasCountedOverageCreditFeed.current) {
+      hasCountedOverageCreditFeed.current = true;
+      incrementOverageCreditUpsellSeenCount();
+    }
+  }, [showOverageCreditFeed]);
   const model = useMainLoopModel();
   const fullModelDisplayName = renderModelSetting(model);
   const {
@@ -178,7 +143,7 @@ export function LogoV2() {
     t10 = $[14];
   }
   const modelDisplayName = t10;
-  if (!hasReleaseNotes && !showOnboarding && !isEnvTruthy(process.env.CLAUDE_CODE_FORCE_FULL_LOGO)) {
+  if (isCondensedMode) {
     let t11;
     let t12;
     let t13;
@@ -248,7 +213,6 @@ export function LogoV2() {
     }
     return t23;
   }
-  const layoutMode = getLayoutMode(columns);
   const userTheme = resolveThemeSetting(getGlobalConfig().theme);
   const borderTitle = ` ${color("claude", userTheme)("Noa Claude")} ${color("inactive", userTheme)(`v${version}`)} `;
   const compactBorderTitle = color("claude", userTheme)(" Noa Claude ");
@@ -425,7 +389,7 @@ export function LogoV2() {
   // only updates lastReleaseNotesSeen so the next launch suppresses it. We must
   // therefore keep onboarding ahead of release notes, otherwise a brand-new
   // install that lands on a version bump would never see onboarding.
-  const t25 = layoutMode === "horizontal" && <FeedColumn feeds={showOnboarding ? [createProjectOnboardingFeed(getSteps()), createRecentActivityFeed(activities)] : hasReleaseNotes ? [createWhatsNewFeed(changelog), createRecentActivityFeed(activities)] : showGuestPassesUpsell ? [createRecentActivityFeed(activities), createGuestPassesFeed()] : showOverageCreditUpsell ? [createRecentActivityFeed(activities), createOverageCreditFeed()] : [createRecentActivityFeed(activities), createWhatsNewFeed(changelog)]} maxWidth={rightWidth} />;
+  const t25 = layoutMode === "horizontal" && <FeedColumn feeds={showOnboarding ? [createProjectOnboardingFeed(getSteps()), createRecentActivityFeed(activities)] : hasReleaseNotes ? [createWhatsNewFeed(changelog), createRecentActivityFeed(activities)] : showOverageCreditFeed ? [createRecentActivityFeed(activities), createOverageCreditFeed()] : [createRecentActivityFeed(activities), createWhatsNewFeed(changelog)]} maxWidth={rightWidth} />;
   let t26;
   if ($[62] !== T2 || $[63] !== t15 || $[64] !== t23 || $[65] !== t24 || $[66] !== t25) {
     t26 = <T2 flexDirection={t15} paddingX={t16} gap={t17}>{t23}{t24}{t25}</T2>;
