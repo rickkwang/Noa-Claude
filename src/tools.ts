@@ -10,8 +10,11 @@ import { GlobTool } from './tools/GlobTool/GlobTool.js'
 import { NotebookEditTool } from './tools/NotebookEditTool/NotebookEditTool.js'
 import { WebFetchTool } from './tools/WebFetchTool/WebFetchTool.js'
 import { TaskStopTool } from './tools/TaskStopTool/TaskStopTool.js'
-import { BriefTool } from './tools/BriefTool/BriefTool.js'
 /* eslint-disable custom-rules/no-process-env-top-level, @typescript-eslint/no-require-imports */
+const BriefTool =
+  feature('KAIROS') || feature('KAIROS_BRIEF')
+    ? require('./tools/BriefTool/BriefTool.js').BriefTool
+    : null
 const SleepTool =
   feature('KAIROS')
     ? require('./tools/SleepTool/SleepTool.js').SleepTool
@@ -183,7 +186,7 @@ export function getAllBaseTools(): Tools {
     ...(SleepTool ? [SleepTool] : []),
     ...cronTools,
     ...(RemoteTriggerTool ? [RemoteTriggerTool] : []),
-    BriefTool,
+    ...(BriefTool ? [BriefTool] : []),
     ...(SendUserFileTool ? [SendUserFileTool] : []),
     ...(PushNotificationTool ? [PushNotificationTool] : []),
     ...(getPowerShellTool() ? [getPowerShellTool()] : []),

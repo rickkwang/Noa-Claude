@@ -1,7 +1,5 @@
 // @ts-nocheck
 import type { BetaMessageStreamParams } from '@anthropic-ai/sdk/resources/beta/messages/messages.mjs'
-import type { Attributes, Meter } from '@opentelemetry/api'
-import type { logs } from '@opentelemetry/api-logs'
 import { realpathSync } from 'fs'
 import { homedir } from 'os'
 import { resolve, sep } from 'path'
@@ -39,7 +37,10 @@ export type ChannelEntry =
   | { kind: 'server'; name: string; dev?: boolean }
 
 export type AttributedCounter = {
-  add(value: number, additionalAttributes?: Attributes): void
+  add(
+    value: number,
+    additionalAttributes?: Record<string, string | number | boolean>,
+  ): void
 }
 
 /**
@@ -148,7 +149,6 @@ type State = {
   oauthTokenFromFd: string | null | undefined
   apiKeyFromFd: string | null | undefined
   // Telemetry state
-  meter: Meter | null
   sessionCounter: AttributedCounter | null
   locCounter: AttributedCounter | null
   prCounter: AttributedCounter | null
@@ -161,8 +161,6 @@ type State = {
   sessionId: SessionId
   // Parent session ID for tracking session lineage (e.g., plan mode -> implementation)
   parentSessionId: SessionId | undefined
-  // Logger state
-  eventLogger: ReturnType<typeof logs.getLogger> | null
   // Agent color state
   agentColorMap: Map<string, AgentColorName>
   agentColorIndex: number
@@ -378,7 +376,6 @@ function getInitialState(): State {
       'policySettings',
     ],
     // Telemetry state
-    meter: null,
     sessionCounter: null,
     locCounter: null,
     prCounter: null,
@@ -390,8 +387,6 @@ function getInitialState(): State {
     statsStore: null,
     sessionId: randomUUID() as SessionId,
     parentSessionId: undefined,
-    // Logger state
-    eventLogger: null,
     // Agent color state
     agentColorMap: new Map(),
     agentColorIndex: 0,
@@ -1099,10 +1094,6 @@ export function clearModelStrings(): void {
   STATE.modelStrings = null
 }
 
-export function getMeter(): Meter | null {
-  return STATE.meter
-}
-
 export function getSessionCounter(): AttributedCounter | null {
   return STATE.sessionCounter
 }
@@ -1133,10 +1124,6 @@ export function getCodeEditToolDecisionCounter(): AttributedCounter | null {
 
 export function getActiveTimeCounter(): AttributedCounter | null {
   return STATE.activeTimeCounter
-}
-
-export function getEventLogger(): ReturnType<typeof logs.getLogger> | null {
-  return STATE.eventLogger
 }
 
 export function getIsNonInteractiveSession(): boolean {

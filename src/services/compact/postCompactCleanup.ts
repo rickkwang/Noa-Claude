@@ -8,7 +8,6 @@ import { clearSpeculativeChecks } from '../../tools/BashTool/bashPermissions.js'
 import { clearClassifierApprovals } from '../../utils/classifierApprovals.js'
 import { resetGetMemoryFilesCache } from '../../utils/claudemd.js'
 import { clearSessionMessagesCache } from '../../utils/sessionStorage.js'
-import { clearBetaTracingState } from '../../utils/telemetry/betaSessionTracing.js'
 import { resetPrecomputeCycle } from './precomputedCompact.js'
 
 /**
@@ -61,7 +60,6 @@ export function runPostCompactCleanup(querySource?: QuerySource): void {
   clearClassifierApprovals()
   clearSpeculativeChecks()
   // Skill listings are restored from the post-compact history on the next turn.
-  clearBetaTracingState()
   if (feature('COMMIT_ATTRIBUTION')) {
     void import('../../utils/attributionHooks.js').then(m =>
       m.sweepFileContentCache(),

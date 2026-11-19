@@ -49,7 +49,7 @@ import { init } from './entrypoints/init.js';
 import { addToHistory } from './history.js';
 import type { Root } from './ink.js';
 import { launchRepl } from './replLauncher.js';
-import { hasGrowthBookEnvOverride, initializeGrowthBook, refreshGrowthBookAfterAuthChange } from './services/analytics/growthbook.js';
+import { refreshGrowthBookAfterAuthChange } from './services/analytics/growthbook.js';
 import { fetchBootstrapData } from './services/api/bootstrap.js';
 import { type DownloadResult, downloadSessionFiles, type FilesApiConfig, parseFileSpecs } from './services/api/filesApi.js';
 import type { McpSdkServerConfig, McpServerConfig, ScopedMcpServerConfig } from './services/mcp/types.js';
@@ -1778,22 +1778,6 @@ async function run(): Promise<CommanderCommand> {
     const sessionNameArg = options.name?.trim();
     if (sessionNameArg) {
       cacheSessionTitle(sessionNameArg);
-    }
-
-    // Ant model aliases (capybara-fast etc.) resolve via the
-    // tengu_ant_model_override GrowthBook flag. _CACHED_MAY_BE_STALE reads
-    // disk synchronously; disk is populated by a fire-and-forget write. On a
-    // cold cache, parseUserSpecifiedModel returns the unresolved alias, the
-    // API 404s, and -p exits before the async write lands — crashloop on
-    // fresh pods. Awaiting init here populates the in-memory payload map that
-    // _CACHED_MAY_BE_STALE now checks first. Gated so the warm path stays
-    // non-blocking:
-    //  - explicit model via --model or ANTHROPIC_MODEL (both feed alias resolution)
-    //  - no env override (which short-circuits _CACHED_MAY_BE_STALE before disk)
-    //  - flag absent from disk (== null also catches pre-#22279 poisoned null)
-    const explicitModel = options.model || process.env.ANTHROPIC_MODEL;
-    if ("external" === 'ant' && explicitModel && explicitModel !== 'default' && !hasGrowthBookEnvOverride('tengu_ant_model_override') && getGlobalConfig().cachedGrowthBookFeatures?.['tengu_ant_model_override'] == null) {
-      await initializeGrowthBook();
     }
 
     // Special case the default model with the null keyword

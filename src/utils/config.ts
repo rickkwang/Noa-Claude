@@ -433,10 +433,6 @@ export type GlobalConfig = {
   bridgeOauthDeadExpiresAt?: number
   bridgeOauthDeadFailCount?: number
 
-  // Desktop upsell startup dialog tracking
-  desktopUpsellSeenCount?: number // Total showings (max 3)
-  desktopUpsellDismissed?: boolean // "Don't ask again" picked
-
   // Idle-return dialog tracking
   idleReturnDismissed?: boolean // "Don't ask again" picked
 
@@ -452,21 +448,6 @@ export type GlobalConfig = {
 
   // Sonnet 4.5 → 4.6 migration (pro/max/team premium)
   sonnet45To46MigrationTimestamp?: number
-
-  // Cached statsig gate values
-  cachedStatsigGates: {
-    [gateName: string]: boolean
-  }
-
-  // Cached statsig dynamic configs
-  cachedDynamicConfigs?: { [configName: string]: unknown }
-
-  // Cached GrowthBook feature values
-  cachedGrowthBookFeatures?: { [featureName: string]: unknown }
-
-  // Local GrowthBook overrides (ant-only, set via /config Gates tab).
-  // Checked after env-var overrides but before the real resolved value.
-  growthBookOverrides?: { [featureName: string]: unknown }
 
   // Emergency tip tracking - stores the last shown tip to prevent re-showing
   lastShownEmergencyTip?: string
@@ -630,9 +611,6 @@ function createDefaultGlobalConfig(): GlobalConfig {
     autoInstallIdeExtension: true,
     fileCheckpointingEnabled: true,
     terminalProgressBarEnabled: true,
-    cachedStatsigGates: {},
-    cachedDynamicConfigs: {},
-    cachedGrowthBookFeatures: {},
     respectGitignore: true,
     copyFullResponse: false,
   }

@@ -582,10 +582,9 @@ export async function getDoctorDiagnostic(): Promise<DiagnosticInfo> {
   const querySource = getQuerySourceForREPL()
   const promptCacheDiag = getPromptCache1hDiagnostic(querySource)
 
-  // Note: allowlist-driven warnings are intentionally suppressed here.
-  // The 1h-cache allowlist lives in a server-managed GrowthBook cache
-  // (cachedGrowthBookFeatures.tengu_*) that end users can't author; surfacing
-  // it here only produces actionless noise.
+  // Note: allowlist-driven warnings are intentionally suppressed here: the
+  // 1h-cache allowlist is a feature gate end users can't change, so surfacing
+  // it only produces actionless noise.
 
   if (promptCacheDiag.reason === 'prompt_caching_disabled') {
     warnings.push({

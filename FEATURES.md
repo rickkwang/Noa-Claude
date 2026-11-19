@@ -219,11 +219,9 @@ Build-scope exclusions:
 
 ## Runtime GrowthBook Gates That Always Resolve to Defaults
 
-GrowthBook remote fetch is hard-disabled and both override channels
-(`CLAUDE_INTERNAL_FC_OVERRIDES`, `/config` Gates tab) require `USER_TYPE=ant`,
-so for normal users these gates always return their in-code defaults. The
-guarded branches are kept (reachable via internal/dev channels) but are inert
-in shipped builds:
+There is no GrowthBook client: `src/services/analytics/growthbook.ts` keeps the
+gate API and returns each gate's in-code default (boolean gates without one
+return `false`). The guarded branches are kept but are inert:
 
 - `tengu_otk_slot_v1` (default `false`) — max_output_tokens same-request 8k→64k
   escalate retry in query.ts never fires; multi-turn recovery still applies.

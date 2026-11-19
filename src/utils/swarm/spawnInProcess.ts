@@ -36,11 +36,6 @@ import {
   STOPPED_DISPLAY_MS,
 } from '../task/framework.js'
 import { createTeammateContext } from '../teammateContext.js'
-import {
-  isPerfettoTracingEnabled,
-  registerAgent as registerPerfettoAgent,
-  unregisterAgent as unregisterPerfettoAgent,
-} from '../telemetry/perfettoTracing.js'
 import { removeMemberByAgentId } from './teamHelpers.js'
 
 type SetAppStateFn = (updater: (prev: AppState) => AppState) => void
@@ -146,11 +141,6 @@ export async function spawnInProcessTeammate(
       parentSessionId,
       abortController,
     })
-
-    // Register agent in Perfetto trace for hierarchy visualization
-    if (isPerfettoTracingEnabled()) {
-      registerPerfettoAgent(agentId, name, parentSessionId)
-    }
 
     const description = `${name}: ${prompt.substring(0, 50)}${prompt.length > 50 ? '...' : ''}`
 
@@ -315,11 +305,6 @@ export function killInProcessTeammate(
       evictTerminalTask.bind(null, taskId, setAppState),
       STOPPED_DISPLAY_MS,
     )
-  }
-
-  // Release perfetto agent registry entry
-  if (agentId) {
-    unregisterPerfettoAgent(agentId)
   }
 
   return killed
