@@ -332,6 +332,7 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
     <button
       type="button"
       onClick={() => setRightOpen((o) => !o)}
+      data-right-panel-toggle=""
       className="flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-[var(--icon-ink,#52514E)] transition-colors hover:bg-[var(--fill-hover)] hover:text-[var(--text-primary,#2D2D2B)]"
       title="Right panel"
       aria-label="Right panel"
@@ -844,7 +845,7 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
   const rightDesired = Math.round(320 + (rightRatio ?? defaultRatio) * (rightWindowMax - 320))
   const rightTarget = Math.min(rightDesired, rightMax)
   const rightWidth = rightOpen ? rightTarget : 0
-  // The overview docks as a column only with the right panel closed and a chat area wide enough;
+  // The overview docks as a column while the chat area is wide enough;
   // otherwise it floats over the chat as a popover.
   // Measure the chat column itself: window-size state lags a live resize and the sidebar animates, so a
   // computed width can dock the overview while the real column is too narrow to hold it.
@@ -862,13 +863,16 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
     observer.observe(el)
     return () => observer.disconnect()
   }, [dockMotion])
-  const overviewDocked = !rightOpen && (measuredChatWide ?? workspaceWidth - rightWidth >= 611)
+  // The right panel opening does not undock it by itself: the docked column rides the chat edge while the panel slides
+  // and turns into the popover in place only if the settled chat column is too narrow.
+  const overviewDocked = measuredChatWide ?? workspaceWidth - rightWidth >= 611
   const overviewDockedVisible = overviewShown && overviewDocked
   const overviewPopoverOpen = overviewPopover === session.key && !overviewDockedVisible
   const overviewVisible = overviewDockedVisible || overviewPopoverOpen
   useEffect(() => { if (overviewPopover !== null && !overviewPopoverOpen) setOverviewPopover(null) }, [overviewPopover, overviewPopoverOpen])
-  // A docked column that stops fitting turns into the popover instead of vanishing.
+  // A docked column that stops fitting turns into the popover instead of vanishing, and a popover docks once the column fits.
   useEffect(() => { if (overviewShown && !overviewDocked) { setOverviewShown(false); setOverviewPopover(session.key) } }, [overviewShown, overviewDocked, session.key])
+  useEffect(() => { if (overviewPopoverOpen && overviewDocked) { setOverviewPopover(null); setOverviewShown(true) } }, [overviewPopoverOpen, overviewDocked])
   const [showDiagnostics, setShowDiagnostics] = useState(false)
   useEffect(() => { if (!overviewVisible) setShowDiagnostics(false) }, [overviewVisible])
   const toggleOverview = () => {

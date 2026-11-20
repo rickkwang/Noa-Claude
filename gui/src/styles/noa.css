@@ -2706,14 +2706,13 @@ html[data-translucent-sidebar="enabled"] .noa-confirm-scrim { backdrop-filter: n
   .noa-message-rail-dot { transition-duration: 0s; }
 }
 
-/* Overview popover: layer, panel, fade-in and shadow read from Claude's flat session rail. */
+/* Overview popover: one panel with the same ring and shadow as the app's other floating panels. It does not take
+   .noa-floating-panel itself, which would hide a browser tab's native view while the popover is open. */
 .noa-overview-layer { position: absolute; inset-block: 0; inset-inline-end: 8px; z-index: 30; display: flex; width: 280px; flex-direction: column; padding-top: 12px; padding-bottom: 8px; pointer-events: none; }
-.noa-overview { pointer-events: auto; display: flex; min-height: 0; flex: 0 1 auto; flex-direction: column; overflow-y: auto; overscroll-behavior: contain; border: 1px solid var(--divider-subtle); border-radius: 12px; background: var(--bg-card); box-shadow: 0 2px 4px rgba(0, 0, 0, .07), 0 6px 16px rgba(0, 0, 0, .08); animation: noa-overview-in 200ms cubic-bezier(.165, .84, .44, 1); }
-/* On the dark floor the light-theme shadow disappears; deepen it so the card lifts off the page. */
-[data-theme="dark"] .noa-overview { box-shadow: 0 2px 4px rgba(0, 0, 0, .25), 0 6px 16px rgba(0, 0, 0, .35); }
+.noa-overview { pointer-events: auto; display: flex; min-height: 0; flex: 0 1 auto; flex-direction: column; overflow-y: auto; overscroll-behavior: contain; border-radius: 12px; background: var(--bg-card); box-shadow: var(--shadow-floating); animation: noa-overview-in 200ms cubic-bezier(.165, .84, .44, 1); }
 @keyframes noa-overview-in { from { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .noa-overview { animation: none; } }
-/* Docked overview: a column of ring cards beside the chat; opening and closing are instant, as in Claude. */
+/* Docked overview: a column of ring cards beside the chat; opening and closing are instant. */
 .noa-overview-dock { position: absolute; inset-block: 0; z-index: 30; width: 280px; overflow-y: auto; overscroll-behavior: contain; padding-top: 12px; padding-bottom: 8px; scrollbar-width: none; }
 .noa-overview-dock::-webkit-scrollbar { display: none; }
 .noa-overview { scrollbar-width: none; }

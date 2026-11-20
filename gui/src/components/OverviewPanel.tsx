@@ -192,12 +192,13 @@ export function OverviewPanel({ state, cwd, open, workspaceRefreshKey, endInset,
   }
   const visible = layout.order.filter((id) => !layout.hidden.includes(id) || (id === "diagnostics" && showDiagnostics))
 
-  // Outside press or Escape dismisses; the toggle button handles its own press.
+  // Outside press or Escape dismisses; the toggle button handles its own press, and the right panel toggle only resizes
+  // the chat, which docks or keeps the popover.
   useEffect(() => {
     if (!open || docked) return
     const press = (event: PointerEvent) => {
       const target = event.target as Element | null
-      if (panelRef.current?.contains(target) || target?.closest("[data-overview-toggle], [role=menu], [role=dialog]")) return
+      if (panelRef.current?.contains(target) || target?.closest("[data-overview-toggle], [data-right-panel-toggle], [role=menu], [role=dialog]")) return
       onClose()
     }
     const key = (event: KeyboardEvent) => {
@@ -309,11 +310,15 @@ export function OverviewPanel({ state, cwd, open, workspaceRefreshKey, endInset,
       </div>}
     </RailCard>,
   }
-  const cardClass = (index: number) => docked
+  // In the popover a held section becomes its own ringed sheet, so it covers the sections it passes over; the ring sits
+  // inside the sheet because the scrolling popover would clip an outer shadow.
+  const cardClass = (id: CardId, index: number) => docked
     ? "rounded-lg bg-[var(--surface-page,#F9F9F7)] shadow-[0_0_0_1px_var(--border-default)] empty:hidden"
-    : `${index > 0 ? "rounded-[10px] border-t border-[var(--divider-subtle)] " : ""}empty:hidden`
+    : drag?.id === id
+      ? `${index > 0 ? "border-t border-transparent " : ""}rounded-xl bg-[var(--bg-card)] shadow-[inset_0_0_0_1px_var(--border-default)] empty:hidden`
+      : `${index > 0 ? "rounded-[10px] border-t border-[var(--divider-subtle)] " : ""}empty:hidden`
   const cardEls = visible.map((id, index) => <div key={id} ref={(node) => { if (node) cardRefs.current.set(id, node); else cardRefs.current.delete(id) }}
-    className={cardClass(index)}
+    className={cardClass(id, index)}
     style={{ transform: drag ? `translateY(${shiftOf(id)}px)` : undefined, transition: drag && drag.id !== id ? `transform ${SORT_MS}ms ease` : undefined, zIndex: drag?.id === id ? 1 : undefined, position: drag?.id === id ? "relative" : undefined }}>
     {cards[id]}
   </div>)
