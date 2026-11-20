@@ -8,9 +8,9 @@
   line-height: 20px;
   letter-spacing: 0;
 }
-/* Corner radius of the conversation surface, the settings page card and the veil. Matches the native window's corner,
-   so a card corner reads as concentric with the window instead of a smaller arc beside it. The right panel is a straight edge. */
-:root { --noa-surface-radius: 16px; --text-danger: #911E1B; --ring-warning: #FBB315; --ring-danger: #C83839; }
+/* Corner radius of the conversation surface, the settings page card and the veil: a 12px arc, tighter than the native
+   window's corner. The right panel is a straight edge. */
+:root { --noa-surface-radius: 12px; --text-danger: #911E1B; --ring-warning: #FBB315; --ring-danger: #C83839; }
 /* Shared menu card tokens: dropdown cards (model, add, permissions, session card) and the suggestion popover (slash). */
 :root {
   --menu-radius: 20px;
