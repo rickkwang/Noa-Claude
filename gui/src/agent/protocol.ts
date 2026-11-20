@@ -311,7 +311,7 @@ export type ControlRequest =
 // Shape of the bridge's /api/sessions/:id response.
 export type HistoryItem =
   | { kind: "user"; id?: string; text: string; images?: ImageBlock[]; sentAt?: number }
-  | { kind: "turn-duration"; durationMs: number; interrupted?: boolean; error?: string }
+  | { kind: "turn-duration"; durationMs?: number; interrupted?: boolean; error?: string }
   | { kind: "compaction"; trigger: "manual" | "auto" }
   | { kind: "rewind"; filesRestored?: boolean; at?: number }
   | { kind: "turn-diff"; diff: TurnDiff; updateOnly?: boolean }

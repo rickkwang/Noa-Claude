@@ -159,6 +159,7 @@ interface Entry {
   isMeta?: boolean
   isCompactSummary?: boolean
   isSidechain?: boolean
+  isApiErrorMessage?: boolean
   durationMs?: number
   compactMetadata?: { trigger?: "manual" | "auto" }
   rewindMetadata?: { filesRestored?: boolean }
@@ -492,7 +493,7 @@ async function conversationChain(file: string, includeSidechain = false): Promis
 // client feeds them through the same reducer.
 export type HistoryItem =
   | { kind: "user"; id?: string; text: string; images?: ImageBlock[]; sentAt?: number }
-  | { kind: "turn-duration"; durationMs: number; interrupted?: boolean; error?: string }
+  | { kind: "turn-duration"; durationMs?: number; interrupted?: boolean; error?: string }
   | { kind: "compaction"; trigger: "manual" | "auto" }
   | { kind: "rewind"; filesRestored?: boolean; at?: number }
   | { kind: "turn-diff"; diff: TurnDiff }
@@ -599,13 +600,20 @@ export async function loadHistory(cwd: string, id: string): Promise<HistoryItem[
   }
   let turnNumber = 0
   let currentUserMessageId: string | undefined
+  // The full text of the turn's API error; the result record keeps only its first line, and older turns have no record.
+  let apiError: string | undefined
   const flushTurnDiff = () => {
     const resultKey = currentUserMessageId && results.has(currentUserMessageId) ? currentUserMessageId : turnNumber
     const result = results.get(resultKey)
     if (result) {
-      items.push({ kind: "turn-duration", durationMs: result.durationMs, error: result.error })
+      items.push({ kind: "turn-duration", durationMs: result.durationMs, error: apiError ?? result.error })
       results.delete(resultKey)
+    } else if (apiError) {
+      const last = items.at(-1)
+      if (last?.kind === "turn-duration") last.error = apiError
+      else items.push({ kind: "turn-duration", error: apiError })
     }
+    apiError = undefined
     if (currentUserMessageId === undefined && !byIndex.has(turnNumber)) return
     const diff = (currentUserMessageId ? byUser.get(currentUserMessageId) : undefined) ?? byIndex.get(turnNumber)
     if (diff) items.push({ kind: "turn-diff", diff })
@@ -673,6 +681,13 @@ export async function loadHistory(cwd: string, id: string): Promise<HistoryItem[
       }
       // The terminal records some commands as a breadcrumb here rather than as a user entry.
       else if (!output && commandLine(entry.content) && !isGuiCommandEntry(entry)) items.push({ kind: "user", id: userId, text: commandLine(entry.content)!, sentAt: entryTime(entry) })
+      continue
+    }
+
+    // An API failure is the turn's error, not its answer.
+    if (entry.type === "assistant" && entry.isApiErrorMessage) {
+      const content = Array.isArray(entry.message?.content) ? entry.message.content : []
+      apiError = content.map((block: any) => block?.type === "text" ? block.text : "").join("").trim() || apiError
       continue
     }
 

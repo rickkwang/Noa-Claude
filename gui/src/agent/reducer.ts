@@ -162,7 +162,7 @@ type Action =
   | { type: "external"; pid: number; status?: string }
   | { type: "user-sent"; id: string; text?: string; content?: UserContent; sentAt?: number }
   | { type: "history-user"; id: string; text: string; images?: ImageBlock[]; sentAt?: number }
-  | { type: "turn-duration"; durationMs: number; interrupted?: boolean; error?: string }
+  | { type: "turn-duration"; durationMs?: number; interrupted?: boolean; error?: string }
   | { type: "exit"; code: number | null }
   | { type: "compaction"; trigger: "manual" | "auto" }
   | { type: "turn-diff"; diff: TurnDiff; updateOnly?: boolean }
@@ -833,8 +833,13 @@ function stampTurn(turns: Turn[], durationMs?: number, interrupted = false, erro
     ]
   }
   const next = [...closed]
+  const turn = next[lastAssistant] as Extract<Turn, { role: "assistant" }>
+  // A live API failure arrives both as the turn's last text and as the result error; show it once, as the error.
+  const last = turn.blocks.at(-1)
+  const echoed = error !== undefined && last?.kind === "text" && last.text.trim() === error.trim()
   next[lastAssistant] = {
-    ...(next[lastAssistant] as Extract<Turn, { role: "assistant" }>),
+    ...turn,
+    ...(echoed && { blocks: turn.blocks.slice(0, -1) }),
     durationMs,
     interrupted,
     error,

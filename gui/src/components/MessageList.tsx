@@ -78,6 +78,8 @@ const TURN_GAP = 16
 const TURN_OVERSCAN = 2
 const ESTIMATED_TURN_HEIGHT = 160
 const TODO_TOOLS = ["TodoWrite", "TaskCreate", "TaskUpdate", "TaskList", "TaskGet"]
+// Errors that only signing in again fixes; Retry would fail the same way.
+const SIGN_IN_ERROR = /\brun \/login\b/i
 const scrollPositions = new Map<string, { top: number; pinned: boolean; heights: Map<string, number> }>()
 
 export function MessageList({ turns, dockMotion, threadTitles, onOpenThread, cwd, onOpenFile, busy, result, readingWidth, liveDiff, onTurnDiff, onTurnDiffAction, diffActionPending, onRetry, onEdit, onRewind, rewindBlocked, onUndoRewind, onQuote, tasks, onStopTask, onOpenTask, sessionId, historyBefore, historyLoading, onLoadEarlier, transcriptView = "normal" }: MessageListProps) {
@@ -559,13 +561,13 @@ export function MessageList({ turns, dockMotion, threadTitles, onOpenThread, cwd
 
         {awaitingModel && !awaitingInGroup && <Working />}
 
-        {!busy && result?.isError && !result.interrupted && onRetry && (
-          <div className="flex min-w-0 flex-wrap items-center gap-2 text-[length:var(--text-chat-sm)] text-[var(--sidebar-text-muted,#898781)]">
+        {!busy && result?.isError && !result.interrupted && onRetry && !SIGN_IN_ERROR.test(lastTurn?.role === "assistant" ? lastTurn.error ?? "" : "") && (
+          <div className="-mt-2 flex min-w-0 flex-wrap items-center gap-2 text-[length:var(--text-chat-sm)] text-[var(--sidebar-text-muted,#898781)]">
             {!turns.some(turn => turn.role === "assistant" && turn.error) && <span className="text-[#C24444]">Finished with an error</span>}
             <button
               type="button"
               onClick={onRetry}
-              className="noa-press flex h-6 items-center rounded-md px-1.5 text-caption text-[var(--accent-color)] hover:bg-[var(--fill-hover)]"
+              className="noa-press flex h-6 items-center rounded-md px-1.5 text-caption text-[var(--accent-color)] first:-ml-1.5 hover:bg-[var(--fill-hover)]"
               title="Send the last message again"
             >
               Retry

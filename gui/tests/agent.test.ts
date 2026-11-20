@@ -118,6 +118,27 @@ test("error results retain actionable details", () => {
   })
   expect(state.error).toBe("Provider unavailable")
 })
+test("an API error shows once, as the turn error", async () => {
+  const text = "API Error: token request failed (400): invalid_grant. Run /login to sign in again."
+  let state = reducer(initialState, { type: "user-sent", id: "u1", text: "hi" })
+  state = reducer(state, { type: "agent", message: { type: "assistant", message: { id: "m1", model: "<synthetic>", content: [{ type: "text", text }] } } as any })
+  state = reducer(state, { type: "agent", message: { type: "result", subtype: "success", is_error: true, duration_ms: 1, result: text } as any })
+  const live = state.turns.at(-1) as any
+  expect(live.blocks.filter((block: any) => block.kind === "text")).toEqual([])
+  expect(live.error).toBe(text)
+
+  // A restored turn needs no result record: the transcript marks the API error itself.
+  const cwd = "/private/tmp/api-error-history"
+  const id = transcript(cwd, [
+    { type: "user", uuid: "u", parentUuid: null, message: { content: "hi" } },
+    { type: "assistant", uuid: "a", parentUuid: "u", isApiErrorMessage: true, message: { id: "m", model: "<synthetic>", content: [{ type: "text", text: `${text}\nmore` }] } },
+  ])
+  const restored = reducer(initialState, { type: "history", items: (await loadHistory(cwd, id))! })
+  const turn = restored.turns.at(-1) as any
+  expect(turn.blocks.filter((block: any) => block.kind === "text")).toEqual([])
+  expect(turn.error).toBe(`${text}\nmore`)
+  expect(turn.durationMs).toBeUndefined()
+})
 test("MCP input requests are visible until answered or cancelled", () => {
   const state = reducer(initialState, {
     type: "agent",
