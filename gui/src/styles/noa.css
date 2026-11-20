@@ -21,17 +21,19 @@
 }
 [data-theme="dark"] { --text-danger: #E02E2A; --ring-danger: #DC3C3D; }
 /* The conversation surface's left edge: window-radius corners over the sidebar floor, edged by a half-pixel ring in the
-   same token as other floating surfaces. The ring is a left border rather than a full ring so the window's right
-   edge never grows a stray hairline. Collapsed, the radius unwinds to 0 and the ring fades; the shell stays
+   same token as other floating surfaces. The ring has no right side so the window's right edge never grows a stray
+   hairline; its top and bottom sides sit just outside the window, so the corner arcs keep their full width instead of
+   tapering into a zero-width side. Collapsed, the radius unwinds to 0 and the ring fades; the shell stays
    sidebar-coloured throughout, so the corner notch never shows a blended colour mid-animation. */
 .noa-content-surface {
   position: absolute;
-  top: 0;
-  bottom: 0;
+  top: -0.5px;
+  bottom: -0.5px;
   right: 0;
   z-index: -1;
   pointer-events: none;
-  border-left: 0.5px solid var(--border-default, rgba(45,45,43,0.078));
+  border: 0.5px solid var(--border-default, rgba(45,45,43,0.078));
+  border-right: 0;
   border-radius: var(--noa-surface-radius) 0 0 var(--noa-surface-radius);
   background-color: var(--surface-page, #F9F9F7);
 }
@@ -538,18 +540,20 @@ html[data-translucent-sidebar="enabled"] .noa-app-shell {
 html[data-translucent-sidebar="enabled"] .noa-app-shell::before {
   content: '';
   position: absolute;
-  inset: 0;
+  /* Top and bottom borders sit just outside the window so the corner arcs keep their full width. */
+  inset: -0.5px 0;
   left: var(--noa-sidebar-material-width);
   z-index: -1;
   pointer-events: none;
-  border-left: 0.5px solid transparent;
+  border: 0.5px solid transparent;
+  border-right: 0;
   background-color: var(--bg-primary, #FCFCFB);
   /* Parked; only the dock-motion rule below arms a transition. */
   transition: none;
 }
 /* Docked: the radius matches .noa-content-surface; collapsed it unwinds to flush with the window edge. */
 html[data-translucent-sidebar="enabled"] .noa-app-shell:has([data-sidebar-expanded="true"])::before {
-  border-left-color: var(--border-default, rgba(45,45,43,0.078));
+  border-color: var(--border-default, rgba(45,45,43,0.078));
   border-radius: var(--noa-surface-radius) 0 0 var(--noa-surface-radius);
 }
 
@@ -557,7 +561,7 @@ html[data-translucent-sidebar="enabled"] .noa-app-shell:has([data-sidebar-expand
    preview, resize drag, or settle frames. The flag is off at first paint, so a restart has no entry animation.
    Same duration, curve and layout pass as the column width and chat column margin, so the edges move as one. */
 html[data-translucent-sidebar="enabled"] .noa-app-shell[data-sidebar-dock-motion="true"]::before {
-  transition: left 500ms cubic-bezier(0.4, 0, 0.2, 1), border-radius 500ms cubic-bezier(0.4, 0, 0.2, 1), border-left-color 500ms cubic-bezier(0.4, 0, 0.2, 1);
+  transition: left 500ms cubic-bezier(0.4, 0, 0.2, 1), border-radius 500ms cubic-bezier(0.4, 0, 0.2, 1), border-color 500ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 /* The veil above already paints the opaque rounded content plane when translucency is enabled; hiding

@@ -852,13 +852,16 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
   // Only the docking threshold is kept, so a live resize that stays on one side of it does not re-render the app.
   const [measuredChatWide, setMeasuredChatWide] = useState<boolean>()
   const [chatHeight, setChatHeight] = useState(window.innerHeight)
+  // While a side panel slides, the docking decision waits for it to settle instead of flipping mid-slide.
   useEffect(() => {
     const el = chatColumnRef.current
     if (!el) return
-    const observer = new ResizeObserver(() => { setMeasuredChatWide(el.offsetWidth >= 611); setChatHeight(el.offsetHeight) })
+    const measure = () => { if (!dockMotion) setMeasuredChatWide(el.offsetWidth >= 611); setChatHeight(el.offsetHeight) }
+    measure()
+    const observer = new ResizeObserver(measure)
     observer.observe(el)
     return () => observer.disconnect()
-  }, [])
+  }, [dockMotion])
   const overviewDocked = !rightOpen && (measuredChatWide ?? workspaceWidth - rightWidth >= 611)
   const overviewDockedVisible = overviewShown && overviewDocked
   const overviewPopoverOpen = overviewPopover === session.key && !overviewDockedVisible
@@ -1139,6 +1142,7 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
             {hasTurns ? (
               <MessageList
                 key={session.key}
+                dockMotion={dockMotion}
                 threadTitles={threadTitles}
                 onOpenThread={inCoordinator ? openThread : undefined}
                 cwd={session.cwd}
@@ -1369,10 +1373,11 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
         <div
           data-customize-page
           data-settings-surface="true"
-          className={`absolute inset-y-0 right-0 z-[15] overflow-hidden border-l-[0.5px] bg-[var(--surface-page,#F9F9F7)] ${moving ? "" : "transition-[left,border-radius,border-left-color] duration-500 ease-in-out"}`}
+          className={`absolute -inset-y-[0.5px] right-0 z-[15] overflow-hidden border-[0.5px] border-r-0 bg-[var(--surface-page,#F9F9F7)] ${moving ? "" : "transition-[left,border-radius,border-color] duration-500 ease-in-out"}`}
+          // Top and bottom borders sit just outside the window so the corner arcs keep their full width.
           style={{
             left: sidebarWidth,
-            borderLeftColor: sidebarOpen ? "var(--border-default, rgba(45,45,43,0.078))" : "transparent",
+            borderColor: sidebarOpen ? "var(--border-default, rgba(45,45,43,0.078))" : "transparent",
             borderRadius: sidebarOpen ? "var(--noa-surface-radius) 0 0 var(--noa-surface-radius)" : 0,
           }}
         >

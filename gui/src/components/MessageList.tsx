@@ -37,6 +37,8 @@ import { streamSound } from "../lib/streamSound"
 
 interface MessageListProps {
   turns: Turn[]
+  // A side panel is sliding; the rail waits for it to settle before appearing.
+  dockMotion?: boolean
   // In a project's coordinator chat: thread titles by session id, to name the thread a tool call acts on.
   threadTitles?: Record<string, string>
   // Opens a thread the project chat names.
@@ -78,7 +80,7 @@ const ESTIMATED_TURN_HEIGHT = 160
 const TODO_TOOLS = ["TodoWrite", "TaskCreate", "TaskUpdate", "TaskList", "TaskGet"]
 const scrollPositions = new Map<string, { top: number; pinned: boolean; heights: Map<string, number> }>()
 
-export function MessageList({ turns, threadTitles, onOpenThread, cwd, onOpenFile, busy, result, readingWidth, liveDiff, onTurnDiff, onTurnDiffAction, diffActionPending, onRetry, onEdit, onRewind, rewindBlocked, onUndoRewind, onQuote, tasks, onStopTask, onOpenTask, sessionId, historyBefore, historyLoading, onLoadEarlier, transcriptView = "normal" }: MessageListProps) {
+export function MessageList({ turns, dockMotion, threadTitles, onOpenThread, cwd, onOpenFile, busy, result, readingWidth, liveDiff, onTurnDiff, onTurnDiffAction, diffActionPending, onRetry, onEdit, onRewind, rewindBlocked, onUndoRewind, onQuote, tasks, onStopTask, onOpenTask, sessionId, historyBefore, historyLoading, onLoadEarlier, transcriptView = "normal" }: MessageListProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
   const layoutRef = useRef<HTMLDivElement>(null)
@@ -131,14 +133,16 @@ export function MessageList({ turns, threadTitles, onOpenThread, cwd, onOpenFile
     const update = () => {
       const bounds = scroll.getBoundingClientRect()
       const scale = scroll.offsetWidth > 0 ? bounds.width / scroll.offsetWidth : 1
-      setShowRail((content.getBoundingClientRect().left - bounds.left) / (scale > 0 ? scale : 1) >= 48)
+      const fits = (content.getBoundingClientRect().left - bounds.left) / (scale > 0 ? scale : 1) >= 48
+      // Mid-slide the rail may leave at once (it would overlap the text) but only appears once the slide settles.
+      setShowRail((shown) => dockMotion ? shown && fits : fits)
     }
     update()
     const observer = new ResizeObserver(update)
     observer.observe(scroll)
     observer.observe(content)
     return () => observer.disconnect()
-  }, [])
+  }, [dockMotion])
 
   useLayoutEffect(() => {
     const el = scrollRef.current
