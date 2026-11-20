@@ -62,7 +62,7 @@ for (const scenario of cases) {
           else blocks = say(`${role}_IDLE`);
         }
       } else if (role === 'MAIN') {
-        if (n === 1) blocks = [launch('spawn_parent', 'PARENT')];
+        if (n === 1) blocks = [launch('spawn_parent', 'PARENT', { effort: 'low' })];
         else if (!all.includes('"tool_use_id":"resume_parent_1"')) {
           const id = agentId(all); assert.ok(id, 'parent ID missing');
           if (scenario === 'resume-legacy') {
@@ -137,6 +137,7 @@ for (const scenario of cases) {
     }
     if (scenario === 'resume-depth') {
       assert.ok(counts.LEAF >= 6, 'nested agents or depth-2 resume never ran');
+      assert.deepEqual([...new Set(requests.filter(r => r.role === 'PARENT').map(r => r.body.output_config?.effort))], ['low'], 'subagent effort not applied across resumes');
       assert.equal(counts.GRAND || 0, 0, 'resume bypassed depth cap');
       assert.ok(requests.filter(r => r.role === 'LEAF').some(r => JSON.stringify(r.body.messages).includes('depth 3 of 2')), 'depth refusal missing');
       assert.ok(main.some(r => JSON.stringify(r.body.messages).includes('PARENT_RESUMED_2')), 'second resume not completed');

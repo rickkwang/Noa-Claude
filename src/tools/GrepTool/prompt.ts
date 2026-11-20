@@ -17,6 +17,8 @@ export function getDescription(model?: string): string {
 - \`multiline: true\` for patterns that span lines.`
   }
 
+  // Deliberately stricter than upstream, which gates this on the steer alone: under
+  // isAgentSpawnRestricted the Agent tool says not to spawn unless asked, so no nudge toward it.
   const delegationHint =
     getSubagentSteer(model) === 'default' && !isAgentSpawnRestricted()
       ? `  - Use ${AGENT_TOOL_NAME} tool (if available) for open-ended searches requiring multiple rounds\n`

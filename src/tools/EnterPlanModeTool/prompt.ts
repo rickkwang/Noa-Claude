@@ -30,6 +30,8 @@ In plan mode, you'll:
  * upstream's more eager default. Don't restore it from a binary diff.
  */
 export function getEnterPlanModeToolPrompt(model?: string): string {
+  // Deliberately stricter than upstream, which gates this on the steer alone: under
+  // isAgentSpawnRestricted the Agent tool says not to spawn unless asked, so no nudge toward it.
   const researchHint =
     getSubagentSteer(model) === 'default' && !isAgentSpawnRestricted()
       ? ' (use the Agent tool instead)'

@@ -231,6 +231,8 @@ When you do spawn one, brief it like the peer it is: state the goal and what you
   const contentSearchHint = embedded
     ? '`grep` via the Bash tool'
     : GREP_TOOL_NAME
+  // Upstream keeps the "Reserve this tool" sentence under the spawn restriction too;
+  // dropped here so it does not contradict doNotSpawnNote.
   const whenNotToUseSection = `
 ## When not to use
 
@@ -248,7 +250,7 @@ ${agentListSection}${doNotSpawnNote}
 When using the ${AGENT_TOOL_NAME} tool, specify a subagent_type parameter to select which agent type to use. If omitted, the general-purpose agent is used.${forkSubagentSentence()}`
 
   // Verbose variant. Sentences follow upstream's wording where the binary
-  // confirms them. Fork subagents and per-call effort have no counterpart in
+  // confirms them. Fork subagents and relative `lower`/`higher` effort have no counterpart in
   // this build, so those sentences are left out.
   // Non-coordinator gets the full prompt with all sections
   return `${verboseHead}

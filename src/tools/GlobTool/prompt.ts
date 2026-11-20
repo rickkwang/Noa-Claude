@@ -13,9 +13,11 @@ const DESCRIPTION = `- Fast file pattern matching tool that works with any codeb
 
 export function getDescription(model?: string): string {
   if (shouldUseCompactSystemPrompt(model)) return LEAN_DESCRIPTION
+  // Deliberately stricter than upstream, which gates this on the steer alone: under
+  // isAgentSpawnRestricted the Agent tool says not to spawn unless asked, so no nudge toward it.
   if (getSubagentSteer(model) !== 'default' || isAgentSpawnRestricted()) {
     return DESCRIPTION
   }
   return `${DESCRIPTION}
-- When you are doing an open ended search that may require multiple rounds of globbing and grepping, use the Agent tool instead`
+- When you are doing an open ended search that may require multiple rounds of globbing and grepping, use the Agent tool instead (if available)`
 }

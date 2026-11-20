@@ -24,7 +24,7 @@ import { jsonStringify } from '../../utils/slowOperations.js';
 import { getCwd, runWithCwdOverride } from '../../utils/cwd.js';
 import { logForDebugging } from '../../utils/debug.js';
 import { isEnvTruthy } from '../../utils/envUtils.js';
-import { EFFORT_LEVELS, type EffortLevel } from '../../utils/effort.js';
+import { EFFORT_LEVELS, getEffortEnvOverride } from '../../utils/effort.js';
 import { AbortError, errorMessage, toError } from '../../utils/errors.js';
 import type { CacheSafeParams } from '../../utils/forkedAgent.js';
 import { lazySchema } from '../../utils/lazySchema.js';
@@ -91,6 +91,7 @@ const baseInputSchema = lazySchema(() => z.object({
   prompt: z.string().describe('The task for the agent to perform'),
   subagent_type: z.string().optional().describe('The type of specialized agent to use for this task'),
   model: z.enum(['sonnet', 'opus', 'haiku', 'fable']).optional().describe("Optional model override for this agent. Takes precedence over the agent definition's model frontmatter and the configured default subagent model. If omitted, uses the agent definition's model, else the default (inherits from the parent unless a default subagent model is configured)."),
+  effort: z.enum(EFFORT_LEVELS).optional().describe('Reasoning effort for this agent. Set this ONLY when the user, or instructions such as CLAUDE.md or a skill, explicitly ask that this agent or delegated work run at a specific effort level, never on your own judgment; otherwise omit it and the agent runs at its usual effort.' + (isForkSubagentEnabled() ? ' Ignored for subagent_type: "fork": a fork runs at your own effort.' : '')),
   run_in_background: z.boolean().optional().describe("Agents run in the background by default; you will be notified when one completes. Set to false only when your very next action depends on this agent's result and nothing else could usefully happen while it runs — otherwise leave it in the background so the user can hand you other work."),
   schema: z.record(z.string(), z.unknown()).optional().describe('JSON Schema for structured output. When set, the agent must finish by calling StructuredOutput with a conforming object, which is returned as `structured_output` in the result (and embedded in the completion notification for background agents) — no parsing needed. Not available with subagent_type "fork".')
 }));
@@ -104,7 +105,6 @@ const fullInputSchema = lazySchema(() => {
       .refine(name => !['main', 'team-lead', 'user', 'system'].includes(name.toLowerCase()) && !toAgentId(name), 'Name must not be a reserved recipient or have the shape of an agent ID.')
       .optional().describe('Name for the spawned agent. Makes it addressable via SendMessage({to: name}) while running.'),
     team_name: z.string().optional().describe('Team name for spawning. Uses current team context if omitted.'),
-    effort: z.enum(EFFORT_LEVELS).optional().describe('Effort override for a named Agent Teams teammate.'),
     mode: permissionModeSchema().optional().describe('Permission mode for spawned teammate (e.g., "plan" to require plan approval).')
   });
   return baseInputSchema().merge(multiAgentInputSchema).extend({
@@ -135,9 +135,11 @@ export const inputSchema = lazySchema(() => {
   const withoutModel = process.env.CLAUDE_CODE_SUBAGENT_MODEL_FORCE
     ? schema.omit({ model: true })
     : schema;
-  return isBackgroundTasksDisabled || isForkSubagentEnabled() ? withoutModel.omit({
+  // CLAUDE_CODE_EFFORT_LEVEL overrides every effort, so hide the parameter.
+  const withoutEffort = getEffortEnvOverride() !== undefined ? withoutModel.omit({ effort: true }) : withoutModel;
+  return isBackgroundTasksDisabled || isForkSubagentEnabled() ? withoutEffort.omit({
     run_in_background: true
-  }) : withoutModel;
+  }) : withoutEffort;
 });
 type InputSchema = ReturnType<typeof inputSchema>;
 
@@ -148,7 +150,6 @@ type InputSchema = ReturnType<typeof inputSchema>;
 type AgentToolInput = z.infer<ReturnType<typeof baseInputSchema>> & {
   name?: string;
   team_name?: string;
-  effort?: EffortLevel;
   mode?: z.infer<ReturnType<typeof permissionModeSchema>>;
   isolation?: 'worktree' | 'remote';
   cwd?: string;
@@ -297,9 +298,6 @@ export const AgentTool = buildTool({
     // can manage their own background agents.
     if (isInProcessTeammate() && teamName && run_in_background === true) {
       throw new Error('In-process teammates cannot spawn background agents. Use run_in_background=false for synchronous subagents.');
-    }
-    if (effort !== undefined && !(teamName && name)) {
-      throw new Error('The effort parameter requires a named Agent Teams teammate.');
     }
     // Teammate spawns return before the schema wiring below; refuse loudly
     // instead of silently dropping the parameter.
@@ -709,7 +707,8 @@ export const AgentTool = buildTool({
       }));
     }
     const runAgentParams: Parameters<typeof runAgent>[0] = {
-      agentDefinition: selectedAgent,
+      // An explicit effort wins over the definition's, as model does; a fork runs at the parent's effort.
+      agentDefinition: effort !== undefined && !isForkPath ? { ...selectedAgent, effort } : selectedAgent,
       promptMessages,
       toolUseContext,
       canUseTool,
