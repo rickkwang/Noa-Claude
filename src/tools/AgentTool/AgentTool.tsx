@@ -24,6 +24,7 @@ import { jsonStringify } from '../../utils/slowOperations.js';
 import { getCwd, runWithCwdOverride } from '../../utils/cwd.js';
 import { logForDebugging } from '../../utils/debug.js';
 import { isEnvTruthy } from '../../utils/envUtils.js';
+import { EFFORT_LEVELS, type EffortLevel } from '../../utils/effort.js';
 import { AbortError, errorMessage, toError } from '../../utils/errors.js';
 import type { CacheSafeParams } from '../../utils/forkedAgent.js';
 import { lazySchema } from '../../utils/lazySchema.js';
@@ -103,6 +104,7 @@ const fullInputSchema = lazySchema(() => {
       .refine(name => !['main', 'team-lead', 'user', 'system'].includes(name.toLowerCase()) && !toAgentId(name), 'Name must not be a reserved recipient or have the shape of an agent ID.')
       .optional().describe('Name for the spawned agent. Makes it addressable via SendMessage({to: name}) while running.'),
     team_name: z.string().optional().describe('Team name for spawning. Uses current team context if omitted.'),
+    effort: z.enum(EFFORT_LEVELS).optional().describe('Effort override for a named Agent Teams teammate.'),
     mode: permissionModeSchema().optional().describe('Permission mode for spawned teammate (e.g., "plan" to require plan approval).')
   });
   return baseInputSchema().merge(multiAgentInputSchema).extend({
@@ -146,6 +148,7 @@ type InputSchema = ReturnType<typeof inputSchema>;
 type AgentToolInput = z.infer<ReturnType<typeof baseInputSchema>> & {
   name?: string;
   team_name?: string;
+  effort?: EffortLevel;
   mode?: z.infer<ReturnType<typeof permissionModeSchema>>;
   isolation?: 'worktree' | 'remote';
   cwd?: string;
@@ -256,6 +259,7 @@ export const AgentTool = buildTool({
     subagent_type,
     description,
     model: modelParam,
+    effort,
     run_in_background,
     name,
     team_name,
@@ -293,6 +297,9 @@ export const AgentTool = buildTool({
     // can manage their own background agents.
     if (isInProcessTeammate() && teamName && run_in_background === true) {
       throw new Error('In-process teammates cannot spawn background agents. Use run_in_background=false for synchronous subagents.');
+    }
+    if (effort !== undefined && !(teamName && name)) {
+      throw new Error('The effort parameter requires a named Agent Teams teammate.');
     }
     // Teammate spawns return before the schema wiring below; refuse loudly
     // instead of silently dropping the parameter.
@@ -335,6 +342,7 @@ export const AgentTool = buildTool({
         use_splitpane: true,
         plan_mode_required: spawnMode === 'plan',
         model: model ?? agentDef?.model,
+        effort,
         agent_type: subagent_type,
         invokingRequestId: assistantMessage?.requestId
       }, toolUseContext);

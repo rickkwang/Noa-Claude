@@ -22,6 +22,7 @@ import { isInBundledMode } from '../../utils/bundledMode.js'
 import { getGlobalConfig } from '../../utils/config.js'
 import { getCwd } from '../../utils/cwd.js'
 import { logForDebugging } from '../../utils/debug.js'
+import type { EffortLevel } from '../../utils/effort.js'
 import { errorMessage } from '../../utils/errors.js'
 import { execFileNoThrow } from '../../utils/execFileNoThrow.js'
 import { parseUserSpecifiedModel } from '../../utils/model/model.js'
@@ -127,6 +128,7 @@ export type SpawnTeammateConfig = {
   use_splitpane?: boolean
   plan_mode_required?: boolean
   model?: string
+  effort?: EffortLevel
   agent_type?: string
   description?: string
   /** request_id of the API call whose response contained the tool_use that
@@ -144,6 +146,7 @@ type SpawnInput = {
   use_splitpane?: boolean
   plan_mode_required?: boolean
   model?: string
+  effort?: EffortLevel
   agent_type?: string
   description?: string
   invokingRequestId?: string
@@ -208,9 +211,10 @@ function getTeammateCommand(): string {
 function buildInheritedCliFlags(options?: {
   planModeRequired?: boolean
   permissionMode?: PermissionMode
+  effort?: EffortLevel
 }): string {
   const flags: string[] = []
-  const { planModeRequired, permissionMode } = options || {}
+  const { planModeRequired, permissionMode, effort } = options || {}
 
   // Propagate permission mode to teammates, but NOT if plan mode is required
   // Plan mode takes precedence over bypass permissions for safety
@@ -235,6 +239,8 @@ function buildInheritedCliFlags(options?: {
   if (modelOverride) {
     flags.push(`--model ${quote([modelOverride])}`)
   }
+
+  if (effort !== undefined) flags.push(`--effort ${quote([effort])}`)
 
   // Propagate --settings if set via CLI
   const settingsPath = getFlagSettingsPath()
@@ -410,6 +416,7 @@ async function handleSpawnSplitPane(
   let inheritedFlags = buildInheritedCliFlags({
     planModeRequired: plan_mode_required,
     permissionMode: appState.toolPermissionContext.mode,
+    effort: input.effort,
   })
 
   // If teammate has a custom model, add --model flag (or replace inherited one)
@@ -616,6 +623,7 @@ async function handleSpawnSeparateWindow(
   let inheritedFlags = buildInheritedCliFlags({
     planModeRequired: plan_mode_required,
     permissionMode: appState.toolPermissionContext.mode,
+    effort: input.effort,
   })
 
   // If teammate has a custom model, add --model flag (or replace inherited one)
@@ -912,6 +920,7 @@ async function handleSpawnInProcess(
       prompt,
       description: input.description,
       model,
+      effort: input.effort,
       agentDefinition,
       teammateContext: result.teammateContext,
       // Strip messages: the teammate never reads toolUseContext.messages

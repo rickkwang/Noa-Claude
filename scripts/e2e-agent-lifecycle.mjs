@@ -51,7 +51,7 @@ for (const scenario of cases) {
         if (role === 'MAIN') {
           if (n === 1) blocks = [tool('create_team', 'TeamCreate', { team_name: 'lifecycle-team', description: 'Lifecycle regression fixture' })];
           else if (scenario === 'team-empty') blocks = say('AUDIT_OK');
-          else if (!all.includes('"tool_use_id":"spawn_A"')) blocks = ['A', 'B'].map(r => launch(`spawn_${r}`, r, { name: `worker${r}`, team_name: 'lifecycle-team' }));
+          else if (!all.includes('"tool_use_id":"spawn_A"')) blocks = ['A', 'B'].map(r => launch(`spawn_${r}`, r, { name: `worker${r}`, team_name: 'lifecycle-team', model: 'haiku', effort: r === 'A' ? 'low' : 'high' }));
           else if (!all.includes('REPORT_A') || !all.includes('REPORT_B')) blocks = say('WAIT_FOR_REPORTS');
           else if (!all.includes('"tool_use_id":"shutdown_A"')) blocks = ['A', 'B'].map(r => tool(`shutdown_${r}`, 'SendMessage', { to: `worker${r}`, message: { type: 'shutdown_request', reason: 'Fixture complete' } }));
           else blocks = say('AUDIT_OK');
@@ -106,8 +106,8 @@ for (const scenario of cases) {
   });
   await new Promise(r => server.listen(0, '127.0.0.1', r));
   const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => ['PATH', 'HOME', 'TMPDIR', 'USER', 'LANG'].includes(k)));
-  Object.assign(env, { CLAUDE_CONFIG_DIR: config, ANTHROPIC_API_KEY: 'local-fixture-key', ANTHROPIC_BASE_URL: `http://127.0.0.1:${server.address().port}`, DISABLE_AUTOUPDATER: '1', CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1', CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: '1', CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH: '2' });
-  const cliArgs = ['--print', '--verbose', '--output-format', 'stream-json', '--model', 'claude-sonnet-4-6', '--strict-mcp-config', '--setting-sources', '', '--permission-mode', 'dontAsk', '--tools', 'Agent,SendMessage,TeamCreate', '--allowedTools', 'SendMessage,TeamCreate', '--teammate-mode', 'in-process', '--debug', '--debug-file', join(dir, 'debug.log'), '--max-turns', '20', '--', 'LIFECYCLE_MAIN Complete the lifecycle fixture.'];
+  Object.assign(env, { CLAUDE_CONFIG_DIR: config, ANTHROPIC_API_KEY: 'local-fixture-key', ANTHROPIC_BASE_URL: `http://127.0.0.1:${server.address().port}`, DISABLE_AUTOUPDATER: '1', CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1', CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: '1', CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH: '2', CLAUDE_CODE_ALWAYS_ENABLE_EFFORT: '1' });
+  const cliArgs = ['--print', '--verbose', '--output-format', 'stream-json', '--model', 'claude-haiku-5-5', '--strict-mcp-config', '--setting-sources', '', '--permission-mode', 'dontAsk', '--tools', 'Agent,SendMessage,TeamCreate', '--allowedTools', 'SendMessage,TeamCreate', '--teammate-mode', 'in-process', '--debug', '--debug-file', join(dir, 'debug.log'), '--max-turns', '20', '--', 'LIFECYCLE_MAIN Complete the lifecycle fixture.'];
   const command = entry.endsWith('.js') ? ['bun', entry, ...cliArgs] : [entry, ...cliArgs];
   const start = performance.now();
   const child = spawn(command[0], command.slice(1), { cwd: dir, env, stdio: ['ignore', 'pipe', 'pipe'], detached: true });
@@ -128,6 +128,7 @@ for (const scenario of cases) {
     if (scenario === 'team-empty') assert.equal(main.length, 2, 'leader-only team triggered extra shutdown work');
     if (scenario === 'team-shutdown') {
       for (const role of ['A', 'B']) {
+        assert.equal(requests.find(r => r.role === role)?.body.output_config?.effort, role === 'A' ? 'low' : 'high', `${role} effort not applied`);
         assert.ok(main.some(r => JSON.stringify(r.body.messages).includes(`REPORT_${role}`)), `${role} report lost`);
         assert.ok(requests.some(r => r.role === role && r.response?.some(b => b.input?.message?.type === 'shutdown_response' && b.input.message.approve)), `${role} never approved shutdown`);
         assert.ok(main.some(r => r.body.messages.some(m => text(m.content).includes('"type":"shutdown_approved"') && text(m.content).includes(`"from":"worker${role}"`))), `${role} approval never reached leader`);
