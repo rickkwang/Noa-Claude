@@ -25,7 +25,7 @@ import type { LogOption } from '../types/logs.js';
 import type { Message } from '../types/message.js';
 import { agenticSessionSearch } from '../utils/agenticSessionSearch.js';
 import { renameRecordingForSession } from '../utils/asciicast.js';
-import { findLiveSessionHolder, heldByLiveSessionMessage, updateSessionName } from '../utils/concurrentSessions.js';
+import { claimSession, heldByLiveSessionMessage, releaseSessionClaim, updateSessionName } from '../utils/concurrentSessions.js';
 import { loadConversationForResume } from '../utils/conversationRecovery.js';
 import { getBgJobShort } from '../utils/background/bgJob.js';
 import { heldByBackgroundMessage, listJobs, markBackgroundHeld } from '../utils/background/jobs.js';
@@ -194,7 +194,7 @@ export function ResumeConversation({
       }
     }
     const heldId = log_0.sessionId ?? log_0.messages?.[0]?.sessionId;
-    const liveHolder = heldId && !forkSession ? await findLiveSessionHolder(heldId) : undefined;
+    const liveHolder = heldId && !forkSession ? await claimSession(heldId) : undefined;
     if (liveHolder) {
       setExitNotice(heldByLiveSessionMessage(liveHolder, 'resume'));
       return;
@@ -212,6 +212,8 @@ export function ResumeConversation({
     }
     try {
       if (!skipSummaryGate && shouldUseResumeSummaryGate(log_0)) {
+        // Continue from the gate claims the session again.
+        if (heldId) await releaseSessionClaim(heldId);
         setSummaryGateTarget(log_0);
         setResuming(false);
         return;
@@ -314,6 +316,7 @@ export function ResumeConversation({
         success: false
       });
       logError(e as Error);
+      if (heldId) await releaseSessionClaim(heldId);
       throw e;
     }
   }

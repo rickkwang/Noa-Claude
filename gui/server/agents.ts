@@ -422,27 +422,40 @@ export function externalHolder(sessionId: string): { pid: number; status?: strin
     if (own.has(pid) || !processAlive(pid)) continue
     try {
       const entry = JSON.parse(readFileSync(join(dir, file), "utf8"))
-      if (entry.sessionId !== sessionId || entry.kind !== "interactive" || entry.ppid === process.pid) continue
-      // A crashed holder leaves its file behind; a recycled PID is not the writer.
-      if (typeof entry.processStartedAt === "string") {
-        const birth = Bun.spawnSync(["ps", "-p", String(pid), "-o", "lstart="], { env: { ...process.env, LC_ALL: "C", TZ: "UTC" } }).stdout.toString().trim()
-        if (birth && birth !== entry.processStartedAt) continue
-      }
+      if (entry.sessionId !== sessionId || entry.kind !== "interactive" || entry.ppid === process.pid || !sameProcess(pid, entry.processStartedAt)) continue
       return { pid, status: entry.status }
     } catch {}
   }
-  return undefined
+  const pid = claimHolder(sessionId)
+  return pid && !own.has(pid) ? { pid } : undefined
+}
+// A CLI claims a task before resuming it and names it in its PID file only afterwards.
+function claimHolder(sessionId: string): number | undefined {
+  try {
+    const entry = JSON.parse(readFileSync(join(configHome(), "sessions", `${sessionId}.claim`), "utf8"))
+    if (typeof entry.pid !== "number" || entry.ppid === process.pid || !processAlive(entry.pid) || !sameProcess(entry.pid, entry.processStartedAt)) return undefined
+    return entry.pid
+  } catch {
+    return undefined
+  }
+}
+// A crashed holder leaves its file behind; a recycled PID is not the writer.
+function sameProcess(pid: number, startedAt: unknown): boolean {
+  if (typeof startedAt !== "string") return true
+  const birth = Bun.spawnSync(["ps", "-p", String(pid), "-o", "lstart="], { env: { ...process.env, LC_ALL: "C", TZ: "UTC" } }).stdout.toString().trim()
+  return !birth || birth === startedAt
 }
 function holderStatus(pid: number, sessionId: string): { held: boolean; status?: string } {
   if (!processAlive(pid)) return { held: false }
   const dir = join(configHome(), "sessions")
   try {
     const entry = JSON.parse(readFileSync(join(dir, `${pid}.json`), "utf8"))
-    return entry.sessionId === sessionId ? { held: true, status: entry.status } : { held: false }
+    if (entry.sessionId === sessionId) return { held: true, status: entry.status }
   } catch {
     // The PID file goes before shutdown finishes; the process still writes until it exits.
     return { held: true }
   }
+  return { held: claimHolder(sessionId) === pid }
 }
 // Shows the holder's transcript as it grows; once the holder lets go, the client reconnects and resumes normally.
 function followExternal(ws: ServerWebSocket<SocketData>, sessionId: string, holder: { pid: number; status?: string }) {
@@ -738,6 +751,15 @@ function spawnRun(opts: SpawnOptions, root: string, previous?: AgentRun): AgentR
     current.busy = false
     void finalizeTurnDiff(current)
     if (!current.queue.length && runs.get(current.id) === current) runs.delete(current.id)
+    // The CLI refused a task another process opened first: follow it, as when the task is found held at attach.
+    const holder = opts.resume && code !== 0 && !current.turn ? externalHolder(opts.resume) : undefined
+    if (holder && opts.resume) {
+      for (const client of current.clients) {
+        client.data.run = undefined
+        followExternal(client, opts.resume, holder)
+      }
+      current.clients.clear()
+    }
     emit(current, { kind: "exit", code })
     // A turn cut short by the agent exiting never reaches idle; its watchers still hear it ended.
     if (interrupted) runHooks.settled?.(runInfo(current))

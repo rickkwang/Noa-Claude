@@ -489,6 +489,44 @@ try {
     terminal.kill()
     await terminal.exited
   }
+  // A process that claimed the task but has not yet named it in its PID file (mid-resume) still holds it.
+  const claimFile = join(config, "sessions", `${titledId}.claim`)
+  await wait(() => {
+    try {
+      process.kill(JSON.parse(readFileSync(claimFile, "utf8")).pid, 0)
+      return false
+    } catch {
+      return true
+    }
+  }, "the GUI's CLI releases the task", 30000)
+  rmSync(claimFile, { force: true })
+  const claimant = Bun.spawn(["sleep", "120"])
+  const claim = JSON.stringify({ pid: claimant.pid, ppid: process.pid })
+  try {
+    writeFileSync(claimFile, claim, { flag: "wx" })
+    const refused = Bun.spawn([process.execPath, join(runtimeRoot, "run-noa.js"), "-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--model", "claude-haiku-5-5", "--resume", titledId], {
+      cwd, env: { ...fixtureEnv, ANTHROPIC_API_KEY: "local-fixture", ANTHROPIC_BASE_URL: `http://127.0.0.1:${provider.port}` }, stdin: "pipe", stdout: "pipe", stderr: "ignore",
+    })
+    const [code, output] = await Promise.all([refused.exited, new Response(refused.stdout).text()])
+    assert.notEqual(code, 0, "A terminal resuming a claimed task is refused")
+    assert.ok(output.includes("open in another Noa process"), "The refusal names the holder")
+    console.log("PASS a terminal resuming a task another process has claimed is refused")
+    rmSync(claimFile)
+    const raced = connect(crypto.randomUUID(), titledId)
+    try {
+      await wait(() => raced.events.some((e) => e.kind === "attached"), "GUI starts its CLI for the free task")
+      // Claimed after the GUI found the task free, before its CLI (still starting up) resumes it.
+      writeFileSync(claimFile, claim, { flag: "wx" })
+      await wait(() => raced.events.some((e) => e.kind === "external" && e.pid === claimant.pid), "GUI follows the claimant once its CLI is refused", 30000)
+      console.log("PASS a GUI whose CLI is refused a task claimed meanwhile follows the claimant")
+    } finally {
+      raced.socket.close()
+    }
+  } finally {
+    claimant.kill()
+    await claimant.exited
+    rmSync(claimFile, { force: true })
+  }
   const thirdRuntime = crypto.randomUUID()
   const third = connect(thirdRuntime, initMessage.message.session_id)
   await third.initialize()

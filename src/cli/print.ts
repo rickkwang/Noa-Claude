@@ -5438,8 +5438,8 @@ async function refuseIfHeldByBackground(
   const { getBgJobShort } = await import('../utils/background/bgJob.js')
   const { findBackgroundHolder, heldByBackgroundMessage } = await import('../utils/background/jobs.js')
   const holder = await findBackgroundHolder(sessionId, getBgJobShort(), via)
-  const { findLiveSessionHolder, heldByLiveSessionMessage } = await import('../utils/concurrentSessions.js')
-  const liveHolder = holder ? undefined : await findLiveSessionHolder(sessionId)
+  const { claimSession, heldByLiveSessionMessage } = await import('../utils/concurrentSessions.js')
+  const liveHolder = holder ? undefined : await claimSession(sessionId)
   if (!holder && !liveHolder) return false
   emitLoadError(
     formatDiagnosticError(

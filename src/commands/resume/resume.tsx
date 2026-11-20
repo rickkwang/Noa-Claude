@@ -28,7 +28,7 @@ import { getLastSessionLog, getSessionIdFromLog, isCustomTitleEnabled, isLiteLog
 import { validateUuid } from '../../utils/uuid.js';
 import { getBgJobShort } from '../../utils/background/bgJob.js';
 import { findBackgroundHolder, heldByBackgroundMessage, markBackgroundHeld } from '../../utils/background/jobs.js';
-import { findLiveSessionHolder, heldByLiveSessionMessage } from '../../utils/concurrentSessions.js';
+import { claimSession, heldByLiveSessionMessage, releaseSessionClaim } from '../../utils/concurrentSessions.js';
 type ResumeResult = {
   resultType: 'sessionNotFound';
   arg: string;
@@ -388,7 +388,7 @@ export const call: LocalJSXCommandCall = async (onDone, context, args) => {
       onDone(heldByBackgroundMessage(holder, 'resume'));
       return;
     }
-    const liveHolder = await findLiveSessionHolder(sessionId);
+    const liveHolder = await claimSession(sessionId);
     if (liveHolder) {
       onDone(heldByLiveSessionMessage(liveHolder, 'resume'));
       return;
@@ -400,6 +400,7 @@ export const call: LocalJSXCommandCall = async (onDone, context, args) => {
       });
     } catch (error) {
       logError(error as Error);
+      await releaseSessionClaim(sessionId);
       const classified = classifyResumeError(error)
       onDone(`${classified.message} (${classified.code})`)
     }

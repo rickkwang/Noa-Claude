@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto'
-import { chmod, mkdir, readdir, readFile, rename, unlink, writeFile } from 'fs/promises'
+import { chmod, link, mkdir, readdir, readFile, rename, unlink, writeFile } from 'fs/promises'
 import { join } from 'path'
 import {
   getIsNonInteractiveSession,
@@ -13,7 +13,7 @@ import { processBirth } from './background/processIdentity.js'
 import { registerCleanup } from './cleanupRegistry.js'
 import { logForDebugging } from './debug.js'
 import { getClaudeConfigHomeDir } from './envUtils.js'
-import { errorMessage, isFsInaccessible } from './errors.js'
+import { errorMessage, getErrnoCode, isFsInaccessible } from './errors.js'
 import { isProcessRunning } from './genericProcessUtils.js'
 import { getPlatform } from './platform.js'
 import { jsonParse, jsonStringify } from './slowOperations.js'
@@ -157,7 +157,7 @@ export type LiveSessionHolder = { pid: number; entrypoint?: string }
  * before the old one has exited. Interactive siblings (two REPLs a tmux server
  * started directly) still conflict.
  */
-export async function findLiveSessionHolder(
+async function findLiveSessionHolder(
   sessionId: string,
 ): Promise<LiveSessionHolder | undefined> {
   const dir = getSessionsDir()
@@ -195,6 +195,114 @@ export async function findLiveSessionHolder(
     }
   }
   return undefined
+}
+
+// A PID file names its session only after the resume has switched to it, so two processes
+// resuming one conversation at the same moment both pass findLiveSessionHolder. A claim file
+// created with link(2), which fails if the file exists, lets exactly one of them through.
+const claimed = new Set<string>()
+let claimHooksRegistered = false
+
+function claimPath(sessionId: string): string {
+  return join(getSessionsDir(), `${sessionId}.claim`)
+}
+
+type ClaimEntry = { pid: number; ppid?: number; processStartedAt?: string; nonInteractive?: boolean; entrypoint?: string }
+
+async function readClaim(sessionId: string): Promise<ClaimEntry | undefined> {
+  try {
+    return jsonParse(await readFile(claimPath(sessionId), 'utf8')) as ClaimEntry
+  } catch {
+    return undefined
+  }
+}
+
+async function writeClaim(sessionId: string, entry: ClaimEntry, replace: boolean): Promise<boolean> {
+  const path = claimPath(sessionId)
+  const temp = `${path}.${randomUUID()}.tmp`
+  try {
+    await writeFile(temp, jsonStringify(entry), { mode: 0o600 })
+    if (replace) await rename(temp, path)
+    else await link(temp, path)
+    return true
+  } catch (e) {
+    if (getErrnoCode(e) === 'EEXIST') return false
+    throw e
+  } finally {
+    await unlink(temp).catch(() => {})
+  }
+}
+
+async function releaseClaim(sessionId: string): Promise<void> {
+  claimed.delete(sessionId)
+  // A same-parent replacement may have taken the claim over; leave its file alone.
+  if ((await readClaim(sessionId))?.pid === process.pid) await unlink(claimPath(sessionId)).catch(() => {})
+}
+
+/** Drop a claim whose resume did not go through; the session this process is on stays claimed. */
+export async function releaseSessionClaim(sessionId: string): Promise<void> {
+  if (claimed.has(sessionId) && getSessionId() !== sessionId) await releaseClaim(sessionId)
+}
+
+/**
+ * Claim `sessionId` for this process before resuming it, or return the live
+ * process that holds it. A claim lasts until this process exits or switches
+ * to another session.
+ */
+export async function claimSession(
+  sessionId: string,
+): Promise<LiveSessionHolder | undefined> {
+  const mine: ClaimEntry = {
+    pid: process.pid,
+    ppid: process.ppid,
+    processStartedAt: await processBirth(process.pid),
+    nonInteractive: getIsNonInteractiveSession(),
+    entrypoint: process.env.CLAUDE_CODE_ENTRYPOINT,
+  }
+  try {
+    await mkdir(getSessionsDir(), { recursive: true, mode: 0o700 })
+    let won = await writeClaim(sessionId, mine, false)
+    for (let attempt = 0; !won && attempt < 2; attempt++) {
+      const holder = await readClaim(sessionId)
+      const live =
+        holder &&
+        holder.pid !== process.pid &&
+        isProcessRunning(holder.pid) &&
+        !(typeof holder.processStartedAt === 'string' && (await processBirth(holder.pid)) !== holder.processStartedAt)
+      if (holder?.pid === process.pid) won = true
+      // The desktop server may start a session's replacement CLI before the old one exits.
+      else if (live && holder.nonInteractive === true && mine.nonInteractive && holder.ppid === process.ppid)
+        won = await writeClaim(sessionId, mine, true)
+      else if (live) return { pid: holder.pid, entrypoint: holder.entrypoint }
+      else {
+        // Left by a process that exited without cleanup (or a recycled PID).
+        await unlink(claimPath(sessionId)).catch(() => {})
+        won = await writeClaim(sessionId, mine, false)
+      }
+    }
+    if (!won) {
+      // Lost a race to recover a stale claim: the winner holds it now.
+      const holder = await readClaim(sessionId)
+      if (holder) return { pid: holder.pid, entrypoint: holder.entrypoint }
+    } else {
+      claimed.add(sessionId)
+      if (!claimHooksRegistered) {
+        claimHooksRegistered = true
+        registerCleanup(async () => {
+          await Promise.all([...claimed].map(releaseClaim))
+        })
+        onSessionSwitch(id => {
+          for (const other of claimed) if (other !== id) void releaseClaim(other)
+        })
+      }
+    }
+  } catch (e) {
+    logForDebugging(`[concurrentSessions] claim failed: ${errorMessage(e)}`)
+  }
+  // A holder that started this conversation fresh never claimed it.
+  const holder = await findLiveSessionHolder(sessionId)
+  if (holder && claimed.has(sessionId)) await releaseClaim(sessionId)
+  return holder
 }
 
 /** Why a resume refuses a conversation another live process is writing. */
