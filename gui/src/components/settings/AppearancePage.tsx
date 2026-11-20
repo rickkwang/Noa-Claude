@@ -94,10 +94,7 @@ export function AppearancePage({
   const isDark = useIsDark(appearance.theme)
   const variant = isDark ? "dark" : "light"
   const contrast = clampContrast(appearance.contrast?.[variant], variant)
-  const translucency = {
-    light: activeTranslucency(appearance.translucentSidebar, false),
-    dark: activeTranslucency(appearance.translucentSidebar, true),
-  }
+  const translucent = activeTranslucency(appearance.translucentSidebar, isDark)
   const [fontFamilies, setFontFamilies] = useState<LocalFontFamily[]>([])
   const [importOpen, setImportOpen] = useState(false)
   const [importDraft, setImportDraft] = useState("")
@@ -480,10 +477,10 @@ export function AppearancePage({
           )}
         </div>
         {supportsSidebarTranslucency() && (
-          <Row label="Translucent sidebar" description="Let the desktop material show behind the sidebar, per theme.">
+          <Row label="Translucent sidebar" description="Let the desktop material show behind the sidebar, in both light and dark.">
             <Toggle
-              checked={translucency[variant]}
-              onChange={(enabled) => change({ translucentSidebar: { ...translucency, [variant]: enabled } })}
+              checked={translucent}
+              onChange={(enabled) => change({ translucentSidebar: { light: enabled, dark: enabled } })}
             />
           </Row>
         )}
