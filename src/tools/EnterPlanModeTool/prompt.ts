@@ -1,5 +1,7 @@
 // @ts-nocheck
+import { isAgentSpawnRestricted } from '../../utils/auth.js'
 import { isPlanModeInterviewPhaseEnabled } from '../../utils/planModeV2.js'
+import { getSubagentSteer } from '../../utils/subagentSteer.js'
 import { ASK_USER_QUESTION_TOOL_NAME } from '../AskUserQuestionTool/prompt.js'
 
 const WHAT_HAPPENS_SECTION = `## What Happens in Plan Mode
@@ -27,7 +29,11 @@ In plan mode, you'll:
  * state, and under the inverted framing its four cases pulled back toward
  * upstream's more eager default. Don't restore it from a binary diff.
  */
-export function getEnterPlanModeToolPrompt(): string {
+export function getEnterPlanModeToolPrompt(model?: string): string {
+  const researchHint =
+    getSubagentSteer(model) === 'default' && !isAgentSpawnRestricted()
+      ? ' (use the Agent tool instead)'
+      : ''
   // When interview phase is enabled, omit the "What Happens" section —
   // detailed workflow instructions arrive via the plan_mode attachment (messages.ts).
   const whatHappens = isPlanModeInterviewPhaseEnabled()
@@ -62,7 +68,7 @@ Skip plan mode when you can reasonably infer the right approach:
 - The user's request is specific enough that the implementation path is clear
 - You're adding a feature with an obvious implementation pattern (e.g., adding a button, a new endpoint following existing conventions)
 - Bug fixes where the fix is clear once you understand the bug
-- Research/exploration tasks (use the Agent tool instead)
+- Research/exploration tasks${researchHint}
 - The user says something like "can we work on X" or "let's do X" — just get started
 
 When in doubt, prefer starting work and using ${ASK_USER_QUESTION_TOOL_NAME} for specific questions over entering a full planning phase.

@@ -43,8 +43,8 @@ export const EnterPlanModeTool: Tool<InputSchema, Output> = buildTool({
   async description() {
     return 'Requests permission to enter plan mode for complex tasks requiring exploration and design'
   },
-  async prompt() {
-    return getEnterPlanModeToolPrompt()
+  async prompt({ model }) {
+    return getEnterPlanModeToolPrompt(model)
   },
   get inputSchema(): InputSchema {
     return inputSchema()

@@ -101,7 +101,7 @@ export const GlobTool = buildTool({
   searchHint: 'find files by name pattern or wildcard',
   maxResultSizeChars: 100_000,
   async description() {
-    return DESCRIPTION
+    return getDescription()
   },
   userFacingName,
   getToolUseSummary,

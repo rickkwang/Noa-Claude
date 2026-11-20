@@ -234,7 +234,7 @@ When you do spawn one, brief it like the peer it is: state the goal and what you
   const whenNotToUseSection = `
 ## When not to use
 
-If the target is already known, use the direct tool: ${FILE_READ_TOOL_NAME} for a known path, ${contentSearchHint} for a specific symbol or string. Reserve this tool for open-ended questions that span the codebase, or tasks that match an available agent type.
+If the target is already known, use the direct tool: ${FILE_READ_TOOL_NAME} for a known path, ${contentSearchHint} for a specific symbol or string.${doNotSpawnNote ? '' : ' Reserve this tool for open-ended questions that span the codebase, or tasks that match an available agent type.'}
 `
 
   // Verbose head. Each sentence is upstream's wording; the paragraph layout is
