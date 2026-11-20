@@ -56,12 +56,6 @@ export const THEME_PRESETS: readonly ThemePresetDefinition[] = [
     dark: { surface: '#0D1117', ink: '#E6EDF3', accent: '#1F6FEB', codeThemeId: 'github-dark' },
   },
   {
-    id: 'gruvbox',
-    label: 'Gruvbox',
-    light: { surface: '#FBF1C7', ink: '#3C3836', accent: '#458588', codeThemeId: 'gruvbox-light' },
-    dark: { surface: '#282828', ink: '#EBDBB2', accent: '#458588', codeThemeId: 'gruvbox-dark' },
-  },
-  {
     id: 'nord',
     label: 'Nord',
     dark: { surface: '#2E3440', ink: '#D8DEE9', accent: '#88C0D0', codeThemeId: 'nord' },

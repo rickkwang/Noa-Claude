@@ -93,7 +93,7 @@ export function buildSettingsSearchIndex({
       page: pageByKey.appearance,
       rows: [
         { label: "Mode", keywords: ["light", "dark", "system"] },
-        { label: "Theme", keywords: ["preset", "palette", "claude", "codex", "nord", "catppuccin", "gruvbox"] },
+        { label: "Theme", keywords: ["preset", "palette", "claude", "codex", "nord", "catppuccin"] },
         { label: "Code theme", keywords: ["syntax", "highlight"] },
         { label: "Accent", keywords: ["color"] },
         { label: "Semantic colors", keywords: ["diff", "added", "removed", "skill"] },

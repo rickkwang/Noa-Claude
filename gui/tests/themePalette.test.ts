@@ -139,8 +139,8 @@ describe('themePalette', () => {
     const lightIds = presetsForVariant('light').map((p) => p.id);
     const darkIds = presetsForVariant('dark').map((p) => p.id);
 
-    expect(lightIds).toEqual(['noa', 'claude', 'codex', 'catppuccin', 'github', 'gruvbox', 'one', 'rose-pine']);
-    expect(darkIds).toEqual(['noa', 'claude', 'codex', 'catppuccin', 'github', 'gruvbox', 'nord', 'one', 'rose-pine', 'tokyo-night', 'vercel']);
+    expect(lightIds).toEqual(['noa', 'claude', 'codex', 'catppuccin', 'github', 'one', 'rose-pine']);
+    expect(darkIds).toEqual(['noa', 'claude', 'codex', 'catppuccin', 'github', 'nord', 'one', 'rose-pine', 'tokyo-night', 'vercel']);
 
     expect(getPresetDefaultCodeThemeId('claude', 'light')).toBe('claude-light');
     expect(getPresetDefaultCodeThemeId('claude', 'dark')).toBe('claude-dark');
@@ -148,8 +148,6 @@ describe('themePalette', () => {
     expect(getPresetDefaultCodeThemeId('catppuccin', 'dark')).toBe('catppuccin-mocha');
     expect(getPresetDefaultCodeThemeId('github', 'light')).toBe('github-light');
     expect(getPresetDefaultCodeThemeId('github', 'dark')).toBe('github-dark');
-    expect(getPresetDefaultCodeThemeId('gruvbox', 'light')).toBe('gruvbox-light');
-    expect(getPresetDefaultCodeThemeId('gruvbox', 'dark')).toBe('gruvbox-dark');
     expect(getPresetDefaultCodeThemeId('nord', 'dark')).toBe('nord');
     expect(getPresetDefaultCodeThemeId('one', 'light')).toBe('one-light');
     expect(getPresetDefaultCodeThemeId('one', 'dark')).toBe('one-dark');
