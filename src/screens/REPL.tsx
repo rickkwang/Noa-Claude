@@ -4267,7 +4267,9 @@ export function REPL({
   }, [queryGuard, commands, setToolJSX, getToolUseContext, messages, mainLoopModel, ideSelection, setUserInputOnProcessing, canUseTool, setAbortController, onQuery, addNotification, setAppState, onBeforeQuery]);
   useQueueProcessor({
     executeQueuedInput,
-    hasActiveLocalJsxUI: isShowingLocalJSXCommand,
+    // The exit-key flow is not a local-JSX command, so hold the queue for it
+    // too: a scheduled fire must not start a turn behind the exit dialog.
+    hasActiveLocalJsxUI: isShowingLocalJSXCommand || exitFlow !== null,
     queryGuard
   });
 
