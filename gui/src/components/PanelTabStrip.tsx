@@ -198,7 +198,7 @@ export function PanelTabStrip({ tabs, activeKey, label, onSelect, onClose, onCon
             )
           })}
         </div>
-        <div className={`flex shrink-0 items-center ${tabs.length > 0 ? "ps-1.5" : "ps-1"}`}>
+        <div className={`flex shrink-0 items-center ${tabs.length > 0 ? "ps-1.5" : "ps-0"}`}>
           <button
             type="button"
             aria-label={newLabel}
