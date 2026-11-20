@@ -16,6 +16,9 @@ import { createFileStateCacheWithSizeLimit } from '../../utils/fileStateCache.js
 import { createAssistantMessage, createUserMessage } from '../../utils/messages.js'
 import { resetSessionBudgets } from '../../utils/task/sessionBudget.js'
 import { AbortError } from '../../utils/errors.js'
+import { stopTask } from '../../tasks/stopTask.js'
+import { resumeAgentBackground } from '../../tools/AgentTool/resumeAgent.js'
+import { asAgentId } from '../../types/ids.js'
 
 function gate() {
   let resolve!: () => void
@@ -44,6 +47,35 @@ afterEach(() => {
 })
 
 describe('agent lifecycle ownership', () => {
+  test('stopping an evicted agent during transcript loading prevents its next run', async () => {
+    const { store, context } = fixture()
+    const reading = gate(), release = gate()
+    const agentId = asAgentId('a0123456789abcdef')
+    spyOn(sessionStorage, 'flushSessionStorage').mockResolvedValue(undefined)
+    spyOn(sessionStorage, 'readAgentMetadata').mockResolvedValue(undefined as never)
+    spyOn(sessionStorage, 'isAgentStoppedByUser').mockReturnValue(false)
+    spyOn(sessionStorage, 'markAgentStoppedByUser').mockImplementation(() => {})
+    spyOn(sessionStorage, 'getAgentTranscript').mockImplementation(async () => {
+      reading.resolve()
+      await release.promise
+      return { messages: [] } as never
+    })
+    const run = spyOn(agentRunner, 'runAgent').mockImplementation((async function* () {}) as never)
+    const resume = resumeAgentBackground({ agentId, prompt: 'resume', toolUseContext: context, canUseTool: undefined as never })
+    const outcome = resume.catch(error => error)
+    try {
+      await reading.promise
+      await expect(stopTask(agentId, { getAppState: store.getState, setAppState: store.setState, stoppedByUser: true })).resolves.toMatchObject({ taskId: agentId })
+    } finally {
+      release.resolve()
+      await outcome
+    }
+    expect(await outcome).toBeInstanceOf(AbortError)
+    expect((await outcome).message).toContain('stopped while resuming')
+    expect(run).not.toHaveBeenCalled()
+    expect(store.getState().tasks[agentId]).toBeUndefined()
+  })
+
   test('background handoff drains the original iterator without losing in-flight results', async () => {
     const { store, context } = fixture()
     const pending = gate(), release = gate(), closing = gate(), closed = gate(), notified = gate()

@@ -3,6 +3,7 @@ import { z } from 'zod/v4'
 import type { TaskStateBase } from '../../Task.js'
 import { buildTool, type ToolDef } from '../../Tool.js'
 import { stopTask } from '../../tasks/stopTask.js'
+import { isAgentWaking } from '../AgentTool/resumeAgent.js'
 import { lazySchema } from '../../utils/lazySchema.js'
 import { jsonStringify } from '../../utils/slowOperations.js'
 import { DESCRIPTION, TASK_STOP_TOOL_NAME } from './prompt.js'
@@ -71,6 +72,8 @@ export const TaskStopTool = buildTool({
 
     const appState = getAppState()
     const task = appState.tasks?.[id] as TaskStateBase | undefined
+
+    if (isAgentWaking(id)) return { result: true }
 
     if (!task) {
       return {

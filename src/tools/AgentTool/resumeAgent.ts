@@ -37,6 +37,7 @@ import {
   getAgentTranscript,
   readAgentMetadata,
   isAgentStoppedByUser,
+  markAgentStoppedByUser,
 } from '../../utils/sessionStorage.js'
 import { buildEffectiveSystemPrompt } from '../../utils/systemPrompt.js'
 import type { SystemPrompt } from '../../utils/systemPromptType.js'
@@ -91,21 +92,31 @@ export type ResumeAgentResult = {
   description: string
   outputFile: string
 }
-const wakingAgentIds = new Set<string>()
+const wakingAgents = new Map<string, AbortController>()
 
 /** True while a resume for this agent is starting up and its task is not yet registered. */
 export function isAgentWaking(agentId: string): boolean {
-  return wakingAgentIds.has(agentId)
+  return wakingAgents.has(agentId)
+}
+
+export function stopWakingAgent(agentId: string, stoppedByUser = false): boolean {
+  const controller = wakingAgents.get(agentId)
+  if (!controller) return false
+  controller.abort()
+  if (stoppedByUser) markAgentStoppedByUser(asAgentId(agentId))
+  return true
 }
 
 export async function resumeAgentBackground(
   args: Parameters<typeof resumeAgentBackgroundInner>[0],
 ): Promise<ResumeAgentResult> {
-  wakingAgentIds.add(args.agentId)
+  if (isAgentWaking(args.agentId)) throw new Error(`Agent "${args.agentId}" is already being resumed.`)
+  const controller = new AbortController()
+  wakingAgents.set(args.agentId, controller)
   try {
-    return await resumeAgentBackgroundInner(args)
+    return await resumeAgentBackgroundInner(args, controller.signal)
   } finally {
-    wakingAgentIds.delete(args.agentId)
+    wakingAgents.delete(args.agentId)
   }
 }
 
@@ -123,7 +134,7 @@ async function resumeAgentBackgroundInner({
   toolUseContext: ToolUseContext
   canUseTool: CanUseToolFn
   invokingRequestId?: string
-}): Promise<ResumeAgentResult> {
+}, wakeSignal: AbortSignal): Promise<ResumeAgentResult> {
   if (isAgentStoppedByUser(asAgentId(agentId))) {
     throw new Error(`Agent "${agentId}" was stopped by the user. Treat its work as cancelled; only start a new agent if the user explicitly asks.`)
   }
@@ -247,6 +258,7 @@ async function resumeAgentBackgroundInner({
   // Transcript/system-prompt reconstruction can await; recheck immediately
   // before allocating personality or a running background task. A resumer
   // stopped meanwhile has had its owned agents killed already.
+  if (wakeSignal.aborted) throw new AbortError(`Agent "${agentId}" was stopped while resuming.`)
   if (toolUseContext.abortController.signal.aborted) throw new AbortError()
   assertBudgetAllowsAgentStart(toolUseContext.options.maxBudgetUsd)
   assertCanStartAgent(toolUseContext.getAppState().tasks)
@@ -394,8 +406,9 @@ async function resumeAgentBackgroundInner({
       runAsyncAgentLifecycle({
         taskId: agentBackgroundTask.agentId,
         abortController: agentBackgroundTask.abortController!,
-        makeStream: onCacheSafeParams =>
-          runAgent({
+        makeStream: onCacheSafeParams => {
+          if (agentBackgroundTask.abortController!.signal.aborted) throw new AbortError()
+          return runAgent({
             ...runAgentParams,
             override: {
               ...runAgentParams.override,
@@ -403,7 +416,8 @@ async function resumeAgentBackgroundInner({
               abortController: agentBackgroundTask.abortController!,
             },
             onCacheSafeParams,
-          }),
+          })
+        },
         metadata,
         description: uiDescription,
         toolUseContext,

@@ -7,6 +7,7 @@ import type { TaskStateBase } from '../Task.js'
 import { getTaskByType } from '../tasks.js'
 import { emitTaskTerminatedSdk } from '../utils/sdkEventQueue.js'
 import { killAsyncAgent } from './LocalAgentTask/LocalAgentTask.js'
+import { stopWakingAgent } from '../tools/AgentTool/resumeAgent.js'
 import { isLocalShellTask } from './LocalShellTask/guards.js'
 
 export class StopTaskError extends Error {
@@ -46,6 +47,10 @@ export async function stopTask(
   const { getAppState, setAppState, stoppedByUser } = context
   const appState = getAppState()
   const task = appState.tasks?.[taskId] as TaskStateBase | undefined
+
+  if (task?.status !== 'running' && stopWakingAgent(taskId, stoppedByUser)) {
+    return { taskId, taskType: 'local_agent', command: task?.description }
+  }
 
   if (!task) {
     throw new StopTaskError(`No task found with ID: ${taskId}`, 'not_found')
