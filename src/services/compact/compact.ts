@@ -2231,7 +2231,7 @@ export async function createPostCompactContextAttachments({
 
   // Resume reads only the transcript after the last compaction, so the jobs
   // created before it are carried across.
-  const cronCarry = context.agentId ? null : createSessionCronCarry()
+  const cronCarry = context.agentId ? null : createSessionCronCarry(context.messages)
   if (cronCarry) {
     attachments.push(createAttachmentMessage(cronCarry))
   }

@@ -101,6 +101,10 @@ export class QueryGuard {
     return this._status !== 'idle'
   }
 
+  get isRunning(): boolean {
+    return this._status === 'running'
+  }
+
   get generation(): number {
     return this._generation
   }

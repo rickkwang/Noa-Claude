@@ -69,7 +69,7 @@ export function useScheduledTasks({
     // forward isMeta, so their messages remain visible in the
     // transcript. This is acceptable since normal mode is not the
     // primary use case for scheduled tasks.
-    const enqueueForLead = (prompt: string) =>
+    const enqueueForLead = (prompt: string, scheduledTaskId?: string) =>
       enqueuePendingNotification({
         value: prompt,
         mode: 'prompt',
@@ -80,6 +80,7 @@ export function useScheduledTasks({
         // at lower QoS when capacity is tight. No human is actively
         // waiting on this response.
         workload: WORKLOAD_CRON,
+        scheduledTaskId,
       })
 
     const scheduler = createCronScheduler({
@@ -112,7 +113,7 @@ export function useScheduledTasks({
           `Running scheduled task (${formatCronFireTime(new Date())})`,
         )
         setMessages(prev => [...prev, msg])
-        enqueueForLead(task.prompt)
+        enqueueForLead(task.prompt, task.id)
       },
       isLoading: () => isLoadingRef.current,
       assistantMode,

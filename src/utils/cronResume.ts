@@ -3,10 +3,12 @@
 import {
   addSessionCronTask,
   getSessionCronTasks,
+  removeSessionCronTasks,
   setScheduledTasksEnabled,
 } from '../bootstrap/state.js'
 import type { Message } from '../types/message.js'
-import type { Attachment } from './attachments.js'
+import { createAttachmentMessage, type Attachment } from './attachments.js'
+import { removeByFilter } from './messageQueueManager.js'
 import { getCronJitterConfig } from './cronJitterConfig.js'
 import {
   LOOP_WAKEUP_MAX_DELAY_S,
@@ -26,7 +28,15 @@ type Call = { name: string; input: Record<string, unknown>; at: number; index: n
 type Carry = Extract<Attachment, { type: 'session_cron_carry' }>
 
 /** The main session's in-memory jobs and pending wakeup, for compaction. */
-export function createSessionCronCarry(): Carry | null {
+export function createSessionCronCarry(
+  messages: readonly Message[] = [],
+  stoppedIds: string[] = [],
+  stoppedLoopAt?: number,
+): Carry | null {
+  const previous = messages.findLast(m => m.type === 'attachment' && m.attachment.type === 'session_cron_carry')
+  const prior = previous?.type === 'attachment' ? previous.attachment as Carry : undefined
+  const ended = [...new Set([...(prior?.ended ?? []), ...stoppedIds])]
+  const loopStoppedAt = stoppedLoopAt ?? prior?.loopStoppedAt
   const own = getSessionCronTasks().filter(t => t.agentId === undefined)
   const tasks = own
     .filter(t => t.kind === undefined)
@@ -43,8 +53,31 @@ export function createSessionCronCarry(): Carry | null {
     loop && scheduledFor !== null
       ? { prompt: loop.prompt, scheduledFor }
       : undefined
-  if (tasks.length === 0 && !wakeup) return null
-  return { type: 'session_cron_carry', tasks, ...(wakeup && { wakeup }) }
+  if (tasks.length === 0 && !wakeup && ended.length === 0 && loopStoppedAt === undefined) return null
+  return {
+    type: 'session_cron_carry', tasks,
+    ...(wakeup && { wakeup }),
+    ...(ended.length > 0 && { ended }),
+    ...(loopStoppedAt !== undefined && { loopStoppedAt }),
+  }
+}
+
+export function stopSessionCronTasks(
+  ids: string[],
+  setMessages: (update: (messages: Message[]) => Message[]) => void,
+): Message[] | undefined {
+  const tasks = getSessionCronTasks().filter(task => ids.includes(task.id))
+  if (!tasks.length) return
+  const stoppedIds = tasks.map(task => task.id)
+  const stoppedLoopAt = tasks.some(task => task.kind === 'loop') ? Date.now() : undefined
+  removeSessionCronTasks(stoppedIds)
+  removeByFilter(command => command.scheduledTaskId !== undefined && stoppedIds.includes(command.scheduledTaskId))
+  let updated: Message[] | undefined
+  setMessages(messages => {
+    const carry = createSessionCronCarry(messages, stoppedIds, stoppedLoopAt)!
+    return updated = [...messages, createAttachmentMessage(carry)]
+  })
+  return updated
 }
 
 export type MissedLoopWakeup = { prompt: string; scheduledFor: number }
@@ -127,7 +160,7 @@ export function restoreScheduledTasksFromMessages(
 
   const cfg = getCronJitterConfig()
   const present = new Set(getSessionCronTasks().map(t => t.id))
-  const deleted = new Set<string>()
+  const deleted = new Set(carry?.attachment.ended ?? [])
   for (const [id, call] of calls)
     if (call.name === 'CronDelete' && results.has(id))
       deleted.add(String(results.get(id)!.id))
@@ -156,6 +189,8 @@ export function restoreScheduledTasksFromMessages(
       // Count the next run from now, so the downtime does not fire at once.
       ...(recurring ? { recurring: true, lastFiredAt: nowMs } : {}),
     })
+    // A job can appear both as its CronCreate call and in a later carry.
+    present.add(result.id)
     restored++
   }
 
@@ -172,6 +207,7 @@ export function restoreScheduledTasksFromMessages(
   if (last && (!carry || last.index > carry.index)) {
     const wake = results.get(lastId!)!
     if (
+      last.at > (carry?.attachment.loopStoppedAt ?? -Infinity) &&
       wake.stopped !== true &&
       typeof wake.scheduledFor === 'number' &&
       typeof last.input.prompt === 'string'

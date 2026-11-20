@@ -145,6 +145,41 @@ try {
   assert.equal(afterClear.data.success, false, 'session change lost user cancellation'); assert.match(afterClear.data.message, /stopped by the user/)
   assert.equal(state.tasks[id], undefined)
 
+  const { addSessionCronTask, getSessionCronTasks, removeSessionCronTasks } = await import('../src/bootstrap/state.js')
+  const { createSessionCronCarry, restoreScheduledTasksFromMessages, stopSessionCronTasks } = await import('../src/utils/cronResume.js')
+  const { createAttachmentMessage } = await import('../src/utils/attachments.js')
+  const { writeCronTasks, listAllCronTasks } = await import('../src/utils/cronTasks.js')
+  const { enqueuePendingNotification, getCommandQueueSnapshot, removeByFilter } = await import('../src/utils/messageQueueManager.js')
+  const { getTranscriptPath, recordTranscript, loadTranscriptFromFile, resetSessionFilePointer } = await import('../src/utils/sessionStorage.js')
+  switchSession('44444444-4444-4444-8444-444444444444' as any); await resetSessionFilePointer()
+  const now = Date.now()
+  const cron = { cron: '0 * * * *', createdAt: now, recurring: true }
+  const durableId = 'durable1', cronDir = join(artifacts, 'project')
+  await writeCronTasks([{ ...cron, id: durableId, prompt: 'Persistent fixture' }], cronDir)
+  for (const id of ['stop-one', 'keep-one']) addSessionCronTask({ ...cron, id, prompt: id })
+  addSessionCronTask({ ...cron, id: 'stop-loop', prompt: 'Loop fixture', kind: 'loop' })
+  const cronCalls = ['stop-one', 'keep-one'].flatMap(id => [
+    createAssistantMessage({ content: [{ type: 'tool_use', id: `create-${id}`, name: 'CronCreate', input: { cron: cron.cron, prompt: id } }] as any }),
+    createUserMessage({ content: [{ type: 'tool_result', tool_use_id: `create-${id}`, content: 'Scheduled' }], toolUseResult: { id, recurring: true, durable: false } }),
+  ])
+  let history = [createUserMessage({ content: 'Scheduled cancellation fixture' }), ...cronCalls, createAttachmentMessage(createSessionCronCarry()!)] as import('../src/types/message.js').Message[]
+  const setHistory = (update: (messages: typeof history) => typeof history) => { history = update(history) }
+  for (const id of ['stop-one', 'stop-loop', durableId]) enqueuePendingNotification({ value: id, mode: 'prompt', scheduledTaskId: id })
+  stopSessionCronTasks(['stop-one', 'stop-loop'], setHistory)
+  assert.deepEqual(getCommandQueueSnapshot().map(command => command.scheduledTaskId).filter(Boolean), [durableId])
+  removeByFilter(command => command.scheduledTaskId === durableId)
+  await recordTranscript(history); await flushSessionStorage()
+  const loaded = await loadTranscriptFromFile(getTranscriptPath())
+  removeSessionCronTasks(['keep-one'])
+  assert.equal(restoreScheduledTasksFromMessages(loaded.messages, now), undefined)
+  assert.deepEqual(getSessionCronTasks().map(task => task.id), ['keep-one'])
+  stopSessionCronTasks(['keep-one'], setHistory)
+  const compactCarry = createAttachmentMessage(createSessionCronCarry(history)!)
+  assert.equal(restoreScheduledTasksFromMessages([history[cronCalls.length + 1]!, compactCarry], now), undefined)
+  assert.deepEqual(getSessionCronTasks(), [])
+  assert.ok((await listAllCronTasks(cronDir)).some(task => task.id === durableId))
+  results.push({ case: 'stop-session-schedule-resume-and-compact', keptDurable: durableId, restoredAfterStopAll: [] })
+
   // This microtask boundary cannot be rendezvoused through the HTTP CLI
   // fixture. Exercise the real query and both callers' shared inbox here:
   // a pre-check arrival must run; a post-check or cleanup arrival must refuse.

@@ -690,6 +690,8 @@ export type Attachment =
         recurring: boolean
       }>
       wakeup?: { prompt: string; scheduledFor: number }
+      ended?: string[]
+      loopStoppedAt?: number
     }
   | {
       type: 'invoked_skills'

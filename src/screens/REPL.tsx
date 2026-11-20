@@ -212,7 +212,7 @@ import { type AttributionState, incrementPromptCount } from '../utils/commitAttr
 import { recordAttributionSnapshot } from '../utils/sessionStorage.js';
 import { computeStandaloneAgentContext, restoreAgentFromSession, restoreSessionStateFromLog, restoreWorktreeForResume, exitRestoredWorktree } from '../utils/sessionRestore.js';
 import { updateSessionName, updateSessionActivity } from '../utils/concurrentSessions.js';
-import { isBgSession, requestBgDetach } from '../utils/background/bgJob.js';
+import { isBgSession } from '../utils/background/bgJob.js';
 import { isImmediateCommand } from '../utils/commandImmediate.js';
 import { deriveBgActivity, reportBgActivity } from '../utils/background/bgSession.js';
 import { watchJobReplies } from '../utils/background/replies.js';
@@ -243,7 +243,6 @@ import type { SandboxAskCallback, NetworkHostPattern } from '../utils/sandbox/sa
 import { type IDEExtensionInstallationStatus, closeOpenDiffs, getConnectedIdeClient, type IdeType } from '../utils/ide.js';
 import { useIDEIntegration } from '../hooks/useIDEIntegration.js';
 import exit from '../commands/exit/index.js';
-import { ExitFlow } from '../components/ExitFlow.js';
 import { getCurrentWorktreeSession } from '../utils/worktree.js';
 import { popAllEditable, enqueue, type SetAppState, getCommandQueue, getMainThreadQueueLength, removeByFilter } from '../utils/messageQueueManager.js';
 import { useCommandQueue } from '../hooks/useCommandQueue.js';
@@ -2684,6 +2683,7 @@ export function REPL({
       },
       resume,
       setConversationId,
+      isTurnRunning: () => queryGuard.isRunning,
       requestPrompt: requestPrompt,
       contentReplacementState: contentReplacementStateRef.current
     };
@@ -4027,24 +4027,14 @@ export function REPL({
   }, []);
   const handleExit = useCallback(async () => {
     setIsExiting(true);
-    // In bg sessions, always detach instead of kill — even when a worktree is
-    // active. Without this guard, the worktree branch below short-circuits into
-    // ExitFlow (which calls gracefulShutdown) before exit.tsx is ever loaded.
-    if (isBgSession()) {
-      requestBgDetach();
-      setIsExiting(false);
-      return;
-    }
-    const showWorktree = getCurrentWorktreeSession() !== null;
-    if (showWorktree) {
-      setExitFlow(<ExitFlow showWorktree onDone={() => {}} onCancel={() => {
-        setExitFlow(null);
-        setIsExiting(false);
-      }} />);
-      return;
-    }
     const exitMod = await exit.load();
-    const exitFlowResult = await exitMod.call(() => {});
+    // Cancelling calls onDone() without a message; exiting passes a goodbye
+    // and keeps the prompt hidden through shutdown.
+    const exitFlowResult = await exitMod.call(message => {
+      if (message !== undefined) return;
+      setExitFlow(null);
+      setIsExiting(false);
+    }, getToolUseContext(messagesRef.current, [], new AbortController(), mainLoopModel));
     setExitFlow(exitFlowResult);
     // If call() returned without killing the process (bg session detach),
     // clear isExiting so the UI is usable on reattach. No-op on the normal
@@ -4052,7 +4042,7 @@ export function REPL({
     if (exitFlowResult === null) {
       setIsExiting(false);
     }
-  }, []);
+  }, [getToolUseContext, mainLoopModel]);
   const handleShowMessageSelector = useCallback(() => {
     setIsMessageSelectorVisible(prev => !prev);
   }, []);

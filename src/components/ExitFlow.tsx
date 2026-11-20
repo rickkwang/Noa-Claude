@@ -1,48 +1,42 @@
-// @ts-nocheck
-import { c as _c } from "react/compiler-runtime";
 import sample from 'lodash-es/sample.js';
-import React from 'react';
+import React, { useState } from 'react';
+import { getSessionCronTasks } from '../bootstrap/state.js';
+import type { LocalJSXCommandContext } from '../commands.js';
+import { stopSessionCronTasks } from '../utils/cronResume.js';
 import { gracefulShutdown } from '../utils/gracefulShutdown.js';
+import { recordTranscript } from '../utils/sessionStorage.js';
+import { Select } from './CustomSelect/index.js';
+import { Dialog } from './design-system/Dialog.js';
 import { WorktreeExitDialog } from './WorktreeExitDialog.js';
+
 const GOODBYE_MESSAGES = ['Goodbye!', 'See ya!', 'Bye!', 'Catch you later!'];
-function getRandomGoodbyeMessage(): string {
-  return sample(GOODBYE_MESSAGES) ?? 'Goodbye!';
-}
+
 type Props = {
   onDone: (message?: string) => void;
-  onCancel?: () => void;
+  onCancel: () => void;
   showWorktree: boolean;
+  confirmScheduledTasks: boolean;
+  context: LocalJSXCommandContext;
 };
-export function ExitFlow(t0) {
-  const $ = _c(5);
-  const {
-    showWorktree,
-    onDone,
-    onCancel
-  } = t0;
-  let t1;
-  if ($[0] !== onDone) {
-    t1 = async function onExit(resultMessage) {
-      onDone(resultMessage ?? getRandomGoodbyeMessage());
-      await gracefulShutdown(0, "prompt_input_exit");
-    };
-    $[0] = onDone;
-    $[1] = t1;
-  } else {
-    t1 = $[1];
-  }
-  const onExit = t1;
-  if (showWorktree) {
-    let t2;
-    if ($[2] !== onCancel || $[3] !== onExit) {
-      t2 = <WorktreeExitDialog onDone={onExit} onCancel={onCancel} />;
-      $[2] = onCancel;
-      $[3] = onExit;
-      $[4] = t2;
-    } else {
-      t2 = $[4];
+
+export function ExitFlow({ onDone, onCancel, showWorktree, confirmScheduledTasks, context }: Props) {
+  const [confirmed, setConfirmed] = useState(false);
+  async function exit(message?: string, stopSchedules = confirmed) {
+    if (stopSchedules && !context.isTurnRunning?.()) {
+      const messages = stopSessionCronTasks(getSessionCronTasks().map(task => task.id), context.setMessages);
+      if (messages) await recordTranscript(messages);
     }
-    return t2;
+    onDone(message ?? sample(GOODBYE_MESSAGES) ?? 'Goodbye!');
+    await gracefulShutdown(0, 'prompt_input_exit');
   }
-  return null;
+  if (confirmScheduledTasks && !confirmed) {
+    return <Dialog title="Scheduled work is pending" subtitle="This session’s scheduled tasks will not run again on resume." onCancel={onCancel}>
+      <Select options={[{ label: 'Exit and stop tasks', value: 'exit' }, { label: 'Stay', value: 'stay' }]} defaultFocusValue="stay" onChange={(value: 'exit' | 'stay') => {
+        if (value === 'stay') onCancel();
+        else if (showWorktree) setConfirmed(true);
+        else void exit(undefined, true);
+      }} />
+    </Dialog>;
+  }
+  return showWorktree ? <WorktreeExitDialog onDone={message => exit(message)} onCancel={onCancel} /> : null;
 }

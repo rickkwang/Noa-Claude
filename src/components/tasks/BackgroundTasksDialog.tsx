@@ -24,8 +24,11 @@ import type { DeepImmutable } from 'src/types/utils.js';
 import { intersperse } from 'src/utils/array.js';
 import { type CronTask, listAllCronTasks, removeCronTasks } from 'src/utils/cronTasks.js';
 import { logForDebugging } from 'src/utils/debug.js';
+import { truncate } from 'src/utils/format.js';
 import { TEAM_LEAD_NAME } from 'src/utils/swarm/constants.js';
-import type { CommandResultDisplay } from '../../commands.js';
+import type { CommandResultDisplay, LocalJSXCommandContext } from '../../commands.js';
+import { stopSessionCronTasks } from '../../utils/cronResume.js';
+import { Select } from '../CustomSelect/index.js';
 import { useRegisterOverlay } from '../../context/overlayContext.js';
 import type { ExitState } from '../../hooks/useExitOnCtrlCDWithKeybindings.js';
 import type { KeyboardEvent } from '../../ink/events/keyboard-event.js';
@@ -59,7 +62,7 @@ type Props = {
   onDone: (result?: string, options?: {
     display?: CommandResultDisplay;
   }) => void;
-  toolUseContext: ToolUseContext;
+  toolUseContext: ToolUseContext & Pick<LocalJSXCommandContext, 'setMessages'>;
   initialDetailTaskId?: string;
 };
 type ListItem = {
@@ -156,6 +159,7 @@ export function BackgroundTasksDialog({
   });
   const [selectedIndex, setSelectedIndex] = useState<number>(0);
   const [scheduledCronTasks, setScheduledCronTasks] = useState<CronTask[]>([]);
+  const [confirmJob, setConfirmJob] = useState<ScheduledJobListItem>();
 
   const refreshScheduledTasks = useEffectEvent(async () => {
     try {
@@ -266,14 +270,14 @@ export function BackgroundTasksDialog({
     }
   }, {
     context: 'Confirmation',
-    isActive: viewState.mode === 'list'
+    isActive: viewState.mode === 'list' && !confirmJob
   });
 
   // Component-specific shortcuts (x=stop, f=foreground, right=zoom) shown in UI.
   // These are task-type and status dependent, not standard dialog keybindings.
   const handleKeyDown = (e: KeyboardEvent) => {
     // Only handle input when in list mode
-    if (viewState.mode !== 'list') return;
+    if (viewState.mode !== 'list' || confirmJob) return;
     if (e.key === 'left') {
       e.preventDefault();
       onDone('Background tasks dialog dismissed', {
@@ -323,12 +327,13 @@ export function BackgroundTasksDialog({
   async function killRemoteAgentTask(taskId_3: string): Promise<void> {
     await RemoteAgentTask.kill(taskId_3, setAppState);
   }
-  async function cancelScheduledJob(taskId_4: string): Promise<void> {
+  async function cancelScheduledJob(job: ScheduledJobListItem): Promise<void> {
     try {
-      await removeCronTasks([taskId_4]);
+      if (job.durable) await removeCronTasks([job.id]);
+      else stopSessionCronTasks([job.id], toolUseContext.setMessages);
       await refreshScheduledTasks();
     } catch (error) {
-      logForDebugging(`[BackgroundTasksDialog] failed to cancel scheduled job ${taskId_4}: ${String(error)}`);
+      logForDebugging(`[BackgroundTasksDialog] failed to cancel scheduled job ${job.id}: ${String(error)}`);
     }
   }
   async function runTaskAction(actionName: string, action: () => Promise<void> | void): Promise<void> {
@@ -356,7 +361,7 @@ export function BackgroundTasksDialog({
       return;
     }
     if (item.type === 'scheduled_job') {
-      await runTaskAction('cancel scheduled job', () => cancelScheduledJob(item.id));
+      setConfirmJob(item);
       return;
     }
     if (item.type === 'remote_agent' && item.status === 'running') {
@@ -407,13 +412,22 @@ export function BackgroundTasksDialog({
     }
   };
 
+  if (confirmJob) {
+    return <Dialog title="Stop this scheduled task?" subtitle={confirmJob.label} onCancel={() => setConfirmJob(undefined)}>
+      <Select options={[{ label: 'Stop', value: 'stop' }, { label: 'Keep', value: 'keep' }]} defaultFocusValue="keep" onChange={(value: 'stop' | 'keep') => {
+        setConfirmJob(undefined);
+        if (value === 'stop') void cancelScheduledJob(confirmJob);
+      }} />
+    </Dialog>;
+  }
+
   // If an item is selected, show the appropriate view
   if (viewState.mode !== 'list') {
     const selectedItem = allSelectableItems.find(item => item.id === viewState.itemId);
     if (selectedItem?.type === 'scheduled_job') {
       return <ScheduledJobDetailDialog item={selectedItem} onBack={goBackToList} onClose={() => onDone('Background tasks dialog dismissed', {
         display: 'system'
-      })} onCancel={() => void cancelScheduledJob(selectedItem.id)} />;
+      })} onCancel={() => setConfirmJob(selectedItem)} />;
     }
     if (!typedTasks) return null;
     const task_0 = typedTasks[viewState.itemId];

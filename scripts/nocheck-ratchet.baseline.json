@@ -214,7 +214,6 @@
     "src/components/DiagnosticsDisplay.tsx",
     "src/components/EffortCallout.tsx",
     "src/components/EffortIndicator.ts",
-    "src/components/ExitFlow.tsx",
     "src/components/ExportDialog.tsx",
     "src/components/FallbackToolUseErrorMessage.tsx",
     "src/components/FallbackToolUseRejectedMessage.tsx",

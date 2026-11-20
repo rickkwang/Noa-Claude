@@ -356,6 +356,7 @@ export type QueuedCommand = {
    * hoisted into bootstrap state when THIS command is dequeued.
    */
   workload?: string
+  scheduledTaskId?: string
   /**
    * Agent that should receive this notification. Undefined = main thread.
    * Subagents run in-process and share the module-level command queue; the

@@ -92,6 +92,7 @@ export type LocalJSXCommandContext = ToolUseContext & {
    * commands that queue follow-up input.
    */
   dispatchedAsImmediate?: boolean
+  isTurnRunning?: () => boolean
   canUseTool?: CanUseToolFn
   setMessages: (updater: (prev: Message[]) => Message[]) => void
   options: {
