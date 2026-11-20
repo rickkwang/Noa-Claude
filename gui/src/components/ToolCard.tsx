@@ -114,7 +114,9 @@ export function TaskDetail({ task, tasks, onStopTask, onOpenTask }: {
 }) {
   const completed = task.status === "completed"
   const blocks = task.turns.flatMap(turn => turn.role === "assistant" ? turn.blocks : [])
-  const resultIndex = completed ? blocks.findLastIndex(block => block.kind === "text" && block.text.trim().length > 0) : -1
+  // A task that stopped reporting (disconnected, failed) still ends on its answer when its last block is text.
+  const lastText = blocks.findLastIndex(block => block.kind === "text" && block.text.trim().length > 0)
+  const resultIndex = completed || (task.status !== "running" && lastText === blocks.length - 1) ? lastText : -1
   const result = blocks[resultIndex]
   const resultText = result?.kind === "text" ? result.text : undefined
   const activity = blocks.filter((_, index) => index !== resultIndex)
@@ -122,14 +124,15 @@ export function TaskDetail({ task, tasks, onStopTask, onOpenTask }: {
   const summary = task.summary?.trim()
   return (
     <div className="flex flex-col gap-3 px-2 py-1">
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-caption text-[var(--text-secondary)]">
-        <span className={`size-1.5 rounded-full ${task.status === "failed" ? "bg-[#C24444]" : task.status === "running" ? "bg-[var(--accent-color)] noa-status-running" : task.status === "completed" ? "bg-[#168447]" : "bg-[var(--sidebar-text-muted)]"}`} />
+      <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-caption text-[var(--text-secondary)]">
+        {/* The dot sits in the activity rows' 16px icon column, so the status text lines up with their labels. */}
+        <span className="flex size-4 shrink-0 items-center justify-center"><span className={`size-1.5 rounded-full ${task.status === "failed" ? "bg-[#C24444]" : task.status === "running" ? "bg-[var(--accent-color)] noa-status-running" : task.status === "completed" ? "bg-[#168447]" : "bg-[var(--sidebar-text-muted)]"}`} /></span>
         <span className="font-medium capitalize text-[var(--text-secondary)]">{task.status}</span>
         {task.status !== "completed" && task.lastTool && <span className="min-w-0 truncate">· {task.lastTool}</span>}
         {task.usage && <span className="tabular-nums">· {task.usage.tool_uses} tools · {task.usage.total_tokens.toLocaleString()} tokens{(!completed || !activity.length) && ` · ${formatElapsed(task.usage.duration_ms)}`}</span>}
       </div>
       {summary && summary !== task.description.trim() && summary !== resultText?.trim() && <p className="m-0 whitespace-pre-wrap break-words text-body text-[var(--text-secondary)]">{task.summary}</p>}
-      {!!activity.length && <TaskTranscript key={task.id} blocks={activity} tasks={tasks} active={task.status === "running" || hasRunningChild} completed={completed} durationMs={task.usage?.duration_ms} />}
+      {!!activity.length && <TaskTranscript key={task.id} blocks={activity} tasks={tasks} active={task.status === "running" || hasRunningChild} completed={completed || resultIndex !== -1} durationMs={task.usage?.duration_ms} />}
       {resultText && <div data-task-result className="text-body"><Markdown text={resultText} /></div>}
       {task.outputFile && <p className="m-0 break-all text-caption text-[var(--text-tertiary)]">Output: {task.outputFile}</p>}
       {(onOpenTask || (onStopTask && task.status === "running" && task.id !== task.toolUseId)) && (
@@ -158,13 +161,12 @@ function TaskTranscript({ blocks, tasks, active, completed, durationMs }: { bloc
   const label = completed && !active && durationMs !== undefined ? `Worked for ${formatElapsed(durationMs)}` : active ? "Working" : "Activity"
   return (
     <div data-task-process className="noa-task-transcript min-w-0">
-      <button type="button" aria-expanded={open} onClick={() => { toggled.current = true; setOpen(value => !value) }} className="group/task-process flex w-full min-w-0 items-center gap-2 text-left text-[length:var(--font-text-md-size)] leading-5 text-[var(--text-tertiary)] hover:text-[var(--text-primary)]">
+      <button type="button" aria-expanded={open} onClick={() => { toggled.current = true; setOpen(value => !value) }} className="group/task-process flex w-fit max-w-full min-w-0 items-center gap-2 text-left text-[length:var(--font-text-md-size)] leading-5 text-[var(--text-tertiary)] hover:text-[var(--text-primary)]">
         <span className={`shrink-0 ${active ? "noa-shimmer" : ""}`}>{label}</span>
         <ChevronRight size={12} className={`shrink-0 ${open ? "rotate-90" : ""}`} />
-        <span className="min-w-0 flex-1 border-t border-[var(--divider-subtle)]" />
       </button>
       <Collapsible open={open}>
-        <div className="noa-activity-scroll scrollbar-on-scroll noa-scroll-fade [--edge-fade-distance:24px] mt-2 flex max-h-56 flex-col gap-1 overflow-x-hidden overflow-y-auto leading-5">
+        <div className="noa-activity-list noa-activity-scroll scrollbar-on-scroll noa-scroll-fade [--edge-fade-distance:24px] mt-2 flex max-h-56 flex-col gap-1 overflow-x-hidden overflow-y-auto leading-5">
           {blocks.map((block, index) => <TaskBlock key={index} block={block} tasks={tasks} active={active} />)}
         </div>
       </Collapsible>
@@ -173,7 +175,7 @@ function TaskTranscript({ blocks, tasks, active, completed, durationMs }: { bloc
 }
 
 function TaskBlock({ block, tasks, active }: { block: Block; tasks?: AgentTask[]; active: boolean }) {
-  if (block.kind === "text") return <Markdown text={block.text} />
+  if (block.kind === "text") return <div className="py-1"><Markdown text={block.text} tone="muted" /></div>
   if (block.kind === "thinking") return <ThinkingActivity block={block} />
   if (block.kind === "tool") {
     const task = tasks?.find(candidate => candidate.id === block.id || candidate.toolUseId === block.id)

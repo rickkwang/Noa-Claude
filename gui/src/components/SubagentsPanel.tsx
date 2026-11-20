@@ -11,7 +11,7 @@ export function SubagentsPanel({ tasks, selectedId, onSelect, onStopTask }: {
 }) {
   const selected = tasks.find(task => task.id === selectedId)
   if (selected) return <div data-subagent-detail className="flex min-h-0 flex-1 flex-col">
-    <div className="flex min-h-11 items-center gap-2 border-b border-[var(--divider-subtle)] px-3 text-body">
+    <div className="flex min-h-11 items-center gap-2 border-b border-[var(--divider-subtle)] ps-4 pe-3 text-body">
       <button type="button" aria-label="Back to subagents" onClick={() => onSelect()} className="flex size-6 shrink-0 items-center justify-center rounded-md hover:bg-[var(--fill-hover)]"><ArrowLeft size={16} /></button>
       <SubagentAvatar id={selected.id} />
       <span className="min-w-0 truncate">{selected.description}</span>
