@@ -26,7 +26,8 @@ interface PanelTabStripProps {
   onReorder?: (from: string, to: string) => void
 }
 
-// The bottom and right panels' tab strip: tabs share the width between 90px and 240px and scroll past that.
+// The bottom and right panels' tab strip: tabs share the width between 56px and 240px and scroll past that,
+// so a handful fit without scrolling, and selecting one of those doesn't shift the strip; a narrow tab shows only its icon.
 // The new-tab button follows the last tab outside the scroller, and a hairline divides two unselected tabs.
 export function PanelTabStrip({ tabs, activeKey, label, onSelect, onClose, onContextMenu, onNew, newLabel, trailing, className = "", style, controlStyle, onReorder }: PanelTabStripProps) {
   const listRef = useRef<HTMLDivElement>(null)
@@ -142,7 +143,7 @@ export function PanelTabStrip({ tabs, activeKey, label, onSelect, onClose, onCon
             const divided = index < tabs.length - 1 && !selected && tabs[index + 1]!.key !== activeKey
             const Icon = tab.icon
             return (
-              // The width wrapper keeps 2px after each tab, where the divider sits.
+              // The width wrapper keeps 2px after each tab, with the divider centred in it.
               <div
                 key={tab.key}
                 className="relative flex shrink-0 items-center"
@@ -152,7 +153,7 @@ export function PanelTabStrip({ tabs, activeKey, label, onSelect, onClose, onCon
                 onPointerCancel={onPointerUp}
                 onClickCapture={(event) => { if (drag) event.stopPropagation() }}
                 style={{
-                  width: `clamp(90px, calc((100cqw - 34px) / ${tabs.length}), 240px)`,
+                  width: `clamp(56px, calc((100cqw - 34px) / ${tabs.length}), 240px)`,
                   transform: drag ? `translateX(${shiftOf(index)}px)` : undefined,
                   transition: drag && (drag.key !== tab.key || drag.settling) ? "transform 180ms cubic-bezier(0.2, 0, 0, 1)" : undefined,
                   zIndex: drag?.key === tab.key ? 20 : undefined,
@@ -160,7 +161,7 @@ export function PanelTabStrip({ tabs, activeKey, label, onSelect, onClose, onCon
               >
                 <div className="flex min-w-0 flex-1 items-center pe-0.5">
                   <div
-                    className="group/tab relative flex h-8 min-w-0 flex-1 items-center rounded-lg"
+                    className="noa-tab group/tab relative flex h-8 min-w-0 flex-1 items-center rounded-lg"
                     style={controlStyle}
                     onContextMenu={onContextMenu ? (event) => { event.preventDefault(); onContextMenu(tab.key, event) } : undefined}
                   >
@@ -192,7 +193,7 @@ export function PanelTabStrip({ tabs, activeKey, label, onSelect, onClose, onCon
                     </button>
                   </div>
                 </div>
-                <span aria-hidden="true" className={`absolute end-0 h-3 w-px bg-[var(--border-default)] ${divided ? "opacity-100" : "opacity-0"}`} />
+                <span aria-hidden="true" className={`absolute end-[0.5px] h-3 w-px bg-[var(--border-default)] ${divided ? "opacity-100" : "opacity-0"}`} />
               </div>
             )
           })}

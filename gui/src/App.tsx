@@ -980,7 +980,7 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
             setRightRatio(rightWindowMax === 320 ? 0 : Math.max(0, Math.min(1, (clamped - 320) / (rightWindowMax - 320))))
           }}
           onDraggingChange={setResizing}
-          style={{ right: rightWidth - 4, zIndex: 40 }}
+          style={{ top: 44, right: rightWidth - 4, zIndex: 40 }}
         />
       )}
       {sidebarOpen && (

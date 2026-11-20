@@ -46,7 +46,7 @@
 .noa-right-surface {
   --noa-right-edge: var(--border-default, rgba(45,45,43,0.078));
   border-left: 0.5px solid transparent;
-  border-image: linear-gradient(to bottom, transparent 14px, var(--noa-right-edge) 14px 30px, transparent 30px 44px, var(--noa-right-edge) 44px) 1;
+  border-image: linear-gradient(to bottom, transparent 14px, var(--noa-right-edge) 14px 30px, transparent 30px 44px, var(--noa-right-edge) 44px) 0 0 0 1;
 }
 .noa-right-surface[data-flush="true"] {
   --noa-right-edge: transparent;
@@ -990,6 +990,9 @@ html[data-translucent-sidebar="enabled"] [data-sidebar-container] .noa-sidebar-t
   -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 1rem), transparent);
   mask-image: linear-gradient(to right, #000 calc(100% - 1rem), transparent);
 }
+.noa-tab { container-type: inline-size; }
+/* Below this a title shows only a letter or two, so the tab keeps just its icon. */
+@container (max-width: 72px) { .noa-tab-title { display: none; } }
 .noa-tab-close:hover { color: var(--text-primary, #2D2D2B); background-color: var(--fill-hover); }
 
 @media (prefers-reduced-motion: reduce) {
