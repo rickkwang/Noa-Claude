@@ -63,7 +63,7 @@ function ColorSwatchPill({
   onChange: (value: string) => void
 }) {
   return (
-    <label className="relative inline-flex h-7 cursor-pointer items-center gap-2 rounded-lg border border-[var(--border-default)] bg-[var(--bg-card)] px-2.5 transition-colors hover:border-[var(--border-strong)] focus-within:border-[var(--accent-color)] focus-within:ring-1 focus-within:ring-[var(--accent-color)]/30">
+    <label className="relative inline-flex h-7 cursor-pointer items-center gap-2 rounded-lg border border-[var(--border-default)] bg-[var(--bg-card)] px-2.5 transition-colors hover:border-[var(--border-strong)]">
       <input
         type="color"
         aria-label={ariaLabel}

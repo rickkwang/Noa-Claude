@@ -256,7 +256,7 @@ export function EnvironmentMenu({ cwd, branch, onBranchChange, worktree, canTogg
                 }}
                 placeholder="new-branch"
                 aria-label="Branch name"
-                className="h-8 rounded-lg border border-[var(--border-default)] bg-transparent px-2 text-body outline-none focus:border-[var(--sidebar-text-muted)]"
+                className="h-8 rounded-lg border border-[var(--border-default)] bg-transparent px-2 text-body outline-none"
               />
               {(createError || error) && <span role="alert" className="text-caption text-[#C24444]">{createError ?? error}</span>}
               <div className="flex justify-end gap-2">

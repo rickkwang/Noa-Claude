@@ -15,7 +15,7 @@ export const dangerButton =
   "inline-flex h-7 shrink-0 items-center justify-center gap-1.5 rounded-[10px] border border-[var(--border-default)] bg-[var(--bg-card)] px-3 text-body text-[var(--text-danger)] transition-colors enabled:hover:border-[var(--text-danger)]/40 enabled:hover:bg-[var(--text-danger)]/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--text-danger)]/35 disabled:cursor-default disabled:opacity-40"
 
 export const fieldInput =
-  "w-full min-w-0 rounded-[10px] border border-[var(--border-default)] bg-[var(--bg-card)] px-3 text-body text-[var(--text-primary)] outline-none transition-colors placeholder:text-[var(--sidebar-text-muted)] focus:border-[var(--accent-color)] focus:ring-2 focus:ring-[var(--accent-color)]/20 disabled:opacity-50"
+  "w-full min-w-0 rounded-[10px] border border-[var(--border-default)] bg-[var(--bg-card)] px-3 text-body text-[var(--text-primary)] outline-none transition-colors placeholder:text-[var(--sidebar-text-muted)] disabled:opacity-50"
 
 export function Section({ title, children }: { title?: string; children: ReactNode }) {
   const rows = Children.toArray(children)
@@ -91,7 +91,7 @@ export function NumberField({
         }}
         onBlur={commit}
         onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
-        className="h-7 w-16 rounded-[10px] border border-[var(--border-default)] bg-[var(--bg-card)] px-2 text-body tabular-nums text-[var(--text-primary)] outline-none transition-colors focus:border-[var(--accent-color)] focus:ring-2 focus:ring-[var(--accent-color)]/20"
+        className="h-7 w-16 rounded-[10px] border border-[var(--border-default)] bg-[var(--bg-card)] px-2 text-body tabular-nums text-[var(--text-primary)] outline-none transition-colors"
       />
       <span className="text-caption text-[var(--sidebar-text-muted)]">px</span>
     </div>
@@ -112,7 +112,7 @@ export function TextField({ value, placeholder, label, onChange }: { value: stri
       onChange={(e) => setDraft(e.target.value)}
       onBlur={() => { if (draft.trim() !== value) onChange(draft.trim()) }}
       onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
-      className="h-7 w-48 shrink-0 rounded-[10px] border border-[var(--border-default)] bg-[var(--bg-card)] px-2.5 text-body text-[var(--text-primary)] outline-none transition-colors placeholder:text-[var(--text-tertiary)] focus:border-[var(--accent-color)] focus:ring-2 focus:ring-[var(--accent-color)]/20"
+      className="h-7 w-48 shrink-0 rounded-[10px] border border-[var(--border-default)] bg-[var(--bg-card)] px-2.5 text-body text-[var(--text-primary)] outline-none transition-colors placeholder:text-[var(--text-tertiary)]"
     />
   )
 }

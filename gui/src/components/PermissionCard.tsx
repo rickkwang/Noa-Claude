@@ -360,7 +360,7 @@ function QuestionCard({ permission, onAnswer, draft, onDraftChange }: Permission
               setCustom((prev) => ({ ...prev, [q.question]: e.target.value }))
               if (!q.multiSelect) setSelected((prev) => ({ ...prev, [q.question]: [] }))
             }}
-            className="mx-5 mt-3 h-9 rounded-lg border border-[var(--border-default)] bg-transparent px-3 text-body outline-none focus:border-[var(--accent-color)]"
+            className="mx-5 mt-3 h-9 rounded-lg border border-[var(--border-default)] bg-transparent px-3 text-body outline-none"
           />
         </fieldset>
       ))}

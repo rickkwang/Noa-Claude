@@ -64,7 +64,7 @@
   background: color-mix(in srgb, var(--text-primary) 14%, transparent);
 }
 [data-theme="dark"] .noa-agent-input {
-  background: #303030;
+  background: color-mix(in srgb, var(--bg-primary, #2D2D2B) 93%, var(--text-primary, #F9F9F7) 7%);
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.035), inset 0 0 0 1px rgba(255, 255, 255, 0.08);
 }
 [data-theme="dark"] .noa-agent-input:focus-within {
@@ -2227,7 +2227,6 @@ html[data-translucent-sidebar="enabled"] .noa-confirm-scrim { backdrop-filter: n
   corner-shape: superellipse(1.5);
   background: var(--project-field);
 }
-.noa-project-dialog__input:focus-within { border-color: var(--project-focus); }
 .noa-project-dialog__input-leading {
   display: flex;
   width: 40px;
@@ -2517,7 +2516,6 @@ html[data-translucent-sidebar="enabled"] .noa-confirm-scrim { backdrop-filter: n
   font: inherit;
   font-size: var(--text-body);
 }
-.noa-auth-dialog__code:focus { border-color: var(--project-focus); }
 .noa-auth-dialog__link {
   justify-self: start;
   padding: 0;

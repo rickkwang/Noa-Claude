@@ -54,7 +54,7 @@ export function SessionTitle({
                 setEditing(false)
               }
             }}
-            className="h-7 w-56 min-w-0 rounded-md border border-[var(--border-default)] bg-[var(--bg-card)] px-2 text-[length:var(--text-chat-sm)] outline-none focus:border-[var(--accent-color)]"
+            className="h-7 w-56 min-w-0 rounded-md border border-[var(--border-default)] bg-[var(--bg-card)] px-2 text-[length:var(--text-chat-sm)] outline-none"
           />
           <button
             type="submit"

@@ -154,7 +154,7 @@ export function ElicitationCard({
                 maxLength={field.maxLength}
                 required={required.includes(name)}
                 defaultValue={draft?.[name]?.[0] ?? (field.default === undefined ? "" : String(field.default))}
-                className="h-8 rounded-md border border-[var(--border-default)] bg-transparent px-2 outline-none focus:border-[var(--accent-color)]"
+                className="h-8 rounded-md border border-[var(--border-default)] bg-transparent px-2 outline-none"
               />
             )}
           </label>
