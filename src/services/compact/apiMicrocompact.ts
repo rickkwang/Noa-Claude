@@ -109,6 +109,107 @@ const CLEARED_RESULT_MARKERS = [
   '<persisted-output>',
 ]
 
+export const IDLE_RESUMED_CLEARED_RESULTS_NOTICE =
+  'This chat has resumed after a long pause. Before you act or answer about something that may have changed during the pause, check it again. Older tool results may now show a short placeholder: that means only that the text is no longer shown, not that the call failed or that you never saw it. Do not redo an action with side effects only because its result is hidden.'
+
+/**
+ * True if a critical_system_reminder with the exact notice text already
+ * appears after the most recent assistant message (keeps injection idempotent).
+ */
+export function hasClearedResultsNoticeSinceLastAssistant(
+  messages: readonly Message[],
+  notice: string,
+): boolean {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i]
+    if (!msg) continue
+    if (msg.type === 'assistant') return false
+    if (
+      msg.type === 'attachment' &&
+      msg.attachment.type === 'critical_system_reminder' &&
+      msg.attachment.content === notice
+    ) {
+      return true
+    }
+  }
+  return false
+}
+
+/**
+ * True when the most recent non-meta assistant message is older than
+ * IDLE_MIN_SECONDS relative to `now` — i.e., the user is actively returning
+ * from a long pause rather than continuing after a historical pause earlier in
+ * the transcript.
+ */
+function isReturningFromIdlePause(
+  messages: readonly Message[],
+  now: number,
+): boolean {
+  const idleMs = IDLE_MIN_SECONDS * 1000
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i]
+    if (!message) continue
+    if (message.isMeta || message.isVirtual || message.isVisibleInTranscriptOnly)
+      continue
+    if (message.type !== 'assistant') continue
+    const timestamp = Date.parse(message.timestamp)
+    if (!Number.isFinite(timestamp)) continue
+    return now - timestamp > idleMs
+  }
+  return false
+}
+
+function isAntToolClearingEnabled(): boolean {
+  if (process.env.USER_TYPE !== 'ant') return false
+  return (
+    isEnvTruthy(process.env.USE_API_CLEAR_TOOL_RESULTS) ||
+    isEnvTruthy(process.env.USE_API_CLEAR_TOOL_USES)
+  )
+}
+
+/**
+ * True when server-side idle tool-result clearing will apply to this request
+ * on a fresh return from a long pause and the anti-redo reminder has not yet
+ * been injected since the last assistant turn.
+ */
+export function shouldInjectIdleClearedNotice(options: {
+  messages: readonly Message[]
+  querySource?: string
+  isSubagent?: boolean
+  // Lazy: resolving model betas can need auth, so it runs only for an idle return.
+  supportsContextManagement?: () => boolean
+  now?: number
+}): boolean {
+  const {
+    messages,
+    querySource,
+    isSubagent = false,
+    supportsContextManagement = () => true,
+    now = Date.now(),
+  } = options
+  if (
+    isAntToolClearingEnabled() ||
+    isSubagent ||
+    !(querySource?.startsWith('repl_main_thread') || querySource === 'sdk')
+  ) {
+    return false
+  }
+  const mode = getIdleCompactionMode()
+  if (mode === 'off' || mode === 'shadow') return false
+  if (!isReturningFromIdlePause(messages, now) || !supportsContextManagement()) {
+    return false
+  }
+  if (
+    hasClearedResultsNoticeSinceLastAssistant(
+      messages,
+      IDLE_RESUMED_CLEARED_RESULTS_NOTICE,
+    )
+  ) {
+    return false
+  }
+  return getIdleToolClearingStrategy(messages, now, mode) !== undefined
+}
+
 const CLEARABLE_TOOL_NAMES = new Set([
   ...TOOLS_CLEARABLE_RESULTS,
   ...TOOLS_CLEARABLE_USES,
@@ -371,7 +472,7 @@ export function getAPIContextManagement(options?: {
   // Idle clearing is the successor to those env-gated strategies. An explicit
   // ant opt-in wins; sending both would put two clear_tool_uses edits in one
   // request.
-  const antToolClearing = useClearToolResults || useClearToolUses
+  const antToolClearing = isAntToolClearingEnabled()
 
   // Idle clearing: after a long pause the cache is cold, so old tool results
   // are worth shedding even without context pressure. Main conversation only —

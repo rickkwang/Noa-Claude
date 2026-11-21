@@ -1,6 +1,10 @@
 import { feature } from 'bun:bundle'
-import { markPostCompaction } from 'src/bootstrap/state.js'
-import { getSdkBetas, isLongContext1mCreditsBlocked } from '../../bootstrap/state.js'
+import {
+  getSdkBetas,
+  getSessionId,
+  isLongContext1mCreditsBlocked,
+  markPostCompaction,
+} from '../../bootstrap/state.js'
 import type { QuerySource } from '../../constants/querySource.js'
 import type { ToolUseContext } from '../../Tool.js'
 import type { Message } from '../../types/message.js'
@@ -11,7 +15,10 @@ import { isEnvTruthy } from '../../utils/envUtils.js'
 import type { CacheSafeParams } from '../../utils/forkedAgent.js'
 import { logError } from '../../utils/log.js'
 import { tokenCountWithEstimation } from '../../utils/tokens.js'
-import { roughTokenCountEstimationForMessages } from '../tokenEstimation.js'
+import {
+  roughTokenCountEstimationForMessage,
+  roughTokenCountEstimationForMessages,
+} from '../tokenEstimation.js'
 import { getEffortModelKey } from '../../utils/effort.js'
 import { getEnabledSettingSources } from '../../utils/settings/constants.js'
 import { getSettingsForSource } from '../../utils/settings/settings.js'
@@ -19,7 +26,10 @@ import { getMarketingNameForModel } from '../../utils/model/model.js'
 import { isModelAllowed } from '../../utils/model/modelAllowlist.js'
 import { currentLimits } from '../claudeAiLimits.js'
 import { createAttachmentMessage } from '../../utils/attachments.js'
-import { SYNTHETIC_MODEL } from '../../utils/messages.js'
+import {
+  normalizeAttachmentForAPI,
+  SYNTHETIC_MODEL,
+} from '../../utils/messages.js'
 import {
   noteOverflowCanCompact,
   overflowReminderText,
@@ -44,6 +54,7 @@ import {
   armPrecompute,
   consumePrecompute,
   isPrecomputeEnabled,
+  tryDeferBesideTurn,
 } from './precomputedCompact.js'
 import { runPostCompactCleanup } from './postCompactCleanup.js'
 import { runReactiveCompaction, type ReactiveCompactOutcome } from './reactiveCompact.js'
@@ -326,6 +337,7 @@ export function countConsecutiveRapidRefills(
 }
 
 export const AUTOCOMPACT_BUFFER_TOKENS = 13_000
+export const BESIDE_TURN_BUFFER_TOKENS = 8_000
 export const WARNING_THRESHOLD_BUFFER_TOKENS = 20_000
 export const ERROR_THRESHOLD_BUFFER_TOKENS = 10_000
 export const MANUAL_COMPACT_BUFFER_TOKENS = 3_000
@@ -449,16 +461,21 @@ export function isBackgroundForkQuerySource(
   return querySource !== undefined && BACKGROUND_FORK_QUERY_SOURCES.has(querySource)
 }
 
-export async function shouldAutoCompact(
+type FixedLoadResolution = {
+  effectiveOverride: AutoCompactWindowOverride | undefined
+  raisedFrom?: number
+  raisedTo?: number
+  fixedLoadTokens: number
+}
+
+function evaluateShouldAutoCompact(
   messages: Message[],
   model: string,
-  querySource?: QuerySource,
-  // Snip removes messages but the surviving assistant's usage still reflects
-  // pre-snip context, so tokenCountWithEstimation can't see the savings.
-  // Subtract the rough-delta that snip already computed.
-  snipTokensFreed = 0,
-  override?: AutoCompactWindowOverride,
-): Promise<boolean> {
+  querySource: QuerySource | undefined,
+  snipTokensFreed: number,
+  tokenCount: number,
+  fixedLoad: FixedLoadResolution,
+): boolean {
   // Recursion guards: session_memory and compact are forked agents that
   // would deadlock.
   if (querySource === 'session_memory' || querySource === 'compact') {
@@ -472,9 +489,9 @@ export async function shouldAutoCompact(
     return false
   }
 
-  const tokenCount = tokenCountWithEstimation(messages) - snipTokensFreed
-  const threshold = getAutoCompactThreshold(model, override)
-  const effectiveWindow = getEffectiveContextWindowSize(model, override)
+  const effectiveOverride = fixedLoad.effectiveOverride
+  const threshold = getAutoCompactThreshold(model, effectiveOverride)
+  const effectiveWindow = getEffectiveContextWindowSize(model, effectiveOverride)
 
   // Threshold collapses to ~0 when effective window hits its floor (small
   // CLAUDE_CODE_AUTO_COMPACT_WINDOW or an unusually small context model).
@@ -492,13 +509,13 @@ export async function shouldAutoCompact(
   }
 
   logForDebugging(
-    `autocompact: tokens=${tokenCount} threshold=${threshold} effectiveWindow=${effectiveWindow}${snipTokensFreed > 0 ? ` snipFreed=${snipTokensFreed}` : ''}`,
+    `autocompact: tokens=${tokenCount} threshold=${threshold} effectiveWindow=${effectiveWindow}${snipTokensFreed > 0 ? ` snipFreed=${snipTokensFreed}` : ''}${fixedLoad.raisedTo ? ` raisedFrom=${fixedLoad.raisedFrom} raisedTo=${fixedLoad.raisedTo}` : ''}`,
   )
 
   const { isAboveAutoCompactThreshold } = calculateTokenWarningState(
     tokenCount,
     model,
-    override,
+    effectiveOverride,
   )
 
   if (
@@ -514,6 +531,180 @@ export async function shouldAutoCompact(
   }
 
   return isAboveAutoCompactThreshold
+}
+
+export async function shouldAutoCompact(
+  messages: Message[],
+  model: string,
+  querySource?: QuerySource,
+  // Snip removes messages but the surviving assistant's usage still reflects
+  // pre-snip context, so tokenCountWithEstimation can't see the savings.
+  // Subtract the rough-delta that snip already computed.
+  snipTokensFreed = 0,
+  override?: AutoCompactWindowOverride,
+): Promise<boolean> {
+  if (
+    querySource === 'session_memory' ||
+    querySource === 'compact' ||
+    isBackgroundForkQuerySource(querySource) ||
+    !isAutoCompactEnabled()
+  ) {
+    return false
+  }
+  const tokenCount = tokenCountWithEstimation(messages) - snipTokensFreed
+  const fixedLoad = resolveFixedLoadWindowOverride(
+    messages,
+    model,
+    tokenCount,
+    override,
+  )
+  return evaluateShouldAutoCompact(
+    messages,
+    model,
+    querySource,
+    snipTokensFreed,
+    tokenCount,
+    fixedLoad,
+  )
+}
+
+const FIXED_LOAD_WINDOW_ROUNDING_STEP = 10_000
+const FIXED_LOAD_NOTIFY_DELTA_TOKENS = 20_000
+const UPPER_BOUND_IMAGE_TOKENS = 2_000
+const MAX_NOTIFIED_CEILING_ENTRIES = 64
+
+/**
+ * Conservative upper bound on the token count of a string so subtracting it
+ * from total API usage yields a safe lower bound on the fixed prefix (never
+ * mistaking dense JSON/code or CJK conversation text for fixed system load).
+ * ASCII counts at 0.5 tokens/char; non-ASCII counts at 2 tokens/char.
+ */
+function upperBoundTextTokens(text: string): number {
+  let ascii = 0
+  let nonAscii = 0
+  for (let i = 0; i < text.length; i++) {
+    if (text.charCodeAt(i) <= 0x7f) ascii++
+    else nonAscii++
+  }
+  return Math.ceil(ascii / 2 + nonAscii * 2)
+}
+
+function upperBoundContentTokens(content: unknown): number {
+  if (typeof content === 'string') return upperBoundTextTokens(content)
+  if (!Array.isArray(content)) return 0
+  let tokens = 0
+  for (const block of content) {
+    if (!block || typeof block !== 'object') continue
+    const b = block as Record<string, unknown>
+    if (b.type === 'text' && typeof b.text === 'string') {
+      tokens += upperBoundTextTokens(b.text)
+    } else if (b.type === 'thinking' && typeof b.thinking === 'string') {
+      tokens += upperBoundTextTokens(b.thinking)
+    } else if (b.type === 'tool_use') {
+      if (typeof b.name === 'string') tokens += upperBoundTextTokens(b.name)
+      if (b.input !== undefined) {
+        try {
+          tokens += upperBoundTextTokens(JSON.stringify(b.input))
+        } catch {
+          // Ignore unserializable inputs
+        }
+      }
+    } else if (b.type === 'tool_result') {
+      tokens += upperBoundContentTokens(b.content)
+    } else if (b.type === 'image' || b.type === 'document') {
+      tokens += UPPER_BOUND_IMAGE_TOKENS
+    } else if (b.type === 'redacted_thinking' && typeof b.data === 'string') {
+      tokens += upperBoundTextTokens(b.data)
+    } else {
+      try {
+        tokens += upperBoundTextTokens(JSON.stringify(b))
+      } catch {
+        // Ignore unserializable blocks
+      }
+    }
+  }
+  return tokens
+}
+
+function upperBoundForMessage(msg: Message): number {
+  if (msg.type === 'user' || msg.type === 'assistant') {
+    return upperBoundContentTokens(msg.message?.content)
+  }
+  if (msg.type === 'attachment' && msg.attachment) {
+    const normalized = normalizeAttachmentForAPI(msg.attachment)
+    let total = 0
+    for (const userMsg of normalized) {
+      total += upperBoundContentTokens(userMsg.message.content)
+    }
+    return total
+  }
+  return 0
+}
+
+function upperBoundMessageTokens(messages: readonly Message[]): number {
+  let tokens = 0
+  for (const msg of messages) {
+    if (!msg) continue
+    tokens += Math.max(
+      roughTokenCountEstimationForMessage(msg),
+      upperBoundForMessage(msg),
+    )
+  }
+  return tokens
+}
+
+/**
+ * When a configured auto-compact window (smaller than the model's real window)
+ * leaves less than half its threshold for conversation because the fixed
+ * prefix (system prompt, tool schemas, userContext) already eats >50%, raise
+ * the effective window to `2 * fixedLoad + buffer + summaryReserve` (rounded
+ * up to 10k steps and capped at the model's real context window or any
+ * explicit subagent ceiling) so the session does not thrash into the
+ * rapid-refill breaker. Explicit env overrides and credits-blocked model
+ * defaults are honored as-is.
+ */
+export function resolveFixedLoadWindowOverride(
+  messages: Message[],
+  model: string,
+  tokenCount: number,
+  override?: AutoCompactWindowOverride,
+): FixedLoadResolution {
+  const resolved = resolveAutoCompactWindow(model, override)
+  const modelContextWindow = getContextWindowForModel(model, getSdkBetas())
+  const maxAllowedWindow =
+    typeof override === 'object'
+      ? Math.min(modelContextWindow, override.ceiling)
+      : modelContextWindow
+  if (
+    resolved.source === 'env' ||
+    resolved.source === 'model-default' ||
+    resolved.window >= maxAllowedWindow
+  ) {
+    return { effectiveOverride: override, fixedLoadTokens: 0 }
+  }
+  const messageTokensUpperBound = upperBoundMessageTokens(messages)
+  const fixedLoadTokens = Math.max(0, tokenCount - messageTokensUpperBound)
+  const threshold = getAutoCompactThreshold(model, override)
+  if (threshold <= 0 || fixedLoadTokens <= threshold / 2) {
+    return { effectiveOverride: override, fixedLoadTokens }
+  }
+  const rawTarget =
+    Math.ceil(2 * fixedLoadTokens) +
+    AUTOCOMPACT_BUFFER_TOKENS +
+    getSummaryOutputReserve(model)
+  const roundedTarget =
+    Math.ceil(rawTarget / FIXED_LOAD_WINDOW_ROUNDING_STEP) *
+    FIXED_LOAD_WINDOW_ROUNDING_STEP
+  const targetWindow = Math.min(maxAllowedWindow, roundedTarget)
+  if (targetWindow <= resolved.window) {
+    return { effectiveOverride: override, fixedLoadTokens }
+  }
+  return {
+    effectiveOverride: targetWindow,
+    raisedFrom: resolved.window,
+    raisedTo: targetWindow,
+    fixedLoadTokens,
+  }
 }
 
 /**
@@ -591,20 +782,21 @@ function maybeArmPrecompute(
   cacheSafeParams: CacheSafeParams,
   model: string,
   querySource?: QuerySource,
+  override: AutoCompactWindowOverride | undefined = context.options.autoCompactWindow,
 ): void {
   if (!isPrecomputeEnabled()) return
   if (!isPrecomputeOwner(querySource)) return
   if (!isAutoCompactEnabled()) return
   const tokenCount = tokenCountWithEstimation(messages)
   const { isAboveWarningThreshold, isAboveAutoCompactThreshold } =
-    calculateTokenWarningState(tokenCount, model, context.options.autoCompactWindow)
+    calculateTokenWarningState(tokenCount, model, override)
   // Only in the warning band: at/over threshold is the consume path, not arm.
   if (!isAboveWarningThreshold || isAboveAutoCompactThreshold) return
   armPrecompute({
     messages,
     context,
     cacheSafeParams,
-    maxTailTokens: precomputeTailBudget(model, context.options.autoCompactWindow),
+    maxTailTokens: precomputeTailBudget(model, override),
   })
 }
 
@@ -704,13 +896,13 @@ function compactRouted(
   cacheSafeParams: CacheSafeParams,
   querySource: QuerySource,
   summaryModel?: string,
+  override: AutoCompactWindowOverride | undefined = toolUseContext.options.autoCompactWindow,
 ): Promise<ReactiveCompactOutcome> {
   // A ready precompute summary is swapped in before the reactive compactor
   // runs, as upstream does; the swap skips the pre-compact hooks, which only
   // run when the summary is produced fresh.
   if (summaryModel === undefined && isPrecomputeOwner(querySource) && isPrecomputeEnabled()) {
     const model = toolUseContext.options.mainLoopModel
-    const override = toolUseContext.options.autoCompactWindow
     const pre = consumePrecompute({
       messages,
       maxTailTokens: precomputeTailBudget(model, override),
@@ -755,6 +947,37 @@ function compactRouted(
     messages,
     cacheSafeParams: { ...cacheSafeParams, toolUseContext: context },
     querySource,
+  })
+}
+
+const raisedLoadNotifiedCeiling = new Map<string, number>()
+
+function notifyFixedLoadWindowRaised(
+  context: ToolUseContext,
+  raisedFrom: number,
+  raisedTo: number,
+): void {
+  const agentKey = `${getSessionId()}:${context.agentId ?? 'main'}`
+  const prev = raisedLoadNotifiedCeiling.get(agentKey)
+  if (prev !== undefined && raisedTo < prev + FIXED_LOAD_NOTIFY_DELTA_TOKENS) {
+    return
+  }
+  if (raisedLoadNotifiedCeiling.size >= MAX_NOTIFIED_CEILING_ENTRIES) {
+    const oldestKey = raisedLoadNotifiedCeiling.keys().next().value
+    if (oldestKey !== undefined) {
+      raisedLoadNotifiedCeiling.delete(oldestKey)
+    }
+  }
+  raisedLoadNotifiedCeiling.set(agentKey, raisedTo)
+  const fromLabel = `${Math.round(raisedFrom / 1000)}k`
+  const toLabel = `${Math.round(raisedTo / 1000)}k`
+  const text = `Raised this conversation's auto-compact window from ${fromLabel} to ${toLabel} tokens to fit the fixed context load.`
+  logForDebugging(`autocompact: ${text}`)
+  context.addNotification?.({
+    key: 'autocompact-fixed-load-raised',
+    text,
+    priority: 'low',
+    color: 'warning',
   })
 }
 
@@ -833,14 +1056,44 @@ export async function autoCompactIfNeeded(
     return { wasCompacted: false }
   }
 
+  const tokenCount = tokenCountWithEstimation(messages) - (snipTokensFreed ?? 0)
+  const fixedLoad = resolveFixedLoadWindowOverride(
+    messages,
+    model,
+    tokenCount,
+    override,
+  )
+  const effectiveOverride = fixedLoad.effectiveOverride
+  if (fixedLoad.raisedFrom !== undefined && fixedLoad.raisedTo !== undefined) {
+    notifyFixedLoadWindowRaised(
+      toolUseContext,
+      fixedLoad.raisedFrom,
+      fixedLoad.raisedTo,
+    )
+  }
+
   const shouldCompact =
     forced !== undefined ||
-    (await shouldAutoCompact(messages, model, querySource, snipTokensFreed, override))
+    evaluateShouldAutoCompact(
+      messages,
+      model,
+      querySource,
+      snipTokensFreed ?? 0,
+      tokenCount,
+      fixedLoad,
+    )
 
   if (!shouldCompact) {
     // Below threshold: arm a background precompute if we're in the warning band
     // so the eventual compaction can consume a ready summary instead of blocking.
-    maybeArmPrecompute(messages, toolUseContext, cacheSafeParams, model, querySource)
+    maybeArmPrecompute(
+      messages,
+      toolUseContext,
+      cacheSafeParams,
+      model,
+      querySource,
+      effectiveOverride,
+    )
     return { wasCompacted: false, consecutiveFailures: failures }
   }
 
@@ -860,10 +1113,54 @@ export async function autoCompactIfNeeded(
 
   const routed =
     forced !== undefined ||
-    resolveAutoCompactWindow(model, override).source !== 'auto'
+    resolveAutoCompactWindow(model, effectiveOverride).source !== 'auto'
+
+  // Beside-turn precompute: if context just crossed the threshold but still
+  // fits within the safe buffer band, arm (or let finish) a background summary
+  // and defer synchronous compaction for at most one turn. Never defers when a
+  // ready summary is already waiting to be consumed, on forced overflows,
+  // during a rapid-refill streak / failure state, or on a non-routed
+  // recompaction chain (which refuses to consume precomputed summaries).
+  if (
+    forced === undefined &&
+    isPrecomputeOwner(querySource) &&
+    isPrecomputeEnabled() &&
+    (failures ?? 0) === 0 &&
+    consecutiveRapidRefills === 0 &&
+    (routed || tracking?.compacted !== true)
+  ) {
+    const threshold = getAutoCompactThreshold(model, effectiveOverride)
+    const besideTurnLimit = Math.min(
+      threshold + BESIDE_TURN_BUFFER_TOKENS,
+      getEffectiveContextWindowSize(model, effectiveOverride) -
+        MANUAL_COMPACT_BUFFER_TOKENS,
+    )
+    if (
+      tokenCount < besideTurnLimit &&
+      tryDeferBesideTurn({
+        messages,
+        context: toolUseContext,
+        cacheSafeParams,
+        maxTailTokens: precomputeTailBudget(model, effectiveOverride),
+      })
+    ) {
+      logForDebugging(
+        `[PRECOMPUTE] beside-turn: deferring sync compact for 1 turn (tokens=${tokenCount}, threshold=${threshold}, limit=${besideTurnLimit})`,
+      )
+      return { wasCompacted: false, consecutiveFailures: failures }
+    }
+  }
+
   if (routed && querySource !== undefined) {
     return finishRoutedCompaction({
-      outcome: await compactRouted(messages, toolUseContext, cacheSafeParams, querySource),
+      outcome: await compactRouted(
+        messages,
+        toolUseContext,
+        cacheSafeParams,
+        querySource,
+        undefined,
+        effectiveOverride,
+      ),
       forced,
       toolUseContext,
       failures,
@@ -875,7 +1172,7 @@ export async function autoCompactIfNeeded(
     isRecompactionInChain: tracking?.compacted === true,
     turnsSincePreviousCompact: tracking?.turnCounter ?? -1,
     previousCompactTurnId: tracking?.turnId,
-    autoCompactThreshold: getAutoCompactThreshold(model, override),
+    autoCompactThreshold: getAutoCompactThreshold(model, effectiveOverride),
     querySource,
   }
 
@@ -925,7 +1222,7 @@ export async function autoCompactIfNeeded(
     ) {
       const pre = consumePrecompute({
         messages,
-        maxTailTokens: precomputeTailBudget(model, override),
+        maxTailTokens: precomputeTailBudget(model, effectiveOverride),
       })
       if (pre) {
         const compactionResult = await partialCompactConversation(

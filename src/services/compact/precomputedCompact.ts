@@ -48,12 +48,27 @@ export function isPrecomputeEnabled(): boolean {
   return getGlobalConfig().precomputeCompactEnabled !== false
 }
 
+export type PrecomputeArmTrigger = 'warning_band' | 'beside_turn'
+
+export type PrecomputeCoverageStatus =
+  | 'match'
+  | 'no_slot'
+  | 'prefix_length_shrunk'
+  | 'boundary_uuid_missing'
+  | 'covered_messages_changed'
+
 type ArmedState = {
   status: 'computing' | 'ready' | 'error'
   // Number of messages summarized === pivot index at consume time.
   pivotCount: number
   // uuid of the last armed message; guards against history rewrite/rewind.
   tailUuid: UUID
+  // Full prefix UUID sequence at arm time; catches any earlier message or
+  // attachment being withdrawn/replaced inside the summarized prefix.
+  prefixUuids?: string[]
+  armTrigger?: PrecomputeArmTrigger
+  // Caps beside-turn deferral to at most one turn per armed slot.
+  besideTurnDeferred?: boolean
   summaryText?: string
   abort: AbortController
 }
@@ -68,15 +83,42 @@ let armed: ArmedState | null = null
 // actually fires (consumePrecompute) — i.e. once per cycle.
 const MAX_ARM_ATTEMPTS_PER_CYCLE = 3
 let armAttempts = 0
+// Caps beside-turn deferral to at most one turn per compaction cycle, even if
+// the deferred background compute errors before the next turn.
+let besideTurnDeferredThisCycle = false
+
+/**
+ * Validates that `armed` still describes an intact append-only prefix of
+ * `messages`: the pivot boundary UUID matches and (when captured) every
+ * covered message UUID in `0..pivotCount-1` is unchanged.
+ */
+export function checkArmedCoverage(
+  messages: Message[],
+): PrecomputeCoverageStatus {
+  if (!armed) return 'no_slot'
+  if (messages.length < armed.pivotCount || armed.pivotCount < 1) {
+    return 'prefix_length_shrunk'
+  }
+  if (messages[armed.pivotCount - 1]?.uuid !== armed.tailUuid) {
+    return 'boundary_uuid_missing'
+  }
+  if (armed.prefixUuids) {
+    for (let i = 0; i < armed.pivotCount; i++) {
+      if (String(messages[i]?.uuid) !== armed.prefixUuids[i]) {
+        return 'covered_messages_changed'
+      }
+    }
+  }
+  return 'match'
+}
 
 /**
  * True when `armed` still describes an append-only prefix of `messages`
- * (the armed pivot message is exactly messages[pivotCount-1]).
+ * (the armed pivot message is exactly messages[pivotCount-1] and no covered
+ * message in the prefix was withdrawn or replaced).
  */
 function armedPrefixMatches(messages: Message[]): boolean {
-  if (!armed) return false
-  if (messages.length < armed.pivotCount || armed.pivotCount < 1) return false
-  return messages[armed.pivotCount - 1]?.uuid === armed.tailUuid
+  return checkArmedCoverage(messages) === 'match'
 }
 
 function tailTokens(messages: Message[], pivotCount: number): number {
@@ -112,6 +154,7 @@ function discardPrecompute(reason: string): void {
 export function resetPrecomputeCycle(): void {
   discardPrecompute('post_compact_cycle_reset')
   armAttempts = 0
+  besideTurnDeferredThisCycle = false
 }
 
 /**
@@ -127,13 +170,20 @@ export function armPrecompute(params: {
   context: ToolUseContext
   cacheSafeParams: CacheSafeParams
   maxTailTokens: number
-}): void {
-  if (!isPrecomputeEnabled()) return
-  const { messages, context, cacheSafeParams, maxTailTokens } = params
+  armTrigger?: PrecomputeArmTrigger
+}): boolean {
+  if (!isPrecomputeEnabled()) return false
+  const {
+    messages,
+    context,
+    cacheSafeParams,
+    maxTailTokens,
+    armTrigger = 'warning_band',
+  } = params
 
   const pivotCount = messages.length
   const tailUuid = messages[pivotCount - 1]?.uuid as UUID | undefined
-  if (!tailUuid || pivotCount < 2) return
+  if (!tailUuid || pivotCount < 2) return false
 
   // Already armed on a compatible prefix?
   if (
@@ -144,11 +194,11 @@ export function armPrecompute(params: {
     // Still fresh enough? If the verbatim tail has grown past budget, the
     // armed summary no longer relieves enough — re-arm at the current pivot.
     if (tailTokens(messages, armed.pivotCount) <= maxTailTokens) {
-      return
+      return true
     }
     discardPrecompute('tail_grew_rearm')
   } else if (armed && !armedPrefixMatches(messages)) {
-    discardPrecompute('prefix_changed_rearm')
+    discardPrecompute(`prefix_changed_rearm:${checkArmedCoverage(messages)}`)
   } else if (armed) {
     // errored slot — replace it
     discardPrecompute('replace_errored')
@@ -159,7 +209,7 @@ export function armPrecompute(params: {
     logForDebugging(
       `[PRECOMPUTE] re-arm capped (${armAttempts}/${MAX_ARM_ATTEMPTS_PER_CYCLE} this cycle)`,
     )
-    return
+    return false
   }
   armAttempts++
 
@@ -175,12 +225,15 @@ export function armPrecompute(params: {
     status: 'computing',
     pivotCount,
     tailUuid,
+    prefixUuids: messages.map(m => String(m.uuid)),
+    armTrigger,
+    besideTurnDeferred: false,
     abort,
   }
   const slot = armed
 
   logForDebugging(
-    `[PRECOMPUTE] arm: summarizing ${pivotCount} messages in background`,
+    `[PRECOMPUTE] arm (${armTrigger}): summarizing ${pivotCount} messages in background`,
   )
 
   void computeSummary(messages, context, cacheSafeParams, abort)
@@ -205,6 +258,49 @@ export function armPrecompute(params: {
         onSessionAbort,
       )
     })
+  return true
+}
+
+/**
+ * Beside-turn deferral: when context has just crossed the auto-compact
+ * threshold but still sits within the safe buffer band, kick off (or let
+ * finish) a background precompute and defer synchronous compaction for at most
+ * one turn so the main query does not stall. Never defers when a ready summary
+ * is already waiting to be consumed.
+ */
+export function tryDeferBesideTurn(params: {
+  messages: Message[]
+  context: ToolUseContext
+  cacheSafeParams: CacheSafeParams
+  maxTailTokens: number
+}): boolean {
+  if (!isPrecomputeEnabled()) return false
+  if (besideTurnDeferredThisCycle) return false
+  const { messages, maxTailTokens } = params
+
+  if (armed && armedPrefixMatches(messages)) {
+    if (armed.status === 'ready') {
+      // Ready to consume right now — do not defer.
+      return false
+    }
+    if (
+      armed.status === 'computing' &&
+      tailTokens(messages, armed.pivotCount) <= maxTailTokens
+    ) {
+      if (armed.besideTurnDeferred) return false
+      armed.besideTurnDeferred = true
+      besideTurnDeferredThisCycle = true
+      return true
+    }
+  }
+
+  const started = armPrecompute({ ...params, armTrigger: 'beside_turn' })
+  if (started && armed && armed.status === 'computing') {
+    armed.besideTurnDeferred = true
+    besideTurnDeferredThisCycle = true
+    return true
+  }
+  return false
 }
 
 /**
@@ -220,6 +316,7 @@ export function consumePrecompute(params: {
   // Compaction is firing: a new cycle begins regardless of the outcome below,
   // so the per-cycle re-arm budget refreshes here.
   armAttempts = 0
+  besideTurnDeferredThisCycle = false
   if (!armed) return null
   const { messages, maxTailTokens } = params
 
@@ -228,8 +325,9 @@ export function consumePrecompute(params: {
     logForDebugging(`[PRECOMPUTE] not consumable (status=${armed.status})`)
     return null
   }
-  if (!armedPrefixMatches(messages)) {
-    discardPrecompute('consume_prefix_changed')
+  const coverage = checkArmedCoverage(messages)
+  if (coverage !== 'match') {
+    discardPrecompute(`consume_${coverage}`)
     return null
   }
   if (tailTokens(messages, armed.pivotCount) > maxTailTokens) {
@@ -298,6 +396,7 @@ export function __getArmedForTest(): ArmedState | null {
 export function __resetForTest(): void {
   armed = null
   armAttempts = 0
+  besideTurnDeferredThisCycle = false
 }
 export function __getArmAttemptsForTest(): number {
   return armAttempts

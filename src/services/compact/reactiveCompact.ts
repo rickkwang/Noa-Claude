@@ -27,7 +27,10 @@ import {
   isPromptTooLongMessage,
   parsePromptTooLongTokenCounts,
 } from '../api/errors.js'
-import { roughTokenCountEstimationForMessages } from '../tokenEstimation.js'
+import {
+  roughTokenCountEstimation,
+  roughTokenCountEstimationForMessages,
+} from '../tokenEstimation.js'
 import {
   getModelEffectiveContextWindowSize,
   isAutoCompactEnabled,
@@ -138,9 +141,30 @@ export function selectReactiveTailPivot(
   model: string,
   tokenGap?: number,
   reportedLimit?: number,
+  actualTokens?: number,
+  systemPromptTokens?: number,
 ): number | null {
   const groups = groupMessagesByApiRound(messages)
   if (groups.length < MIN_GROUPS_TO_COMPACT) return null
+
+  // When the API reported its actual token count for the overflowing request,
+  // calibrate local rough estimates upward so dense code or non-ASCII text
+  // cannot be undercounted into keeping a tail that overflows the retry again.
+  let estimateScale = 1
+  if (actualTokens !== undefined && actualTokens > 0) {
+    const estimatedTotal = estimateTokens(messages)
+    if (estimatedTotal > 0) {
+      const estimatedActualMessages = Math.max(
+        0,
+        actualTokens - (systemPromptTokens ?? 0),
+      )
+      estimateScale = Math.max(1, estimatedActualMessages / estimatedTotal)
+    }
+  }
+  const calibratedTokens = (msgs: Message[]): number =>
+    estimateScale === 1
+      ? estimateTokens(msgs)
+      : Math.ceil(estimateTokens(msgs) * estimateScale)
 
   const window = Math.min(getModelEffectiveContextWindowSize(model), reportedLimit ?? Infinity)
   const budget = Math.min(
@@ -160,16 +184,24 @@ export function selectReactiveTailPivot(
   )
   if (firstAssistantGroup === -1) return null
   let tailTokens = 0
+  let rawTailTokens = 0
   let keptGroups = 0
   for (let g = groups.length - 1; g > firstAssistantGroup; g--) {
-    const groupTokens = estimateTokens(groups[g]!)
-    // Once the overflow is covered, the budget decides; the cap always does.
-    if (tailTokens >= minTail && tailTokens + groupTokens > budget) break
+    const rawGroupTokens = estimateTokens(groups[g]!)
+    const groupTokens =
+      estimateScale === 1
+        ? rawGroupTokens
+        : Math.ceil(rawGroupTokens * estimateScale)
+    // Once the overflow is covered (using uninflated tokens so unsubtracted
+    // fixed prefix such as tool schemas cannot falsely satisfy minTail), the
+    // budget decides; the calibrated cap always does.
+    if (rawTailTokens >= minTail && tailTokens + groupTokens > budget) break
     if (tailTokens + groupTokens > hardCap) break
     tailTokens += groupTokens
+    rawTailTokens += rawGroupTokens
     keptGroups++
   }
-  if (keptGroups === 0 || tailTokens < minTail) return null
+  if (keptGroups === 0 || rawTailTokens < minTail) return null
 
   const groupPivot = groups
     .slice(0, groups.length - keptGroups)
@@ -181,10 +213,12 @@ export function selectReactiveTailPivot(
   // not grow past what the loop itself would have accepted.
   const tail = messages.slice(pivot)
   const snappedTailTokens =
-    pivot === groupPivot ? tailTokens : estimateTokens(tail)
+    pivot === groupPivot ? tailTokens : calibratedTokens(tail)
+  const snappedRawTailTokens =
+    pivot === groupPivot ? rawTailTokens : estimateTokens(tail)
   if (
     snappedTailTokens > Math.min(Math.max(budget, tailTokens), hardCap) ||
-    snappedTailTokens < minTail
+    snappedRawTailTokens < minTail
   ) {
     return null
   }
@@ -253,11 +287,20 @@ export async function runReactiveCompaction(params: {
     error !== undefined && !isMediaError
       ? getPromptTooLongTokenGap(error)
       : undefined
+  const parsedCounts =
+    error !== undefined && !isMediaError && error.errorDetails
+      ? parsePromptTooLongTokenCounts(error.errorDetails)
+      : undefined
+  const systemPromptTokens = Array.isArray(cacheSafeParams.systemPrompt)
+    ? roughTokenCountEstimation(cacheSafeParams.systemPrompt.join('\n'))
+    : 0
   const pivot = selectReactiveTailPivot(
     messages,
     context.options.mainLoopModel,
     tokenGap,
-    error?.errorDetails ? parsePromptTooLongTokenCounts(error.errorDetails).limitTokens : undefined,
+    parsedCounts?.limitTokens,
+    parsedCounts?.actualTokens,
+    systemPromptTokens,
   )
 
   beginCompactLifecycle(context)

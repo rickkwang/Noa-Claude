@@ -150,4 +150,85 @@ describe('re-arm cap (cost guard)', () => {
     expect(__getArmAttemptsForTest()).toBe(0)
   })
 
+  test('checkArmedCoverage detects a modified message inside the armed prefix', async () => {
+    const { checkArmedCoverage } = await import(
+      '../../../services/compact/precomputedCompact.js'
+    )
+    const m1 = asst(10)
+    const m2 = asst(10)
+    const m3 = asst(10)
+    armOnce([m1, m2])
+    expect(checkArmedCoverage([m1, m2, m3])).toBe('match')
+
+    // Replacing m1 while keeping m2 (tailUuid) intact must still be caught.
+    const replaced = asst(10)
+    expect(checkArmedCoverage([replaced, m2, m3])).toBe('covered_messages_changed')
+  })
+
+  test('tryDeferBesideTurn defers at most once per armed slot and never when ready', async () => {
+    const { tryDeferBesideTurn } = await import(
+      '../../../services/compact/precomputedCompact.js'
+    )
+    const messages = [asst(10), asst(10)]
+    const params = {
+      messages,
+      context: abortedContext(),
+      cacheSafeParams: {} as never,
+      maxTailTokens: BIG_TAIL_BUDGET,
+    }
+
+    // First call arms beside_turn and defers once.
+    expect(tryDeferBesideTurn(params)).toBe(true)
+    // Second call on the same computing slot must NOT defer again.
+    expect(tryDeferBesideTurn(params)).toBe(false)
+
+    // When a ready summary exists, never defer — consume it immediately.
+    __setReadyForTest({
+      pivotCount: 2,
+      tailUuid: uid(messages[1]),
+      summaryText: 'READY',
+    })
+    expect(tryDeferBesideTurn(params)).toBe(false)
+  })
+
+  test('tryDeferBesideTurn does not re-defer after an errored slot or for an over-budget computing slot', async () => {
+    const {
+      tryDeferBesideTurn,
+      __getArmedForTest,
+      __setComputingForTest,
+      __resetForTest,
+    } = await import('../../../services/compact/precomputedCompact.js')
+
+    const m1 = asst(10)
+    const m2 = asst(10)
+    const params = {
+      messages: [m1, m2],
+      context: abortedContext(),
+      cacheSafeParams: {} as never,
+      maxTailTokens: BIG_TAIL_BUDGET,
+    }
+
+    // First deferral succeeds; if that slot errors, a second call in the same
+    // cycle must NOT defer again.
+    expect(tryDeferBesideTurn(params)).toBe(true)
+    const slot = __getArmedForTest()!
+    slot.status = 'error'
+    expect(tryDeferBesideTurn(params)).toBe(false)
+
+    // Fresh cycle: a computing slot whose verbatim tail already exceeds
+    // maxTailTokens must not be deferred on — it re-arms at the new pivot.
+    __resetForTest()
+    const bigTail = asst(50_000)
+    __setComputingForTest({ pivotCount: 2, tailUuid: uid(m2) })
+    expect(
+      tryDeferBesideTurn({
+        messages: [m1, m2, bigTail],
+        context: abortedContext(),
+        cacheSafeParams: {} as never,
+        maxTailTokens: 100,
+      }),
+    ).toBe(true)
+    expect(__getArmedForTest()?.pivotCount).toBe(3)
+  })
+
 })

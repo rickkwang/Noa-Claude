@@ -16,6 +16,14 @@ import {
   RAPID_REFILL_MAX_CONSECUTIVE,
 } from './services/compact/autoCompact.js'
 import { buildPostCompactMessages } from './services/compact/compact.js'
+import { CONTEXT_MANAGEMENT_BETA_HEADER } from './constants/betas.js'
+import { getModelBetas } from './utils/betas.js'
+import { CLEARED_RESULTS_ANTI_REDO_NOTICE } from './services/compact/microCompact.js'
+import {
+  hasClearedResultsNoticeSinceLastAssistant,
+  IDLE_RESUMED_CLEARED_RESULTS_NOTICE,
+  shouldInjectIdleClearedNotice,
+} from './services/compact/apiMicrocompact.js'
 import * as reactiveCompact from './services/compact/reactiveCompact.js'
 import {
   logEvent,
@@ -753,6 +761,43 @@ async function* queryLoop(
       tracking = {
         ...(tracking ?? { compacted: false, turnId: '', turnCounter: 0 }),
         consecutiveFailures,
+      }
+    }
+
+    // Inject cleared-results / idle-resume anti-redo notice only when
+    // autocompact did not just replace the transcript. It is yielded so the
+    // transcript keeps it: a request-only message would drop out of the next
+    // turn's history and invalidate any precompute armed over it.
+    if (!compactionResult) {
+      const clearedResultsNotice =
+        microcompactResult.trigger === 'time'
+          ? IDLE_RESUMED_CLEARED_RESULTS_NOTICE
+          : microcompactResult.trigger === 'size'
+            ? CLEARED_RESULTS_ANTI_REDO_NOTICE
+            : shouldInjectIdleClearedNotice({
+                  messages: messagesForQuery,
+                  querySource,
+                  isSubagent: Boolean(toolUseContext.agentId),
+                  supportsContextManagement: () =>
+                    getModelBetas(compactModel).includes(
+                      CONTEXT_MANAGEMENT_BETA_HEADER,
+                    ),
+                })
+              ? IDLE_RESUMED_CLEARED_RESULTS_NOTICE
+              : undefined
+      if (
+        clearedResultsNotice &&
+        !hasClearedResultsNoticeSinceLastAssistant(
+          messagesForQuery,
+          clearedResultsNotice,
+        )
+      ) {
+        const notice = createAttachmentMessage({
+          type: 'critical_system_reminder',
+          content: clearedResultsNotice,
+        })
+        messagesForQuery = [...messagesForQuery, notice]
+        yield notice
       }
     }
 

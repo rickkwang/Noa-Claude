@@ -41,6 +41,8 @@ export const MC_CLEARED_INPUT_MESSAGE =
   '[Old tool input content cleared; re-read the file if needed]'
 // Same inline-for-circular-deps reason, same drift test.
 export const MC_PERSISTED_OUTPUT_TAG = '<persisted-output>'
+export const CLEARED_RESULTS_ANTI_REDO_NOTICE =
+  'Older tool results have been replaced with a short placeholder to save context. That means only that the text is no longer shown, not that the call failed or that you never saw it. Do not redo an action with side effects only because its result is hidden.'
 
 /**
  * Pointers to content microcompact wrote to disk, ready to substitute for the
@@ -184,6 +186,7 @@ export function estimateMessageTokens(messages: Message[]): number {
 
 export type MicrocompactResult = {
   messages: Message[]
+  trigger?: 'time' | 'size'
 }
 
 /**
@@ -730,7 +733,7 @@ async function maybeTimeBasedMicrocompact(
 
   finalizeContentClear(querySource)
 
-  return { messages: cleared.messages }
+  return { messages: cleared.messages, trigger: 'time' }
 }
 
 /**
@@ -812,5 +815,5 @@ async function maybeSizeBasedMicrocompact(
 
   finalizeContentClear(querySource)
 
-  return { messages: cleared.messages }
+  return { messages: cleared.messages, trigger: 'size' }
 }

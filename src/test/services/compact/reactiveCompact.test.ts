@@ -95,4 +95,47 @@ describe('selectReactiveTailPivot', () => {
     expect(selectPTLPartialPivot([...rounds(3), user(350_000)], error)).not.toBeNull()
     expect(selectPTLPartialPivot([...rounds(3), user(350_000)], error, [user(100_000)])).toBeNull()
   })
+
+  test('calibrates rough token estimates upward when API reports higher actual token count', () => {
+    // 10 rounds of ~5K rough tokens each (~50K rough total).
+    // Without calibration, budget (~18K) keeps 3 rounds (~15K).
+    // If API reports actualTokens = 100K (2x rough estimate, 0 system prompt),
+    // each round is really ~10K, so budget only keeps 1 round instead of 3.
+    const messages = rounds(10, 10_000)
+    const uncalibrated = selectReactiveTailPivot(messages, 'test-model')!
+    const roughTotal = roughTokenCountEstimationForMessages(messages as never)
+    const calibrated = selectReactiveTailPivot(
+      messages,
+      'test-model',
+      undefined,
+      undefined,
+      roughTotal * 2,
+      0,
+    )!
+    expect(calibrated).toBeGreaterThan(uncalibrated)
+  })
+
+  test('calibration does not let unsubtracted fixed prefix prematurely satisfy minTail', () => {
+    // 10 rounds of ~5K rough tokens each (~50K rough total).
+    // With tokenGap=15_000 (minTail = 18_000), at least 4 rounds (~20K rough)
+    // must be kept so the summary request sheds enough real tokens.
+    // Even if actualTokens is 150K (e.g. 100K of unsubtracted MCP tool schemas,
+    // making estimateScale = 3.0), a single 5K round must NOT satisfy minTail.
+    const messages = rounds(10, 10_000)
+    const roughTotal = roughTokenCountEstimationForMessages(messages as never)
+    const pivot = selectReactiveTailPivot(
+      messages,
+      'test-model',
+      15_000,
+      undefined,
+      roughTotal * 3,
+      0,
+    )
+    if (pivot !== null) {
+      const keptRough = roughTokenCountEstimationForMessages(
+        messages.slice(pivot) as never,
+      )
+      expect(keptRough).toBeGreaterThanOrEqual(18_000)
+    }
+  })
 })

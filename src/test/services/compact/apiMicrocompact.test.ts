@@ -2,6 +2,9 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import {
   getIdleToolClearingStrategy,
   getAPIContextManagement,
+  hasClearedResultsNoticeSinceLastAssistant,
+  IDLE_RESUMED_CLEARED_RESULTS_NOTICE,
+  shouldInjectIdleClearedNotice,
 } from '../../../services/compact/apiMicrocompact.js'
 
 const originalEnv = {
@@ -260,5 +263,80 @@ describe('idle tool clearing', () => {
       now: NOW,
     })
     expect(subagent?.edits ?? []).toEqual([])
+  })
+
+  test('injects idle anti-redo notice once per idle return and skips shadow/subagent', () => {
+    const messages = conversation(40, 66 * 60_000) as unknown as Array<Record<string, unknown>>
+    expect(
+      shouldInjectIdleClearedNotice({
+        messages: messages as never,
+        querySource: 'repl_main_thread',
+        now: NOW,
+      }),
+    ).toBe(true)
+
+    expect(
+      shouldInjectIdleClearedNotice({
+        messages: messages as never,
+        querySource: 'repl_main_thread',
+        isSubagent: true,
+        now: NOW,
+      }),
+    ).toBe(false)
+
+    // Once the attachment is appended after the last assistant, it is idempotent.
+    const withNotice = [
+      ...messages,
+      {
+        type: 'attachment',
+        uuid: 'notice-1',
+        attachment: {
+          type: 'critical_system_reminder',
+          content: IDLE_RESUMED_CLEARED_RESULTS_NOTICE,
+        },
+      },
+    ]
+    expect(
+      hasClearedResultsNoticeSinceLastAssistant(
+        withNotice as never,
+        IDLE_RESUMED_CLEARED_RESULTS_NOTICE,
+      ),
+    ).toBe(true)
+    expect(
+      shouldInjectIdleClearedNotice({
+        messages: withNotice as never,
+        querySource: 'repl_main_thread',
+        now: NOW,
+      }),
+    ).toBe(false)
+
+    // After a fresh assistant reply, a historical idle gap must NOT re-inject
+    // the idle-resumed notice on subsequent active turns.
+    const afterReply = [
+      ...withNotice,
+      {
+        type: 'assistant',
+        uuid: 'asst-after-resume',
+        timestamp: new Date(NOW - 5_000).toISOString(),
+        message: { role: 'assistant', content: [{ type: 'text', text: 'ok' }] },
+      },
+    ]
+    expect(
+      shouldInjectIdleClearedNotice({
+        messages: afterReply as never,
+        querySource: 'repl_main_thread',
+        now: NOW,
+      }),
+    ).toBe(false)
+
+    // Never inject when the active provider/model does not send context_management.
+    expect(
+      shouldInjectIdleClearedNotice({
+        messages: messages as never,
+        querySource: 'repl_main_thread',
+        supportsContextManagement: () => false,
+        now: NOW,
+      }),
+    ).toBe(false)
   })
 })

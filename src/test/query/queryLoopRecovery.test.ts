@@ -14,7 +14,10 @@ import {
 } from '../../utils/messages.js'
 import { asSystemPrompt } from '../../utils/systemPromptType.js'
 import { createThreadGoal } from '../../utils/goalState.js'
-import { clearOldToolResults } from '../../services/compact/microCompact.js'
+import {
+  CLEARED_RESULTS_ANTI_REDO_NOTICE,
+  clearOldToolResults,
+} from '../../services/compact/microCompact.js'
 import { tokenCountWithEstimation } from '../../utils/tokens.js'
 
 // Loop-level tests for queryLoop's recovery paths, driven through QueryDeps
@@ -210,6 +213,25 @@ describe('query loop recovery', () => {
       }
     },
   )
+
+  test('the cleared-results notice is yielded so the transcript keeps it', async () => {
+    const seen: Message[][] = []
+    const { events, terminal } = await drain({
+      deps: makeDeps(async function* ({ messages }) {
+        seen.push(messages)
+        yield createAssistantMessage({ content: 'Done.' })
+      }, {
+        microcompact: async messages => ({ messages, trigger: 'size' }),
+      }),
+    })
+    const isNotice = (m: Message) =>
+      m.type === 'attachment' &&
+      m.attachment.type === 'critical_system_reminder' &&
+      m.attachment.content === CLEARED_RESULTS_ANTI_REDO_NOTICE
+    expect(terminal.reason).toBe('completed')
+    expect(events.filter(isNotice)).toHaveLength(1)
+    expect(seen[0]!.filter(isNotice)).toHaveLength(1)
+  })
 
   test('exhausted empty responses schedule recovery for an active interactive goal', async () => {
     const context = createContext()

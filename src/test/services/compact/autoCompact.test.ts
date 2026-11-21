@@ -8,6 +8,7 @@ import {
   isFixedPrefixOverThreshold,
   RAPID_REFILL_MAX_CONSECUTIVE,
   RAPID_REFILL_TURN_WINDOW,
+  resolveFixedLoadWindowOverride,
   shouldAutoCompact,
   WARNING_THRESHOLD_BUFFER_TOKENS,
 } from '../../../services/compact/autoCompact.js'
@@ -130,5 +131,92 @@ describe('shouldAutoCompact background forks', () => {
     for (const source of ['agent_summary', 'away_summary', 'prompt_suggestion', 'speculation']) {
       expect(await shouldAutoCompact(messages, 'test-model', source as never)).toBe(false)
     }
+  })
+})
+
+describe('fixed-load adaptive window raising', () => {
+  afterEach(() => {
+    restoreEnv()
+  })
+
+  test('raises a smaller configured window when fixed prefix exceeds half the threshold', () => {
+    delete process.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW
+    const messages = [asstText(400)] // ~100 rough tokens
+    // 1M model with a 200k override (threshold 167k) and 110k fixed load (> 83.5k).
+    const res = resolveFixedLoadWindowOverride(
+      messages,
+      'claude-sonnet-4-6',
+      110_100,
+      200_000,
+    )
+    expect(res.raisedFrom).toBe(200_000)
+    expect(res.raisedTo).toBeGreaterThan(200_000)
+    expect(res.effectiveOverride).toBe(res.raisedTo)
+  })
+
+  test('does not silently raise an explicit CLAUDE_CODE_AUTO_COMPACT_WINDOW env override', () => {
+    process.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW = '200000'
+    const messages = [asstText(400)]
+    const res = resolveFixedLoadWindowOverride(
+      messages,
+      'claude-sonnet-4-6',
+      150_000,
+    )
+    expect(res.raisedTo).toBeUndefined()
+  })
+
+  test('does not mistake CJK/dense conversation text for fixed prefix load', () => {
+    delete process.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW
+    // 75k Chinese chars: rough chars/4 is ~18.75k, real tokens ~150k, fixed prefix ~20k.
+    const cjkMsg = {
+      type: 'user',
+      uuid: nextUuid(),
+      message: { role: 'user', content: '中'.repeat(75_000) },
+    } as unknown as Message
+    const res = resolveFixedLoadWindowOverride(
+      [cjkMsg],
+      'claude-sonnet-4-6',
+      170_000,
+      200_000,
+    )
+    expect(res.raisedTo).toBeUndefined()
+    expect(res.effectiveOverride).toBe(200_000)
+  })
+
+  test('does not raise past an explicit subagent ceiling', () => {
+    delete process.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW
+    const messages = [asstText(400)]
+    const ceilingOverride = { ceiling: 200_000 }
+    const res = resolveFixedLoadWindowOverride(
+      messages,
+      'claude-sonnet-4-6',
+      150_000,
+      ceilingOverride,
+    )
+    expect(res.raisedTo).toBeUndefined()
+    expect(res.effectiveOverride).toBe(ceilingOverride)
+  })
+
+  test('counts attachment messages in upperBoundMessageTokens so CJK attachments are not misattributed to fixed load', () => {
+    delete process.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW
+    // English user message + large CJK attachment: upperBound must include the
+    // attachment instead of letting the English message mask it.
+    const englishMsg = asstText(20_000)
+    const cjkAttachment = {
+      type: 'attachment',
+      uuid: nextUuid(),
+      attachment: {
+        type: 'critical_system_reminder',
+        content: '中'.repeat(70_000),
+      },
+    } as unknown as Message
+    const res = resolveFixedLoadWindowOverride(
+      [englishMsg, cjkAttachment],
+      'claude-sonnet-4-6',
+      170_000,
+      200_000,
+    )
+    expect(res.raisedTo).toBeUndefined()
+    expect(res.effectiveOverride).toBe(200_000)
   })
 })
