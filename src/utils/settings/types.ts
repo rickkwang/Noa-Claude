@@ -1136,7 +1136,7 @@ export const SettingsSchema = lazySchema(() =>
         .boolean()
         .optional()
         .describe(
-          'Enable turn-end memory extraction (a background agent that saves memories from each turn). When set, overrides the server-side default, which is off.',
+          'Enable turn-end memory extraction (a background agent that saves memories from each turn). Defaults to on in interactive sessions and the desktop app; other non-interactive sessions run it only when this is true.',
         ),
       autoDreamEnabled: z
         .boolean()

@@ -127,7 +127,7 @@ Bridge/remote runtime modules can exist in source, but this build does not regis
 - `BUILTIN_EXPLORE_PLAN_AGENTS` (default-on; enables the built-in Explore + Plan subagents. Its GrowthBook A/B gate `tengu_amber_stoat` is inert here — GrowthBook is hard-disabled — so the default `true` applies.)
 - `COMMIT_ATTRIBUTION`
 - `CONNECTOR_TEXT`
-- `EXTRACT_MEMORIES`
+- `EXTRACT_MEMORIES` (default-on; after each turn of an interactive or desktop-app session a background agent saves memories the main model missed. `autoMemoryExtractEnabled: false` turns it off; other `--print` runs need `autoMemoryExtractEnabled: true` (the desktop app opts in with `NOA_CLAUDE_HOST_MEMORY_EXTRACT=1`). Auto memory itself must be on. Covered by `scripts/e2e-extract-memories.mjs`)
 - `FILE_PERSISTENCE`
 - `HISTORY_PICKER`
 - `KAIROS`

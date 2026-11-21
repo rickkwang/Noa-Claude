@@ -561,6 +561,8 @@ function spawnRun(opts: SpawnOptions, root: string, previous?: AgentRun): AgentR
       CLAUDE_CODE_EAGER_FLUSH: "1",
       // Per-turn file-history checkpoints back the non-git diff fallback.
       CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING: "1",
+      // Turn-end memory extraction, as in interactive sessions.
+      NOA_CLAUDE_HOST_MEMORY_EXTRACT: "1",
     },
     stdin: "pipe",
     stdout: "pipe",

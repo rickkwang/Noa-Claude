@@ -130,6 +130,7 @@ const defaultFeatures = [
   'AUTO_MODE',
   'MONITOR_TOOL',
   'AGENT_TRIGGERS',
+  'EXTRACT_MEMORIES',
 ]
 const featureSet = new Set<string>(defaultFeatures)
 

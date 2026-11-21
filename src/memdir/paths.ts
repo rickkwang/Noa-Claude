@@ -97,6 +97,8 @@ export function isExtractModeActive(): boolean {
   return (
     !getIsNonInteractiveSession() ||
     getInitialSettings().autoMemoryExtractEnabled === true ||
+    // A host that keeps the session open (the desktop app) opts in for it.
+    isEnvTruthy(process.env.NOA_CLAUDE_HOST_MEMORY_EXTRACT) ||
     getFeatureValue_CACHED_MAY_BE_STALE('tengu_slate_thimble', false)
   )
 }
@@ -104,12 +106,12 @@ export function isExtractModeActive(): boolean {
 /**
  * Whether turn-end memory extraction is enabled. The autoMemoryExtractEnabled
  * setting wins when set; otherwise the tengu_passport_quail gate decides
- * (in-code default off, since remote GrowthBook fetch is disabled).
+ * (in-code default on, since remote GrowthBook fetch is disabled).
  */
 export function isMemoryExtractEnabled(): boolean {
   const setting = getInitialSettings().autoMemoryExtractEnabled
   if (setting !== undefined) return setting
-  return getFeatureValue_CACHED_MAY_BE_STALE('tengu_passport_quail', false)
+  return getFeatureValue_CACHED_MAY_BE_STALE('tengu_passport_quail', true)
 }
 
 /**
