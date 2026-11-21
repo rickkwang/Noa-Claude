@@ -598,7 +598,7 @@ try {
       let inlineError;
       try { await inline.getPromptForCommand('', context); } catch (error) { inlineError = String(error); }
       const fork = await prepareForkedCommandContext({ ...command, context: 'fork' }, '', context);
-      const forkContext = { ...context, getAppState: fork.modifiedGetAppState };
+      const forkContext = fork.forkContext;
       const shell = { command: 'printf fixture > ' + marker + '-fork' };
       const permission = await hasPermissionsToUseTool(BashTool, shell, forkContext, createAssistantMessage({ content: [] }), '');
       state.toolPermissionContext.alwaysDenyRules.cliArg = ['Bash'];
@@ -606,7 +606,7 @@ try {
       delete state.toolPermissionContext.alwaysDenyRules.cliArg;
       state.toolPermissionContext.alwaysAllowRules.cliArg = ['Bash'];
       const explicit = await hasPermissionsToUseTool(BashTool, shell, forkContext, createAssistantMessage({ content: [] }), '');
-      console.log(JSON.stringify({ policy: getSettingsForSource('policySettings')?.strictPluginOnlyCustomization, allowedTools: result.allowedTools, hooks: [...state.sessionHooks.values()].flatMap(s => Object.values(s.hooks)).length, inlineRan: existsSync(marker), inlineError, forkRules: fork.modifiedGetAppState().toolPermissionContext.alwaysAllowRules.command ?? [], forkPermission: permission.behavior, deniedPermission: denied.behavior, explicitPermission: explicit.behavior }));
+      console.log(JSON.stringify({ policy: getSettingsForSource('policySettings')?.strictPluginOnlyCustomization, allowedTools: result.allowedTools, hooks: [...state.sessionHooks.values()].flatMap(s => Object.values(s.hooks)).length, inlineRan: existsSync(marker), inlineError, forkRules: fork.forkContext.getAppState().toolPermissionContext.alwaysAllowRules.command ?? [], forkPermission: permission.behavior, deniedPermission: denied.behavior, explicitPermission: explicit.behavior }));
     `)
     const observations = []
     for (const restricted of [false, true]) {

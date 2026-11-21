@@ -10,7 +10,7 @@
  */
 
 import { randomUUID } from 'crypto'
-import type { PromptCommand } from '../commands.js'
+import type { CommandBase, PromptCommand } from '../commands.js'
 import type { QuerySource } from '../constants/querySource.js'
 import type { CanUseToolFn } from '../hooks/useCanUseTool.js'
 import { query } from '../query.js'
@@ -189,8 +189,7 @@ export function createGetAppStateWithAllowedTools(
 export type PreparedForkedContext = {
   /** Skill content with args replaced */
   skillContent: string
-  /** Modified getAppState with allowed tools */
-  modifiedGetAppState: ToolUseContext['getAppState']
+  forkContext: ToolUseContext
   /** The general-purpose agent to use */
   baseAgent: AgentDefinition
   /** Initial prompt messages */
@@ -202,10 +201,17 @@ export type PreparedForkedContext = {
  * This handles the common setup that both SkillTool and slash commands need.
  */
 export async function prepareForkedCommandContext(
-  command: PromptCommand,
+  command: CommandBase & PromptCommand,
   args: string,
   context: ToolUseContext,
 ): Promise<PreparedForkedContext> {
+  const chain = context.forkedSkillChain ?? []
+  if (chain.includes(command.name)) {
+    throw new Error(
+      `Skill /${command.name} is already running in this call chain. Continue without invoking it again.`,
+    )
+  }
+
   // Use command.agent if specified, otherwise 'general-purpose'
   const agentTypeName = command.agent ?? 'general-purpose'
   const agents = context.options.agentDefinitions.activeAgents
@@ -244,18 +250,15 @@ export async function prepareForkedCommandContext(
     ? parseToolListFromCLI(command.allowedTools ?? [])
     : []
 
-  // Create modified context with allowed tools
-  const modifiedGetAppState = createGetAppStateWithAllowedTools(
-    context.getAppState,
-    allowedTools,
-  )
-
-  // Prepare prompt messages
   const promptMessages = [createUserMessage({ content: skillContent })]
 
   return {
     skillContent,
-    modifiedGetAppState,
+    forkContext: {
+      ...context,
+      getAppState: createGetAppStateWithAllowedTools(context.getAppState, allowedTools),
+      forkedSkillChain: [...chain, command.name],
+    },
     baseAgent,
     promptMessages,
   }
@@ -416,6 +419,7 @@ export function createSubagentContext(
     dynamicSkillDirTriggers: new Set<string>(),
     // Per-subagent: tracks skills surfaced by discovery for was_discovered telemetry (SkillTool.ts:116)
     discoveredSkillNames: new Set<string>(),
+    forkedSkillChain: parentContext.forkedSkillChain,
     toolDecisions: undefined,
     // Budget decisions: override > clone of parent > undefined (feature off).
     //

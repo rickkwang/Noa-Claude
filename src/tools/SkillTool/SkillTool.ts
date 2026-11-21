@@ -203,7 +203,7 @@ async function executeForkedSkill(
     }),
   })
 
-  const { modifiedGetAppState, baseAgent, promptMessages, skillContent } =
+  const { forkContext, baseAgent, promptMessages, skillContent } =
     await prepareForkedCommandContext(command, args || '', context)
 
   // Merge skill's effort into the agent definition so runAgent applies it
@@ -224,10 +224,7 @@ async function executeForkedSkill(
     for await (const message of runAgent({
       agentDefinition,
       promptMessages,
-      toolUseContext: {
-        ...context,
-        getAppState: modifiedGetAppState,
-      },
+      toolUseContext: forkContext,
       canUseTool,
       isAsync: false,
       querySource: 'agent:custom',

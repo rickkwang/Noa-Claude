@@ -78,7 +78,7 @@ async function executeForkedSlashCommand(command: CommandBase & PromptCommand, a
   });
   const {
     skillContent,
-    modifiedGetAppState,
+    forkContext,
     baseAgent,
     promptMessages
   } = await prepareForkedCommandContext(command, args, context);
@@ -154,8 +154,7 @@ async function executeForkedSlashCommand(command: CommandBase & PromptCommand, a
         agentDefinition,
         promptMessages,
         toolUseContext: {
-          ...context,
-          getAppState: modifiedGetAppState,
+          ...forkContext,
           abortController: bgAbortController
         },
         canUseTool,
@@ -233,10 +232,7 @@ async function executeForkedSlashCommand(command: CommandBase & PromptCommand, a
     for await (const message of runAgent({
       agentDefinition,
       promptMessages,
-      toolUseContext: {
-        ...context,
-        getAppState: modifiedGetAppState
-      },
+      toolUseContext: forkContext,
       canUseTool,
       isAsync: false,
       querySource: 'agent:custom',

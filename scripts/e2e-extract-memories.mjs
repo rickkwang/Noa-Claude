@@ -23,6 +23,7 @@ const cases = [
   { name: 'print-plain', settings: '{}', expect: false },
   { name: 'print-host', settings: '{}', host: true, expect: true },
   { name: 'print-host-off', settings: off, host: true, expect: false },
+  { name: 'forked-skill-cycle', settings: off, skillCycle: true },
 ].filter(c => !option('--case') || c.name === option('--case'));
 assert.ok(cases.length, 'unknown --case');
 
@@ -40,7 +41,19 @@ async function run(c) {
     const body = JSON.parse(raw);
     const all = JSON.stringify(body);
     let blocks, kind;
-    if (all.includes('acting as the memory extraction subagent')) {
+    if (c.skillCycle && body.tools?.some(t => t.name === 'Skill')) {
+      kind = 'skill';
+      const last = body.messages.at(-1).content;
+      const result = Array.isArray(last) && last.find(b => b.type === 'tool_result');
+      if (result) {
+        blocks = [{ type: 'text', text: JSON.stringify(result).includes('already running in this call chain') ? 'CYCLE_BLOCKED' : JSON.stringify(result).includes('CYCLE_BLOCKED') ? 'ANSWER_391' : 'CYCLE_MISSED' }];
+      } else {
+        const skill = all.includes('FORK_CYCLE_INNER') ? '/cycle-outer' : 'cycle-inner';
+        blocks = requests.filter(r => r.kind === 'skill').length < 3
+          ? [{ type: 'tool_use', id: `cycle_${requests.length}`, name: 'Skill', input: { skill } }]
+          : [{ type: 'text', text: 'EXTRA_FORK' }];
+      }
+    } else if (all.includes('acting as the memory extraction subagent')) {
       kind = 'extract';
       if (!all.includes('"tool_use_id":"mem_write"')) {
         memFile = all.match(/(\/[^"\\ `]*?\/projects\/[^"\\ `]*?\/memory\/)/)?.[1] + 'user_go.md';
@@ -69,7 +82,15 @@ async function run(c) {
   writeFileSync(join(config, 'settings.json'), c.settings);
   const env = { PATH: process.env.PATH, HOME: join(dir, 'home'), TERM: 'xterm-256color', CLAUDE_CONFIG_DIR: config, CLAUDE_CODE_PRODUCT_DIR: config, ANTHROPIC_API_KEY: 'sk-noa-e2e', ANTHROPIC_BASE_URL: `http://127.0.0.1:${server.address().port}`, CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1', ...(c.host ? { NOA_CLAUDE_HOST_MEMORY_EXTRACT: '1' } : {}) };
   const cli = [entry, '--model', 'claude-haiku-5-5', '--debug-file', join(dir, 'debug.log')];
-  const prompt = "FYI I'm a Go engineer new to React. What's 17*23?";
+  if (c.skillCycle) {
+    cli.push('--allowedTools', 'Skill');
+    for (const name of ['outer', 'inner']) {
+      const skillDir = join(config, 'skills', `cycle-${name}`);
+      mkdirSync(skillDir, { recursive: true });
+      writeFileSync(join(skillDir, 'SKILL.md'), `---\nname: cycle-${name}\ndescription: Fork cycle fixture\ncontext: fork\n---\nFORK_CYCLE_${name.toUpperCase()}\n`);
+    }
+  }
+  const prompt = c.skillCycle ? '/cycle-outer' : "FYI I'm a Go engineer new to React. What's 17*23?";
   let command, output = '', exit = 0;
   try {
     if (c.interactive) {
@@ -109,7 +130,13 @@ async function run(c) {
   const extracts = requests.filter(r => r.kind === 'extract').length;
   const written = !!memFile && existsSync(memFile);
   assert.equal(exit, 0, `CLI exit ${exit}`);
-  assert.ok(output.includes('ANSWER_391'), 'main turn did not answer');
+  if (c.skillCycle) {
+    const skillRequests = requests.filter(r => r.kind === 'skill');
+    assert.deepEqual(skillRequests.flatMap(r => r.response).filter(b => b.type === 'tool_use').map(b => b.input.skill), ['cycle-inner', '/cycle-outer'], 'the cycle started an extra fork');
+    assert.ok(output.includes('ANSWER_391'), 'forked skill did not finish after the recursion error');
+  } else {
+    assert.ok(output.includes('ANSWER_391'), 'main turn did not answer');
+  }
   if (c.expect) {
     assert.ok(written, 'extraction did not write the memory file');
     assert.match(readFileSync(memFile, 'utf8'), /Go analogies/);
