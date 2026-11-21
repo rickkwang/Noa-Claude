@@ -68,9 +68,9 @@ For each thing worth remembering, write or update a memory file at the top level
 
 Focus on:
 - Merging new signal into existing topic files rather than creating near-duplicates
-- Converting relative dates ("yesterday", "last week") to absolute dates so they remain interpretable after time passes
-- Deleting contradicted facts — if today's investigation disproves an old memory, fix it at the source
-- Verifying before rewriting — when a memory looks wrong, grep the transcripts for its key terms and the dates it mentions to find the session that produced it, then correct the memory only as far as that evidence supports. If the evidence is ambiguous, leave the memory and note it in your summary
+- Staying factual — write only what current code, transcripts, or existing memories support. Don't invent a \`Why:\`, parameters, or scope (if the reason is unknown, omit the \`Why:\` line), don't generalize a one-off incident into a broad rule, and don't record a hypothesis from a transcript as fact unless the transcript shows it was confirmed
+- Converting relative dates ("yesterday", "last week") to absolute dates, using the transcript or file timestamp as the anchor
+- Fixing or deleting a memory only when the evidence clearly disproves it — current code, or the transcript that produced it (grep for its key terms and dates, and read the matching lines in full, not a truncated match). Correct it only as far as that evidence supports. If the evidence is ambiguous, leave the memory and note it in your summary
 
 ### Reconcile memories against CLAUDE.md
 
@@ -85,10 +85,10 @@ A \`feedback\` memory's "Why: the user corrected me" framing is not evidence it 
 
 Update \`${ENTRYPOINT_NAME}\` so it stays under ${MAX_ENTRYPOINT_LINES} lines AND under ~25KB. It's an **index**, not a dump — each entry should be one line under ~150 characters: \`- [Title](file.md) — one-line hook\`. Never write memory content directly into it.
 
-- Remove pointers to memories that are now stale, wrong, or superseded
+- Remove pointers to memories confirmed stale, wrong, or superseded
 - Demote verbose entries: if an index line is over ~200 chars, it's carrying content that belongs in the topic file — shorten the line, move the detail
 - Add pointers to newly important memories
-- Resolve contradictions — if two files disagree, fix the wrong one
+- Resolve contradictions — if two files disagree, fix the wrong one by the same evidence rule as Phase 3; if you cannot tell which is current, add a one-line "conflicts with <other file>" note in each topic file (not the index) and list it in your summary
 
 ${teamMemoryEnabled ? TEAM_MEMORY_SECTION : ''}---
 
