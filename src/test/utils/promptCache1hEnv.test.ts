@@ -39,6 +39,11 @@ describe('1h prompt-cache TTL env opt-in', () => {
     expect(matchAllowlist('repl_main_thread', PROMPT_CACHE_1H_DEFAULT_SOURCES)).toBe(true)
     expect(matchAllowlist('repl_main_thread:explanatory', PROMPT_CACHE_1H_DEFAULT_SOURCES)).toBe(true)
     expect(matchAllowlist('sdk', PROMPT_CACHE_1H_DEFAULT_SOURCES)).toBe(true)
+    // Single-turn skipCacheWrite forks share the main thread's prefix and must
+    // match its 1h TTL to hit the warm entry instead of mismatching.
+    expect(matchAllowlist('compact', PROMPT_CACHE_1H_DEFAULT_SOURCES)).toBe(true)
+    expect(matchAllowlist('side_question', PROMPT_CACHE_1H_DEFAULT_SOURCES)).toBe(true)
+    expect(matchAllowlist('prompt_suggestion', PROMPT_CACHE_1H_DEFAULT_SOURCES)).toBe(true)
   })
 
   test('an explicit falsy value is a hard off, not a fall-through', () => {

@@ -8,13 +8,22 @@ import { getInitialSettings } from './settings/settings.js'
 /**
  * Query sources covered when the env opt-in is set to a bare boolean.
  *
- * Only the interactive main thread and the SDK driver ever see the
- * human-length pauses a 1-hour TTL exists to survive. Subagents and forked
- * side-queries run back-to-back inside a single turn, so a 1h write there is
- * pure surcharge — 2x input against the 5-minute entry's 1.25x — on a read
- * that would have hit the short entry anyway.
+ * Covers the interactive main thread, the SDK driver, and the single-turn
+ * `skipCacheWrite` forks (`compact`, `side_question` for `/btw`, and
+ * `prompt_suggestion`) that share the main thread's `CacheSafeParams` prefix.
+ * Because those forks place their breakpoint on `messages.length - 2` (an
+ * already-cached prefix point), matching the main thread's 1h TTL reads the
+ * warm 1h entry instead of causing a 1h↔5m TTL mismatch, without billing a
+ * 2x write on their own suffix. Subagents and multi-turn background forks
+ * still default to 5m; add `agent:*` explicitly if you want 1h there too.
  */
-export const PROMPT_CACHE_1H_DEFAULT_SOURCES = ['repl_main_thread*', 'sdk']
+export const PROMPT_CACHE_1H_DEFAULT_SOURCES = [
+  'repl_main_thread*',
+  'sdk',
+  'compact',
+  'side_question',
+  'prompt_suggestion',
+]
 
 /**
  * Local opt-in for the 1-hour prompt-cache TTL.

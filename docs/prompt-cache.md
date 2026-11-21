@@ -12,7 +12,7 @@ export NOA_CLAUDE_PROMPT_CACHE_1H='repl_main_thread*,agent:*'   # explicit query
 export NOA_CLAUDE_PROMPT_CACHE_1H=0                        # hard off, outranks ENABLE_PROMPT_CACHING_1H_BEDROCK
 ```
 
-A bare `1` covers `repl_main_thread*` and `sdk` only. Subagents and forked side-queries run back-to-back inside a single turn, so a 1-hour write there is pure surcharge on a read that would have hit the 5-minute entry anyway; add `agent:*` explicitly if you want it.
+A bare `1` covers `repl_main_thread*`, `sdk`, and the single-turn `skipCacheWrite` forks that share the main thread's cached prefix (`compact`, `side_question` for `/btw`, `prompt_suggestion`), so those forks hit the warm 1-hour entry instead of causing a TTL mismatch. Subagents and multi-turn background forks run back-to-back inside a single turn, so a 1-hour write there is pure surcharge on a read that would have hit the 5-minute entry anyway; add `agent:*` explicitly if you want it.
 
 **When it pays.** Because every write gets 1.6x more expensive, the switch only wins when more than **~37.5% of your cache-write volume** follows a gap longer than five minutes — that is the break-even, not a rule of thumb. Note the unit is write *volume*, not request count: the requests that follow a long gap rewrite far more than the ones inside a tool loop, so counting requests understates it. Measured over this repository's own session transcripts that share was 2.6%, i.e. enabling it would have cost about 1.56x the write spend. It pays for a genuinely interrupted rhythm — ask, leave for half an hour, come back to the same session — not for continuous work.
 

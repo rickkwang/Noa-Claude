@@ -203,6 +203,45 @@ describe('MCP context budgeting', () => {
     expect(text).toContain('small resource body')
   })
 
+  test('MCP instruction delta attachments are enabled by default and respect explicit opt-out', () => {
+    const prev = process.env.CLAUDE_CODE_MCP_INSTR_DELTA
+    try {
+      delete process.env.CLAUDE_CODE_MCP_INSTR_DELTA
+      const enabledAttachments = getMcpInstructionsDeltaAttachment(
+        [
+          {
+            type: 'connected',
+            name: 'default-on-server',
+            instructions: 'server instructions',
+          } as never,
+        ],
+        [],
+        'test-model',
+        [],
+      )
+      expect(enabledAttachments).toHaveLength(1)
+      expect(enabledAttachments[0]?.type).toBe('mcp_instructions_delta')
+
+      process.env.CLAUDE_CODE_MCP_INSTR_DELTA = 'false'
+      const disabledAttachments = getMcpInstructionsDeltaAttachment(
+        [
+          {
+            type: 'connected',
+            name: 'default-on-server',
+            instructions: 'server instructions',
+          } as never,
+        ],
+        [],
+        'test-model',
+        [],
+      )
+      expect(disabledAttachments).toHaveLength(0)
+    } finally {
+      if (prev === undefined) delete process.env.CLAUDE_CODE_MCP_INSTR_DELTA
+      else process.env.CLAUDE_CODE_MCP_INSTR_DELTA = prev
+    }
+  })
+
   test('MCP instruction delta attachments are truncated to a bounded size', () => {
     process.env.CLAUDE_CODE_MCP_INSTR_DELTA = 'true'
     const giantInstruction = `intro\n${'A'.repeat(10_000)}\nTAIL_SENTINEL`

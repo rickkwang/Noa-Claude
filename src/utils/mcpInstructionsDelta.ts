@@ -33,15 +33,17 @@ export type ClientSideInstruction = {
  * False → prompts.ts keeps its DANGEROUS_uncachedSystemPromptSection
  * (rebuilt every turn; cache-busts on late connect).
  *
- * Env override for local testing: CLAUDE_CODE_MCP_INSTR_DELTA=true/false
- * wins over both ant bypass and the GrowthBook gate.
+ * Default on in noa (GrowthBook is disabled here, so the upstream
+ * `tengu_basalt_3kr` gate can never fire and would otherwise leave MCP
+ * instructions in the uncached system-prompt section). Env override
+ * `CLAUDE_CODE_MCP_INSTR_DELTA=true/false` still wins.
  */
 export function isMcpInstructionsDeltaEnabled(): boolean {
   if (isEnvTruthy(process.env.CLAUDE_CODE_MCP_INSTR_DELTA)) return true
   if (isEnvDefinedFalsy(process.env.CLAUDE_CODE_MCP_INSTR_DELTA)) return false
   return (
     process.env.USER_TYPE === 'ant' ||
-    getFeatureValue_CACHED_MAY_BE_STALE('tengu_basalt_3kr', false)
+    getFeatureValue_CACHED_MAY_BE_STALE('tengu_basalt_3kr', true)
   )
 }
 

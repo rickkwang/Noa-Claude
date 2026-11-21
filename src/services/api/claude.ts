@@ -735,17 +735,24 @@ export function assistantMessageToMessageParam(
         ],
       }
     } else {
+      let lastCacheableIndex = -1
+      for (let i = message.message.content.length - 1; i >= 0; i--) {
+        const block = message.message.content[i]!
+        if (
+          block.type !== 'thinking' &&
+          block.type !== 'redacted_thinking' &&
+          (feature('CONNECTOR_TEXT') ? !isConnectorTextBlock(block) : true)
+        ) {
+          lastCacheableIndex = i
+          break
+        }
+      }
       return {
         role: 'assistant',
         content: message.message.content.map((_, i) => ({
           ..._,
-          ...(i === message.message.content.length - 1 &&
-          _.type !== 'thinking' &&
-          _.type !== 'redacted_thinking' &&
-          (feature('CONNECTOR_TEXT') ? !isConnectorTextBlock(_) : true)
-            ? enablePromptCaching
-              ? { cache_control: getCacheControl({ querySource }) }
-              : {}
+          ...(i === lastCacheableIndex && enablePromptCaching
+            ? { cache_control: getCacheControl({ querySource }) }
             : {}),
         })),
       }

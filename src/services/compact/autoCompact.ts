@@ -570,7 +570,16 @@ export async function shouldAutoCompact(
 
 const FIXED_LOAD_WINDOW_ROUNDING_STEP = 10_000
 const FIXED_LOAD_NOTIFY_DELTA_TOKENS = 20_000
-const UPPER_BOUND_IMAGE_TOKENS = 2_000
+// High-resolution images resize up to 2000x2000 (~5,333 tokens per
+// tokenEstimation.ts); 6,000 is a safe upper bound so image-heavy turns are
+// never misattributed to fixed prefix load.
+const UPPER_BOUND_IMAGE_TOKENS = 6_000
+// Multi-page PDFs are billed primarily by page count (~1.5k-3k tokens/page, up
+// to Anthropic's 100-page limit) regardless of byte size. When page count is
+// unavailable synchronously (base64/url/file documents), use the full
+// conservative ceiling so a small-byte, high-page-count PDF is never
+// misattributed to fixed prefix load.
+const UPPER_BOUND_DOCUMENT_MAX_TOKENS = 300_000
 const MAX_NOTIFIED_CEILING_ENTRIES = 64
 
 /**
@@ -587,6 +596,21 @@ function upperBoundTextTokens(text: string): number {
     else nonAscii++
   }
   return Math.ceil(ascii / 2 + nonAscii * 2)
+}
+
+function upperBoundDocumentTokens(block: Record<string, unknown>): number {
+  const source = block.source
+  if (!source || typeof source !== 'object') {
+    return UPPER_BOUND_DOCUMENT_MAX_TOKENS
+  }
+  const s = source as Record<string, unknown>
+  if (s.type === 'text' && typeof s.data === 'string') {
+    return upperBoundTextTokens(s.data)
+  }
+  if (s.type === 'content' && Array.isArray(s.content)) {
+    return upperBoundContentTokens(s.content)
+  }
+  return UPPER_BOUND_DOCUMENT_MAX_TOKENS
 }
 
 function upperBoundContentTokens(content: unknown): number {
@@ -611,8 +635,10 @@ function upperBoundContentTokens(content: unknown): number {
       }
     } else if (b.type === 'tool_result') {
       tokens += upperBoundContentTokens(b.content)
-    } else if (b.type === 'image' || b.type === 'document') {
+    } else if (b.type === 'image') {
       tokens += UPPER_BOUND_IMAGE_TOKENS
+    } else if (b.type === 'document') {
+      tokens += upperBoundDocumentTokens(b)
     } else if (b.type === 'redacted_thinking' && typeof b.data === 'string') {
       tokens += upperBoundTextTokens(b.data)
     } else {

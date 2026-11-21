@@ -219,4 +219,59 @@ describe('fixed-load adaptive window raising', () => {
     expect(res.raisedTo).toBeUndefined()
     expect(res.effectiveOverride).toBe(200_000)
   })
+
+  test('does not mistake high-resolution image blocks for fixed prefix load', () => {
+    delete process.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW
+    // 40 high-res images (~5k tokens each = 200k) + 20k real fixed prefix = 220k total.
+    const imageMsg = {
+      type: 'user',
+      uuid: nextUuid(),
+      message: {
+        role: 'user',
+        content: Array.from({ length: 40 }, () => ({
+          type: 'image',
+          source: { type: 'base64', media_type: 'image/png', data: 'AAAA' },
+        })),
+      },
+    } as unknown as Message
+    const res = resolveFixedLoadWindowOverride(
+      [imageMsg],
+      'claude-sonnet-4-6',
+      220_000,
+      200_000,
+    )
+    expect(res.raisedTo).toBeUndefined()
+    expect(res.effectiveOverride).toBe(200_000)
+  })
+
+  test('does not mistake a small-byte multi-page base64 PDF document for fixed prefix load', () => {
+    delete process.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW
+    // A 100-page PDF can be small in bytes (40k base64 chars) yet bill ~150k tokens;
+    // with 10k real fixed prefix (160k total), it must not raise a 200k window.
+    const pdfMsg = {
+      type: 'user',
+      uuid: nextUuid(),
+      message: {
+        role: 'user',
+        content: [
+          {
+            type: 'document',
+            source: {
+              type: 'base64',
+              media_type: 'application/pdf',
+              data: 'A'.repeat(40_000),
+            },
+          },
+        ],
+      },
+    } as unknown as Message
+    const res = resolveFixedLoadWindowOverride(
+      [pdfMsg],
+      'claude-sonnet-4-6',
+      160_000,
+      200_000,
+    )
+    expect(res.raisedTo).toBeUndefined()
+    expect(res.effectiveOverride).toBe(200_000)
+  })
 })
