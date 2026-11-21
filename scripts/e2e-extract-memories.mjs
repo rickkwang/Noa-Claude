@@ -103,10 +103,10 @@ async function run(c) {
         tmux('new-session', '-d', '-s', 'ui', '-x', '110', '-y', '40', '-c', cwd, command);
         for (let i = 0; i < 100 && !/\? for shortcuts|shift\+tab/.test(screen()); i++) await sleep(200);
         await sleep(800);
-        // Extraction is armed by the first submit, which an instant fixture reply can beat; the second turn covers both.
+        // Extraction runs every 7th turn and the first turn can beat its arming, so the session needs eight.
         await submit(prompt);
         for (let i = 0; i < 50 && !screen().includes('ANSWER_391'); i++) await sleep(200);
-        await submit('And 2+2?');
+        for (let turn = 2; turn <= 8; turn++) { await sleep(800); await submit(`Next question ${turn}: what is ${turn}+${turn}?`); }
         for (let i = 0; i < 40 && !(memFile && existsSync(memFile)); i++) await sleep(200);
         await sleep(c.expect ? 300 : 3000);
         output = screen();
@@ -117,9 +117,14 @@ async function run(c) {
       const io = c.host ? ['--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose'] : [];
       command = ['bun', ...cli, '-p', ...io, ...(c.host ? [] : [prompt])];
       const child = spawn(command[0], command.slice(1), { cwd, env });
-      if (c.host) child.stdin.write(JSON.stringify({ type: 'user', message: { role: 'user', content: prompt } }) + '\n');
-      child.stdin.end();
-      child.stdout.on('data', d => output += d); child.stderr.on('data', d => output += d);
+      // Host turns go one at a time: queued messages would merge into a single turn.
+      const send = turn => child.stdin.write(JSON.stringify({ type: 'user', message: { role: 'user', content: turn === 1 ? prompt : `Next question ${turn}: what is ${turn}+${turn}?` } }) + '\n');
+      let sent = 0;
+      if (c.host) send(++sent);
+      const results = () => output.split('"type":"result"').length - 1;
+      child.stdout.on('data', d => { output += d; if (c.host && sent < 8 && results() >= sent) send(++sent); else if (c.host && results() >= 8) child.stdin.end(); });
+      if (!c.host) child.stdin.end();
+      child.stderr.on('data', d => output += d);
       const timer = setTimeout(() => child.kill('SIGKILL'), 60000);
       exit = await new Promise(r => child.on('close', code => r(code ?? -1)));
       clearTimeout(timer);

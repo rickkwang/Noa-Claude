@@ -111,15 +111,6 @@ function countModelVisibleMessagesSince(
   return n
 }
 
-/**
- * Returns true if any assistant message after the cursor UUID contains a
- * Write/Edit tool_use block targeting an auto-memory path.
- *
- * The main agent's prompt has full save instructions — when it writes
- * memories, the forked extraction is redundant. runExtraction skips the
- * agent and advances the cursor past this range, making the main agent
- * and the background agent mutually exclusive per turn.
- */
 // A user message counts as prose with at least this many words; each CJK
 // character counts as one word since those scripts have no spaces.
 const MIN_PROSE_WORDS = 3
@@ -151,6 +142,15 @@ function hasUserProseSince(
   return messages.slice(start + 1).some(isProseMessage)
 }
 
+/**
+ * Returns true if any assistant message after the cursor UUID contains a
+ * Write/Edit tool_use block targeting an auto-memory path.
+ *
+ * The main agent's prompt has full save instructions — when it writes
+ * memories, the forked extraction is redundant. runExtraction skips the
+ * agent and advances the cursor past this range, making the main agent
+ * and the background agent mutually exclusive per turn.
+ */
 function hasMemoryWritesSince(
   messages: Message[],
   sinceUuid: string | undefined,
