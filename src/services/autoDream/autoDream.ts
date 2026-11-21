@@ -23,12 +23,7 @@ import {
   createMemorySavedMessage,
   createSystemMessage,
 } from '../../utils/messages.js'
-import {
-  checkRuleBasedPermissions,
-  getAskRuleForTool,
-  getDenyRuleForTool,
-} from '../../utils/permissions/permissions.js'
-import { matchingRuleForInput } from '../../utils/permissions/filesystem.js'
+import { checkRuleBasedPermissions } from '../../utils/permissions/permissions.js'
 import type { Message } from '../../types/message.js'
 import { logForDebugging } from '../../utils/debug.js'
 import type { ToolUseContext } from '../../Tool.js'
@@ -44,7 +39,10 @@ import {
   getIsRemoteMode,
   getSessionId,
 } from '../../bootstrap/state.js'
-import { createAutoMemCanUseTool } from '../extractMemories/extractMemories.js'
+import {
+  createAutoMemCanUseTool,
+  findMemoryWriteBlockRule,
+} from '../extractMemories/extractMemories.js'
 import { ENTRYPOINT_NAME } from '../../memdir/memdir.js'
 import { isTeamMemoryEnabled } from '../../memdir/teamMemPaths.js'
 import { BASH_TOOL_NAME } from '../../tools/BashTool/toolName.js'
@@ -106,26 +104,6 @@ export function dreamEntrypointBlocked(
   entrypoint: string | undefined,
 ): boolean {
   return entrypoint !== undefined && DREAM_BLOCKED_ENTRYPOINTS.has(entrypoint)
-}
-
-// A deny/ask rule on Edit/Write (whole tool, or the memory directory by path)
-// would make the dream stall or fail headless, so the run is skipped instead.
-export function findDreamWriteBlockRule(
-  permissionContext,
-  memoryRoot: string,
-) {
-  const tools = [{ name: FILE_EDIT_TOOL_NAME }, { name: FILE_WRITE_TOOL_NAME }]
-  for (const tool of tools) {
-    const rule =
-      getDenyRuleForTool(permissionContext, tool) ??
-      getAskRuleForTool(permissionContext, tool)
-    if (rule) return rule
-  }
-  const probe = join(memoryRoot, ENTRYPOINT_NAME)
-  return (
-    matchingRuleForInput(probe, permissionContext, 'edit', 'deny') ??
-    matchingRuleForInput(probe, permissionContext, 'edit', 'ask')
-  )
 }
 
 // Reads outside the working directory are blocked when the user set
@@ -384,8 +362,10 @@ export function initAutoDream(): void {
     }
 
     // --- Permission gate ---
+    // A deny/ask rule on Edit/Write (whole tool, or the memory directory by
+    // path) would make the dream stall or fail headless, so skip instead.
     // Checked before the lock so a skipped run never stamps lastConsolidatedAt.
-    const blockRule = findDreamWriteBlockRule(
+    const blockRule = findMemoryWriteBlockRule(
       context.toolUseContext.getAppState().toolPermissionContext,
       getAutoMemPath(),
     )

@@ -3,8 +3,8 @@ import { getEmptyToolPermissionContext } from '../../../Tool.js'
 import {
   createDreamCanUseTool,
   dreamEntrypointBlocked,
-  findDreamWriteBlockRule,
 } from '../../../services/autoDream/autoDream.js'
+import { findMemoryWriteBlockRule } from '../../../services/extractMemories/extractMemories.js'
 import { setAutoMemoryPausedForSession } from '../../../memdir/paths.js'
 import { BashTool } from '../../../tools/BashTool/BashTool.js'
 import { FileReadTool } from '../../../tools/FileReadTool/FileReadTool.js'
@@ -18,19 +18,19 @@ function contextWithDeny(rules: string[]) {
   }
 }
 
-describe('findDreamWriteBlockRule', () => {
+describe('findMemoryWriteBlockRule', () => {
   test('blocks when Edit or Write is denied as a whole tool', () => {
     expect(
-      findDreamWriteBlockRule(contextWithDeny(['Edit']), MEMORY_ROOT),
+      findMemoryWriteBlockRule(contextWithDeny(['Edit']), MEMORY_ROOT),
     ).not.toBeNull()
     expect(
-      findDreamWriteBlockRule(contextWithDeny(['Write']), MEMORY_ROOT),
+      findMemoryWriteBlockRule(contextWithDeny(['Write']), MEMORY_ROOT),
     ).not.toBeNull()
   })
 
   test('blocks when the memory directory is denied by path', () => {
     expect(
-      findDreamWriteBlockRule(
+      findMemoryWriteBlockRule(
         contextWithDeny([`Edit(//${MEMORY_ROOT.slice(1)}/**)`]),
         MEMORY_ROOT,
       ),
@@ -39,13 +39,13 @@ describe('findDreamWriteBlockRule', () => {
 
   test('ignores rules for unrelated paths and no rules at all', () => {
     expect(
-      findDreamWriteBlockRule(
+      findMemoryWriteBlockRule(
         contextWithDeny(['Edit(//elsewhere/**)']),
         MEMORY_ROOT,
       ),
     ).toBeNull()
     expect(
-      findDreamWriteBlockRule(getEmptyToolPermissionContext(), MEMORY_ROOT),
+      findMemoryWriteBlockRule(getEmptyToolPermissionContext(), MEMORY_ROOT),
     ).toBeNull()
   })
 })

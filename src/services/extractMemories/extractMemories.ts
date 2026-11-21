@@ -15,7 +15,7 @@
  */
 
 import { feature } from 'bun:bundle'
-import { basename } from 'path'
+import { basename, join } from 'path'
 import { getIsRemoteMode } from '../../bootstrap/state.js'
 import type { CanUseToolFn } from '../../hooks/useCanUseTool.js'
 import { ENTRYPOINT_NAME } from '../../memdir/memdir.js'
@@ -55,6 +55,12 @@ import {
   createMemorySavedMessage,
   createUserMessage,
 } from '../../utils/messages.js'
+import { matchingRuleForInput } from '../../utils/permissions/filesystem.js'
+import {
+  checkRuleBasedPermissions,
+  getAskRuleForTool,
+  getDenyRuleForTool,
+} from '../../utils/permissions/permissions.js'
 import { getFeatureValue_CACHED_MAY_BE_STALE } from '../analytics/growthbook.js'
 import { logEvent } from '../analytics/index.js'
 import { sanitizeToolNameForAnalytics } from '../analytics/metadata.js'
@@ -183,6 +189,30 @@ function hasMemoryWritesSince(
 // ============================================================================
 // Tool Permissions
 // ============================================================================
+
+/**
+ * Returns the first deny/ask permission rule that would block headless writes
+ * to the memory directory (whole-tool Edit/Write deny/ask, or a path rule
+ * covering MEMORY.md). Shared by extractMemories and autoDream so neither
+ * spawns a forked agent that cannot persist anything.
+ */
+export function findMemoryWriteBlockRule(
+  permissionContext,
+  memoryRoot: string,
+) {
+  const tools = [{ name: FILE_EDIT_TOOL_NAME }, { name: FILE_WRITE_TOOL_NAME }]
+  for (const tool of tools) {
+    const rule =
+      getDenyRuleForTool(permissionContext, tool) ??
+      getAskRuleForTool(permissionContext, tool)
+    if (rule) return rule
+  }
+  const probe = join(memoryRoot, ENTRYPOINT_NAME)
+  return (
+    matchingRuleForInput(probe, permissionContext, 'edit', 'deny') ??
+    matchingRuleForInput(probe, permissionContext, 'edit', 'ask')
+  )
+}
 
 function denyAutoMemTool(tool: Tool, reason: string) {
   logForDebugging(`[autoMem] denied ${tool.name}: ${reason}`)
@@ -415,7 +445,24 @@ export function initExtractMemories(): void {
       false,
     )
 
-    const canUseTool = createAutoMemCanUseTool(memoryDir)
+    // The allow-list bypasses the normal permission flow, so user deny/ask
+    // rules are checked per call; headless, an ask can only be denied.
+    const autoMemCanUseTool = createAutoMemCanUseTool(memoryDir)
+    const canUseTool: CanUseToolFn = async (tool, input, ...rest) => {
+      const ruleDecision = await checkRuleBasedPermissions(
+        tool,
+        input,
+        context.toolUseContext,
+      )
+      if (ruleDecision) {
+        return {
+          behavior: 'deny' as const,
+          message: ruleDecision.message,
+          decisionReason: ruleDecision.decisionReason,
+        }
+      }
+      return autoMemCanUseTool(tool, input, ...rest)
+    }
     const cacheSafeParams = createCacheSafeParams(context)
 
     // Only run extraction every N eligible turns (tengu_bramble_lintel; the
@@ -432,6 +479,20 @@ export function initExtractMemories(): void {
       }
     }
     turnsSinceLastExtraction = 0
+
+    // A deny/ask rule on Edit/Write (whole tool, or the memory directory by
+    // path) would deny every write, so skip instead of spawning the fork.
+    const blockRule = findMemoryWriteBlockRule(
+      context.toolUseContext.getAppState().toolPermissionContext,
+      memoryDir,
+    )
+    if (blockRule) {
+      logForDebugging(
+        '[extractMemories] skipping — a permission rule blocks memory writes',
+      )
+      logEvent('tengu_extract_memories_skipped_permission_rule', {})
+      return
+    }
 
     inProgress = true
     const startTime = Date.now()

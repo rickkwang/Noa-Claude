@@ -23,6 +23,9 @@ const cases = [
   { name: 'print-plain', settings: '{}', expect: false },
   { name: 'print-host', settings: '{}', host: true, expect: true },
   { name: 'print-host-off', settings: off, host: true, expect: false },
+  { name: 'print-host-deny-edit', settings: JSON.stringify({ permissions: { deny: ['Edit'] } }), host: true, expect: false },
+  // The extraction fork first runs a read-only `ls`, which a Bash deny rule must still block.
+  { name: 'print-host-deny-bash', settings: JSON.stringify({ permissions: { deny: ['Bash(ls:*)'] } }), host: true, expect: true, bashProbe: true },
   { name: 'forked-skill-cycle', settings: off, skillCycle: true },
 ].filter(c => !option('--case') || c.name === option('--case'));
 assert.ok(cases.length, 'unknown --case');
@@ -34,7 +37,7 @@ async function run(c) {
   const dir = join(artifacts, c.name), cwd = join(dir, 'workspace'), config = join(dir, 'config');
   for (const d of [cwd, config, join(dir, 'home')]) mkdirSync(d, { recursive: true });
   const requests = [];
-  let memFile;
+  let memFile, probeResult;
   const server = createServer(async (req, res) => {
     let raw = ''; for await (const chunk of req) raw += chunk;
     if (!req.url.includes('/messages') || req.url.includes('count_tokens')) { res.end('{"input_tokens":10}'); return; }
@@ -55,7 +58,10 @@ async function run(c) {
       }
     } else if (all.includes('acting as the memory extraction subagent')) {
       kind = 'extract';
-      if (!all.includes('"tool_use_id":"mem_write"')) {
+      if (c.bashProbe && !all.includes('"tool_use_id":"probe_ls"')) {
+        blocks = [{ type: 'tool_use', id: 'probe_ls', name: 'Bash', input: { command: 'ls /' } }];
+      } else if (!all.includes('"tool_use_id":"mem_write"')) {
+        probeResult ??= body.messages.flatMap(m => Array.isArray(m.content) ? m.content : []).find(b => b.tool_use_id === 'probe_ls')?.content;
         memFile = all.match(/(\/[^"\\ `]*?\/projects\/[^"\\ `]*?\/memory\/)/)?.[1] + 'user_go.md';
         blocks = [{ type: 'tool_use', id: 'mem_write', name: 'Write', input: { file_path: memFile, content: '---\nname: user-go\ndescription: Go engineer new to React\nmetadata:\n  type: user\n---\n\nExplain frontend code with Go analogies.\n' } }];
       } else blocks = [{ type: 'text', text: 'saved' }];
@@ -142,6 +148,7 @@ async function run(c) {
   } else {
     assert.ok(output.includes('ANSWER_391'), 'main turn did not answer');
   }
+  if (c.bashProbe) assert.match(JSON.stringify(probeResult), /has been denied/, 'a Bash deny rule did not block the extraction fork');
   if (c.expect) {
     assert.ok(written, 'extraction did not write the memory file');
     assert.match(readFileSync(memFile, 'utf8'), /Go analogies/);
