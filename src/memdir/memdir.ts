@@ -3,6 +3,7 @@ import { feature } from 'bun:bundle'
 import { join } from 'path'
 import { getFsImplementation } from '../utils/fsOperations.js'
 import { shouldUseCompactSystemPrompt } from '../constants/systemPromptCompact.js'
+import { scanMemoryFiles } from './memoryScan.js'
 import { getAutoMemPath, isAutoMemoryEnabled } from './paths.js'
 
 /* eslint-disable @typescript-eslint/no-require-imports */
@@ -136,6 +137,36 @@ export const DIR_EXISTS_GUIDANCE =
   'This directory already exists — write to it directly with the Write tool (do not run mkdir or check for its existence).'
 export const DIRS_EXIST_GUIDANCE =
   'Both directories already exist — write to them directly with the Write tool (do not run mkdir or check for their existence).'
+
+/**
+ * Append an index line for every top-level topic file that MEMORY.md does not
+ * link to, so a file written without its index step is still recalled.
+ * Best-effort: any failure leaves the index untouched.
+ */
+export async function backfillMemoryIndex(memoryDir: string): Promise<void> {
+  try {
+    const fs = getFsImplementation()
+    const indexPath = join(memoryDir, ENTRYPOINT_NAME)
+    let index = ''
+    try {
+      index = await fs.readFile(indexPath, { encoding: 'utf-8' })
+    } catch {}
+    const headers = await scanMemoryFiles(memoryDir, new AbortController().signal)
+    const lines = headers
+      .filter(h => !/[\\/]/.test(h.filename) && !index.includes(`(${h.filename})`))
+      .map(h => {
+        const title = h.filename.replace(/\.md$/, '')
+        const hook = h.description ? ` — ${truncate(h.description, 100)}` : ''
+        return `- [${title}](${h.filename})${hook}`
+      })
+    if (lines.length === 0) return
+    const sep = index === '' || index.endsWith('\n') ? '' : '\n'
+    fs.appendFileSync(indexPath,`${sep}${lines.join('\n')}\n`)
+    logForDebugging(`memory index backfill: linked ${lines.length} topic files`)
+  } catch (e) {
+    logForDebugging(`memory index backfill failed: ${String(e)}`)
+  }
+}
 
 /**
  * Ensure a memory directory exists. Idempotent — called from loadMemoryPrompt
@@ -529,6 +560,7 @@ export async function loadMemoryPrompt(
     // Harness guarantees the directory exists so the model can write without
     // checking. The prompt text reflects this ("already exists").
     await ensureMemoryDirExists(autoDir)
+    if (!skipIndex) await backfillMemoryIndex(autoDir)
     logMemoryDirCounts(autoDir, {
       memory_type:
         'auto' as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,

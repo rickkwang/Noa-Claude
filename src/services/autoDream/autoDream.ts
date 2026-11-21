@@ -11,6 +11,7 @@
 // State is closure-scoped inside initAutoDream() rather than module-level
 // (tests call initAutoDream() in beforeEach for a fresh closure).
 
+import { readdir } from 'fs/promises'
 import { join, resolve, sep } from 'path'
 import type { REPLHookContext } from '../../utils/hooks/postSamplingHooks.js'
 import {
@@ -402,6 +403,18 @@ export function initAutoDream(): void {
           ),
         )
       }
+      return
+    }
+
+    // --- Readability gate ---
+    // Before the lock, so a skipped run never stamps lastConsolidatedAt.
+    try {
+      await readdir(getAutoMemPath())
+    } catch (e: unknown) {
+      logForDebugging(
+        `[autoDream] skip — memory directory is not readable: ${(e as Error).message}`,
+      )
+      logEvent('tengu_auto_dream_skipped', { reason: 'items_unreadable' })
       return
     }
 

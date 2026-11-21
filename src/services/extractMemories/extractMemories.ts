@@ -120,6 +120,37 @@ function countModelVisibleMessagesSince(
  * agent and advances the cursor past this range, making the main agent
  * and the background agent mutually exclusive per turn.
  */
+// A user message counts as prose with at least this many words; each CJK
+// character counts as one word since those scripts have no spaces.
+const MIN_PROSE_WORDS = 3
+
+function countProseWords(text: string): number {
+  const cjk = text.match(/[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]/g)?.length ?? 0
+  const rest = text.replace(/[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]/g, ' ')
+  return cjk + rest.split(/\s+/).filter(Boolean).length
+}
+
+function isProseMessage(message: Message): boolean {
+  if (message.type !== 'user' || message.isMeta) return false
+  const content = message.message.content
+  if (typeof content === 'string') {
+    return countProseWords(content) >= MIN_PROSE_WORDS
+  }
+  return content.some(
+    block => block.type === 'text' && countProseWords(block.text) >= MIN_PROSE_WORDS,
+  )
+}
+
+// Whether a real user message with enough words arrived after the cursor.
+// Turns made only of tool results or one-word replies carry nothing to save.
+function hasUserProseSince(
+  messages: Message[],
+  sinceUuid: string | undefined,
+): boolean {
+  const start = sinceUuid ? messages.findIndex(m => m.uuid === sinceUuid) : -1
+  return messages.slice(start + 1).some(isProseMessage)
+}
+
 function hasMemoryWritesSince(
   messages: Message[],
   sinceUuid: string | undefined,
@@ -361,6 +392,20 @@ export function initExtractMemories(): void {
       return
     }
 
+    if (!hasUserProseSince(messages, lastMemoryMessageUuid)) {
+      logForDebugging(
+        '[extractMemories] skipping — not enough user prose since the last extraction',
+      )
+      const lastMessage = messages.at(-1)
+      if (lastMessage?.uuid) {
+        lastMemoryMessageUuid = lastMessage.uuid
+      }
+      logEvent('tengu_extract_memories_skipped_no_prose', {
+        message_count: newMessageCount,
+      })
+      return
+    }
+
     const teamMemoryEnabled = feature('TEAMMEM')
       ? teamMemPaths!.isTeamMemoryEnabled()
       : false
@@ -373,14 +418,15 @@ export function initExtractMemories(): void {
     const canUseTool = createAutoMemCanUseTool(memoryDir)
     const cacheSafeParams = createCacheSafeParams(context)
 
-    // Only run extraction every N eligible turns (tengu_bramble_lintel, default 1).
+    // Only run extraction every N eligible turns (tengu_bramble_lintel; the
+    // default of 7 is the value upstream's remote config serves).
     // Trailing extractions (from stashed contexts) skip this check since they
     // process already-committed work that should not be throttled.
     if (!isTrailingRun) {
       turnsSinceLastExtraction++
       if (
         turnsSinceLastExtraction <
-        (getFeatureValue_CACHED_MAY_BE_STALE('tengu_bramble_lintel', null) ?? 1)
+        (getFeatureValue_CACHED_MAY_BE_STALE('tengu_bramble_lintel', null) ?? 7)
       ) {
         return
       }
