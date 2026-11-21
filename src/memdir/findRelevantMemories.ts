@@ -92,7 +92,19 @@ async function selectRelevantMemories(
       messages: [
         {
           role: 'user',
-          content: `Query: ${query}\n\nAvailable memories:\n${manifest}${toolsSection}`,
+          content: [
+            // Cache the stable memory manifest prefix across turns; the
+            // query varies per turn.
+            {
+              type: 'text',
+              text: `Available memories:\n${manifest}`,
+              cache_control: { type: 'ephemeral' },
+            },
+            {
+              type: 'text',
+              text: `Query: ${query}${toolsSection}`,
+            },
+          ],
         },
       ],
       max_tokens: 256,
