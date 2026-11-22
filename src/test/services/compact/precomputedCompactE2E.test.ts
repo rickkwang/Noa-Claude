@@ -80,7 +80,7 @@ function liveContext() {
   return {
     abortController: new AbortController(),
     getAppState: () => ({}),
-    options: {},
+    options: { mainLoopModel: 'claude-opus-5-5' },
   } as never
 }
 

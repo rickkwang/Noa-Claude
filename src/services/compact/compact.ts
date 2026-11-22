@@ -128,6 +128,7 @@ import {
   getPartialCompactPrompt,
   hasSummaryBlock,
 } from './prompt.js'
+import { modelThinkingCannotBeDisabled } from '../../utils/thinking.js'
 
 export const POST_COMPACT_MAX_FILES_TO_RESTORE = 5
 export const POST_COMPACT_TOKEN_BUDGET = 50_000
@@ -943,6 +944,9 @@ export async function compactConversation(
     const transcriptPath = getTranscriptPath()
     const compactPrompt = getCompactPrompt(customInstructions, {
       keepEarlierAsks: transcriptPath !== undefined,
+      thinkingAlwaysOn: modelThinkingCannotBeDisabled(
+        context.options.mainLoopModel,
+      ),
     })
     let summaryRequest = createUserMessage({
       content: compactPrompt,
@@ -1427,7 +1431,12 @@ export async function partialCompactConversation(
             customInstructions,
             direction,
             messagesToSummarize.length,
-            { keepEarlierAsks: transcriptPath !== undefined },
+            {
+              keepEarlierAsks: transcriptPath !== undefined,
+              thinkingAlwaysOn: modelThinkingCannotBeDisabled(
+                context.options.mainLoopModel,
+              ),
+            },
           ) + (withRetryHint ? FOR_REPLY_ONLY_INSTRUCTION : ''),
       })
     let summaryRequest = buildSummaryRequest()

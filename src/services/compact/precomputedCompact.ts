@@ -40,6 +40,7 @@ import {
 import { streamCompactSummary } from './compact.js'
 import { estimateMessageTokens } from './microCompact.js'
 import { getPartialCompactPrompt, hasSummaryBlock } from './prompt.js'
+import { modelThinkingCannotBeDisabled } from '../../utils/thinking.js'
 
 export function isPrecomputeEnabled(): boolean {
   const env = process.env.NOA_CLAUDE_PRECOMPUTE_COMPACT ?? process.env.CLAUDE_CODE_PRECOMPUTE_COMPACT
@@ -370,7 +371,11 @@ async function computeSummary(
   }
 
   const summaryRequest = createUserMessage({
-    content: getPartialCompactPrompt(undefined, 'up_to'),
+    content: getPartialCompactPrompt(undefined, 'up_to', undefined, {
+      thinkingAlwaysOn: modelThinkingCannotBeDisabled(
+        context.options.mainLoopModel,
+      ),
+    }),
   })
 
   const response: AssistantMessage = await streamCompactSummary({
