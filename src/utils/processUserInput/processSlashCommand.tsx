@@ -279,6 +279,11 @@ async function executeForkedSlashCommand(command: CommandBase & PromptCommand, a
     );
   }
   let resultText = extractResultText(agentMessages, 'Command completed');
+  try {
+    resultText = command.formatForegroundForkResult?.(resultText) ?? resultText;
+  } catch (e) {
+    logError(e);
+  }
   logForDebugging(`Forked slash command /${command.name} completed with agent ${agentId}`);
 
   // Prepend debug log for ant users so it appears inside the command output
@@ -770,6 +775,10 @@ async function getMessagesForSlashCommand(commandName: string, args: string, set
       case 'prompt':
         {
           try {
+            // Scripted --print runs leave the user's remembered choices alone.
+            if (!context.options.isNonInteractiveSession) {
+              command.onUserTypedArgs?.(args);
+            }
             // Check if command should run as forked sub-agent
             if (command.context === 'fork') {
               return await executeForkedSlashCommand(command, args, context, precedingInputBlocks, setToolJSX, canUseTool ?? hasPermissionsToUseTool);

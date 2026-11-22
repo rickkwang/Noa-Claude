@@ -52,9 +52,15 @@ export type PromptCommand = {
   // Agent type to use when forked (e.g., 'Bash', 'general-purpose')
   // Only applicable when context is 'fork'
   agent?: string
+  // A model-invoked forked run goes to the background unless this is false
+  background?: boolean
   effort?: EffortValue
   // Per-invocation effort for a forked run; overrides `effort` when it returns a value
   getEffort?: (args: string, context: ToolUseContext) => EffortValue | undefined
+  // Rewrites a user-invoked forked run's result text before it is shown
+  formatForegroundForkResult?: (result: string) => string
+  // Runs only when the user typed the command in an interactive session, before its prompt is built
+  onUserTypedArgs?: (args: string) => void
   // Glob patterns for file paths this skill applies to
   // When set, the skill is only visible after the model touches matching files
   paths?: string[]

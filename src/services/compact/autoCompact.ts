@@ -1090,7 +1090,15 @@ export async function autoCompactIfNeeded(
     override,
   )
   const effectiveOverride = fixedLoad.effectiveOverride
-  if (fixedLoad.raisedFrom !== undefined && fixedLoad.raisedTo !== undefined) {
+  // Announce the raise only where autocompact would use it.
+  if (
+    fixedLoad.raisedFrom !== undefined &&
+    fixedLoad.raisedTo !== undefined &&
+    querySource !== 'session_memory' &&
+    querySource !== 'compact' &&
+    !isBackgroundForkQuerySource(querySource) &&
+    isAutoCompactEnabled()
+  ) {
     notifyFixedLoadWindowRaised(
       toolUseContext,
       fixedLoad.raisedFrom,

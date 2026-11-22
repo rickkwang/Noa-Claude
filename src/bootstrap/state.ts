@@ -131,6 +131,8 @@ type State = {
   isInteractive: boolean
   // --permission-prompt-tool was given, so a host can answer user-input tools
   permissionPromptToolConfigured: boolean
+  // --output-format of a non-interactive run; undefined in interactive sessions
+  printOutputFormat: string | undefined
   kairosActive: boolean
   // When true, ensureToolResultPairing throws on mismatch instead of
   // repairing with synthetic placeholders. HFI opts in at startup so
@@ -356,6 +358,7 @@ function getInitialState(): State {
     modelStrings: null,
     isInteractive: false,
     permissionPromptToolConfigured: false,
+    printOutputFormat: undefined,
     kairosActive: false,
     strictToolResultPairing: false,
     sdkAgentProgressSummariesEnabled: false,
@@ -1140,6 +1143,14 @@ export function setIsInteractive(value: boolean): void {
 
 export function setPermissionPromptToolConfigured(value: boolean): void {
   STATE.permissionPromptToolConfigured = value
+}
+
+export function getPrintOutputFormat(): string | undefined {
+  return STATE.printOutputFormat
+}
+
+export function setPrintOutputFormat(value: string | undefined): void {
+  STATE.printOutputFormat = value
 }
 
 /**

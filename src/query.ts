@@ -785,13 +785,23 @@ async function* queryLoop(
                 })
               ? IDLE_RESUMED_CLEARED_RESULTS_NOTICE
               : undefined
-      if (
-        clearedResultsNotice &&
-        !hasClearedResultsNoticeSinceLastAssistant(
-          messagesForQuery,
-          clearedResultsNotice,
-        )
-      ) {
+      // Size-based clearing repeats on every later iteration, so its notice is
+      // injected once per compaction cycle (messagesForQuery starts at the last
+      // compact boundary); the idle notice is deduped per assistant turn.
+      const alreadyNoticed =
+        clearedResultsNotice === CLEARED_RESULTS_ANTI_REDO_NOTICE
+          ? messagesForQuery.some(
+              m =>
+                m.type === 'attachment' &&
+                m.attachment.type === 'critical_system_reminder' &&
+                m.attachment.content === clearedResultsNotice,
+            )
+          : clearedResultsNotice !== undefined &&
+            hasClearedResultsNoticeSinceLastAssistant(
+              messagesForQuery,
+              clearedResultsNotice,
+            )
+      if (clearedResultsNotice && !alreadyNoticed) {
         const notice = createAttachmentMessage({
           type: 'critical_system_reminder',
           content: clearedResultsNotice,

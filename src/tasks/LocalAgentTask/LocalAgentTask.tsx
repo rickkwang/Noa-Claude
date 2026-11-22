@@ -196,7 +196,7 @@ export function assertCanStartAgent(tasks: AppState['tasks'], existingAgentId?: 
   }
 }
 
-function hasAgentCapacity(tasks: AppState['tasks'], existingAgentId: string): boolean {
+export function hasAgentCapacity(tasks: AppState['tasks'], existingAgentId?: string): boolean {
   try {
     // A foreground-to-background transition keeps its existing slot.
     assertCanStartAgent(tasks, existingAgentId);

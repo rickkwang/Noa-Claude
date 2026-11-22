@@ -28,7 +28,10 @@ export type BundledSkillDefinition = {
   hooks?: HooksSettings
   context?: 'inline' | 'fork'
   agent?: string
+  background?: boolean
   getEffort?: (args: string, context: ToolUseContext) => EffortValue | undefined
+  formatForegroundForkResult?: (result: string) => string
+  onUserTypedArgs?: (args: string) => void
   /**
    * Additional reference files to extract to disk on first invocation.
    * Keys are relative paths (forward slashes, no `..`), values are content.
@@ -104,7 +107,10 @@ export function registerBundledSkill(definition: BundledSkillDefinition): void {
     skillRoot,
     context: definition.context,
     agent: definition.agent,
+    background: definition.background,
     getEffort: definition.getEffort,
+    formatForegroundForkResult: definition.formatForegroundForkResult,
+    onUserTypedArgs: definition.onUserTypedArgs,
     isEnabled: definition.isEnabled,
     isHidden: !(definition.userInvocable ?? true),
     progressMessage: 'running',

@@ -48,6 +48,8 @@ export type FrontmatterData = {
   // Agent type to use when forked (e.g., 'Bash', 'general-purpose')
   // Only applicable when context is 'fork'
   agent?: string | null
+  // A forked skill the model invokes runs in the background unless this is false
+  background?: string | boolean | null
   // Glob patterns for file paths this skill applies to. Accepts either a
   // comma-separated string or a YAML list of strings.
   // When set, the skill is only activated when the model touches matching files

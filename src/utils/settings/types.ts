@@ -765,7 +765,7 @@ export const SettingsSchema = lazySchema(() =>
         .positive()
         .optional()
         .describe(
-          'Per-skill description character cap in the skill listing sent to the model (default: 250). Longer descriptions are truncated; raise it to keep trigger phrases at the end of long descriptions, at a higher per-turn context cost.',
+          'Per-skill description character cap in the skill listing sent to the model (default: 1536). Longer descriptions are truncated; when the whole listing exceeds its context budget, entries fall back to 250 characters before further trimming. Lower it to save per-turn context.',
         ),
       skillOverrides: z
         .record(

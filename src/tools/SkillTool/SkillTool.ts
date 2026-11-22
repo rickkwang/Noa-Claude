@@ -38,6 +38,7 @@ import { z } from 'zod/v4'
 import {
   addInvokedSkill,
   clearInvokedSkillsForAgent,
+  getIsNonInteractiveSession,
   getSessionId,
 } from '../../bootstrap/state.js'
 import { COMMAND_MESSAGE_TAG } from '../../constants/xml.js'
@@ -48,7 +49,7 @@ import {
   logEvent,
 } from '../../services/analytics/index.js'
 import { getAgentContext } from '../../utils/agentContext.js'
-import { errorMessage } from '../../utils/errors.js'
+import { AbortError, errorMessage } from '../../utils/errors.js'
 import {
   extractResultText,
   prepareForkedCommandContext,
@@ -60,6 +61,15 @@ import type { ModelAlias } from '../../utils/model/aliases.js'
 import { resolveSkillModelOverride } from '../../utils/model/model.js'
 import { recordSkillUsage } from '../../utils/suggestions/skillUsageTracking.js'
 import { createAgentId } from '../../utils/uuid.js'
+import type { AppState } from '../../state/AppStateStore.js'
+import {
+  hasAgentCapacity,
+  registerAsyncAgent,
+} from '../../tasks/LocalAgentTask/LocalAgentTask.js'
+import { asAgentId, toAgentId } from '../../types/ids.js'
+import { isEnvTruthy } from '../../utils/envUtils.js'
+import { runAsyncAgentLifecycle } from '../AgentTool/agentToolUtils.js'
+import { isBuiltInAgent } from '../AgentTool/loadAgentsDir.js'
 import { runAgent } from '../AgentTool/runAgent.js'
 import {
   getToolUseIDFromParentMessage,
@@ -115,6 +125,40 @@ const remoteSkillModules = feature('EXPERIMENTAL_SKILL_SEARCH')
     }
   : null
 /* eslint-enable @typescript-eslint/no-require-imports */
+
+// Forked skills the model started in the background that are still running, by
+// skill name. A second call for the same skill runs in the foreground instead.
+const backgroundSkillsRunning = new Set<string>()
+
+// A model-invoked forked skill runs in the background unless the skill opts out
+// (`background: false`), the session has no one to notify (--print), background
+// tasks are disabled, or the concurrent subagent limit leaves no free slot.
+function shouldRunSkillInBackground(
+  command: PromptCommand,
+  context: ToolUseContext,
+): boolean {
+  return (
+    (command.background ?? true) &&
+    !getIsNonInteractiveSession() &&
+    !isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS) &&
+    !backgroundSkillsRunning.has(command.name) &&
+    hasAgentCapacity(context.getAppState().tasks)
+  )
+}
+
+const RESERVED_AGENT_NAMES = new Set(['main', 'team-lead', 'user', 'system'])
+
+// SendMessage name for a background skill: the skill name, or name-2, name-3…
+// while an earlier holder of that name still has a task.
+function allocateSkillAgentName(skillName: string, state: AppState): string {
+  const base = skillName.replace(/[^a-zA-Z0-9_-]+/g, '-').replace(/^[-_]+/, '').slice(0, 60) || 'skill'
+  for (let i = 1; ; i++) {
+    const name = i === 1 ? base : `${base}-${i}`
+    if (RESERVED_AGENT_NAMES.has(name.toLowerCase()) || toAgentId(name)) continue
+    const holder = state.agentNameRegistry.get(name)
+    if (holder === undefined || state.tasks[holder] === undefined) return name
+  }
+}
 
 /**
  * Executes a skill in a forked sub-agent context.
@@ -203,14 +247,92 @@ async function executeForkedSkill(
     }),
   })
 
+  const background = shouldRunSkillInBackground(command, context)
   const { forkContext, baseAgent, promptMessages, skillContent } =
-    await prepareForkedCommandContext(command, args || '', context)
+    await prepareForkedCommandContext(command, args || '', context, background)
+
+  // A caller stopped during prompt setup has already had its owned agents
+  // killed; registering a background task now would leave an orphan running.
+  if (context.abortController.signal.aborted) {
+    throw new AbortError()
+  }
 
   // Merge skill's effort into the agent definition so runAgent applies it
+  const effort = command.getEffort?.(args || '', context) ?? command.effort
   const agentDefinition =
-    command.effort !== undefined
-      ? { ...baseAgent, effort: command.effort }
-      : baseAgent
+    effort !== undefined ? { ...baseAgent, effort } : baseAgent
+
+  // Checked again: building the prompt awaited, and in the meantime the same
+  // skill may have gone to the background or the last agent slot filled. The
+  // prompt saw the async tool list, a subset of what a foreground run gets.
+  if (background && shouldRunSkillInBackground(command, context)) {
+    // The skill reports back through a task notification, like a background agent.
+    const description = `/${commandName} ${args ?? ''}`.trim()
+    const rootSetAppState = context.setAppStateForTasks ?? context.setAppState
+    const task = registerAsyncAgent({
+      agentId,
+      description,
+      prompt: skillContent,
+      selectedAgent: agentDefinition,
+      getAppState: context.getAppState,
+      setAppState: rootSetAppState,
+      toolUseId: context.toolUseId,
+      ownerAgentId: context.agentId,
+    })
+    backgroundSkillsRunning.add(command.name)
+    const name = allocateSkillAgentName(commandName, context.getAppState())
+    rootSetAppState(prev => {
+      const registry = new Map(prev.agentNameRegistry)
+      registry.set(name, asAgentId(agentId))
+      return { ...prev, agentNameRegistry: registry }
+    })
+    void runAsyncAgentLifecycle({
+      taskId: task.agentId,
+      abortController: task.abortController!,
+      makeStream: onCacheSafeParams =>
+        runAgent({
+          agentDefinition,
+          promptMessages,
+          toolUseContext: forkContext,
+          canUseTool,
+          isAsync: true,
+          querySource: 'agent:custom',
+          model: command.model as ModelAlias | undefined,
+          availableTools: context.options.tools,
+          override: { agentId, abortController: task.abortController! },
+          onCacheSafeParams,
+          // Persisted so a SendMessage resume still shows the skill in its notification.
+          description,
+        }),
+      metadata: {
+        prompt: skillContent,
+        resolvedAgentModel: command.model ?? context.options.mainLoopModel,
+        isBuiltInAgent: isBuiltInAgent(agentDefinition),
+        startTime,
+        agentType: agentDefinition.agentType,
+        isAsync: true,
+      },
+      description,
+      toolUseContext: context,
+      rootSetAppState,
+      agentIdForCleanup: agentId,
+      enableSummarization: false,
+      getWorktreeResult: async () => ({}),
+    }).finally(() => {
+      backgroundSkillsRunning.delete(command.name)
+      clearInvokedSkillsForAgent(agentId)
+    })
+    return {
+      data: {
+        success: true,
+        commandName,
+        status: 'forked',
+        background: true,
+        agentId,
+        result: `Running in the background as @${name}. You will be notified when it completes; you know nothing about its results until then. To add instructions while it runs, use SendMessage with to: '${name}'.`,
+      },
+    }
+  }
 
   // Collect messages from the forked agent
   const agentMessages: Message[] = []
@@ -318,6 +440,10 @@ export const outputSchema = lazySchema(() => {
       .string()
       .describe('The ID of the sub-agent that executed the skill'),
     result: z.string().describe('The result from the forked skill execution'),
+    background: z
+      .boolean()
+      .optional()
+      .describe('Whether the skill was launched in the background'),
   })
 
   return z.union([inlineOutputSchema, forkedOutputSchema])
@@ -843,7 +969,9 @@ export const SkillTool: Tool<InputSchema, Output, Progress> = buildTool({
       return {
         type: 'tool_result' as const,
         tool_use_id: toolUseID,
-        content: `Skill "${result.commandName}" completed (forked execution).\n\nResult:\n${result.result}`,
+        content: result.background
+          ? `Skill "${result.commandName}" launched (forked execution, running in the background).\n\n${result.result}`
+          : `Skill "${result.commandName}" completed (forked execution).\n\nResult:\n${result.result}`,
       }
     }
 
@@ -880,6 +1008,7 @@ const SAFE_SKILL_PROPERTIES = new Set([
   'skillRoot',
   'context',
   'agent',
+  'background',
   'getPromptForCommand',
   'frontmatterKeys',
   // CommandBase properties

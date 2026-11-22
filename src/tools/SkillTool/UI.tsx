@@ -12,7 +12,7 @@ import { MessageResponse } from '../../components/MessageResponse.js';
 import { Box, Text } from '../../ink.js';
 import type { Tools } from '../../Tool.js';
 import type { ProgressMessage } from '../../types/message.js';
-import { buildSubagentLookups, EMPTY_LOOKUPS } from '../../utils/messages.js';
+import { buildSubagentLookups } from '../../utils/messages.js';
 import { plural } from '../../utils/stringUtils.js';
 import type { inputSchema, Output, Progress } from './SkillTool.js';
 type Input = z.infer<ReturnType<typeof inputSchema>>;
@@ -22,7 +22,7 @@ export function renderToolResultMessage(output: Output): React.ReactNode {
   if ('status' in output && output.status === 'forked') {
     return <MessageResponse height={1}>
         <Text>
-          <Byline>{['Done']}</Byline>
+          <Byline>{[output.background ? 'Running in the background' : 'Done']}</Byline>
         </Text>
       </MessageResponse>;
   }
@@ -75,14 +75,16 @@ export function renderToolUseProgressMessage(progressMessages: ProgressMessage<P
   // Take only the last few messages for display in non-verbose mode
   const displayedMessages = verbose ? progressMessages : progressMessages.slice(-MAX_PROGRESS_MESSAGES_TO_SHOW);
   const hiddenCount = progressMessages.length - displayedMessages.length;
+  // Rows re-render (isStatic false) so a child tool call moves from queued to running to done.
   const {
+    lookups,
     inProgressToolUseIDs
   } = buildSubagentLookups(progressMessages.map(pm => pm.data));
   return <MessageResponse>
       <Box flexDirection="column">
         <SubAgentProvider>
           {displayedMessages.map(progressMessage => <Box key={progressMessage.uuid} height={1} overflow="hidden">
-              <MessageComponent message={progressMessage.data.message} lookups={EMPTY_LOOKUPS} addMargin={false} tools={tools} commands={[]} verbose={verbose} inProgressToolUseIDs={inProgressToolUseIDs} progressMessagesForMessage={[]} shouldAnimate={false} shouldShowDot={false} style="condensed" isTranscriptMode={false} isStatic={true} />
+              <MessageComponent message={progressMessage.data.message} lookups={lookups} addMargin={false} tools={tools} commands={[]} verbose={verbose} inProgressToolUseIDs={inProgressToolUseIDs} progressMessagesForMessage={[]} shouldAnimate={false} shouldShowDot={false} style="condensed" isTranscriptMode={false} isStatic={false} />
             </Box>)}
         </SubAgentProvider>
         {hiddenCount > 0 && <Text dimColor>

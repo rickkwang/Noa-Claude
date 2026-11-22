@@ -21,10 +21,10 @@ export const SKILL_BUDGET_CONTEXT_PERCENT = 0.01
 export const CHARS_PER_TOKEN = 4
 export const DEFAULT_CHAR_BUDGET = 8_000 // Fallback: 1% of 200k × 4
 
-// Per-entry hard cap. The listing is for discovery only — the Skill tool loads
-// full content on invoke, so verbose whenToUse strings waste turn-1 cache_creation
-// tokens without improving match rate. Applies to all entries, including bundled,
-// since the cap is generous enough to preserve the core use case.
+// Per-entry cap. Long enough that trigger phrases at the end of a description
+// survive; applies to all entries, including bundled.
+export const DEFAULT_LISTING_DESC_CHARS = 1536
+// Cap used instead when the listing at the configured cap overflows the budget.
 export const MAX_LISTING_DESC_CHARS = 250
 
 export function getCharBudget(contextWindowTokens?: number): number {
@@ -41,7 +41,7 @@ export function getCharBudget(contextWindowTokens?: number): number {
 
 function getCommandDescription(
   cmd: Command,
-  maxChars: number = MAX_LISTING_DESC_CHARS,
+  maxChars: number = DEFAULT_LISTING_DESC_CHARS,
 ): string {
   const desc = cmd.whenToUse
     ? `${cmd.description} - ${cmd.whenToUse}`
@@ -81,9 +81,9 @@ export function formatCommandsWithinBudget(
 
   const budget = getCharBudget(contextWindowTokens)
 
-  // Try full descriptions first, at the configured per-entry cap. A raised cap
+  // Try full descriptions first, at the configured per-entry cap. A long cap
   // that overflows the budget would only force a uniform trim that can land
-  // below the default cap, so fall back to the default cap before trimming.
+  // below the short cap, so fall back to the short cap before trimming.
   const buildEntries = (maxChars: number) => {
     const entries = commands.map(cmd => ({
       cmd,
@@ -99,7 +99,7 @@ export function formatCommandsWithinBudget(
   // the whole settings file.
   let maxChars = Math.max(
     MIN_DESC_LENGTH,
-    getInitialSettings().skillListingMaxDescChars ?? MAX_LISTING_DESC_CHARS,
+    getInitialSettings().skillListingMaxDescChars ?? DEFAULT_LISTING_DESC_CHARS,
   )
   let { entries: fullEntries, total: fullTotal } = buildEntries(maxChars)
   if (fullTotal > budget && maxChars > MAX_LISTING_DESC_CHARS) {

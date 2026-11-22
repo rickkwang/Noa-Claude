@@ -204,6 +204,7 @@ export async function prepareForkedCommandContext(
   command: CommandBase & PromptCommand,
   args: string,
   context: ToolUseContext,
+  isAsync = false,
 ): Promise<PreparedForkedContext> {
   const chain = context.forkedSkillChain ?? []
   if (chain.includes(command.name)) {
@@ -226,8 +227,8 @@ export async function prepareForkedCommandContext(
 
   // Get skill content with $ARGUMENTS replaced. The content goes to the
   // forked agent, so judge inline shell hand-off against the tools that
-  // agent will run with (both fork callers run it synchronously on
-  // context.options.tools), not the caller's. Lazy import: agentToolUtils is
+  // agent will run with (filtered for async agents when SkillTool runs it in
+  // the background), not the caller's. Lazy import: agentToolUtils is
   // already loaded by the fork callers, and a static import would join its
   // AgentTool cycle from this widely imported module.
   const { resolveAgentTools } = await import(
@@ -238,7 +239,8 @@ export async function prepareForkedCommandContext(
     promptShellHandOff: true,
     options: {
       ...context.options,
-      tools: resolveAgentTools(baseAgent, context.options.tools).resolvedTools,
+      tools: resolveAgentTools(baseAgent, context.options.tools, isAsync)
+        .resolvedTools,
     },
   })
   const skillContent = skillPrompt
