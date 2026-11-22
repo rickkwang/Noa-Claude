@@ -82,8 +82,8 @@ describe('selectReactiveTailPivot', () => {
 
   test('honors a reported 200k endpoint limit for a model configured at 1M', () => {
     const messages = [...rounds(3), asst(40), user(1_000_000)]
-    expect(selectReactiveTailPivot(messages, 'claude-sonnet-4-6', 80_000)).not.toBeNull()
-    expect(selectReactiveTailPivot(messages, 'claude-sonnet-4-6', 80_000, 200_000)).toBeNull()
+    expect(selectReactiveTailPivot(messages, 'claude-sonnet-5', 80_000)).not.toBeNull()
+    expect(selectReactiveTailPivot(messages, 'claude-sonnet-5', 80_000, 200_000)).toBeNull()
   })
 
   test('summary PTL fallback cannot put an oversized latest input back in the tail', () => {

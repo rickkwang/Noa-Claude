@@ -145,7 +145,7 @@ describe('fixed-load adaptive window raising', () => {
     // 1M model with a 200k override (threshold 167k) and 110k fixed load (> 83.5k).
     const res = resolveFixedLoadWindowOverride(
       messages,
-      'claude-sonnet-4-6',
+      'claude-sonnet-5',
       110_100,
       200_000,
     )

@@ -648,13 +648,13 @@ function mapAssistantMessageFromError(
 
     // No quota headers — this is NOT a quota limit. Surface what the API actually
     // said instead of a generic "Rate limit reached". Entitlement rejections
-    // (e.g. 1M context without Extra Usage) and infra capacity 429s land here.
-    if (error.message.includes('Extra usage is required for long context')) {
+    // (e.g. 1M context without usage credits) and infra capacity 429s land here.
+    if (isLongContextCreditsError(error.message)) {
       const hint = getIsNonInteractiveSession()
-        ? `enable extra usage at ${PRODUCT_USAGE_URL}, or use --model to switch to standard context`
-        : 'run /usage-credits to turn them on, or /model to switch to standard context'
+        ? `turn on usage credits at ${PRODUCT_USAGE_URL} (they take effect in a new session), or use --model to switch to standard context`
+        : 'run /usage-credits to turn them on (they take effect after you restart Noa), or /model to switch to standard context'
       return createAssistantAPIErrorMessage({
-        content: `${API_ERROR_MESSAGE_PREFIX}: Extra usage is required for 1M context · ${hint}`,
+        content: `${API_ERROR_MESSAGE_PREFIX}: Usage credits required for 1M context · ${hint}`,
         error: 'rate_limit',
       })
     }

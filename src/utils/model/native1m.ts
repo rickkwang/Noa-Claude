@@ -9,8 +9,6 @@ import { getCanonicalName } from './model.js'
  * @[MODEL LAUNCH]: add new native-1M models here.
  */
 const NATIVE_1M_MODELS: ReadonlySet<string> = new Set([
-  'claude-opus-4-6',
-  'claude-sonnet-4-6',
   'claude-haiku-5-5',
   'claude-sonnet-5',
   'claude-sonnet-5-5',
@@ -34,27 +32,11 @@ const NATIVE_1M_MODELS: ReadonlySet<string> = new Set([
  * CLAUDE_CODE_AUTO_COMPACT_WINDOW), not by under-reporting every session.
  */
 /**
- * Native-1M models that still get the `context-1m-*` beta header with every
- * request. Opus 4.6 / Sonnet 4.6 are documented at 1M, but their long context
- * originally shipped behind that header; sending it is harmless where it is
- * no longer required and keeps requests above 200k from being rejected where
- * it still is.
- */
-const NATIVE_1M_WITH_BETA_HEADER: ReadonlySet<string> = new Set([
-  'claude-opus-4-6',
-  'claude-sonnet-4-6',
-])
-
-export function native1mNeedsBetaHeader(model: string): boolean {
-  return NATIVE_1M_WITH_BETA_HEADER.has(getCanonicalName(model))
-}
-
-/**
  * Models whose `[1m]` suffix is inert: natively 1M per the upstream catalog's
  * `native_1m` flag, so the suffix neither changes the served window nor is
- * rendered. Deliberately NOT NATIVE_1M_MODELS: Opus/Sonnet 4.6 serve 1M here
- * via the beta header but upstream keeps them opt-in (`supports_1m_suffix`),
- * so `claude-sonnet-4-6[1m]` must survive normalization and keep its marker.
+ * rendered. Opus/Sonnet 4.6 are absent: they are 200k unless opted in
+ * (`supports_1m_suffix`), so `claude-sonnet-4-6[1m]` must survive
+ * normalization and keep its marker.
  */
 const SUFFIX_INERT_1M_MODELS: ReadonlySet<string> = new Set([
   'claude-haiku-5-5',
