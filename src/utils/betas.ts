@@ -137,43 +137,6 @@ export function vertexModelSupportsWebSearch(model: string): boolean {
   )
 }
 
-/**
- * Whether a model takes the dynamic-filtering `web_search_20260209` tool type
- * instead of the basic `web_search_20250305`. Both carry identical fields and
- * both return `web_search_tool_result` blocks, so this only selects the `type`
- * literal — no result-parsing branch hangs off it.
- *
- * Declaring it where the endpoint does not serve it is the dangerous direction:
- * an unknown tool type is a hard 400 that fails the whole request, whereas
- * falling back to the basic variant just forgoes dynamic filtering. So this is
- * an allowlist of models documented to accept it, and everything else — older
- * models, Vertex and Foundry Hosted-on-Azure (which serve only the basic
- * variant), and 3P Anthropic-compatible endpoints — stays on
- * `web_search_20250305`. Opus 5.5 matches via the `claude-opus-5` prefix; it
- * keeps Opus 5's server tools.
- *
- * @[MODEL LAUNCH]: Add the new model here once it is documented to accept the
- * dynamic-filtering variant. The Fable / Mythos family is deliberately
- * absent: it is not named in the compatibility list, and guessing costs a 400.
- */
-export function modelSupportsWebSearchDynamicFiltering(model: string): boolean {
-  // First party only: Vertex serves only the basic variant, and so does
-  // Foundry's Hosted-on-Azure path, which Noa cannot tell apart from Foundry's
-  // Hosted-on-Anthropic path by configuration alone.
-  if (!isDirectFirstParty()) {
-    return false
-  }
-  const canonical = getCanonicalName(model)
-  return (
-    canonical.includes('claude-opus-4-6') ||
-    canonical.includes('claude-opus-4-7') ||
-    canonical.includes('claude-opus-4-8') ||
-    canonical.includes('claude-opus-5') ||
-    canonical.includes('claude-sonnet-4-6') ||
-    canonical.includes('claude-sonnet-5')
-  )
-}
-
 // Context management is supported on Claude 4+ models
 export function modelSupportsContextManagement(model: string): boolean {
   const supported3P = get3PModelCapabilityOverride(model, 'context_management')

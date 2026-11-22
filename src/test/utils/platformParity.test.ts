@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import {
   clearBetasCaches,
   cloudProviderSupportsEagerInputStreaming,
-  modelSupportsWebSearchDynamicFiltering,
 } from '../../utils/betas.js'
 import { getSupportedEffortLevelsForModel } from '../../utils/effort.js'
 import { getModelDeprecationWarning } from '../../utils/model/deprecation.js'
@@ -56,12 +55,6 @@ describe('adaptive thinking is chosen by model, not platform', () => {
 })
 
 describe('server-tool and per-tool field gating', () => {
-  test('dynamic-filtering web search is first-party only', () => {
-    expect(modelSupportsWebSearchDynamicFiltering('claude-opus-5')).toBe(true)
-    process.env.CLAUDE_CODE_USE_FOUNDRY = '1'
-    expect(modelSupportsWebSearchDynamicFiltering('claude-opus-5')).toBe(false)
-  })
-
   test('the default Bedrock endpoint keeps eager_input_streaming enabled', () => {
     process.env.CLAUDE_CODE_USE_BEDROCK = '1'
     process.env.ANTHROPIC_BEDROCK_BASE_URL =

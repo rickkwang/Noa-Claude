@@ -13,8 +13,7 @@ export function getWebSearchPrompt(
   const currentMonthYear = getLocalMonthYear()
   if (shouldUseCompactSystemPrompt(model)) {
     // Ported from upstream's lean variant, which assumes Anthropic's
-    // server-side search (`web_search_20250305`, or `web_search_20260209` on
-    // models that take it — see modelSupportsWebSearchDynamicFiltering). The
+    // server-side search (`web_search_20250305`). The
     // "US-only" limit applies only when that same backend serves the request,
     // hence anthropicSearch. The mandatory "Sources:" list is stricter than
     // our verbose text, which no lean model ever sees.

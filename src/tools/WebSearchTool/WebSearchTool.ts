@@ -2,11 +2,9 @@
 import type {
   BetaContentBlock,
   BetaWebSearchTool20250305,
-  BetaWebSearchTool20260209,
 } from '@anthropic-ai/sdk/resources/beta/messages/messages.mjs'
 import {
   modelRejectsForcedToolChoice,
-  modelSupportsWebSearchDynamicFiltering,
   vertexModelSupportsWebSearch,
 } from 'src/utils/betas.js'
 import {
@@ -20,11 +18,13 @@ import { queryModelWithStreaming } from '../../services/api/claude.js'
 import { isGeminiOpenAIBaseUrl } from '../../services/api/client.js'
 import { buildTool, type ToolDef } from '../../Tool.js'
 import { lazySchema } from '../../utils/lazySchema.js'
+import { AbortError } from '../../utils/errors.js'
 import { logError } from '../../utils/log.js'
 import { createUserMessage } from '../../utils/messages.js'
 import { getMainLoopModel, getSmallFastModel } from '../../utils/model/model.js'
 import { jsonParse, jsonStringify } from '../../utils/slowOperations.js'
 import { asSystemPrompt } from '../../utils/systemPromptType.js'
+import { modelThinkingCannotBeDisabled } from '../../utils/thinking.js'
 import {
   getMaxWebSearchesPerSession,
   getWebSearchCalls,
@@ -103,16 +103,12 @@ export type { WebSearchProgress } from '../../types/tools.js'
 
 import type { WebSearchProgress } from '../../types/tools.js'
 
-function makeToolSchema(
-  input: Input,
-  model: string,
-): BetaWebSearchTool20250305 | BetaWebSearchTool20260209 {
+function makeToolSchema(input: Input): BetaWebSearchTool20250305 {
   return {
-    // The two variants carry identical fields and both return
-    // `web_search_tool_result`; only the newer one applies dynamic filtering.
-    type: modelSupportsWebSearchDynamicFiltering(model)
-      ? 'web_search_20260209'
-      : 'web_search_20250305',
+    // Not `web_search_20260209`: its dynamic filtering runs through code
+    // execution, which this one-tool request does not grant, so the search
+    // model answers "no code-execution calls left" without searching.
+    type: 'web_search_20250305',
     name: 'web_search',
     allowed_domains: input.allowed_domains,
     blocked_domains: input.blocked_domains,
@@ -399,41 +395,39 @@ export const WebSearchTool = buildTool({
       false,
     )
 
-    // The tool type is model-gated, so it has to be built for the model that
-    // actually receives it — the small fast model under the Haiku experiment,
-    // not the main loop model.
     const searchModel = useHaiku
       ? getSmallFastModel()
       : context.options.mainLoopModel
-    const toolSchema = makeToolSchema(input, searchModel)
+    const toolSchema = makeToolSchema(input)
 
     const appState = context.getAppState()
     const queryStream = queryModelWithStreaming({
       messages: [userMessage],
       systemPrompt: asSystemPrompt([
-        'You are an assistant for performing a web search tool use',
+        'You run a web search for another Claude model, which is waiting on the result and can search again. Search once, then reply with a brief summary of the results.',
       ]),
-      thinkingConfig: useHaiku
-        ? { type: 'disabled' as const }
-        : context.options.thinkingConfig,
+      thinkingConfig: { type: 'disabled' as const },
       tools: [],
       signal: context.abortController.signal,
       options: {
         getToolPermissionContext: async () => appState.toolPermissionContext,
         model: searchModel,
-        // Fable 5.1 / Mythos 5.1 / Opus 5.5 reject forced tool_choice with a 400. The
-        // Haiku experiment normally points searchModel at the small fast
-        // model, but ANTHROPIC_SMALL_FAST_MODEL can pin it to anything — so
-        // gate on the model that actually receives the request. Dropping to
-        // `auto` is safe here: the search tool is the only one in the schema.
+        // Forced tool_choice is a 400 on models that reject it outright and on
+        // models whose thinking stays on despite `disabled` above (the API
+        // refuses forced tool use with thinking). On ChatGPT the search is a
+        // hosted tool, not a function that tool_choice can name. Dropping to
+        // `auto` is safe: the search tool is the only one in the schema.
         toolChoice:
-          useHaiku && !modelRejectsForcedToolChoice(searchModel)
-            ? { type: 'tool', name: 'web_search' }
-            : undefined,
+          chatgpt ||
+          modelRejectsForcedToolChoice(searchModel) ||
+          modelThinkingCannotBeDisabled(searchModel)
+            ? undefined
+            : { type: 'tool', name: 'web_search' },
         isNonInteractiveSession: context.options.isNonInteractiveSession,
         hasAppendSystemPrompt: !!context.options.appendSystemPrompt,
         extraToolSchemas: [toolSchema],
         querySource: 'web_search_tool',
+        enablePromptCaching: false,
         agents: context.options.agentDefinitions.activeAgents,
         mcpTools: [],
         agentId: context.agentId,
@@ -447,8 +441,15 @@ export const WebSearchTool = buildTool({
     let progressCounter = 0
     const toolUseQueries = new Map() // Map of tool_use_id to query
 
+    let apiError: string | null = null
     for await (const event of queryStream) {
       if (event.type === 'assistant') {
+        if (event.isApiErrorMessage) {
+          apiError = event.message.content
+            .map(b => (b.type === 'text' ? b.text : ''))
+            .join('')
+          continue
+        }
         allContentBlocks.push(...event.message.content)
         continue
       }
@@ -547,6 +548,15 @@ export const WebSearchTool = buildTool({
       query,
       durationSeconds,
     )
+    if (
+      context.abortController.signal.aborted &&
+      data.results.every(r => typeof r === 'string' || r.content.length === 0)
+    ) {
+      throw new AbortError()
+    }
+    if (apiError !== null && data.results.length === 0) {
+      throw new Error(apiError)
+    }
     if (chatgpt) {
       // OpenAI cites sources per answer, not per search, so every citation
       // lands in one result block however many searches ran.
