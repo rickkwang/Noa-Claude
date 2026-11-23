@@ -227,3 +227,54 @@ export async function fetchStats(range: StatsRange): Promise<StatsSummary> {
   if (!response.ok) throw new Error(`Could not load stats (HTTP ${response.status})`)
   return (await response.json()) as StatsSummary
 }
+
+export type ScheduleFrequency =
+  | { kind: "manual" }
+  | { kind: "hourly" }
+  | { kind: "daily" | "weekdays"; time: string }
+  | { kind: "weekly"; time: string; weekday: number }
+  | { kind: "cron"; cron: string }
+
+export interface ScheduledTask {
+  id: string
+  name: string
+  prompt: string
+  cwd: string
+  frequency: ScheduleFrequency
+  mode: string
+  enabled: boolean
+  createdAt: number
+  lastRunAt?: number
+  lastSessionId?: string
+  lastError?: string
+  // Human reading of the frequency, and when the task fires next (epoch ms; unset for manual or off).
+  summary: string
+  nextRunAt?: number
+}
+
+export type ScheduleRequest =
+  | { action: "create" | "update"; id?: string; name: string; prompt: string; cwd: string; frequency: ScheduleFrequency; mode: string }
+  | { action: "update"; id: string; enabled: boolean }
+  | { action: "delete" | "duplicate"; id: string }
+
+export async function fetchSchedules(): Promise<ScheduledTask[]> {
+  const response = await fetch("/api/schedule")
+  if (!response.ok) throw new Error(`Could not load scheduled tasks (HTTP ${response.status})`)
+  return (await response.json()) as ScheduledTask[]
+}
+
+// Resolves to the updated list, or throws with the bridge's message.
+export async function scheduleAction(request: ScheduleRequest): Promise<ScheduledTask[]> {
+  const response = await fetch("/api/schedule", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(request) })
+  const body = await response.json()
+  if (!response.ok) throw new Error(body.error ?? `HTTP ${response.status}`)
+  return body as ScheduledTask[]
+}
+
+// Starts a run now; resolves to the new task's folder and id.
+export async function runScheduledTask(id: string): Promise<{ cwd: string; sessionId: string }> {
+  const response = await fetch("/api/schedule", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "run", id }) })
+  const body = await response.json()
+  if (!response.ok) throw new Error(body.error ?? `HTTP ${response.status}`)
+  return body
+}

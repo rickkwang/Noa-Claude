@@ -37,6 +37,9 @@ function isSafeFontFamilyName(value: string): boolean {
  * system stack as a suffix so uninstalling a font degrades to the platform UI
  * face instead of the browser's default serif.
  */
+/** The serif stack for headings; keep in sync with `--font-serif` in noa.css, which paints first. */
+export const SERIF_FONT_STACK = 'ui-serif, "New York", Georgia, Cambria, "Times New Roman", serif';
+
 export const MONO_FONT_STACK =
   'ui-monospace, "SFMono-Regular", "SF Mono", Menlo, Consolas, "Liberation Mono", monospace';
 

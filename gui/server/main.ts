@@ -8,6 +8,7 @@ import { isManagedWorktree, mediaResponse, projectWorktrees, workspaceRequest } 
 import { listPlugins, pluginAction } from "./plugins"
 import { skillAction, skillsState } from "./skills"
 import { statsSummary } from "./stats"
+import { initSchedule, listSchedules, scheduleAction } from "./schedule"
 import { attachAgent, agentMessage, detachAgent, externalHolder, listAgentRuns, releaseSessionRuns, SPAWN_PERMISSION_MODES, type SocketData } from "./agents"
 import { coordinatorSession, ensureCoordinator, initCoordinator, messageCoordinator, reminders, resolutions, setThreadReminder, setThreadResolved } from "./coordinator"
 import { attachTerminal, detachTerminal, TERMINAL_ID, terminalMessage, terminalSize, type TerminalSocketData } from "./terminal"
@@ -38,6 +39,8 @@ function serveStatic(pathname: string): Response {
   return new Response(Bun.file(path))
 }
 
+initSchedule(REPO_ROOT, schedulableFolder)
+
 const TOKEN = process.env.NOA_GUI_TOKEN
 const TOKEN_COOKIE = "noa_token"
 // Without a token any local process can add a project and then read it, so running open is an explicit opt-in.
@@ -52,6 +55,10 @@ function authorized(req: Request): boolean {
   const bearer = req.headers.get("authorization")
   if (bearer === `Bearer ${TOKEN}`) return true
   return (req.headers.get("cookie") ?? "").split(";").some((part) => part.trim() === `${TOKEN_COOKIE}=${TOKEN}`)
+}
+
+function schedulableFolder(cwd: string): boolean {
+  return !!resolveCwd(cwd) && inListedProject(resolve(cwd))
 }
 
 function inListedProject(cwd: string): boolean {
@@ -316,6 +323,12 @@ Bun.serve<BridgeSocketData>({
       if (req.method === "GET") return json(await skillsState())
       if (req.method !== "POST") return json({ error: "Method not allowed" }, 405)
       const result = await skillAction(await req.json().catch(() => null))
+      return json(result.body, result.status)
+    }
+    if (url.pathname === "/api/schedule") {
+      if (req.method === "GET") return json(listSchedules())
+      if (req.method !== "POST") return json({ error: "Method not allowed" }, 405)
+      const result = await scheduleAction(await req.json().catch(() => null))
       return json(result.body, result.status)
     }
     if (url.pathname === "/api/runs") return json(listAgentRuns())

@@ -57,6 +57,8 @@ export interface AppSettings {
     /** Whether tool groups and reasoning stay folded (normal), reasoning expands (thinking), or everything expands inline (verbose). */
     transcriptView: 'normal' | 'thinking' | 'verbose';
     codeFontSize: number;
+    /** Typeface for serif headings: SYSTEM_DEFAULT_FONT or an installed family. */
+    serifFont: string;
     fontSmoothing: boolean;
   };
   composer: {

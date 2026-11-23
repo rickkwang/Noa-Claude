@@ -163,6 +163,10 @@ body[data-pane-dragging="row"] * { cursor: row-resize !important; user-select: n
      it must match SYSTEM_FONT_STACK in src/lib/fontFamily.ts — otherwise the
      first frame renders in a different face than every frame after it. */
   --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  /* The one serif face, first-paint value; ThemeInjector applies the Appearance "Serif font" choice and
+     must match SERIF_FONT_STACK in src/lib/fontFamily.ts. `.noa-serif` (below) applies it with the weight
+     and tracking tokens. */
+  --font-serif: ui-serif, "New York", Georgia, Cambria, "Times New Roman", serif;
   --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
 
   /* Corner radius tiers. Pair with Tailwind's rounded-md (6px, controls) and rounded-lg (8px, rows).
@@ -2817,3 +2821,14 @@ input[type="number"]::-webkit-inner-spin-button {
 .noa-mascot-bubble { transform-origin: bottom right; animation: noa-mascot-bubble-in 260ms cubic-bezier(.22,1,.36,1) backwards; transition: opacity 180ms ease, transform 180ms ease; }
 .noa-mascot-bubble[data-leaving] { opacity: 0; transform: translate(2px, 2px) scale(.97); }
 @keyframes noa-mascot-bubble-in { from { opacity: 0; transform: translate(3px, 4px) scale(.96); } to { opacity: 1; transform: none; } }
+
+/* Serif headings: page titles and the new-task heading. Size and colour stay with each call site. */
+:root {
+  --serif-weight: 400;
+  --serif-tracking: 0;
+}
+.noa-serif {
+  font-family: var(--font-serif);
+  font-weight: var(--serif-weight);
+  letter-spacing: var(--serif-tracking);
+}

@@ -420,7 +420,7 @@ export function CustomizePage({ skills: promptCommands, mcpServers, mcpLocked, o
   const menuItem = "h-8 rounded-lg px-2.5 text-left text-body hover:bg-[var(--settings-fill-hover)]"
   return (
     <>
-      <h1 className="m-0 font-serif text-[26px] font-normal leading-8 text-[var(--text-primary)]">Customize</h1>
+      <h1 className="m-0 noa-serif text-[26px] leading-8 text-[var(--text-primary)]">Customize</h1>
       {(inDetail || marketView) && (
         <button type="button" className="-mt-2 inline-flex items-center gap-1 self-start text-chat-sm text-[var(--sidebar-text-muted)] hover:text-[var(--text-primary)]" onClick={() => { if (inDetail) setDetail(undefined); else { setTab("plugins"); setBrowsing(true); setFilter("") } }}>
           <ChevronLeft size={14} />

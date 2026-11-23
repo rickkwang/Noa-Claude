@@ -18,7 +18,7 @@ export function EmptyState({
   const name = cwd.split("/").filter(Boolean).pop() ?? cwd
   return (
     <div className="flex min-h-0 flex-1 flex-col items-center gap-4 overflow-y-auto px-6 py-4 text-center font-ui">
-      <h1 data-wave-obstacle="14" className="relative mx-0 mb-0 mt-auto shrink-0 text-balance text-[length:var(--text-title)] font-normal leading-[1.2] tracking-normal">
+      <h1 data-wave-obstacle="14" className="noa-serif relative mx-0 mb-0 mt-auto shrink-0 text-balance text-[length:var(--text-title)] leading-[1.2]">
         What should we build in{" "}
         <button
           onClick={() => setPickerOpen(true)}

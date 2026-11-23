@@ -45,6 +45,7 @@ import TopBar from "./components/TopBar"
 import ThemeInjector from "./theme/ThemeInjector"
 import { SettingsDialog } from "./components/SettingsDialog"
 import { CustomizePage } from "./components/CustomizePage"
+import { SchedulePage } from "./components/SchedulePage"
 import { SessionActions, RewindDialog, type RewindPreview } from "./components/SessionActions"
 import { SessionTitle } from "./components/SessionTitle"
 import { SearchDialog } from "./components/SearchDialog"
@@ -94,7 +95,9 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
   const [sessionTranscriptViews, setSessionTranscriptViews] = useState<Record<string, AppSettings["appearance"]["transcriptView"]>>({})
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [settingsPage, setSettingsPage] = useState<"mcp">()
-  const [customizeOpen, setCustomizeOpen] = useState(false)
+  const [page, setPage] = useState<"customize" | "schedule">()
+  // Either full-window page.
+  const customizeOpen = page !== undefined
   const [settingsSignIn, setSettingsSignIn] = useState(false)
   // The settings page overlays the whole window, so CSS hides the app shell while it is open.
   // The attribute hides the shell, so it is cleared on unmount too: a stuck flag would leave a blank window.
@@ -234,13 +237,13 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
   }, [sideChatReady, sideChatKey])
   useEffect(() => {
     if (!customizeOpen) return
-    const close = (event: KeyboardEvent) => { if (event.key === "Escape" && !event.defaultPrevented && !document.querySelector("[role=dialog]")) setCustomizeOpen(false) }
+    const close = (event: KeyboardEvent) => { if (event.key === "Escape" && !event.defaultPrevented && !document.querySelector("[role=dialog]")) setPage(undefined) }
     window.addEventListener("keydown", close)
     return () => window.removeEventListener("keydown", close)
   }, [customizeOpen])
   useEffect(() => {
-    if (customizeOpen && state.connection === "ready") refreshMcp()
-  }, [customizeOpen, state.connection, refreshMcp])
+    if (page === "customize" && state.connection === "ready") refreshMcp()
+  }, [page, state.connection, refreshMcp])
   const transcriptView = (activeId ? sessionTranscriptViews[activeId] : undefined) ?? settings.appearance.transcriptView
   useEffect(() => {
     fetchProjects().then(setProjects)
@@ -937,8 +940,8 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
             sessions={sessionsByProject}
             loadedProjects={loadedProjects}
             active={{ cwd: session.cwd, id: customizeOpen ? undefined : activeId }}
-            onNewSession={(dir) => { setCustomizeOpen(false); newSession(dir) }}
-            onSelect={(dir, id) => { setCustomizeOpen(false); selectSession(dir, id) }}
+            onNewSession={(dir) => { setPage(undefined); newSession(dir) }}
+            onSelect={(dir, id) => { setPage(undefined); selectSession(dir, id) }}
             onAddProject={() => {
               setEditingProject(undefined)
               setAddingProject(true)
@@ -949,12 +952,14 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
             }}
             onRemoveProject={removeProjectPath}
             onRevealProject={revealProject}
-            onOpenCoordinator={(path) => { setCustomizeOpen(false); openCoordinator(path).then((id) => selectSession(path, id), (error) => confirm({ title: "Could not open the coordinator", description: (error as Error).message, confirmLabel: "OK", cancelLabel: "Close" })) }}
+            onOpenCoordinator={(path) => { setPage(undefined); openCoordinator(path).then((id) => selectSession(path, id), (error) => confirm({ title: "Could not open the coordinator", description: (error as Error).message, confirmLabel: "OK", cancelLabel: "Close" })) }}
             onDeleteSession={removeSession}
             onSearch={() => setSearchOpen(true)}
             onSettings={() => setSettingsOpen(true)}
-            onCustomize={() => setCustomizeOpen(true)}
-            customizeOpen={customizeOpen}
+            onCustomize={() => setPage("customize")}
+            customizeOpen={page === "customize"}
+            onSchedule={() => setPage("schedule")}
+            scheduleOpen={page === "schedule"}
           />
         </div>
       </div>
@@ -1357,7 +1362,7 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
         finishRewind(mode, rewindMessage.text, rewindMessage.images)
         setRewindMessage(undefined)
       }} />}
-      {searchOpen && <SearchDialog cwd={session.cwd} projects={projects} sessions={sessionsByProject} onNewSession={() => { setCustomizeOpen(false); newSession() }} onOpenFolder={() => { setEditingProject(undefined); setAddingProject(true) }} onSelectSession={(dir, id) => { setCustomizeOpen(false); selectSession(dir, id) }} onOpenFile={openFile} onClose={() => setSearchOpen(false)} newTaskShortcut={settings.shortcuts.newTask} />}
+      {searchOpen && <SearchDialog cwd={session.cwd} projects={projects} sessions={sessionsByProject} onNewSession={() => { setPage(undefined); newSession() }} onOpenFolder={() => { setEditingProject(undefined); setAddingProject(true) }} onSelectSession={(dir, id) => { setPage(undefined); selectSession(dir, id) }} onOpenFile={openFile} onClose={() => setSearchOpen(false)} newTaskShortcut={settings.shortcuts.newTask} />}
       {confirmDialog}
       {editingProject && (
         <AddProjectDialog
@@ -1387,15 +1392,19 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
         >
           <div className="h-full overflow-y-auto pt-11">
             <div className="mx-auto flex max-w-[960px] flex-col gap-5 px-8 pb-12 pt-8">
+              {page === "schedule" ? (
+                <SchedulePage projects={projects} activeCwd={session.cwd} onOpenTask={(dir, id) => { setPage(undefined); selectSession(dir, id) }} />
+              ) : (
               <CustomizePage
                 skills={state.commands.filter((command) => command.type === "prompt")}
                 mcpServers={state.mcpServers}
                 mcpLocked={state.connection !== "ready" || state.busy || !!state.mcpPending}
                 onChangeMcp={changeMcp}
                 onReloadCommands={() => reloadCommands(true)}
-                onOpenMcp={() => { setCustomizeOpen(false); setSettingsPage("mcp"); setSettingsOpen(true) }}
-                onTrySkill={(name) => { setCustomizeOpen(false); setPrefill({ text: `/${name} `, key: Date.now() }) }}
+                onOpenMcp={() => { setPage(undefined); setSettingsPage("mcp"); setSettingsOpen(true) }}
+                onTrySkill={(name) => { setPage(undefined); setPrefill({ text: `/${name} `, key: Date.now() }) }}
               />
+              )}
             </div>
           </div>
         </div>

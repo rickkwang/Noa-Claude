@@ -1,6 +1,6 @@
 import { useLayoutEffect } from 'react';
 import { useIsDark } from '../hooks/useIsDark';
-import { SYSTEM_DEFAULT_FONT, CONTENT_SAME_AS_UI, MONO_FONT_STACK, resolveFontFamily } from '../lib/fontFamily';
+import { SYSTEM_DEFAULT_FONT, CONTENT_SAME_AS_UI, MONO_FONT_STACK, SERIF_FONT_STACK, resolveFontFamily } from '../lib/fontFamily';
 import { faceFamilyName, faceFontFaceRule, quoteFamily } from '../lib/localFonts';
 import { resolveCodeTheme } from '../lib/codeThemes';
 import { CONTRAST_DEFAULTS, activeContrast, effectiveContrast, inkAlpha, mixRgb } from '../lib/contrast';
@@ -256,6 +256,7 @@ export default function ThemeInjector({ settings }: ThemeInjectorProps) {
         --text-heading-sm: ${Math.round(18 * textScale)}px;
         --code-font-size: ${settings.appearance.codeFontSize}px;
         --font-mono: ${codeFontFamilyStyle};
+        --font-serif: ${resolveFontFamily(settings.appearance.serifFont ?? SYSTEM_DEFAULT_FONT, SERIF_FONT_STACK)};
         /* Conversation typeface: turn items read these so the composer and chrome stay on the UI font. */
         --font-content: ${contentFontFamilyStyle};
         --content-font-weight: 400;

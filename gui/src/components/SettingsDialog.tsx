@@ -356,7 +356,7 @@ export function SettingsDialog({
         <main className="noa-settings-scroll scrollbar-on-scroll noa-scroll-fade min-h-0 flex-1 overflow-y-auto px-5 pt-16 pb-16">
         <div className="mx-auto flex max-w-3xl flex-col gap-8">
           <div className="flex items-center justify-between gap-4">
-            <h1 className="text-[26px] leading-8 font-normal">{current?.label}</h1>
+            <h1 className="noa-serif text-[26px] leading-8">{current?.label}</h1>
             {(page === "configuration" || page === "hooks" || page === "mcp") && (
               <button
                 type="button"

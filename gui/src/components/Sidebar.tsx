@@ -23,7 +23,8 @@ import {
   FolderPlus,
   MoreHorizontal,
   Pin,
-  Search,
+  Clock,
+  Magnifier,
   SlidersHorizontal,
   Settings,
   SquarePen,
@@ -125,6 +126,8 @@ interface SidebarProps {
   onSettings: () => void
   onCustomize: () => void
   customizeOpen?: boolean
+  onSchedule: () => void
+  scheduleOpen?: boolean
 }
 
 // Noa's sidebar: search, a Projects toolbar, then one collapsible group per project folder.
@@ -147,6 +150,8 @@ export function Sidebar({
   onSettings,
   onCustomize,
   customizeOpen = false,
+  onSchedule,
+  scheduleOpen = false,
 }: SidebarProps) {
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set())
   const [unfolded, setUnfolded] = useState<ReadonlySet<string>>(new Set())
@@ -447,7 +452,7 @@ export function Sidebar({
         aria-keyshortcuts={isMac ? "Meta+K" : "Control+K"}
         className="noa-sidebar-search noa-sidebar-tree-item noa-sidebar-tree-row noa-sidebar-hover-surface-subtle mx-2 mb-1 flex h-[30px] shrink-0 items-center gap-2 rounded-lg pl-[7px] pr-2 text-body"
       >
-        <Search size={14} className="shrink-0" />
+        <Magnifier size={14} className="shrink-0" />
         Search
       </button>
 
@@ -458,6 +463,16 @@ export function Sidebar({
       >
         <SquarePen size={14} className="shrink-0" />
         New task
+      </button>
+
+      <button
+        type="button"
+        aria-current={scheduleOpen ? "page" : undefined}
+        onClick={onSchedule}
+        className={`noa-sidebar-tree-item noa-sidebar-tree-row noa-agent-sidebar-row ${scheduleOpen ? "is-active" : "noa-sidebar-hover-surface-subtle"} mx-2 mb-1 flex h-[30px] shrink-0 items-center gap-2 rounded-lg pl-[7px] pr-2 text-body`}
+      >
+        <Clock size={14} className="shrink-0" />
+        Scheduled
       </button>
 
       <button

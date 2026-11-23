@@ -253,6 +253,10 @@ export function AppearancePage({
     [[SYSTEM_DEFAULT_FONT, "System monospace"], ...fontFamilies.filter((f) => f.monospaced).map((f) => familyOption(f.family))],
     activeFonts.code,
   )
+  const serifFamilyOptions = withStoredFamily(
+    [[SYSTEM_DEFAULT_FONT, "System serif"], ...fontFamilies.map((f) => familyOption(f.family))],
+    appearance.serifFont ?? SYSTEM_DEFAULT_FONT,
+  )
   const faceOptions = (family: string, face: ThemeFontFace | undefined, fallbackLabel: string): [string, string][] => {
     const faces = facesFor(family)
     if (!faces.length) return [["", fallbackLabel]]
@@ -502,6 +506,16 @@ export function AppearancePage({
         </Row>
         <Row label="Code font" description={`Typeface for code blocks and diffs in ${variant} mode.`}>
           {fontPair({ role: "code", label: "Code font", family: activeFonts.code, face: activeFonts.codeFace, options: codeFamilyOptions })}
+        </Row>
+        <Row label="Serif font" description="Typeface for page titles and the new task heading.">
+          <Select
+            value={appearance.serifFont ?? SYSTEM_DEFAULT_FONT}
+            options={serifFamilyOptions}
+            label="Serif font"
+            searchable
+            searchPlaceholder="Search fonts…"
+            onChange={(serifFont) => change({ serifFont })}
+          />
         </Row>
         <Row label="UI font size" description="Base size for interface text (11–16 px).">
           <NumberField label="UI font size" value={appearance.uiFontSize} min={11} max={16} onChange={(uiFontSize) => change({ uiFontSize })} />
