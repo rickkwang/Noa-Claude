@@ -194,11 +194,9 @@ export function formatCommandsWithinBudget(
 }
 
 export const getPrompt = memoize(async (_cwd: string): Promise<string> => {
-  // Upstream's current Skill description, minus its sentences on directory-
-  // scoped skills and background skills, neither of which this fork has.
   return `Invoke a skill.
 
-A skill is a packaged set of instructions the user or project has set up to help you perform a particular kind of task (deploy steps, a review checklist, a repo-specific workflow, certain types of design taste or API interactions, and so on). The skills which are available to you appear in a system-reminder listing with one-line descriptions. When the task at hand is one which a listed skill covers and is useful for, call this tool first — the skill's instructions then load into the turn for you to follow in place of your default approach. Some skills instead run in a subagent and return the finished result. Users may also ask for one specifically by name (\`/<name>\`, or "slash command"); that's a request to invoke it.
+A skill is a packaged set of instructions the user or project has set up for a particular kind of task (deploy steps, a review checklist, a repo-specific workflow). Available skills appear in a listing from the system with one-line descriptions. When the task at hand is one a listed skill covers, call this tool first — the skill's instructions load into the turn for you to follow in place of your default approach; some skills instead run in a subagent and return the finished result. A skill that runs in the background returns only the agent's name — its result arrives later as a task notification, so don't wait on it or invoke it again in the meantime. Users may also ask for one by name (\`/<name>\`, or "slash command"); that's a request to invoke it.
 
 - \`skill\`: exact name from the listing, no leading slash. Plugin skills use \`plugin:skill\`.
 - \`args\`: optional arguments to pass through.
