@@ -148,7 +148,7 @@ Bridge/remote runtime modules can exist in source, but this build does not regis
 - `TREE_SITTER_BASH_SHADOW`
 - `ULTRATHINK`
 - `UNATTENDED_RETRY`
-- `VERIFICATION_AGENT`
+- `VERIFICATION_AGENT` (default-on; enables the built-in `verification` subagent, system-prompt verification guidance, and 3+ task completion verification nudges in `TaskUpdate`/`TodoWrite`. `NOA_CLAUDE_VERIFICATION_AGENT=0` / `CLAUDE_CODE_VERIFICATION_AGENT=0` turns it off)
 
 ## Unlocked but Runtime-Caveated
 
@@ -225,8 +225,6 @@ return `false`). The guarded branches are kept but are inert:
 
 - `tengu_otk_slot_v1` (default `false`) — max_output_tokens same-request 8k→64k
   escalate retry in query.ts never fires; multi-turn recovery still applies.
-- `tengu_hive_evidence` (default `false`) — the VERIFICATION_AGENT system-prompt
-  section never injects, even in dev-full builds.
 
 ## Command Surfaces Outside Flag Unlock
 

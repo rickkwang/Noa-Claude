@@ -132,6 +132,24 @@ Use the literal string \`VERDICT: \` followed by exactly one of \`PASS\`, \`FAIL
 const VERIFICATION_WHEN_TO_USE =
   'Use this agent to verify implementation work before reporting completion. By default, invoke it after non-trivial tasks (3+ file edits, backend/API changes, infrastructure changes). Also use it for smaller changes when the work is risky, cross-cutting, user-visible, or expensive to guess wrong. Pass the ORIGINAL user task description, list of files changed, approach taken, and the plan file path if applicable. The agent independently runs builds, tests, linters, and checks to produce a PASS/FAIL/PARTIAL verdict with evidence; the implementer should not substitute its own confidence for this verdict.'
 
+import { isEnvDefinedFalsy, isEnvTruthy } from '../../../utils/envUtils.js'
+
+/**
+ * Whether the built-in verification subagent and its completion nudges are
+ * active. Defaults to true when compiled with VERIFICATION_AGENT; set
+ * NOA_CLAUDE_VERIFICATION_AGENT=0 (or CLAUDE_CODE_VERIFICATION_AGENT=0) to opt out.
+ */
+export function isVerificationAgentEnabled(): boolean {
+  const raw =
+    process.env.NOA_CLAUDE_VERIFICATION_AGENT ??
+    process.env.CLAUDE_CODE_VERIFICATION_AGENT
+  if (raw !== undefined) {
+    if (isEnvDefinedFalsy(raw)) return false
+    if (isEnvTruthy(raw)) return true
+  }
+  return true
+}
+
 export const VERIFICATION_AGENT: BuiltInAgentDefinition = {
   agentType: 'verification',
   whenToUse: VERIFICATION_WHEN_TO_USE,

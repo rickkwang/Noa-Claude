@@ -61,7 +61,7 @@ export class FileTooLargeError extends Error {
     public maxSizeBytes: number,
   ) {
     super(
-      `File content (${formatFileSize(sizeInBytes)}) exceeds maximum allowed size (${formatFileSize(maxSizeBytes)}). Use offset and limit parameters to read specific portions of the file, or search for specific content instead of reading the whole file.`,
+      `File content (${formatFileSize(sizeInBytes)}) exceeds maximum allowed size (${formatFileSize(maxSizeBytes)}). Use offset and limit parameters to read specific portions of the file, pass allow_large: true to read a larger file, or search for specific content instead of reading the whole file.`,
     )
     this.name = 'FileTooLargeError'
   }

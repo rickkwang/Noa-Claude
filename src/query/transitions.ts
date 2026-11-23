@@ -40,6 +40,8 @@ export type Continue =
   | { reason: 'truncated_response_recovery'; attempt: number }
   // A thinking signature was rejected: resend without thinking blocks.
   | { reason: 'thinking_signature_retry' }
+  // An empty/whitespace text content block triggered a 400: strip and retry once.
+  | { reason: 'empty_text_retry' }
   // The response had no visible output (thinking only, or nothing); nudge
   // the model once to answer.
   | { reason: 'empty_response_retry' }

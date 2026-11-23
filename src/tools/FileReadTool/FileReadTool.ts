@@ -169,7 +169,7 @@ export class MaxFileReadTokenExceededError extends Error {
     public maxTokens: number,
   ) {
     super(
-      `File content (${tokenCount} tokens) exceeds maximum allowed tokens (${maxTokens}). Use offset and limit parameters to read specific portions of the file, or search for specific content instead of reading the whole file.`,
+      `File content (${tokenCount} tokens) exceeds maximum allowed tokens (${maxTokens}). Use offset and limit parameters to read specific portions of the file, pass allow_large: true to read a larger file, or search for specific content instead of reading the whole file.`,
     )
     this.name = 'MaxFileReadTokenExceededError'
   }
@@ -229,6 +229,12 @@ const inputSchema = lazySchema(() =>
       .optional()
       .describe(
         `Page range for PDF files (e.g., "1-5", "3", "10-20"). Only applicable to PDF files. Maximum ${PDF_MAX_PAGES_PER_READ} pages per request.`,
+      ),
+    allow_large: z
+      .boolean()
+      .optional()
+      .describe(
+        'Set to true to allow reading a file that exceeds the default size or token limit.',
       ),
   }),
 )
@@ -479,7 +485,7 @@ export const FileReadTool = buildTool({
     return { result: true }
   },
   async call(
-    { file_path, offset = 1, limit = undefined, pages },
+    { file_path, offset = 1, limit = undefined, pages, allow_large },
     context,
     _canUseTool?,
     parentMessage?,
@@ -487,9 +493,20 @@ export const FileReadTool = buildTool({
     const { readFileState, fileReadingLimits } = context
 
     const defaults = getDefaultFileReadingLimits()
+    const ALLOW_LARGE_MAX_TOKENS = 100_000
+    const ALLOW_LARGE_MAX_SIZE_BYTES = 2 * 1024 * 1024
+    // Respect explicit caller-supplied fileReadingLimits; allow_large only
+    // raises the default limits when no caller cap is configured.
     const maxSizeBytes =
-      fileReadingLimits?.maxSizeBytes ?? defaults.maxSizeBytes
-    const maxTokens = fileReadingLimits?.maxTokens ?? defaults.maxTokens
+      fileReadingLimits?.maxSizeBytes ??
+      (allow_large
+        ? Math.max(defaults.maxSizeBytes, ALLOW_LARGE_MAX_SIZE_BYTES)
+        : defaults.maxSizeBytes)
+    const maxTokens =
+      fileReadingLimits?.maxTokens ??
+      (allow_large
+        ? Math.max(defaults.maxTokens, ALLOW_LARGE_MAX_TOKENS)
+        : defaults.maxTokens)
 
     // Telemetry: track when callers override default read limits.
     // Only fires on override (low volume) — event count = override frequency.

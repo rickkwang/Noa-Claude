@@ -5,6 +5,7 @@ import {
   AGENT_TOOL_NAME,
   VERIFICATION_AGENT_TYPE,
 } from '../tools/AgentTool/constants.js'
+import { isVerificationAgentEnabled } from '../tools/AgentTool/built-in/verificationAgent.js'
 import {
   EXPLORE_AGENT,
   EXPLORE_AGENT_MIN_QUERIES,
@@ -18,7 +19,6 @@ import { SKILL_TOOL_NAME } from '../tools/SkillTool/constants.js'
 import { hasEmbeddedSearchTools } from '../utils/embeddedTools.js'
 import { isUndercover } from '../utils/undercover.js'
 import { getAntModelOverrideConfig } from '../utils/model/antModels.js'
-import { getFeatureValue_CACHED_MAY_BE_STALE } from 'src/services/analytics/growthbook.js'
 import type { Command } from '../types/command.js'
 import type {
   ConnectedMCPServer,
@@ -181,7 +181,7 @@ export function getSessionSpecificGuidanceSection(
       : null,
     hasAgentTool &&
     feature('VERIFICATION_AGENT') &&
-    getFeatureValue_CACHED_MAY_BE_STALE('tengu_hive_evidence', false)
+    isVerificationAgentEnabled()
       ? `For implementation work, use the ${AGENT_TOOL_NAME} tool with subagent_type="${VERIFICATION_AGENT_TYPE}" before reporting completion after non-trivial tasks. Non-trivial means: 3+ file edits, backend/API changes, or infrastructure changes. Also use it for smaller changes when the work is risky, cross-cutting, user-visible, or expensive to guess wrong. Pass the original user request, all files changed, the approach taken, and the plan file path if applicable. The verifier runs independently and returns PASS/FAIL/PARTIAL. Use the verifier's verdict rather than substituting your own confidence; you cannot self-assign PASS or PARTIAL. On FAIL: fix the issue and re-run verification until the verifier returns PASS or PARTIAL. On PASS: spot-check a few commands from the report and confirm the evidence matches. On PARTIAL: report what was verified, what could not be verified, and why.`
       : null,
   ].filter(item => item !== null)

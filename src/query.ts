@@ -226,6 +226,86 @@ const TRUNCATED_RESUME_PROMPT = 'Your response above was cut off mid-stream. Res
 // A subagent delivers only its final message, so it rewrites the whole answer.
 const TRUNCATED_REWRITE_PROMPT = 'Your response above was cut off mid-stream and only your next message is delivered. Write the complete response again from the start — no apology, no mention of the cut-off.'
 const INVALID_THINKING_SIGNATURE = /invalid `?signature`? in `?thinking`? block/i
+const EMPTY_TEXT_BLOCK_ERROR =
+  /text content blocks must (?:be non-empty|contain non-whitespace text)/i
+
+// Strip empty or whitespace-only text blocks from message history after a 400.
+function stripEmptyTextBlocks(messages: Message[]): Message[] {
+  const result: Message[] = []
+  for (const message of messages) {
+    if (message.type !== 'assistant' && message.type !== 'user') {
+      result.push(message)
+      continue
+    }
+    const content = message.message.content
+    if (typeof content === 'string') {
+      if (content.trim() === '' && messages.length > 1) {
+        continue
+      }
+      result.push(message)
+      continue
+    }
+    if (!Array.isArray(content)) {
+      result.push(message)
+      continue
+    }
+    let blockChanged = false
+    const filtered = content
+      .filter(
+        block =>
+          !(
+            block.type === 'text' &&
+            (typeof block.text !== 'string' || block.text.trim() === '')
+          ),
+      )
+      .map(block => {
+        if (block.type === 'tool_result' && Array.isArray(block.content)) {
+          const inner = block.content.filter(
+            sub =>
+              !(
+                sub.type === 'text' &&
+                (typeof sub.text !== 'string' || sub.text.trim() === '')
+              ),
+          )
+          if (inner.length !== block.content.length) {
+            blockChanged = true
+            return { ...block, content: inner }
+          }
+        }
+        return block
+      })
+    if (filtered.length === content.length && !blockChanged) {
+      result.push(message)
+      continue
+    }
+    if (filtered.length === 0) {
+      // Drop messages that contained only empty text blocks unless it is the sole message.
+      if (messages.length > 1) {
+        continue
+      }
+      result.push(message)
+      continue
+    }
+    if (message.type === 'assistant') {
+      result.push({
+        ...message,
+        message: {
+          ...message.message,
+          content: filtered as AssistantMessage['message']['content'],
+        },
+      })
+    } else {
+      result.push({
+        ...message,
+        message: {
+          ...message.message,
+          content: filtered as UserMessage['message']['content'],
+        },
+      })
+    }
+  }
+  return result
+}
 // Persist the rejected history boundary without stripping thinking from later turns.
 function applyRecordedSignatureStrips(messages: Message[]): Message[] {
   const rejected = new Set<string>()
@@ -452,6 +532,7 @@ async function* queryLoop(
   // of each iteration so reads stay bare-name (`messages`, `toolUseContext`).
   // Continue sites write `state = { ... }` instead of 9 separate assignments.
   let hasRetriedThinkingSignature = false
+  let hasRetriedEmptyText = false
   let state: State = {
     messages: applyRecordedSignatureStrips(params.messages),
     toolUseContext: params.toolUseContext,
@@ -1755,6 +1836,23 @@ async function* queryLoop(
           toolUseContext,
           autoCompactTracking: tracking,
           transition: { reason: 'thinking_signature_retry' },
+        })
+        continue
+      }
+
+      if (
+        lastMessage?.isApiErrorMessage &&
+        !hasRetriedEmptyText &&
+        EMPTY_TEXT_BLOCK_ERROR.test(JSON.stringify(lastMessage.message.content))
+      ) {
+        hasRetriedEmptyText = true
+        yield { type: 'tombstone' as const, message: lastMessage }
+        const cleanedMessages = stripEmptyTextBlocks(messagesForQuery)
+        state = nextState(state, {
+          messages: cleanedMessages,
+          toolUseContext,
+          autoCompactTracking: tracking,
+          transition: { reason: 'empty_text_retry' },
         })
         continue
       }

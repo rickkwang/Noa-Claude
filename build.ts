@@ -131,6 +131,7 @@ const defaultFeatures = [
   'MONITOR_TOOL',
   'AGENT_TRIGGERS',
   'EXTRACT_MEMORIES',
+  'VERIFICATION_AGENT',
 ]
 const featureSet = new Set<string>(defaultFeatures)
 

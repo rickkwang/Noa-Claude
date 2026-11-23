@@ -1,7 +1,6 @@
 // @ts-nocheck
 import { feature } from 'bun:bundle'
 import { z } from 'zod/v4'
-import { getFeatureValue_CACHED_MAY_BE_STALE } from '../../services/analytics/growthbook.js'
 import { buildTool, type ToolDef } from '../../Tool.js'
 import { isAgentSwarmsEnabled } from '../../utils/agentSwarmsEnabled.js'
 import {
@@ -28,6 +27,7 @@ import {
 } from '../../utils/teammate.js'
 import { writeToMailbox } from '../../utils/teammateMailbox.js'
 import { VERIFICATION_AGENT_TYPE } from '../AgentTool/constants.js'
+import { isVerificationAgentEnabled } from '../AgentTool/built-in/verificationAgent.js'
 import { TASK_UPDATE_TOOL_NAME } from './constants.js'
 import { DESCRIPTION, PROMPT } from './prompt.js'
 
@@ -337,7 +337,7 @@ export const TaskUpdateTool = buildTool({
     let verificationNudgeNeeded = false
     if (
       feature('VERIFICATION_AGENT') &&
-      getFeatureValue_CACHED_MAY_BE_STALE('tengu_hive_evidence', false) &&
+      isVerificationAgentEnabled() &&
       !context.agentId &&
       updates.status === 'completed'
     ) {
