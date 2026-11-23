@@ -61,6 +61,7 @@ import { AskUserQuestionTool } from './tools/AskUserQuestionTool/AskUserQuestion
 import { LSPTool } from './tools/LSPTool/LSPTool.js'
 import { ListMcpResourcesTool } from './tools/ListMcpResourcesTool/ListMcpResourcesTool.js'
 import { ListAgentsTool } from './tools/ListAgentsTool/ListAgentsTool.js'
+import { ReportFindingsTool } from './tools/ReportFindingsTool/ReportFindingsTool.js'
 import { ReadMcpResourceTool } from './tools/ReadMcpResourceTool/ReadMcpResourceTool.js'
 import { ReadMcpResourceDirTool } from './tools/ReadMcpResourceDirTool/ReadMcpResourceDirTool.js'
 import { ToolSearchTool } from './tools/ToolSearchTool/ToolSearchTool.js'
@@ -182,6 +183,7 @@ export function getAllBaseTools(): Tools {
     ...(isWorktreeModeEnabled() ? [EnterWorktreeTool, ExitWorktreeTool] : []),
     getSendMessageTool(),
     ListAgentsTool,
+    ReportFindingsTool,
     ...(isAgentSwarmsEnabled()
       ? [getTeamCreateTool(), getTeamDeleteTool()]
       : []),

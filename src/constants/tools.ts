@@ -19,6 +19,7 @@ import { NOTEBOOK_EDIT_TOOL_NAME } from '../tools/NotebookEditTool/constants.js'
 import { SKILL_TOOL_NAME } from '../tools/SkillTool/constants.js'
 import { SEND_MESSAGE_TOOL_NAME } from '../tools/SendMessageTool/constants.js'
 import { LIST_AGENTS_TOOL_NAME } from '../tools/ListAgentsTool/ListAgentsTool.js'
+import { REPORT_FINDINGS_TOOL_NAME } from '../tools/ReportFindingsTool/ReportFindingsTool.js'
 import { TASK_CREATE_TOOL_NAME } from '../tools/TaskCreateTool/constants.js'
 import { TASK_GET_TOOL_NAME } from '../tools/TaskGetTool/constants.js'
 import { TASK_LIST_TOOL_NAME } from '../tools/TaskListTool/constants.js'
@@ -65,6 +66,7 @@ export const ASYNC_AGENT_ALLOWED_TOOLS = new Set([
   TOOL_SEARCH_TOOL_NAME,
   SEND_MESSAGE_TOOL_NAME,
   LIST_AGENTS_TOOL_NAME,
+  REPORT_FINDINGS_TOOL_NAME,
   ENTER_WORKTREE_TOOL_NAME,
   EXIT_WORKTREE_TOOL_NAME,
 ])

@@ -2,6 +2,7 @@
 import { registerCodeReviewSkill } from './codeReview.js'
 import { registerBatchSkill } from './batch.js'
 import { registerDebugSkill } from './debug.js'
+import { registerFewerPermissionPromptsSkill } from './fewerPermissionPrompts.js'
 import { registerKeybindingsSkill } from './keybindings.js'
 import { registerRememberSkill } from './remember.js'
 import { registerRunSkill } from './run.js'
@@ -25,6 +26,7 @@ export function initBundledSkills(): void {
   registerKeybindingsSkill()
   registerVerifySkill()
   registerDebugSkill()
+  registerFewerPermissionPromptsSkill()
   registerSkillifySkill()
   registerRememberSkill()
   registerRunSkill()
