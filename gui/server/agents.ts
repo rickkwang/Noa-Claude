@@ -512,6 +512,8 @@ interface SpawnOptions {
 // and the events of the tasks it watches.
 export const runHooks: {
   coordinator?: (cwd: string, sessionId: string) => { appendSystemPrompt: string; server: string } | undefined
+  // Session tools for a task that is not a coordinator, such as a chat that sets up a scheduled task.
+  tools?: (sessionId: string) => { appendSystemPrompt: string; server: string; mcp: (message: { id?: string | number; method: string; params?: any }) => Promise<unknown> } | undefined
   mcp?: (cwd: string, sessionId: string, message: { id?: string | number; method: string; params?: any }) => Promise<unknown>
   settled?: (run: RunInfo) => void
   waiting?: (run: RunInfo) => void
@@ -538,7 +540,8 @@ function spawnRun(opts: SpawnOptions, root: string, previous?: AgentRun): AgentR
   if (opts.resume) args.push("--resume", opts.resume)
   else if (opts.sessionId) args.push("--session-id", opts.sessionId)
   const coordinator = runHooks.coordinator?.(opts.cwd, opts.resume ?? opts.sessionId ?? "")
-  if (coordinator) args.push("--allowedTools", `mcp__${coordinator.server}`)
+  const tools = coordinator ?? runHooks.tools?.(opts.resume ?? opts.sessionId ?? "")
+  if (tools) args.push("--allowedTools", `mcp__${tools.server}`)
   // A respawn keeps the mode the session was in; only start-safe modes are restored, never bypass.
   const lastMode = previous?.mode ?? runModes.get(opts.resume ?? opts.runtimeId)
   const startMode = lastMode && SPAWN_PERMISSION_MODES.has(lastMode) ? lastMode : opts.mode
@@ -590,9 +593,9 @@ function spawnRun(opts: SpawnOptions, root: string, previous?: AgentRun): AgentR
     titlePending: !opts.resume && !coordinator,
   }
   // The coordinator's prompt and session tools ride on the initialize request; clients that attach share its answer.
-  if (coordinator || opts.headless) {
+  if (tools || opts.headless) {
     run.initializationRequest = crypto.randomUUID()
-    write(run, { type: "control_request", request_id: run.initializationRequest, request: { subtype: "initialize", ...(coordinator && { sdkMcpServers: [coordinator.server], appendSystemPrompt: coordinator.appendSystemPrompt }) } })
+    write(run, { type: "control_request", request_id: run.initializationRequest, request: { subtype: "initialize", ...(tools && { sdkMcpServers: [tools.server], appendSystemPrompt: tools.appendSystemPrompt }) } })
   }
   if (opts.resume) {
     const current = run
@@ -708,6 +711,8 @@ function spawnRun(opts: SpawnOptions, root: string, previous?: AgentRun): AgentR
     if (message.type === "control_request" && message.request.subtype === "mcp_message") {
       const request = message.request as unknown as { server_name: string; message: { id?: string | number; method: string; params?: any } }
       const reply = (mcp_response: unknown) => write(current, { type: "control_response", response: { subtype: "success", request_id: message.request_id, response: { mcp_response } } })
+      const tools = current.sessionId ? runHooks.tools?.(current.sessionId) : undefined
+      if (tools && request.server_name === tools.server) return void tools.mcp(request.message).then(reply, (error) => reply({ jsonrpc: "2.0", id: request.message.id ?? 0, error: { code: -32603, message: String(error) } }))
       if (!runHooks.mcp || !current.sessionId) return void reply({ jsonrpc: "2.0", id: request.message.id ?? 0, error: { code: -32601, message: "No session tools for this task" } })
       runHooks.mcp(current.cwd, current.sessionId, request.message).then(reply, (error) => reply({ jsonrpc: "2.0", id: request.message.id ?? 0, error: { code: -32603, message: String(error) } }))
       return

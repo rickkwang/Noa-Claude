@@ -271,9 +271,10 @@ export async function scheduleAction(request: ScheduleRequest): Promise<Schedule
   return body as ScheduledTask[]
 }
 
-// Starts a run now; resolves to the new task's folder and id.
-export async function runScheduledTask(id: string): Promise<{ cwd: string; sessionId: string }> {
-  const response = await fetch("/api/schedule", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "run", id }) })
+// Starts a task: a run of a scheduled task now, or a chat in which Claude sets one up from the request.
+// Resolves to the new task's folder and id.
+export async function startScheduleTask(request: { action: "run"; id: string } | { action: "compose"; cwd: string; request: string }): Promise<{ cwd: string; sessionId: string }> {
+  const response = await fetch("/api/schedule", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(request) })
   const body = await response.json()
   if (!response.ok) throw new Error(body.error ?? `HTTP ${response.status}`)
   return body
