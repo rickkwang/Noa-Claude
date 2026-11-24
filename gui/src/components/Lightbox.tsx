@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode, type Ref } from "react"
 import { createPortal } from "react-dom"
-import { ChevronLeft, ChevronRight, Download, RotateCcw, X, ZoomIn, ZoomOut } from "../lib/icons"
+import { ChevronLeft, ChevronRight, Download, X } from "../lib/icons"
 
 export interface LightboxItem {
   src: string
@@ -162,14 +162,12 @@ export function Lightbox({ items, index, onIndex, onClose }: {
       aria-modal="true"
       aria-label={item?.name ?? "Image preview"}
     >
-      <div className="flex h-12 shrink-0 items-center gap-1 px-3">
+      {/* Same metrics as the main titlebar: 44px tall, clear of the traffic lights, 24px buttons 15px from the right edge. */}
+      <div className="flex h-11 shrink-0 items-center gap-0.5 pl-[max(0.75rem,var(--noa-titlebar-inset))] pr-[15px] [&>*]:translate-y-[var(--noa-titlebar-lift,0px)]">
         <span className="min-w-0 flex-1 truncate text-caption text-white/70">{item?.name ?? item?.alt ?? "Image"}</span>
         {items.length > 1 && <span className="px-2 font-mono text-caption tabular-nums text-white/50">{index + 1} / {items.length}</span>}
-        <LightboxButton label="Zoom out" onClick={() => applyZoom(0.8)}><ZoomOut size={16} /></LightboxButton>
-        <LightboxButton label="Zoom in" onClick={() => applyZoom(1.25)}><ZoomIn size={16} /></LightboxButton>
-        <LightboxButton label="Reset zoom" onClick={() => setTransform(RESET)}><RotateCcw size={15} /></LightboxButton>
         {item && /^(?:data:image\/|blob:|\/api\/)/i.test(item.src) && <LightboxButton label="Save copy" onClick={() => { const link = document.createElement("a"); link.href = item.src; link.download = item.name ?? "image"; link.click() }}><Download size={16} /></LightboxButton>}
-        <LightboxButton label="Close" onClick={onClose} ref={closeRef}><X size={17} /></LightboxButton>
+        <LightboxButton label="Close" onClick={onClose} ref={closeRef}><X size={16} /></LightboxButton>
       </div>
 
       <div
@@ -226,7 +224,7 @@ function LightboxButton({ label, onClick, children, ref }: {
       aria-label={label}
       title={label}
       onClick={onClick}
-      className="flex size-8 items-center justify-center rounded-md text-white/70 transition-colors hover:bg-white/10 hover:text-white noa-press"
+      className="flex size-6 items-center justify-center rounded-md text-white/70 transition-colors hover:bg-white/10 hover:text-white noa-press"
     >
       {children}
     </button>

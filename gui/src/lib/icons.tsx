@@ -151,5 +151,3 @@ export const Trash2 = glyph("trash");
 export const Link = glyph("link");
 export const Users = glyph("person-2");
 export const X = glyph("xmark-md");
-export const ZoomIn = glyph("plus-md");
-export const ZoomOut = glyph("minus-md");
