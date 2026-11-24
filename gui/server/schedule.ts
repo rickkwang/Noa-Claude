@@ -90,7 +90,8 @@ function nextRun(cron: string, from: number): number | undefined {
 function view(task: ScheduleTask): ScheduleView {
   const cron = cronOf(task.frequency)
   const summary = task.frequency.kind === "manual" ? "Manual only" : cron === "* * * * *" ? "Every minute" : cronToHuman(cron)
-  return { ...task, cron, summary, nextRunAt: task.enabled && cron ? Math.max(Date.now(), nextRun(cron, task.lastFiredAt ?? task.createdAt) ?? 0) || undefined : undefined }
+  const next = task.enabled && cron ? nextRun(cron, task.lastFiredAt ?? task.createdAt) : undefined
+  return { ...task, cron, summary, nextRunAt: next !== undefined ? Math.max(Date.now(), next) : undefined }
 }
 
 export function listSchedules(): ScheduleView[] {
@@ -99,6 +100,19 @@ export function listSchedules(): ScheduleView[] {
 
 let cliRoot = ""
 let allowedFolder: (cwd: string) => boolean = () => false
+
+// The CLI creates the transcript file asynchronously after sendToSession()
+// spawns it; retry briefly until the file exists so the task title is applied.
+function renameSessionWhenReady(cwd: string, sessionId: string, name: string, attemptsLeft = 60): void {
+  try {
+    renameSession(cwd, sessionId, name)
+    return
+  } catch (error) {
+    if (attemptsLeft <= 1 || (error as Error).message !== "Task not found") return
+  }
+  const timer = setTimeout(() => renameSessionWhenReady(cwd, sessionId, name, attemptsLeft - 1), 250)
+  timer.unref?.()
+}
 
 async function fire(id: string, manual: boolean): Promise<{ sessionId: string; cwd: string }> {
   const task = readStore().find((t) => t.id === id)
@@ -115,7 +129,7 @@ async function fire(id: string, manual: boolean): Promise<{ sessionId: string; c
   save({ lastRunAt: Date.now(), ...(manual ? {} : { lastFiredAt: Date.now() }), lastSessionId: sessionId, lastError: undefined })
   try {
     await sendToSession({ cwd: task.cwd, sessionId, isNew: true, mode: task.mode }, task.prompt, cliRoot)
-    try { renameSession(task.cwd, sessionId, task.name) } catch {}
+    renameSessionWhenReady(task.cwd, sessionId, task.name)
   } catch (error) {
     save({ lastError: (error as Error).message })
     throw error
