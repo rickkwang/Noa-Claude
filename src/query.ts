@@ -287,6 +287,9 @@ function stripEmptyTextBlocks(messages: Message[]): Message[] {
       continue
     }
     if (message.type === 'assistant') {
+      // Thinking stays: a signature binds only the prefix before its block, and
+      // any later block whose prefix this edit changes is dropped by the API
+      // (block_binding drop_block) or recovered by the signature retry.
       result.push({
         ...message,
         message: {
@@ -305,6 +308,25 @@ function stripEmptyTextBlocks(messages: Message[]): Message[] {
     }
   }
   return result
+}
+// Replay persisted empty-text cleanup across resume boundaries.
+function applyRecordedEmptyTextStrips(messages: Message[]): Message[] {
+  let boundaryIndex = -1
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i]!
+    if (
+      message.type === 'system' &&
+      message.subtype === 'empty_text_recovery'
+    ) {
+      boundaryIndex = i
+      break
+    }
+  }
+  if (boundaryIndex <= 0) return messages
+  return [
+    ...stripEmptyTextBlocks(messages.slice(0, boundaryIndex)),
+    ...messages.slice(boundaryIndex),
+  ]
 }
 // Persist the rejected history boundary without stripping thinking from later turns.
 function applyRecordedSignatureStrips(messages: Message[]): Message[] {
@@ -534,7 +556,9 @@ async function* queryLoop(
   let hasRetriedThinkingSignature = false
   let hasRetriedEmptyText = false
   let state: State = {
-    messages: applyRecordedSignatureStrips(params.messages),
+    messages: applyRecordedEmptyTextStrips(
+      applyRecordedSignatureStrips(params.messages),
+    ),
     toolUseContext: params.toolUseContext,
     maxOutputTokensOverride: params.maxOutputTokensOverride,
     autoCompactTracking: undefined,
@@ -1095,8 +1119,8 @@ async function* queryLoop(
     try {
       while (attemptWithFallback) {
         attemptWithFallback = false
+        let streamingFallbackOccured = false
         try {
-          let streamingFallbackOccured = false
           queryCheckpoint('query_api_streaming_start')
           toolUseContext = toolUseContext.refreshRuntimeContext?.(toolUseContext) ?? toolUseContext
           // Direct agent/SDK callers may skip input attachments. Persist announcements
@@ -1360,6 +1384,22 @@ async function* queryLoop(
           }
           queryCheckpoint('query_api_streaming_end')
         } catch (innerError) {
+          if (streamingFallbackOccured && assistantMessages.length > 0) {
+            streamingFallbackOccured = false
+            for (const msg of assistantMessages) {
+              yield { type: 'tombstone' as const, message: msg }
+            }
+            logEvent('tengu_orphaned_messages_tombstoned', {
+              orphanedMessageCount: assistantMessages.length,
+              queryChainId: queryChainIdForAnalytics,
+              queryDepth: queryTracking.depth,
+            })
+            assistantMessages.length = 0
+            toolResults.length = 0
+            toolUseBlocks.length = 0
+            needsFollowUp = false
+            lastAssistantWithheld = false
+          }
           if (innerError instanceof FallbackTriggeredError && remainingFallbackModel) {
             // Fallback was triggered - switch model and retry
             currentModel = remainingFallbackModel
@@ -1870,16 +1910,29 @@ async function* queryLoop(
         !hasRetriedEmptyText &&
         EMPTY_TEXT_BLOCK_ERROR.test(JSON.stringify(lastMessage.message.content))
       ) {
-        hasRetriedEmptyText = true
-        yield { type: 'tombstone' as const, message: lastMessage }
         const cleanedMessages = stripEmptyTextBlocks(messagesForQuery)
-        state = nextState(state, {
-          messages: cleanedMessages,
-          toolUseContext,
-          autoCompactTracking: tracking,
-          transition: { reason: 'empty_text_retry' },
-        })
-        continue
+        const didChange =
+          cleanedMessages.length !== messagesForQuery.length ||
+          cleanedMessages.some((msg, idx) => msg !== messagesForQuery[idx])
+        if (didChange) {
+          hasRetriedEmptyText = true
+          yield { type: 'tombstone' as const, message: lastMessage }
+          const recovery = {
+            ...createSystemMessage(
+              'Recovered from an empty text block in earlier history.',
+              'warning',
+            ),
+            subtype: 'empty_text_recovery',
+          }
+          yield recovery
+          state = nextState(state, {
+            messages: [...cleanedMessages, recovery],
+            toolUseContext,
+            autoCompactTracking: tracking,
+            transition: { reason: 'empty_text_retry' },
+          })
+          continue
+        }
       }
 
       // Skip stop hooks when the last message is an API error (rate limit,

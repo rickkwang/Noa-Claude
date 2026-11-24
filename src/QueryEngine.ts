@@ -696,6 +696,14 @@ export class QueryEngine {
 
     const runQuery = this.config.queryRunner ?? query
 
+    let pendingTranscriptRecord: Promise<unknown> = Promise.resolve()
+    if (persistSession) {
+      processUserInputContext.enqueueTranscriptForStopHook = async () => {
+        await pendingTranscriptRecord
+        await recordTranscript(messages)
+      }
+    }
+
     const queryIterator = runQuery({
       messages,
       systemPrompt,
@@ -724,7 +732,8 @@ export class QueryEngine {
         message.type === 'user' ||
         (message.type === 'system' &&
           (message.subtype === 'compact_boundary' ||
-            message.subtype === 'thinking_signature_recovery'))
+            message.subtype === 'thinking_signature_recovery' ||
+            message.subtype === 'empty_text_recovery'))
       ) {
         // Before writing a compact boundary, flush any in-memory-only
         // messages up through the preservedSegment tail. Attachments and
@@ -761,7 +770,7 @@ export class QueryEngine {
           // useLogMessages.ts fire-and-forgets. enqueueWrite is
           // order-preserving so fire-and-forget here is safe.
           if (message.type === 'assistant') {
-            void recordTranscript(messages).catch(logError)
+            pendingTranscriptRecord = recordTranscript(messages).catch(logError)
           } else {
             await recordTranscript(messages)
           }
