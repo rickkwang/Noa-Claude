@@ -14,6 +14,9 @@ beforeEach(() => {
   delete process.env.CLAUDE_CODE_PROMPT_CACHE_1H
   delete process.env.ENABLE_PROMPT_CACHING_1H_BEDROCK
   delete process.env.DISABLE_PROMPT_CACHING
+  delete process.env.DISABLE_PROMPT_CACHING_SONNET
+  delete process.env.DISABLE_PROMPT_CACHING_HAIKU
+  delete process.env.DISABLE_PROMPT_CACHING_OPUS
   delete process.env.ANTHROPIC_BASE_URL
   delete process.env.CLAUDE_CODE_USE_BEDROCK
   delete process.env.CLAUDE_CODE_USE_VERTEX
