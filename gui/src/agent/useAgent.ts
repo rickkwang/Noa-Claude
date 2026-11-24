@@ -14,7 +14,7 @@ import type {
   PermissionMode,
   SlashCommand,
 } from "./protocol"
-import { initialState, reducer, type Permission, type AgentState } from "./reducer"
+import { initialState, reducer, type Permission, type AgentState, type McpAction } from "./reducer"
 
 interface AgentOptions {
   cwd?: string
@@ -85,6 +85,16 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
   const pendingRef = useRef(new Map<string, ResponseKind>())
   const requestsRef = useRef(new Map<string, { resolve: (value: any) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }>())
   const mcpTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const mcpActionRef = useRef<McpAction | undefined>(undefined)
+  // Records how the MCP action ended; a success note fades after a few seconds, an error stays until the next action.
+  const finishMcpAction = useCallback((error?: string) => {
+    const started = mcpActionRef.current
+    mcpActionRef.current = undefined
+    if (!started) return dispatch({ type: "mcp-pending", pending: false })
+    const action: McpAction = { ...started, done: true, error }
+    dispatch({ type: "mcp-result", action })
+    if (!error) setTimeout(() => dispatch({ type: "mcp-result-clear", action }), 4000)
+  }, [])
   const contextTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const contextRefreshAfterRef = useRef<"summary" | "full" | undefined>(undefined)
   const authCompletedRef = useRef(false)
@@ -116,8 +126,7 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
         if (sent) mcpTimerRef.current = setTimeout(() => {
           pendingRef.current.delete(requestId)
           mcpTimerRef.current = undefined
-          dispatch({ type: "mcp-pending", pending: false })
-          dispatch({ type: "error", text: "MCP request timed out. Refresh server status before trying again." })
+          finishMcpAction("Timed out. Refresh server status before trying again.")
         }, 60000)
         else dispatch({ type: "error", text: "Noa is disconnected." })
       }
@@ -132,7 +141,7 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
       }
       return sent
     },
-    [write],
+    [write, finishMcpAction],
   )
 
   // A timeout or an aborted signal also tells the CLI to cancel, so it stops working on the request.
@@ -287,7 +296,7 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
               if (kind === "mcp_action") {
                 clearTimeout(mcpTimerRef.current)
                 mcpTimerRef.current = undefined
-                dispatch({ type: "mcp-pending", pending: false })
+                finishMcpAction(message.response.subtype === "error" ? message.response.error ?? "Agent rejected the request" : undefined)
                 control({ subtype: "mcp_status" }, "mcp_status")
               }
               if (message.response.subtype === "error") {
@@ -295,7 +304,8 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
                 if (kind === "context_usage") dispatch({ type: "context-error", error })
                 else if (kind === "auth_urls" || kind === "auth_complete") dispatch({ type: "auth-error", error })
                 else if (kind === "provider") dispatch({ type: "provider-error", error })
-                else dispatch({ type: "error", text: error })
+                // An MCP action's error shows on the server's row instead.
+                else if (kind !== "mcp_action") dispatch({ type: "error", text: error })
                 if (kind === "initialize" || kind === "startup_settings") socket.close()
               } else routeResponse(kind, message.response.response)
               if (kind === "context_usage" && contextRefreshAfterRef.current) {
@@ -591,7 +601,11 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
   const refreshSettings = useCallback(() => control({ subtype: "get_settings" }, "settings"), [control])
   const changeMcp = useCallback((serverName: string, enabled?: boolean) => {
     const sent = control(enabled === undefined ? { subtype: "mcp_reconnect", serverName } : { subtype: "mcp_toggle", serverName, enabled }, "mcp_action")
-    if (sent) dispatch({ type: "mcp-pending", pending: true })
+    if (sent) {
+      const action: McpAction = { server: serverName, kind: enabled === undefined ? "reconnect" : enabled ? "enable" : "disable" }
+      mcpActionRef.current = action
+      dispatch({ type: "mcp-pending", pending: true, action })
+    }
   }, [control])
   const refreshMcp = useCallback(() => control({ subtype: "mcp_status" }, "mcp_status"), [control])
   const refreshContext = useCallback(() => control({ subtype: "get_context_usage", detail: "full" }, "context_usage"), [control])

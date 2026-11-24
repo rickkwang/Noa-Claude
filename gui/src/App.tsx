@@ -1406,6 +1406,7 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
               <CustomizePage
                 skills={state.commands.filter((command) => command.type === "prompt")}
                 mcpServers={state.mcpServers}
+                mcpAction={state.mcpAction}
                 mcpLocked={state.connection !== "ready" || state.busy || !!state.mcpPending}
                 onChangeMcp={changeMcp}
                 onReloadCommands={() => reloadCommands(true)}

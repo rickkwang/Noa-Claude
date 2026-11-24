@@ -125,6 +125,8 @@ export interface AgentState {
   mcpServers?: McpServerStatus[]
   cliSettings?: CliSettings
   mcpPending?: boolean
+  // The last reconnect, enable or disable, so the server row it came from can show its progress and outcome.
+  mcpAction?: McpAction
   contextLoading?: boolean
   contextError?: string
   contextUpdatedAt?: number
@@ -150,8 +152,12 @@ export interface AgentState {
   notice?: string
 }
 
+export interface McpAction { server: string; kind: "reconnect" | "enable" | "disable"; done?: boolean; error?: string }
+
 type Action =
-  | { type: "mcp-pending"; pending: boolean }
+  | { type: "mcp-pending"; pending: boolean; action?: McpAction }
+  | { type: "mcp-result"; action: McpAction }
+  | { type: "mcp-result-clear"; action: McpAction }
   | { type: "context-request" }
   | { type: "context-error"; error: string }
   | { type: "history"; items: HistoryItem[]; before?: number; prepend?: boolean }
@@ -376,7 +382,11 @@ export function reducer(state: AgentState, action: Action): AgentState {
     case "permission-mode-set":
       return { ...state, permissionMode: action.mode }
     case "mcp-pending":
-      return { ...state, mcpPending: action.pending, error: action.pending ? undefined : state.error }
+      return { ...state, mcpPending: action.pending, mcpAction: action.pending ? action.action : state.mcpAction?.done ? state.mcpAction : undefined, error: action.pending ? undefined : state.error }
+    case "mcp-result":
+      return { ...state, mcpPending: false, mcpAction: action.action }
+    case "mcp-result-clear":
+      return state.mcpAction === action.action ? { ...state, mcpAction: undefined } : state
     case "control":
       if (action.payload.kind === "settings") return { ...state, cliSettings: action.payload.settings }
       if (action.payload.kind === "mcp_status") return { ...state, mcpServers: action.payload.servers }

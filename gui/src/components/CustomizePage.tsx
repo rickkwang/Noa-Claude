@@ -6,7 +6,7 @@ import { ArrowUpDown, Check, ChevronDown, ChevronLeft, Download, Plug, Plus, Sea
 import { useConfirm } from "./ConfirmDialog"
 import { Markdown } from "./Markdown"
 import { Row, Section, Toggle } from "./settings/controls"
-import { sourceLabels } from "./settings/ConfigurationPages"
+import { mcpActionStatus, sourceLabels } from "./settings/ConfigurationPages"
 
 type PluginsTab = "plugins" | "skills" | "connectors" | "marketplace"
 type SkillCommand = AgentState["commands"][number]
@@ -39,7 +39,7 @@ function skillBody(markdown: string): string {
   return markdown.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, "").trim()
 }
 
-export function CustomizePage({ skills: promptCommands, mcpServers, mcpLocked, onChangeMcp, onReloadCommands, onOpenMcp, onTrySkill }: { skills: SkillCommand[]; mcpServers?: AgentState["mcpServers"]; mcpLocked: boolean; onChangeMcp: (name: string, enabled?: boolean) => void; onReloadCommands: () => void; onOpenMcp: () => void; onTrySkill: (name: string) => void }) {
+export function CustomizePage({ skills: promptCommands, mcpServers, mcpAction, mcpLocked, onChangeMcp, onReloadCommands, onOpenMcp, onTrySkill }: { skills: SkillCommand[]; mcpServers?: AgentState["mcpServers"]; mcpAction?: AgentState["mcpAction"]; mcpLocked: boolean; onChangeMcp: (name: string, enabled?: boolean) => void; onReloadCommands: () => void; onOpenMcp: () => void; onTrySkill: (name: string) => void }) {
   const { confirm, dialog } = useConfirm()
   const [catalog, setCatalog] = useState<PluginCatalog>()
   const [loadError, setLoadError] = useState<string>()
@@ -376,17 +376,21 @@ export function CustomizePage({ skills: promptCommands, mcpServers, mcpLocked, o
   } else if (tab === "connectors") {
     const list = order((mcpServers ?? []).filter((server) => match(server.name)), (server) => server.name)
     const statusLabel: Record<string, string> = { connected: "Connected", failed: "Failed to connect", "needs-auth": "Needs authentication", pending: "Connecting…", disabled: "Disabled" }
-    body = list.length ? grid(list.map((server) => (
-      <div key={server.name} data-connector={server.name} className={`flex items-start gap-3 p-3.5 ${cardClass}`}>
-        <span className={tileClass}><Plug size={18} /></span>
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-chat-sm font-medium leading-[18px] text-[var(--text-primary)]">{server.name}</span>
-          <span className="mt-0.5 block truncate text-caption leading-[17px] text-[var(--sidebar-text-muted)]">{statusLabel[server.status] ?? server.status}</span>
-        </span>
-        {server.status !== "disabled" && server.status !== "pending" && <button type="button" className={outlineButton} disabled={mcpLocked} onClick={() => onChangeMcp(server.name)}>Reconnect</button>}
-        <Toggle checked={server.status !== "disabled"} label={server.status === "disabled" ? "Enable connector" : "Disable connector"} onChange={(enabled) => onChangeMcp(server.name, enabled)} />
-      </div>
-    ))) : empty(mcpServers ? (needle ? "No matching connectors" : "No connectors") : "Loading connectors…", mcpServers && !needle ? "Use Add → MCP server to connect one." : undefined)
+    body = list.length ? grid(list.map((server) => {
+      const action = mcpActionStatus(mcpAction, server.name)
+      const status = action?.label ?? statusLabel[server.status] ?? server.status
+      return (
+        <div key={server.name} data-connector={server.name} className={`flex items-start gap-3 p-3.5 ${cardClass}`}>
+          <span className={tileClass}><Plug size={18} /></span>
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-chat-sm font-medium leading-[18px] text-[var(--text-primary)]">{server.name}</span>
+            <span role="status" title={action?.failed ? status : undefined} className={`mt-0.5 block truncate text-caption leading-[17px] ${action?.failed ? "text-[var(--text-danger)]" : "text-[var(--sidebar-text-muted)]"}`}>{status}</span>
+          </span>
+          {server.status !== "disabled" && server.status !== "pending" && <button type="button" className={outlineButton} disabled={mcpLocked} onClick={() => onChangeMcp(server.name)}>Reconnect</button>}
+          <Toggle checked={server.status !== "disabled"} label={server.status === "disabled" ? "Enable connector" : "Disable connector"} onChange={(enabled) => onChangeMcp(server.name, enabled)} />
+        </div>
+      )
+    })) : empty(mcpServers ? (needle ? "No matching connectors" : "No connectors") : "Loading connectors…", mcpServers && !needle ? "Use Add → MCP server to connect one." : undefined)
   } else {
     body = marketplaces.length ? flat(marketplaces.map((market) => {
       const local = LOCAL_SOURCES.has(market.source)

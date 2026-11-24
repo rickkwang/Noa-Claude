@@ -1,4 +1,4 @@
-import type { AgentState } from "../../agent/reducer"
+import type { AgentState, McpAction } from "../../agent/reducer"
 import type { PermissionMode } from "../../agent/protocol"
 import { ChevronDown } from "../../lib/icons"
 import { findModel } from "../../lib/models"
@@ -191,6 +191,15 @@ function mcpStatusDisplay(status: string): { label: string; dotClass: string } {
   }
 }
 
+// What a server's row says while its reconnect, enable or disable runs, and how it ended.
+export function mcpActionStatus(action: McpAction | undefined, server: string): { label: string; dotClass: string; failed?: boolean } | undefined {
+  if (action?.server !== server) return
+  if (!action.done) return { label: action.kind === "reconnect" ? "Reconnecting…" : action.kind === "enable" ? "Enabling…" : "Disabling…", dotClass: "bg-[var(--accent-color)]" }
+  if (action.error) return { label: `Couldn't ${action.kind}: ${action.error}`, dotClass: "bg-[var(--text-danger)]", failed: true }
+  // A finished enable or disable already shows as the server's new status.
+  return action.kind === "reconnect" ? { label: "Reconnected", dotClass: "bg-emerald-500" } : undefined
+}
+
 export function McpPage({ agent, onChangeMcp }: { agent: AgentState; onChangeMcp: (name: string, enabled?: boolean) => void }) {
   const locked = agent.connection !== "ready" || agent.busy
   return (
@@ -199,15 +208,16 @@ export function McpPage({ agent, onChangeMcp }: { agent: AgentState; onChangeMcp
         <Row label={agent.mcpServers ? "No MCP servers connected" : "Loading…"} />
       ) : (
         agent.mcpServers.map((server) => {
-          const status = mcpStatusDisplay(server.status)
+          const action = mcpActionStatus(agent.mcpAction, server.name)
+          const status = action ?? mcpStatusDisplay(server.status)
           return (
             <Row
               key={server.name}
               label={server.name}
               description={
-                <span className="inline-flex items-center gap-1.5">
+                <span role="status" className="inline-flex items-center gap-1.5">
                   <span aria-hidden="true" className={`size-1.5 shrink-0 rounded-full ${status.dotClass}`} />
-                  <span>{status.label}</span>
+                  <span className={action?.failed ? "break-words text-[var(--text-danger)]" : undefined}>{status.label}</span>
                 </span>
               }
             >
