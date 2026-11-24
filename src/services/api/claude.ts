@@ -1115,10 +1115,26 @@ async function* queryModel(
   tools: Tools,
   signal: AbortSignal,
   options: Options,
-): AsyncGenerator<
-  StreamEvent | AssistantMessage | SystemAPIErrorMessage,
-  void
-> {
+): AsyncGenerator<StreamEvent | AssistantMessage | SystemAPIErrorMessage, void> {
+  const retryStream = yield* queryModelAttempt(
+    messages, systemPrompt, thinkingConfig, tools, signal, options, false,
+  )
+  if (retryStream && !signal.aborted) {
+    yield* queryModelAttempt(
+      messages, systemPrompt, thinkingConfig, tools, signal, options, true,
+    )
+  }
+}
+
+async function* queryModelAttempt(
+  messages: Message[],
+  systemPrompt: SystemPrompt,
+  thinkingConfig: ThinkingConfig,
+  tools: Tools,
+  signal: AbortSignal,
+  options: Options,
+  retriedThinkingStall: boolean,
+): AsyncGenerator<StreamEvent | AssistantMessage | SystemAPIErrorMessage, void | true> {
   // Check cheap conditions first — the off-switch await blocks on GrowthBook
   // init (~10ms). For non-Opus models (haiku, sonnet) this skips the await
   // entirely. Subscribers don't hit this path at all.
@@ -2605,7 +2621,21 @@ async function* queryModel(
         })
       }
 
-      if (streamingError instanceof APIUserAbortError) {
+      if (
+        streamIdleAborted && !signal.aborted && stopReason === null &&
+        contentBlocks.length > 0 && contentBlocks.every(block =>
+          block.type === 'thinking' || block.type === 'redacted_thinking',
+        )
+      ) {
+        options.onStreamingFallback?.()
+        if (!retriedThinkingStall) {
+          logForDebugging('Stream stalled after thinking only; retrying streaming', { level: 'warn' })
+          return true
+        }
+        throw new Error('The response stalled before a response was produced. Try again.')
+      }
+
+      if (streamingError instanceof APIUserAbortError || signal.aborted) {
         // Check if the abort signal was triggered by the user (ESC key)
         // If the signal is aborted, it's a user-initiated abort
         // If not, it's likely a timeout from the SDK
@@ -2622,7 +2652,9 @@ async function* queryModel(
                 'unknown') as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
             })
           }
-          throw streamingError
+          throw streamingError instanceof APIUserAbortError
+            ? streamingError
+            : new APIUserAbortError()
         } else {
           // The SDK threw APIUserAbortError but our signal wasn't aborted
           // This means it's a timeout from the SDK's internal timeout
@@ -3003,7 +3035,7 @@ async function* queryModel(
           previousRequestId,
         })
 
-        if (error instanceof APIUserAbortError) {
+        if (error instanceof APIUserAbortError || signal.aborted) {
           releaseStreamResources()
           return
         }
@@ -3062,7 +3094,7 @@ async function* queryModel(
 
       // Don't yield an assistant error message for user aborts
       // The interruption message is handled in query.ts
-      if (error instanceof APIUserAbortError) {
+      if (error instanceof APIUserAbortError || signal.aborted) {
         releaseStreamResources()
         return
       }

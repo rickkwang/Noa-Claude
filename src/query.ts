@@ -1175,6 +1175,7 @@ async function* queryLoop(
             // We could.. but then we'd have to merge assistant messages
             // with different ids and double up on full the tool_results
             if (streamingFallbackOccured) {
+              streamingFallbackOccured = false
               // Yield tombstones for orphaned messages so they're removed from UI and transcript.
               // These partial messages (especially thinking blocks) have invalid signatures
               // that would cause "thinking blocks cannot be modified" API errors.
@@ -1331,6 +1332,30 @@ async function* queryLoop(
                   }
                 }
               }
+            }
+          }
+          if (streamingFallbackOccured) {
+            streamingFallbackOccured = false
+            for (const msg of assistantMessages) {
+              yield { type: 'tombstone' as const, message: msg }
+            }
+            logEvent('tengu_orphaned_messages_tombstoned', {
+              orphanedMessageCount: assistantMessages.length,
+              queryChainId: queryChainIdForAnalytics,
+              queryDepth: queryTracking.depth,
+            })
+            assistantMessages.length = 0
+            toolResults.length = 0
+            toolUseBlocks.length = 0
+            needsFollowUp = false
+            lastAssistantWithheld = false
+            if (streamingToolExecutor) {
+              streamingToolExecutor.discard()
+              streamingToolExecutor = new StreamingToolExecutor(
+                toolUseContext.options.tools,
+                canUseTool,
+                toolUseContext,
+              )
             }
           }
           queryCheckpoint('query_api_streaming_end')
