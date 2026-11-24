@@ -15,6 +15,10 @@ beforeEach(() => {
   delete process.env.ENABLE_PROMPT_CACHING_1H_BEDROCK
   delete process.env.DISABLE_PROMPT_CACHING
   delete process.env.ANTHROPIC_BASE_URL
+  delete process.env.CLAUDE_CODE_USE_BEDROCK
+  delete process.env.CLAUDE_CODE_USE_VERTEX
+  delete process.env.CLAUDE_CODE_USE_FOUNDRY
+  delete process.env.CLAUDE_CODE_USE_OPENAI
 })
 
 afterEach(() => {

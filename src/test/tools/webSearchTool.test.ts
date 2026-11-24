@@ -1,10 +1,25 @@
-import { afterEach, expect, test } from 'bun:test'
+import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { WebSearchTool } from '../../tools/WebSearchTool/WebSearchTool.js'
 
-const originalBaseUrl = process.env.ANTHROPIC_BASE_URL
+const envKeys = [
+  'ANTHROPIC_BASE_URL',
+  'CLAUDE_CODE_USE_BEDROCK',
+  'CLAUDE_CODE_USE_VERTEX',
+  'CLAUDE_CODE_USE_FOUNDRY',
+  'CLAUDE_CODE_USE_OPENAI',
+  'NOA_CLAUDE_WEB_SEARCH_BACKEND',
+] as const
+const original = Object.fromEntries(envKeys.map(key => [key, process.env[key]]))
+
+beforeEach(() => {
+  for (const key of envKeys) delete process.env[key]
+})
+
 afterEach(() => {
-  if (originalBaseUrl === undefined) delete process.env.ANTHROPIC_BASE_URL
-  else process.env.ANTHROPIC_BASE_URL = originalBaseUrl
+  for (const key of envKeys) {
+    if (original[key] === undefined) delete process.env[key]
+    else process.env[key] = original[key]
+  }
 })
 
 test('WebSearch on a custom Anthropic-compatible endpoint rejects the call with setup steps', async () => {

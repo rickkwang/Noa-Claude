@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import {
   modelOmitsThinkingByDefault,
   effortRejectedWithDisabledThinking,
@@ -25,6 +25,10 @@ const PROVIDER_ENV_KEYS = [
 const original = Object.fromEntries(
   PROVIDER_ENV_KEYS.map(k => [k, process.env[k]]),
 )
+
+beforeEach(() => {
+  for (const k of PROVIDER_ENV_KEYS) delete process.env[k]
+})
 
 afterEach(() => {
   for (const k of PROVIDER_ENV_KEYS) {

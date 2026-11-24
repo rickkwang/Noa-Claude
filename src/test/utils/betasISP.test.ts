@@ -29,6 +29,10 @@ const ENV_KEYS = [
 
 const original = Object.fromEntries(ENV_KEYS.map(k => [k, process.env[k]]))
 
+beforeEach(() => {
+  for (const k of ENV_KEYS) delete process.env[k]
+})
+
 afterEach(() => {
   for (const k of ENV_KEYS) {
     if (original[k] === undefined) delete process.env[k]

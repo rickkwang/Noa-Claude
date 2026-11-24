@@ -17,6 +17,9 @@ const ENV_KEYS = [
   'ANTHROPIC_BASE_URL',
   'ANTHROPIC_DEFAULT_SONNET_MODEL',
   'CLAUDE_CODE_USE_BEDROCK',
+  'CLAUDE_CODE_USE_VERTEX',
+  'CLAUDE_CODE_USE_FOUNDRY',
+  'CLAUDE_CODE_USE_OPENAI',
 ] as const
 
 const original = Object.fromEntries(ENV_KEYS.map(k => [k, process.env[k]]))
@@ -26,6 +29,10 @@ beforeEach(() => {
   // built-in default — an ambient value (e.g. from an active provider
   // profile) would replace the 'claude-sonnet-5-5' these tests assert.
   delete process.env.ANTHROPIC_DEFAULT_SONNET_MODEL
+  delete process.env.CLAUDE_CODE_USE_BEDROCK
+  delete process.env.CLAUDE_CODE_USE_VERTEX
+  delete process.env.CLAUDE_CODE_USE_FOUNDRY
+  delete process.env.CLAUDE_CODE_USE_OPENAI
 })
 
 afterEach(() => {

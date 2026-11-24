@@ -50,6 +50,10 @@ describe('third-party fallback suggestions match the upstream catalog', () => {
 
   test('no suggestion on first party', () => {
     delete process.env.CLAUDE_CODE_USE_BEDROCK
+    delete process.env.CLAUDE_CODE_USE_VERTEX
+    delete process.env.CLAUDE_CODE_USE_FOUNDRY
+    delete process.env.CLAUDE_CODE_USE_OPENAI
+    delete process.env.ANTHROPIC_BASE_URL
     expect(getModelFallbackSuggestionForTesting('claude-opus-5')).toBeUndefined()
   })
 })

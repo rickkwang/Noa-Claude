@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import {
   calculateUSDCost,
   COST_TIER_2_10,
@@ -12,15 +12,25 @@ import {
 } from '../../utils/modelCost.js'
 import { getSonnet46_1MOption } from '../../utils/model/modelOptions.js'
 
-const originalBaseUrl = process.env.ANTHROPIC_BASE_URL
-const originalDisableFastMode = process.env.CLAUDE_CODE_DISABLE_FAST_MODE
+const envKeys = [
+  'ANTHROPIC_BASE_URL',
+  'CLAUDE_CODE_DISABLE_FAST_MODE',
+  'CLAUDE_CODE_USE_BEDROCK',
+  'CLAUDE_CODE_USE_VERTEX',
+  'CLAUDE_CODE_USE_FOUNDRY',
+  'CLAUDE_CODE_USE_OPENAI',
+] as const
+const original = Object.fromEntries(envKeys.map(key => [key, process.env[key]]))
+
+beforeEach(() => {
+  for (const key of envKeys) delete process.env[key]
+})
 
 afterEach(() => {
-  if (originalBaseUrl === undefined) delete process.env.ANTHROPIC_BASE_URL
-  else process.env.ANTHROPIC_BASE_URL = originalBaseUrl
-  if (originalDisableFastMode === undefined)
-    delete process.env.CLAUDE_CODE_DISABLE_FAST_MODE
-  else process.env.CLAUDE_CODE_DISABLE_FAST_MODE = originalDisableFastMode
+  for (const key of envKeys) {
+    if (original[key] === undefined) delete process.env[key]
+    else process.env[key] = original[key]
+  }
 })
 
 describe('Opus 5 pricing', () => {
