@@ -83,7 +83,16 @@ for (const [tier, model] of [
   // Every other tool description, so an unregistered one cannot drift unseen.
   // Noa's own tools are skipped: SendMessage (continues subagents without
   // agent teams), EnterWorktree (`path`) and ExitWorktree have no upstream text.
-  const skip = new Set(['Read', 'Bash', 'Agent', 'SendMessage', 'ListAgents', 'EnterWorktree', 'ExitWorktree'])
+  const skip = new Set([
+    'Read',
+    'Bash',
+    'Agent',
+    'SendMessage',
+    'ListAgents',
+    'EnterWorktree',
+    'ExitWorktree',
+    'ReportFindings',
+  ])
   for (const tool of tools) {
     if (skip.has(tool.name)) continue
     const key = `Tool ${tool.name} ${tier}`
