@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { type ChildProcess, execFile } from 'child_process'
+import { type ChildProcess, execFile, execFileSync } from 'child_process'
 import { stat } from 'fs/promises'
 import type { Readable } from 'stream'
 import treeKill from 'tree-kill'
@@ -68,6 +68,8 @@ const KILL_BACKSTOP_TIMEOUT_MS = 1500
 const liveShellCommands = new Set<ShellCommandImpl>()
 const pendingKillBackstops = new Set<Promise<void>>()
 const dyingProcesses = new Map<number, ChildProcess>()
+const pendingGroupEscalations = new Set<number>()
+const pendingDescendantEscalations = new Map<number, string>()
 let exitSweepInstalled = false
 
 function killProcessGroupSync(pid: number, onlyGroup = false): void {
@@ -87,8 +89,18 @@ function killProcessGroupSync(pid: number, onlyGroup = false): void {
 }
 
 function killChildProcessGroupSync(pid: number, child: ChildProcess): void {
-  if (process.platform === 'win32' || pid <= 1) return
+  if (pid <= 1) return
   const reaped = child.exitCode !== null || child.signalCode !== null
+  if (process.platform === 'win32') {
+    if (!reaped) {
+      try {
+        child.kill('SIGKILL')
+      } catch {
+        // Process already exited or cannot be signalled
+      }
+    }
+    return
+  }
   if (!reaped) {
     killProcessGroupSync(pid)
     return
@@ -103,7 +115,61 @@ function killChildProcessGroupSync(pid: number, child: ChildProcess): void {
   }
 }
 
+function sweepTrackedDescendantsSync(
+  tracked: ReadonlyMap<number, string>,
+): void {
+  if (process.platform === 'win32' || tracked.size === 0) return
+  const alivePids: number[] = []
+  for (const pid of tracked.keys()) {
+    if (pid <= 1) continue
+    try {
+      process.kill(pid, 0)
+      alivePids.push(pid)
+    } catch {
+      // Already exited
+    }
+  }
+  if (alivePids.length === 0) return
+  let table: ProcessTable
+  try {
+    const stdout = execFileSync('ps', PS_ARGS, PS_OPTIONS)
+    table = parseProcessTable(stdout)
+  } catch {
+    return
+  }
+  for (const pid of alivePids) {
+    if (table.get(pid)?.start !== tracked.get(pid)) continue
+    try {
+      process.kill(pid, 'SIGKILL')
+    } catch {
+      // Already exited
+    }
+  }
+}
+
 function sweepLiveShellCommandsOnExit(): void {
+  if (process.platform === 'win32') {
+    for (const [, child] of dyingProcesses) {
+      if (child.exitCode === null && child.signalCode === null) {
+        try {
+          child.kill('SIGKILL')
+        } catch {
+          // Best-effort cleanup on exit
+        }
+      }
+    }
+    for (const cmd of liveShellCommands) {
+      const child = cmd.getChildProcess()
+      if (child && child.exitCode === null && child.signalCode === null) {
+        try {
+          child.kill('SIGKILL')
+        } catch {
+          // Best-effort cleanup on exit
+        }
+      }
+    }
+    return
+  }
   const activePids = new Set<number>()
   for (const [pid, child] of dyingProcesses) {
     const reaped = child.exitCode !== null || child.signalCode !== null
@@ -119,19 +185,34 @@ function sweepLiveShellCommandsOnExit(): void {
       }
     }
   }
+  for (const pid of pendingGroupEscalations) {
+    try {
+      process.kill(-pid, 0)
+      killProcessGroupSync(pid, true)
+    } catch {
+      // Process group is empty
+    }
+  }
+  const trackedDescendants = new Map<number, string>(
+    pendingDescendantEscalations,
+  )
   for (const cmd of liveShellCommands) {
     const pid = cmd.getActivePid()
     if (pid !== undefined && pid > 1) {
       activePids.add(pid)
     }
+    for (const [descPid, start] of cmd.getTrackedDescendants()) {
+      trackedDescendants.set(descPid, start)
+    }
   }
   for (const pid of activePids) {
     killProcessGroupSync(pid)
   }
+  sweepTrackedDescendantsSync(trackedDescendants)
 }
 
 function ensureExitSweepInstalled(): void {
-  if (exitSweepInstalled || process.platform === 'win32') return
+  if (exitSweepInstalled) return
   exitSweepInstalled = true
   process.prependListener('exit', sweepLiveShellCommandsOnExit)
 }
@@ -367,6 +448,14 @@ class ShellCommandImpl implements ShellCommand {
     return child.pid
   }
 
+  getChildProcess(): ChildProcess | null {
+    return this.#childProcess
+  }
+
+  getTrackedDescendants(): ReadonlyMap<number, string> {
+    return this.#descendants
+  }
+
   get status(): 'running' | 'backgrounded' | 'completed' | 'killed' {
     return this.#status
   }
@@ -405,6 +494,7 @@ class ShellCommandImpl implements ShellCommand {
       this.#killDescendants(resolveExit)
       return
     }
+    this.#clearTrackedDescendantsFromPending()
     resolveExit()
   }
 
@@ -428,6 +518,14 @@ class ShellCommandImpl implements ShellCommand {
     }
   }
 
+  #clearTrackedDescendantsFromPending(): void {
+    for (const [descPid, start] of this.#descendants) {
+      if (pendingDescendantEscalations.get(descPid) === start) {
+        pendingDescendantEscalations.delete(descPid)
+      }
+    }
+  }
+
   #killDescendants(done: () => void): void {
     // Exited processes are the common case; skip the ps snapshot if none remain
     const pids = [...this.#descendants.keys()].filter(pid => {
@@ -438,13 +536,17 @@ class ShellCommandImpl implements ShellCommand {
         return false
       }
     })
-    if (pids.length === 0) return done()
+    if (pids.length === 0) {
+      this.#clearTrackedDescendantsFromPending()
+      return done()
+    }
     // Signal only pids whose start time still matches the sample
     const sameProcess = (table: ProcessTable | null, pid: number) =>
       table?.get(pid)?.start === this.#descendants.get(pid)
     listProcesses(table => {
       if (!table) logForDebugging('ShellCommand: ps failed, orphaned descendants not swept')
       const targets = pids.filter(pid => sameProcess(table, pid))
+      this.#clearTrackedDescendantsFromPending()
       for (const pid of targets) {
         try {
           process.kill(pid, 'SIGTERM')
@@ -454,9 +556,18 @@ class ShellCommandImpl implements ShellCommand {
       }
       done()
       if (targets.length === 0) return
+      for (const pid of targets) {
+        const start = this.#descendants.get(pid)
+        if (start !== undefined) {
+          pendingDescendantEscalations.set(pid, start)
+        }
+      }
       const escalate = setTimeout(() => {
         listProcesses(later => {
           for (const pid of targets) {
+            if (pendingDescendantEscalations.get(pid) === this.#descendants.get(pid)) {
+              pendingDescendantEscalations.delete(pid)
+            }
             if (!sameProcess(later, pid)) continue
             try {
               process.kill(pid, 'SIGKILL')
@@ -485,8 +596,10 @@ class ShellCommandImpl implements ShellCommand {
       // Group already empty
       return
     }
+    pendingGroupEscalations.add(pid)
     // Escalate for members that ignore SIGTERM
     const escalate = setTimeout(() => {
+      pendingGroupEscalations.delete(pid)
       // Once the group is empty its id can be reused by an unrelated process
       try {
         process.kill(-pid, 0)
@@ -664,6 +777,11 @@ class ShellCommandImpl implements ShellCommand {
       this.#childProcess.exitCode !== null ||
       this.#childProcess.signalCode !== null
     if (pid && !reaped) {
+      if (this.taskOutput.stdoutToFile) {
+        for (const [descPid, start] of this.#descendants) {
+          pendingDescendantEscalations.set(descPid, start)
+        }
+      }
       const child = this.#childProcess
       dyingProcesses.set(pid, child)
       const killPromise = new Promise<void>(resolve => {
