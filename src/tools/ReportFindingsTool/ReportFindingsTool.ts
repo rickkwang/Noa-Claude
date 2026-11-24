@@ -1,5 +1,6 @@
 import { z } from 'zod/v4'
 import { buildTool, type ToolDef } from '../../Tool.js'
+import { isEnvTruthy } from '../../utils/envUtils.js'
 import { lazySchema } from '../../utils/lazySchema.js'
 
 export const REPORT_FINDINGS_TOOL_NAME = 'ReportFindings'
@@ -92,10 +93,15 @@ export const ReportFindingsTool = buildTool({
     return outputSchema()
   },
   userFacingName() {
-    return 'ReportFindings'
+    return 'Code review'
   },
+  // Only a host that renders the findings opts in; otherwise the tool would
+  // swallow them, since the TUI shows no findings list.
   isEnabled() {
-    return true
+    return isEnvTruthy(
+      process.env.NOA_CLAUDE_REPORT_FINDINGS ??
+        process.env.CLAUDE_CODE_REPORT_FINDINGS,
+    )
   },
   isConcurrencySafe() {
     return true
@@ -103,8 +109,9 @@ export const ReportFindingsTool = buildTool({
   isReadOnly() {
     return true
   },
-  renderToolUseMessage() {
-    return null
+  renderToolUseMessage(input) {
+    const count = input.findings?.length ?? 0
+    return `${input.level ?? 'review'} · ${count} ${count === 1 ? 'finding' : 'findings'}`
   },
   async call(input) {
     return {

@@ -2,6 +2,7 @@ import { realpath } from 'fs/promises'
 import { isAbsolute, join, relative, resolve, sep } from 'path'
 import type { ToolUseContext } from '../../Tool.js'
 import { AGENT_TOOL_NAME } from '../../tools/AgentTool/constants.js'
+import { REPORT_FINDINGS_TOOL_NAME } from '../../tools/ReportFindingsTool/ReportFindingsTool.js'
 import { getGlobalConfig, saveGlobalConfig } from '../../utils/config.js'
 import { getCwd } from '../../utils/cwd.js'
 import { getPrintOutputFormat } from '../../bootstrap/state.js'
@@ -206,6 +207,9 @@ ${runner} Re-read the diff and the enclosing functions looking ONLY for defects 
 Surface up to 8 additional candidates, each naming a defect not already on the list. If nothing new, return nothing from this phase; do not pad.`
 }
 
+// The forked reviewer's text is its result; a findings tool call there would leave the caller only a count.
+const NO_REPORT_TOOL = `Do not call the ${REPORT_FINDINGS_TOOL_NAME} tool even if it is available.`
+
 function outputSection(cap: number | 'all', floor?: number, severity = false): string {
   const target = floor === undefined
     ? ''
@@ -217,7 +221,7 @@ function outputSection(cap: number | 'all', floor?: number, severity = false): s
     ? `\`summary\` (the problem, where it happens and what sets it off, then "Fix:" and the change to make), \`failure_scenario\` (concrete inputs or state → wrong output or crash), and \`severity\` (one of \`important\`, \`nit\`, \`pre_existing\`)`
     : `\`summary\` (one sentence), and \`failure_scenario\` (concrete inputs or state → wrong output or crash)`
   return `## Output
-${target}Return ${size} as a JSON array in a \`\`\`json block, ranked most severe first. Each entry has \`file\` (repo-relative path), \`line\`, ${fields}. If nothing survives, return \`[]\`.${severity ? `\n\n${SEVERITY_SPEC}` : ''}`
+${target}Return ${size} as a JSON array in a \`\`\`json block, ranked most severe first. Each entry has \`file\` (repo-relative path), \`line\`, ${fields}. If nothing survives, return \`[]\`. ${NO_REPORT_TOOL} This review's output contract is the JSON block above.${severity ? `\n\n${SEVERITY_SPEC}` : ''}`
 }
 
 const LOW_READ = `Read the diff and in-scope untracked files as new-file additions. No subagents, no full-file reads.`
@@ -244,7 +248,7 @@ ${LOW_READ}${cell === 'o48-low-v1' ? '' : LOW_SKIP_TESTS}`
   }
   const bugsOnly = cell === 'bugs-low-v1'
   const flags = `${LOW_BUG_FLAGS}${bugsOnly ? '' : LOW_CLEANUP_FLAGS}\n${LOW_SCOPE}`
-  return [gatherSection(bugsOnly), read, flags, output].join('\n\n')
+  return [gatherSection(bugsOnly), read, flags, `${output} ${NO_REPORT_TOOL}`].join('\n\n')
 }
 
 // Agent-backed recipe: parallel finder subagents, one verifier per candidate, and a sweep at xhigh and max.
