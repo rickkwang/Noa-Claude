@@ -1,5 +1,5 @@
 import { ElicitationCard } from "./components/ElicitationCard"
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { useEvent } from "./hooks/useEvent"
 import { useAgent } from "./agent/useAgent"
 import { isSubagentTask } from "./agent/reducer"
@@ -52,7 +52,7 @@ import { SearchDialog } from "./components/SearchDialog"
 import { matchesShortcut } from "./lib/shortcuts"
 import { rateLimitKey } from "./components/RateLimitNotice"
 import type { AppSettings } from "./types"
-import { Clock, ListDetails, Magnifier, PanelRight, SlidersHorizontal, SquarePen, X } from "./lib/icons"
+import { ListDetails, PanelRight, X } from "./lib/icons"
 
 // Noa's default layout widths.
 const SIDEBAR_DEFAULT_WIDTH = 340
@@ -837,12 +837,6 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
   // Closed panes keep their content width while the outer edge slides away.
   const sidebarTarget = Math.round(Math.max(240, Math.min(sidebar.width, windowSize.width - (rightOpen ? 320 + 352 : 352))))
   const sidebarWidth = sidebarOpen ? sidebarTarget : 0
-  // Where the sidebar's nav rows sit, so the icon rail follows the sidebar layout instead of copying it.
-  const [navRows, setNavRows] = useState<{ top: number; left: number }[]>([])
-  useLayoutEffect(() => {
-    const rows = Array.from(document.querySelectorAll<HTMLElement>("[data-sidebar-container] [data-sidebar-nav]"), (row) => ({ top: row.offsetTop, left: row.offsetLeft }))
-    if (JSON.stringify(rows) !== JSON.stringify(navRows)) setNavRows(rows)
-  })
   const workspaceWidth = windowSize.width - sidebarWidth
   const rightMax = Math.max(320, workspaceWidth - 352)
   const rightWindowMax = Math.max(320, windowSize.width - 352)
@@ -968,34 +962,6 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
             scheduleOpen={page === "schedule"}
           />
         </div>
-      </div>
-      {/* The sidebar's four nav icons, kept opaque at their rows so they never fade or change colour; when the
-          sidebar is open this rail sits exactly over the same icons (drawn only here) and lets clicks and focus
-          fall through to the sidebar rows. */}
-      <div
-        data-sidebar-rail
-        inert={sidebarOpen ? true : undefined}
-        className={`absolute left-0 top-0 z-30 ${sidebarOpen ? "pointer-events-none" : ""}`}
-        style={{ color: "color-mix(in srgb, var(--text-primary) 85%, var(--surface-page))" }}
-      >
-        {[
-          { label: "Search", icon: <Magnifier size={16} />, onClick: () => setSearchOpen(true) },
-          { label: "New task", icon: <SquarePen size={16} />, onClick: () => { setPage(undefined); newSession() } },
-          { label: "Scheduled", icon: <Clock size={16} />, onClick: () => setPage("schedule") },
-          { label: "Customize", icon: <SlidersHorizontal size={16} />, onClick: () => setPage("customize") },
-        ].map(({ label, icon, onClick }, index) => navRows[index] && (
-          <button
-            key={label}
-            type="button"
-            title={label}
-            aria-label={label}
-            onClick={onClick}
-            className="absolute flex h-[30px] w-[30px] items-center rounded-lg pl-[7px]"
-            style={{ top: navRows[index].top, left: navRows[index].left }}
-          >
-            {icon}
-          </button>
-        ))}
       </div>
       {/* The content surface rides over the sidebar floor, so its left edge is a rounded card edge instead of a
           straight hairline; the sidebar colour shows through the corner notches. Behind the in-flow columns. */}

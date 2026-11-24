@@ -450,20 +450,18 @@ export function Sidebar({
         aria-label="Search"
         aria-haspopup="dialog"
         aria-keyshortcuts={isMac ? "Meta+K" : "Control+K"}
-        data-sidebar-nav
         className="noa-sidebar-search noa-sidebar-tree-item noa-sidebar-tree-row noa-sidebar-hover-surface-subtle mx-2 mb-1 flex h-[30px] shrink-0 items-center gap-2 rounded-lg pl-[7px] pr-2 text-body"
       >
-        <Magnifier size={16} className="invisible shrink-0" />
+        <Magnifier size={16} className="shrink-0" />
         Search
       </button>
 
       <button
         type="button"
         onClick={() => onNewSession()}
-        data-sidebar-nav
         className="noa-sidebar-tree-item noa-sidebar-tree-row noa-sidebar-hover-surface-subtle mx-2 mb-1 flex h-[30px] shrink-0 items-center gap-2 rounded-lg pl-[7px] pr-2 text-body"
       >
-        <SquarePen size={16} className="invisible shrink-0" />
+        <SquarePen size={16} className="shrink-0" />
         New task
       </button>
 
@@ -471,10 +469,9 @@ export function Sidebar({
         type="button"
         aria-current={scheduleOpen ? "page" : undefined}
         onClick={onSchedule}
-        data-sidebar-nav
         className={`noa-sidebar-tree-item noa-sidebar-tree-row noa-agent-sidebar-row ${scheduleOpen ? "is-active" : "noa-sidebar-hover-surface-subtle"} mx-2 mb-1 flex h-[30px] shrink-0 items-center gap-2 rounded-lg pl-[7px] pr-2 text-body`}
       >
-        <Clock size={16} className="invisible shrink-0" />
+        <Clock size={16} className="shrink-0" />
         Scheduled
       </button>
 
@@ -483,10 +480,9 @@ export function Sidebar({
         data-customize-nav
         aria-current={customizeOpen ? "page" : undefined}
         onClick={onCustomize}
-        data-sidebar-nav
         className={`noa-sidebar-tree-item noa-sidebar-tree-row noa-agent-sidebar-row ${customizeOpen ? "is-active" : "noa-sidebar-hover-surface-subtle"} mx-2 mb-1 flex h-[30px] shrink-0 items-center gap-2 rounded-lg pl-[7px] pr-2 text-body`}
       >
-        <SlidersHorizontal size={16} className="invisible shrink-0" />
+        <SlidersHorizontal size={16} className="shrink-0" />
         Customize
       </button>
 

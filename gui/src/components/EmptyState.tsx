@@ -45,7 +45,7 @@ export function EmptyState({
           />
         )}
       </h1>
-      <div className="-mt-1.5 mb-auto flex w-full shrink-0 justify-center">
+      <div className="-mt-2.5 mb-auto flex w-full shrink-0 justify-center">
         <StatsPanel />
       </div>
     </div>
