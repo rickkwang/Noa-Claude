@@ -219,6 +219,7 @@ export type ToolUseContext = {
   appendSystemMessage?: (
     msg: Exclude<SystemMessage, SystemLocalCommandMessage>,
   ) => void
+  enqueueTranscriptForStopHook?: () => Promise<unknown>
   /** Send an OS-level notification (iTerm2, Kitty, Ghostty, bell, etc.) */
   sendOSNotification?: (opts: {
     message: string

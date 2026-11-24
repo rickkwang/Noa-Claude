@@ -36,6 +36,7 @@ import {
   addToTurnHookDuration,
   getOriginalCwd,
   getMainThreadAgentType,
+  isSessionPersistenceDisabled,
 } from '../bootstrap/state.js'
 import { checkHasTrustDialogAccepted } from './config.js'
 import {
@@ -46,7 +47,9 @@ import {
 import {
   getTranscriptPathForSession,
   getAgentTranscriptPath,
+  flushSessionStorage,
 } from './sessionStorage.js'
+import { withTimeout } from './sleep.js'
 import type { AgentId } from '../types/ids.js'
 import {
   getSettings_DEPRECATED,
@@ -2141,6 +2144,25 @@ async function* executeHooks({
 
   if (signal?.aborted) {
     return
+  }
+
+  if (
+    (hookEvent === 'Stop' || hookEvent === 'SubagentStop') &&
+    !isSessionPersistenceDisabled() &&
+    matchingHooks.some(({ hook }) =>
+      hook.type === 'command' || hook.type === 'http' || hook.type === 'agent',
+    )
+  ) {
+    const flush = async () => {
+      if (hookEvent === 'Stop') {
+        await toolUseContext?.enqueueTranscriptForStopHook?.()
+      }
+      await flushSessionStorage()
+    }
+    await withTimeout(flush(), 2000, 'Transcript flush timed out').catch(error => {
+      logForDebugging(`${hookName} transcript flush: ${errorMessage(error)}`, { level: 'warn' })
+    })
+    if (signal?.aborted) return
   }
 
   const userHooks = matchingHooks.filter(h => !isInternalHook(h))

@@ -209,7 +209,7 @@ import type { LogOption } from '../types/logs.js';
 import type { AgentColorName } from '../tools/AgentTool/agentColorManager.js';
 import { fileHistoryMakeSnapshot, type FileHistoryState, fileHistoryRewind, fileHistoryTouch, type FileHistorySnapshot, copyFileHistoryForResume, fileHistoryEnabled, fileHistoryHasAnyChanges } from '../utils/fileHistory.js';
 import { type AttributionState, incrementPromptCount } from '../utils/commitAttribution.js';
-import { recordAttributionSnapshot } from '../utils/sessionStorage.js';
+import { recordAttributionSnapshot, recordTranscript } from '../utils/sessionStorage.js';
 import { computeStandaloneAgentContext, restoreAgentFromSession, restoreSessionStateFromLog, restoreWorktreeForResume, exitRestoredWorktree } from '../utils/sessionRestore.js';
 import { updateSessionName, updateSessionActivity } from '../utils/concurrentSessions.js';
 import { isBgSession } from '../utils/background/bgJob.js';
@@ -2974,6 +2974,14 @@ export function REPL({
       appendSystemPrompt
     });
     toolUseContext.renderedSystemPrompt = systemPrompt;
+    // The transcript effect may not have run for the last streamed message yet.
+    toolUseContext.enqueueTranscriptForStopHook = () => {
+      const team = toolUseContext.getAppState().teamContext;
+      return recordTranscript(messagesRef.current, isAgentSwarmsEnabled() ? {
+        teamName: team?.teamName,
+        agentName: team?.selfAgentName
+      } : undefined);
+    };
     queryCheckpoint('query_query_start');
     resetTurnHookDuration();
     resetTurnToolDuration();
