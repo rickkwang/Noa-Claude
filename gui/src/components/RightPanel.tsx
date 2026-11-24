@@ -1,8 +1,8 @@
-import { defaultShortcuts, shortcutHint, type ShortcutBindings } from "../lib/shortcuts"
+import { defaultShortcuts, formatBinding, type ShortcutBindings } from "../lib/shortcuts"
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties } from "react"
 import { isSubagentTask, type AgentState } from "../agent/reducer"
 import type { TurnDiff } from "../agent/protocol"
-import { Folder, Globe, ListDetails, MessageCircle, MoreHorizontal, PanelBottom, Plus, PlusMinus, Terminal, Users } from "../lib/icons"
+import { MessageCircle, MoreHorizontal, PaneBrowser, PaneChanges, PaneFiles, PaneSideChat, PaneSubagents, PaneTerminal, PaneThreads, PanelBottom, Plus } from "../lib/icons"
 import { browserVersion, closeBrowser, dismissWebUrl, localWebUrls, openBrowser, projectBrowser, selectBrowser, subscribeBrowser } from "../lib/browserTabs"
 import { BrowserPanel } from "./BrowserPanel"
 import { closeTerminal, moveTerminal, openTerminal, selectTerminal, snapshotTerminals, subscribeTerminals, terminalsVersion, terminalTabs } from "../lib/terminalSessions"
@@ -14,7 +14,7 @@ import { WorkspaceFiles } from "./WorkspaceFiles"
 import { SubagentsPanel } from "./SubagentsPanel"
 import { ThreadsPanel } from "./ThreadsPanel"
 import type { SessionSummary } from "../api"
-import { NewTabPage } from "./NewTabPage"
+import { NewTabPage, ShortcutKeys, type NewTabTool } from "./NewTabPage"
 import { PanelTabStrip } from "./PanelTabStrip"
 import { TerminalView } from "./TerminalView"
 import { SideChat } from "./SideChat"
@@ -34,15 +34,14 @@ const noDragRegion = { WebkitAppRegion: "no-drag" } as CSSProperties
 const SOURCES = { turn: "Last turn", all: "Uncommitted", unstaged: "Unstaged", staged: "Staged", branch: "Branch comparison", commit: "Committed" } as const
 
 const TOOLS = {
-  files: { title: "Files", icon: Folder },
-  changes: { title: "Changes", icon: PlusMinus },
-  subagents: { title: "Subagents", icon: Users },
-  threads: { title: "Threads", icon: ListDetails },
-  sidechat: { title: "Side chat", icon: MessageCircle },
+  files: { title: "Files", icon: PaneFiles },
+  changes: { title: "Changes", icon: PaneChanges },
+  subagents: { title: "Subagents", icon: PaneSubagents },
+  threads: { title: "Threads", icon: PaneThreads },
+  sidechat: { title: "Side chat", icon: PaneSideChat },
   thread: { title: "Thread", icon: MessageCircle },
 } as const
 // Subagents open from the Overview's Tasks card or the conversation, not from the New tab page.
-const NEW_TAB_TOOLS: PanelTab[] = ["files", "changes", "threads"]
 const TERMINAL_KEY = "terminal:"
 const BROWSER_KEY = "browser:"
 
@@ -142,6 +141,18 @@ export function RightPanel({ shortcuts = defaultShortcuts, state, onStopTask, cw
     if (!tabs.includes(tool)) onTabs([...tabs, tool])
     onTab(tool)
   }
+  // The "+" menu and the empty panel list the same tools: workspace tools first, then the conversation's side views.
+  const toolGroups: NewTabTool[][] = [
+    [
+      { id: "changes", ...TOOLS.changes, keys: formatBinding(shortcuts.changes) },
+      ...(supportsBrowser ? [{ id: "browser", title: "Browser", icon: PaneBrowser, keys: formatBinding(shortcuts.browser) }] : []),
+      { id: "files", ...TOOLS.files, keys: formatBinding(shortcuts.files) },
+      { id: "terminal", title: "Terminal", icon: PaneTerminal, keys: formatBinding(shortcuts.terminal) },
+      { id: "threads", ...TOOLS.threads },
+    ],
+    [{ id: "sidechat", ...TOOLS.sidechat, keys: formatBinding(shortcuts.sideChat) }, { id: "subagents", ...TOOLS.subagents }],
+  ]
+  const [newMenu, setNewMenu] = useState<{ anchor: PopupMenuAnchor; trigger: Element }>()
   const [tabMenu, setTabMenu] = useState<{ key: string; anchor: PopupMenuAnchor }>()
   const [selectedTask, setSelectedTask] = useState<string>()
   useEffect(() => { setSelectedTask(focusTask?.id) }, [focusTask, state.sessionId])
@@ -222,10 +233,10 @@ export function RightPanel({ shortcuts = defaultShortcuts, state, onStopTask, cw
         label="Panel tabs"
         tabs={stripKeys.map((key) => {
           if (key === "new") return { key, title: "New tab", icon: Plus }
-          if (key.startsWith(TERMINAL_KEY)) return { key, title: terminals.find((terminal) => TERMINAL_KEY + terminal.id === key)?.title ?? "Terminal", icon: Terminal }
+          if (key.startsWith(TERMINAL_KEY)) return { key, title: terminals.find((terminal) => TERMINAL_KEY + terminal.id === key)?.title ?? "Terminal", icon: PaneTerminal }
           if (key.startsWith(BROWSER_KEY)) {
             const page = browser.tabs.find(page => BROWSER_KEY + page.id === key)
-            return { key, title: page?.title || (page?.url ? new URL(page.url).host : "Browser"), icon: Globe }
+            return { key, title: page?.title || (page?.url ? new URL(page.url).host : "Browser"), icon: PaneBrowser }
           }
           return { key, ...TOOLS[key as PanelTab], ...(key === "thread" && thread && { title: thread.title }) }
         })}
@@ -233,7 +244,7 @@ export function RightPanel({ shortcuts = defaultShortcuts, state, onStopTask, cw
         onSelect={select}
         onClose={close}
         onContextMenu={(key, event) => { if (key.startsWith(TERMINAL_KEY)) setTabMenu({ key, anchor: { left: event.clientX, top: event.clientY, bottom: event.clientY } }) }}
-        onNew={() => { onNewTab(true); onTab("new") }}
+        onNew={(button) => setNewMenu(newMenu ? undefined : { anchor: anchorBelow(button), trigger: button })}
         newLabel="New tab"
         onReorder={(from, to) => {
           const next = stripKeys.filter((key) => key !== from)
@@ -241,6 +252,18 @@ export function RightPanel({ shortcuts = defaultShortcuts, state, onStopTask, cw
           setOrder(next)
         }}
       />
+      {newMenu && (
+        <PopupMenu
+          anchor={newMenu.anchor}
+          trigger={newMenu.trigger}
+          label="New tab"
+          onClose={() => setNewMenu(undefined)}
+          entries={toolGroups.flatMap((group, index) => [
+            ...(index > 0 ? [{ kind: "separator" as const }] : []),
+            ...group.map((tool) => ({ key: tool.id, icon: tool.icon, onSelect: () => openTool(tool.id), label: tool.keys?.length ? <span className="flex w-full items-center justify-between gap-6">{tool.title}<ShortcutKeys keys={tool.keys} /></span> : tool.title })),
+          ])}
+        />
+      )}
       {tabMenu && (
         <PopupMenu
           anchor={tabMenu.anchor}
@@ -251,17 +274,11 @@ export function RightPanel({ shortcuts = defaultShortcuts, state, onStopTask, cw
       )}
       {shown === "new" && (
         <NewTabPage
-          shortcuts={shortcuts}
-          tools={[
-            ...NEW_TAB_TOOLS.map((id) => ({ id, ...TOOLS[id] })),
-            { id: "terminal", title: "Terminal", icon: Terminal, shortcut: shortcutHint(shortcuts.terminal) },
-            ...(supportsBrowser ? [{ id: "browser", title: "Browser", icon: Globe }] : []),
-          ]}
+          groups={toolGroups}
           suggested={supportsBrowser ? suggested : []}
           onOpenUrl={url => { onNewTab(false); openBrowser(cwd, url); onTab("browser") }}
           onDismissUrl={url => dismissWebUrl(cwd, url)}
           onSelect={openTool}
-          onOpenBottomTerminal={() => onBottomTerminal?.()}
         />
       )}
       {shown === "terminal" && activeTerminal && (

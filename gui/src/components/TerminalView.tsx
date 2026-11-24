@@ -27,10 +27,10 @@ export function TerminalView({ cwd, terminal, visible, focusKey }: { cwd: string
   }, [visible, cwd, id, focusKey])
 
   return (
-    <div className="relative min-h-0 flex-1 overflow-hidden ps-4 pt-2 pb-3">
+    <div className="relative min-h-0 flex-1 overflow-hidden ps-[21px] pe-5 pt-2 pb-3">
       <div ref={bodyRef} className="relative h-full w-full overflow-hidden" onMouseDown={() => terminalSession(cwd, id).focus()} />
       {terminal.status !== "ready" && (
-        <div role="status" className="pointer-events-none absolute inset-x-4 bottom-3 z-10 flex">
+        <div role="status" className="pointer-events-none absolute start-[21px] end-5 bottom-3 z-10 flex">
           <div className="pointer-events-auto flex items-center gap-3 text-[length:var(--text-chat-sm)] text-[var(--text-secondary,#7B7974)]">
             <span>{STATUS[terminal.status] ?? terminal.message ?? "Shell exited"}</span>
             {terminal.status !== "connecting" && terminal.status !== "reconnecting" && (

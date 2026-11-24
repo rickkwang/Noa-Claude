@@ -151,3 +151,11 @@ export const Trash2 = glyph("trash");
 export const Link = glyph("link");
 export const Users = glyph("person-2");
 export const X = glyph("xmark-md");
+// The right and bottom panels' tools: their tabs, the new-tab menu and the empty panel.
+export const PaneFiles = vectorIcon("pane-files");
+export const PaneChanges = vectorIcon("pane-changes");
+export const PaneThreads = vectorIcon("pane-threads");
+export const PaneTerminal = vectorIcon("pane-terminal");
+export const PaneBrowser = vectorIcon("pane-browser");
+export const PaneSideChat = vectorIcon("pane-side-chat");
+export const PaneSubagents = vectorIcon("pane-subagents");

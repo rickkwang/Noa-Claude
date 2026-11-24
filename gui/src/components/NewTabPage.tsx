@@ -1,52 +1,34 @@
-import { defaultShortcuts, shortcutHint, type ShortcutBindings } from "../lib/shortcuts"
-import { useState, type ComponentType } from "react"
-import { Globe, MoreHorizontal, PanelBottom, X } from "../lib/icons"
-import { PopupMenu, anchorBelow, type PopupMenuAnchor } from "./PopupMenu"
+import type { ComponentType } from "react"
+import { Globe, X } from "../lib/icons"
 
-interface NewTabTool {
+export interface NewTabTool {
   id: string
   title: string
   icon: ComponentType<{ size?: number; className?: string }>
-  shortcut?: string
+  keys?: string[]
 }
 
-// A panel's New tab page: the tools that can open as a tab, one row each with its shortcut.
-// The terminal row also offers the bottom terminal, as its own menu.
-export function NewTabPage({ tools, onSelect, onOpenBottomTerminal, suggested = [], onOpenUrl, onDismissUrl, shortcuts = defaultShortcuts }: { shortcuts?: ShortcutBindings; tools: NewTabTool[]; onSelect: (id: string) => void; onOpenBottomTerminal: () => void; suggested?: string[]; onOpenUrl?: (url: string) => void; onDismissUrl?: (url: string) => void }) {
-  const [menu, setMenu] = useState<{ anchor: PopupMenuAnchor; trigger: Element }>()
+// A shortcut as separate key glyphs with a little space between them.
+export function ShortcutKeys({ keys }: { keys: string[] }) {
+  return <span className="flex shrink-0 items-center gap-[3px] text-[length:var(--text-chat-sm)] text-[var(--text-secondary,#7B7974)]">{keys.map((key, index) => <span key={index}>{key}</span>)}</span>
+}
+
+// An empty panel: the tools that can open as a tab, as one centered list with each tool's shortcut.
+export function NewTabPage({ groups, onSelect, suggested = [], onOpenUrl, onDismissUrl }: { groups: NewTabTool[][]; onSelect: (id: string) => void; suggested?: string[]; onOpenUrl?: (url: string) => void; onDismissUrl?: (url: string) => void }) {
   return (
-    <div className="noa-new-tab-page @container h-full min-h-0 overflow-y-auto px-3 pt-4 pb-8 select-none">
-      <section className="mx-auto flex w-full max-w-3xl flex-col gap-4">
-        <h3 className="m-0 ps-2 text-[length:var(--text-chat-sm)] font-medium text-[var(--text-primary,#2D2D2B)]">Tools</h3>
-        <div className="grid grid-cols-1 gap-1 @md:grid-cols-2">
-          {tools.map((tool) => {
-            const Icon = tool.icon
-            return (
-              <div key={tool.id} className="noa-new-tab-row flex w-full min-w-0 items-center rounded-md">
-                <button type="button" onClick={() => onSelect(tool.id)} className="flex min-h-10 w-full min-w-0 flex-1 items-center gap-[5px] rounded-md px-2 py-2 text-start">
-                  <span className="flex shrink-0 items-center justify-center text-[var(--text-secondary,#7B7974)]"><Icon size={16} /></span>
-                  <span className="min-w-0 flex-1 truncate text-[length:var(--text-chat-sm)] text-[var(--text-primary,#2D2D2B)]">{tool.title}</span>
-                  {tool.shortcut && <kbd className="noa-new-tab-key ms-auto shrink-0">{tool.shortcut}</kbd>}
-                </button>
-                {tool.id === "terminal" && (
-                  <div className="shrink-0 pe-[5px]">
-                    <button
-                      type="button"
-                      aria-label="Terminal options"
-                      aria-haspopup="menu"
-                      aria-expanded={!!menu}
-                      onClick={(event) => setMenu(menu ? undefined : { anchor: anchorBelow(event.currentTarget), trigger: event.currentTarget })}
-                      className="noa-terminal-action flex size-7 items-center justify-center rounded-[10px]"
-                    >
-                      <MoreHorizontal size={16} />
-                    </button>
-                  </div>
-                )}
-              </div>
-            )
-          })}
-        </div>
-      </section>
+    <div className="noa-new-tab-page @container flex h-full min-h-0 flex-col overflow-y-auto px-3 py-8 select-none">
+      <nav aria-label="Tools" className="m-auto flex w-full max-w-[220px] flex-col">
+        {groups.flat().map((tool) => {
+          const Icon = tool.icon
+          return (
+            <button key={tool.id} type="button" onClick={() => onSelect(tool.id)} className="noa-new-tab-row flex h-8 w-full min-w-0 items-center gap-1 rounded-lg px-2 text-start text-[length:var(--text-chat-sm)] text-[var(--text-primary,#2D2D2B)]">
+              <Icon size={16} className="shrink-0" />
+              <span className="min-w-0 flex-1 truncate">{tool.title}</span>
+              {tool.keys?.length ? <ShortcutKeys keys={tool.keys} /> : null}
+            </button>
+          )
+        })}
+      </nav>
       {suggested.length > 0 && <section className="mx-auto mt-8 flex w-full max-w-3xl flex-col gap-4" aria-label="Suggested websites">
         <h3 className="m-0 ps-2 text-[length:var(--text-chat-sm)] font-normal text-[var(--text-primary)]">Suggested</h3>
         <div className="grid grid-cols-1 gap-3 @md:grid-cols-2">
@@ -59,15 +41,6 @@ export function NewTabPage({ tools, onSelect, onOpenBottomTerminal, suggested = 
           </div>)}
         </div>
       </section>}
-      {menu && (
-        <PopupMenu
-          anchor={menu.anchor}
-          trigger={menu.trigger}
-          label="Terminal options"
-          onClose={() => setMenu(undefined)}
-          entries={[{ key: "bottom", label: <span className="flex w-full items-center justify-between gap-6">Open bottom terminal<span className="text-[var(--text-tertiary,#A3A19B)]">{shortcutHint(shortcuts.bottomPanel)}</span></span>, icon: PanelBottom, onSelect: onOpenBottomTerminal }]}
-        />
-      )}
     </div>
   )
 }

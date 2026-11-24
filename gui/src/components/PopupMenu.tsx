@@ -16,6 +16,9 @@ type PopupMenuEntry =
       disabled?: boolean
       danger?: boolean
       onSelect?: () => void
+      // A close button at the row's end; the menu stays open.
+      onRemove?: () => void
+      removeLabel?: string
       submenu?: PopupMenuEntry[]
     }
   | { kind: "separator"; key?: string }
@@ -163,6 +166,7 @@ export function PopupMenu({
             aria-expanded={hasSubmenu ? open === index : undefined}
             disabled={entry.disabled}
             data-danger={entry.danger ? "" : undefined}
+            style={entry.onRemove ? { paddingInlineEnd: 30 } : undefined}
             onClick={() => {
               if (hasSubmenu) setOpen(open === index ? undefined : index)
               else {
@@ -191,6 +195,13 @@ export function PopupMenu({
             {entry.checked && <Check size={14} className="noa-popup-menu-trailing" />}
             {hasSubmenu && <ChevronRight size={14} className="noa-popup-menu-trailing noa-popup-menu-chevron" />}
           </button>
+          {entry.onRemove && (
+            <span className="absolute end-[3px] top-1/2 flex -translate-y-1/2">
+              <button type="button" tabIndex={-1} aria-label={entry.removeLabel} onClick={entry.onRemove} className="noa-tab-close flex size-[22px] items-center justify-center rounded-md">
+                <X size={14} />
+              </button>
+            </span>
+          )}
           {hasSubmenu && open === index && list(entry.submenu!, true)}
         </div>
       )

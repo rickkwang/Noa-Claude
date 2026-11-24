@@ -210,7 +210,7 @@ export default function CodeView({ path, content, diff = false, split = false, w
   useEffect(() => { if (findRequest) openFind() }, [findRequest]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     const find = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "f" && root.current?.offsetParent) {
+      if ((event.metaKey || event.ctrlKey) && !event.shiftKey && event.key.toLowerCase() === "f" && root.current?.offsetParent) {
         event.preventDefault(); openFind()
       } else if (event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey && event.code === "KeyG" && root.current?.offsetParent && !diff) {
         event.preventDefault(); openGoto()

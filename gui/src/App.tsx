@@ -37,6 +37,7 @@ import { ResizeHandle } from "./components/ResizeHandle"
 import { usePanelWidth } from "./hooks/usePanelWidth"
 import { TERMINAL_PANEL_DEFAULT_HEIGHT, TerminalPanel } from "./components/TerminalPanel"
 import { openTerminal, setTerminalFontFamily, terminalTabs } from "./lib/terminalSessions"
+import { openBrowser, projectBrowser } from "./lib/browserTabs"
 import { abandonSideChat, askSideChat, clearSideChat, moveSideChat, pumpSideChat } from "./lib/sideChat"
 import { useAppSettings } from "./hooks/useAppSettings"
 import { removeSessionBrowserState, useSessionSync } from "./hooks/useSessionSync"
@@ -482,6 +483,20 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
       } else if (matchesShortcut(e, bindings.terminal)) {
         e.preventDefault()
         openDefaultTerminal()
+      } else if (matchesShortcut(e, bindings.changes)) {
+        e.preventDefault()
+        showPanelTool("changes")
+      } else if (matchesShortcut(e, bindings.files)) {
+        e.preventDefault()
+        showPanelTool("files")
+      } else if (matchesShortcut(e, bindings.browser) && window.noaDesktop?.preview) {
+        e.preventDefault()
+        if (projectBrowser(session.cwd).tabs.length === 0) openBrowser(session.cwd)
+        else showPanelTool("browser")
+      } else if (matchesShortcut(e, bindings.sideChat)) {
+        e.preventDefault()
+        showPanelTool("sidechat")
+        setSideChatFocus((n) => n + 1)
       } else if (matchesShortcut(e, bindings.settings)) {
         e.preventDefault()
         setSearchOpen(false)
@@ -510,6 +525,11 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
       setRightTab("terminal")
       setRightTerminalFocus(n => n + 1)
     } else showBottomTerminal()
+  }
+  function showPanelTool(tool: "changes" | "files" | "browser" | "sidechat") {
+    setRightOpen(true)
+    setRightNewTab(false)
+    setRightTab(tool)
   }
   function showBottomTerminal() {
     setTerminalOpen(true)

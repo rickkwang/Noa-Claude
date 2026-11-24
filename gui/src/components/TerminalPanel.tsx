@@ -1,5 +1,5 @@
 import { useEffect, useState, useSyncExternalStore } from "react"
-import { ChevronDown, PanelRight, Terminal } from "../lib/icons"
+import { ChevronDown, PaneTerminal, PanelRight } from "../lib/icons"
 import {
   closeTerminal,
   moveTerminal,
@@ -87,9 +87,9 @@ export function TerminalPanel({ cwd, open, height, available, styleKey, focusKey
       )}
       <div className="noa-terminal-panel absolute inset-x-0 top-0 flex min-h-0 flex-col overflow-hidden border-t border-[var(--border-default)] bg-[var(--surface-page,#F9F9F7)]" style={{ height: shown }}>
         <PanelTabStrip
-          className="h-10 border-b border-[var(--border-default)] pe-1.5"
+          className="h-10 border-b border-[var(--border-default)] pe-[14px]"
           label="Terminal tabs"
-          tabs={tabs.map((tab) => ({ key: tab.id, title: tab.title, icon: Terminal }))}
+          tabs={tabs.map((tab) => ({ key: tab.id, title: tab.title, icon: PaneTerminal }))}
           activeKey={activeId}
           onSelect={(id) => selectTerminal(cwd, id)}
           onClose={close}

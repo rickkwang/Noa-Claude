@@ -379,52 +379,19 @@ body {
 
 /* ── Scroll-edge fades ──
    Each edge is a number from 0 to 1 that a scroll-driven animation writes from the scroll position itself: no
-   script runs per scroll frame. The top (left) edge eases in over the first 28px of scroll and the
-   bottom (right) edge eases out over the last 28px. Both are gone at rest, and a surface with nothing to scroll has
+   script runs per scroll frame. The top edge eases in over the first 28px of scroll and the
+   bottom edge eases out over the last 28px. Both are gone at rest, and a surface with nothing to scroll has
    no fade. The ramp is restated per surface: var() in a custom property is substituted at declaration, so a :root
    ramp would freeze. */
 @property --noa-fade-top { syntax: '<number>'; inherits: false; initial-value: 0; }
 @property --noa-fade-bottom { syntax: '<number>'; inherits: false; initial-value: 0; }
-@property --noa-fade-left { syntax: '<number>'; inherits: false; initial-value: 0; }
-@property --noa-fade-right { syntax: '<number>'; inherits: false; initial-value: 0; }
 @keyframes noa-fade-top-in { from { --noa-fade-top: 0; } to { --noa-fade-top: 1; } }
 @keyframes noa-fade-bottom-out { from { --noa-fade-bottom: 1; } to { --noa-fade-bottom: 0; } }
-@keyframes noa-fade-left-in { from { --noa-fade-left: 0; } to { --noa-fade-left: 1; } }
-@keyframes noa-fade-right-out { from { --noa-fade-right: 1; } to { --noa-fade-right: 0; } }
-
-/* The tab strip's two overflow edges. A mask rather than a colored overlay because the header background is themed
-   at runtime and an overlay would have to match it exactly. Both edges are independent: scrolling away from the left
-   edge eases its ramp in while the right one eases out as the last tab arrives. */
-.noa-edge-fade-x {
-  --noa-fade-ramp:
-    rgb(0 0 0 / 0) calc(var(--noa-fade-left, 0) * 0px),
-    rgb(0 0 0 / 0.05) calc(var(--noa-fade-left, 0) * 4.2px),
-    rgb(0 0 0 / 0.15) calc(var(--noa-fade-left, 0) * 8.4px),
-    rgb(0 0 0 / 0.3) calc(var(--noa-fade-left, 0) * 12.6px),
-    rgb(0 0 0 / 0.5) calc(var(--noa-fade-left, 0) * 16.8px),
-    rgb(0 0 0 / 0.7) calc(var(--noa-fade-left, 0) * 21px),
-    rgb(0 0 0 / 0.85) calc(var(--noa-fade-left, 0) * 25.2px),
-    rgb(0 0 0 / 1) calc(var(--noa-fade-left, 0) * 28px),
-    rgb(0 0 0 / 1) calc(100% - var(--noa-fade-right, 0) * 28px),
-    rgb(0 0 0 / 0.85) calc(100% - var(--noa-fade-right, 0) * 25.2px),
-    rgb(0 0 0 / 0.7) calc(100% - var(--noa-fade-right, 0) * 21px),
-    rgb(0 0 0 / 0.5) calc(100% - var(--noa-fade-right, 0) * 16.8px),
-    rgb(0 0 0 / 0.3) calc(100% - var(--noa-fade-right, 0) * 12.6px),
-    rgb(0 0 0 / 0.15) calc(100% - var(--noa-fade-right, 0) * 8.4px),
-    rgb(0 0 0 / 0.05) calc(100% - var(--noa-fade-right, 0) * 4.2px),
-    rgb(0 0 0 / 0) calc(100% - var(--noa-fade-right, 0) * 0px);
-  -webkit-mask-image: linear-gradient(to right, var(--noa-fade-ramp));
-  mask-image: linear-gradient(to right, var(--noa-fade-ramp));
-  scroll-padding-inline: 28px;
-}
 
 /* A keyboard focus inside a scroller would be dimmed by its edge fade, so the fade steps aside while focus is there. */
-.noa-edge-fade-x:has(:focus-visible),
 .noa-sidebar-scroll-fade:has(:focus-visible) {
   --noa-fade-top: 0 !important;
   --noa-fade-bottom: 0 !important;
-  --noa-fade-left: 0 !important;
-  --noa-fade-right: 0 !important;
   scroll-padding: 0 !important;
 }
 .noa-sidebar-fade-scope:has(.noa-sidebar-scroll-fade:has(:focus-visible)) .noa-sidebar-toolbar-mask::after {
@@ -993,15 +960,13 @@ html[data-translucent-sidebar="enabled"] [data-sidebar-container] .noa-sidebar-t
 /* The close button sits 2px inside the tab's right edge, whatever the tab's inset. */
 
 .noa-tab-close { color: var(--text-secondary, #7B7974); transition: color 60ms var(--ease-out), background-color 60ms var(--ease-out); }
-/* Long tab titles fade out over their last 1rem instead of ending in an ellipsis. */
-.noa-tab-title {
-  display: block; width: 100%; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: clip;
-  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 1rem), transparent);
-  mask-image: linear-gradient(to right, #000 calc(100% - 1rem), transparent);
-}
-.noa-tab { container-type: inline-size; }
-/* Below this a title shows only a letter or two, so the tab keeps just its icon. */
-@container (max-width: 72px) { .noa-tab-title { display: none; } }
+/* A title cut off at 140px fades out over its last 1rem instead of ending in an ellipsis. */
+.noa-tab-title { display: block; min-width: 0; max-width: 140px; overflow: hidden; white-space: nowrap; text-overflow: clip; }
+.noa-tab-title[data-overflow] { mask-image: linear-gradient(to right, #000 calc(100% - 1rem), transparent); }
+/* The selected tab is a raised plate: a card with a soft shadow in light themes, an outlined fill in dark ones. */
+.noa-tab-plate[data-selected] { background-color: var(--bg-card, #FFFFFF); box-shadow: 0 0 1px rgba(45, 45, 43, .28), 0 1px 3px rgba(45, 45, 43, .12); }
+/* The hover fill is translucent, so it sits on the page color to keep a dragged tab opaque over its neighbours. */
+[data-theme="dark"] .noa-tab-plate[data-selected] { background: linear-gradient(var(--fill-hover), var(--fill-hover)), var(--surface-page, #2b2b29); border-color: var(--border-default); box-shadow: none; }
 .noa-tab-close:hover { color: var(--text-primary, #2D2D2B); background-color: var(--fill-hover); }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1370,7 +1335,7 @@ html[data-translucent-sidebar="enabled"] [data-sidebar-container] .noa-sidebar-t
 .noa-file-root-chip { display: inline-flex; min-width: 0; max-width: 70%; align-items: center; gap: 5px; height: 26px; padding: 0; border-radius: 8px; color: var(--text-primary); }
 .noa-file-root-chip > svg { color: var(--sidebar-text-muted); }
 .noa-file-root-chip > svg { flex-shrink: 0; }
-.noa-file-search { display: flex; flex-shrink: 0; align-items: center; gap: 4px; padding: 8px 8px 4px 12px; }
+.noa-file-search { display: flex; flex-shrink: 0; align-items: center; gap: 4px; padding: 8px 12px 4px; }
 .noa-file-search-field { display: flex; min-width: 0; flex: 1; align-items: center; gap: 5px; height: 30px; padding: 0 7px; border: 1px solid var(--border-default); border-radius: 8px; background: transparent; color: var(--sidebar-text-muted); transition: border-color 120ms; }
 .noa-file-search-field:focus-within { border-color: var(--border-strong); }
 .noa-file-search-field input { min-width: 0; flex: 1; border: 0; outline: 0; background: transparent; font: inherit; font-size: 13px; color: var(--text-primary); }
@@ -1379,7 +1344,8 @@ html[data-translucent-sidebar="enabled"] [data-sidebar-container] .noa-sidebar-t
 .noa-file-search-field svg { flex-shrink: 0; }
 .noa-file-root-chip > svg, .noa-file-search-field > svg { margin-inline: 1px; }
 /* No right padding: the scroll body already reserves an 8px scrollbar strip there, which makes the gap match the left. */
-.noa-file-tree { padding: 4px 0 8px 12px; font-size: 13px; }
+/* With the scroller's 8px gutter, rows end 12px from the panel edge on both sides. */
+.noa-file-tree { padding: 4px 4px 8px 12px; font-size: 13px; }
 .noa-file-row { position: relative; display: flex; align-items: center; gap: 5px; height: 28px; width: 100%; padding: 0 8px; border-radius: 6px; text-align: left; color: var(--sidebar-text); }
 .noa-file-icon { display: flex; flex-shrink: 0; align-items: center; justify-content: center; width: 16px; color: var(--sidebar-text-muted); }
 .noa-file-icon > svg { transition: transform 120ms ease; }
@@ -1400,7 +1366,7 @@ html[data-translucent-sidebar="enabled"] [data-sidebar-container] .noa-sidebar-t
 .noa-files-head > .noa-file-root-chip { flex-shrink: 1; }
 /* The file column can be 220px wide, so its menus open rightwards over the tree instead of past the pane's left edge. */
 .noa-files-head .noa-review-menu-content { right: auto; left: 0; }
-.noa-files-tree > .noa-file-search { min-height: 42px; padding: 6px 8px 6px 12px; }
+.noa-files-tree > .noa-file-search { min-height: 42px; padding: 6px 12px; }
 .noa-files-resize { position: absolute; inset-block: 0; left: -3px; z-index: 30; width: 6px; cursor: col-resize; touch-action: none; }
 .noa-files-placeholder { display: flex; height: 100%; flex-direction: column; align-items: center; justify-content: center; gap: 4px; }
 .noa-files-placeholder > p { margin: 0; color: var(--text-primary); }
@@ -1498,10 +1464,11 @@ kbd.noa-review-menu-hint { font-family: inherit; }
 /* PopupMenu: 4px gutter, 16px radius, 220px minimum width, rows padded 5px 8px
    at 13px with a 1.4286 line height, 12px row radius, 6px icon gap, 12px after the label, section labels and
    separators padded 4px 8px in the 50% ink, a 0.5px ring plus a large shadow, and an opaque surface. */
+/* A 6px gutter inside a 14px card leaves 8px item corners that follow the card's. */
 .noa-context-menu.noa-popup-menu {
   min-width: 220px;
-  padding: 4px;
-  border-radius: 16px;
+  padding: 6px;
+  border-radius: 14px;
   background: var(--surface-page, #F9F9F7);
   box-shadow: 0 0 0 0.5px var(--border-default), 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
   font-size: 13px;
@@ -1542,7 +1509,7 @@ kbd.noa-review-menu-hint { font-family: inherit; }
 .noa-popup-menu-scroll.is-searchable::-webkit-scrollbar { display: block; width: 6px; }
 .noa-popup-menu-scroll.is-searchable::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--text-primary) 18%, transparent); border-radius: 9999px; }
 .noa-popup-menu-scroll.is-searchable::-webkit-scrollbar-track { background: transparent; }
-.noa-popup-menu .noa-context-menu-entry > button { display: flex; width: 100%; max-width: none; min-height: 28px; align-items: center; font-size: 12px; line-height: calc(1.25 / 0.875); gap: 6px; padding: 5px 8px; border-radius: 12px; color: var(--text-primary); text-align: left; white-space: nowrap; }
+.noa-popup-menu .noa-context-menu-entry > button { display: flex; width: 100%; max-width: none; min-height: 28px; align-items: center; font-size: 12px; line-height: calc(1.25 / 0.875); gap: 6px; padding: 5px 8px; border-radius: 8px; color: var(--text-primary); text-align: left; white-space: nowrap; }
 .noa-popup-menu .noa-context-menu-entry > button:hover,
 .noa-popup-menu .noa-context-menu-entry > button:focus-visible,
 .noa-popup-menu .noa-context-menu-entry > button[aria-expanded="true"] { background: color-mix(in srgb, var(--text-primary) 5%, transparent); outline: none; }
@@ -1633,7 +1600,7 @@ kbd.noa-review-menu-hint { font-family: inherit; }
 .noa-code-view.is-diff .noa-code-line.is-empty .noa-code-number { background: color-mix(in lab, var(--surface-page, #F9F9F7) 98.5%, #000); }
 [data-theme="dark"] .noa-code-view.is-diff .noa-code-line.is-empty .noa-code-number { background: color-mix(in lab, var(--surface-page) 98.5%, #fff); }
 .noa-code-view.is-diff .noa-code-line.is-empty code { background: repeating-linear-gradient(-45deg, transparent, transparent calc(3px * 1.414), var(--diff-buffer) calc(3px * 1.414), var(--diff-buffer) calc(4px * 1.414)) 5px 0 / 8px 8px fixed; }
-/* Panel alignment grid: leading icons and text sit 16px from the panel edge in every tab. */
+/* Panel alignment grid: leading icons and text sit 21px from the panel edge in every tab, under the tab icons; boxes and rows start at 12px, with the tabs. */
 .noa-panel-title { padding-left: 13px; }
 /* A leading icon button (Back) centres on the 24px icon column too. */
 .noa-panel-toolbar > .noa-panel-button:first-child:not(.is-text) { margin-left: 4px; }
@@ -1704,7 +1671,8 @@ kbd.noa-review-menu-hint { font-family: inherit; }
 .noa-turn-review-row:hover { background: var(--fill-hover); }
 .noa-turn-review-row[data-selected] { background: color-mix(in srgb, var(--text-primary) 7%, transparent); }
 .noa-turn-review-row .noa-middle-path { flex: 1; }
-.noa-turn-scope { position: relative; z-index: 30; justify-content: space-between; }
+/* The source selector's label lines up with the 21px icon column with the tab icons; the row is as tall as the tab strip. */
+.noa-turn-scope { position: relative; z-index: 30; justify-content: space-between; min-height: 44px; padding-left: 14px; }
 /* The branch or commit picker beside the source selector: muted, caption size, hugging its text up to a cap. */
 .noa-ref-trigger { flex: 0 1 auto; min-width: 0; max-width: 11em; height: 24px; padding: 0 22px 0 8px; border: 0; border-radius: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; font: inherit; font-size: var(--text-caption); color: var(--sidebar-text-muted); outline: none; cursor: pointer; background: transparent url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23898781' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") no-repeat right 6px center; }
 .noa-ref-trigger.is-source { max-width: none; flex-shrink: 0; font-size: var(--text-body); color: var(--text-primary); }
@@ -2798,9 +2766,7 @@ html[data-translucent-sidebar="enabled"] .noa-confirm-scrim { backdrop-filter: n
 .noa-stats-tile:hover { background: color-mix(in srgb, var(--text-primary) 7%, transparent); }
 .noa-stats-range-option[aria-checked="true"] { background: color-mix(in srgb, var(--text-primary) 6%, transparent); color: var(--text-primary); }
 @media (prefers-reduced-motion: reduce) { .noa-stats-collapse, .noa-stats-chevron { transition: none; } }
-.noa-new-tab-row {background: color-mix(in oklab, var(--text-primary, #2D2D2B) 2.5%, transparent); transition: background-color 120ms ease; }
-.noa-new-tab-row:hover, .noa-new-tab-row:has([aria-expanded="true"]) { background: var(--fill-hover); }
-.noa-new-tab-key { display: inline-flex; padding: 2px 6px; border: 0; border-radius: 6px; background: color-mix(in srgb, currentColor 10%, transparent); color: var(--text-secondary, #7B7974); font-family: var(--font-ui, inherit); font-size: var(--text-micro, 11px); line-height: 1; }
+.noa-new-tab-row:hover { background: var(--fill-hover); }
 
 /* Keep native number spin buttons compact to match Codex's proportion inside settings inputs. */
 input[type="number"]::-webkit-inner-spin-button {

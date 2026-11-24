@@ -3,7 +3,7 @@ import type { AppSettings } from '../types';
 // Customizable global shortcuts. A binding is "+"-joined modifiers then a KeyboardEvent.code, e.g. "mod+KeyN".
 // "mod" is Command on macOS and Ctrl elsewhere; "ctrl" is always the Control key. An empty string means unbound.
 
-export const SHORTCUT_IDS = ['newTask', 'findTasks', 'settings', 'bottomPanel', 'terminal'] as const
+export const SHORTCUT_IDS = ['newTask', 'findTasks', 'settings', 'bottomPanel', 'terminal', 'changes', 'files', 'browser', 'sideChat'] as const
 export type ShortcutId = (typeof SHORTCUT_IDS)[number]
 export type ShortcutBindings = Record<ShortcutId, string>
 
@@ -13,6 +13,10 @@ export const SHORTCUT_LABELS: Record<ShortcutId, string> = {
   settings: 'Settings',
   bottomPanel: 'Toggle bottom panel',
   terminal: 'Open terminal',
+  changes: 'Open changes',
+  files: 'Open files',
+  browser: 'Open browser',
+  sideChat: 'Open side chat',
 }
 
 export const defaultShortcuts: ShortcutBindings = {
@@ -21,6 +25,10 @@ export const defaultShortcuts: ShortcutBindings = {
   settings: 'mod+Comma',
   bottomPanel: 'mod+KeyJ',
   terminal: 'ctrl+Backquote',
+  changes: 'mod+shift+KeyD',
+  files: 'mod+shift+KeyF',
+  browser: 'mod+shift+KeyB',
+  sideChat: 'mod+Semicolon',
 }
 
 const isMac = typeof navigator !== 'undefined' && navigator.platform.includes('Mac')
@@ -69,13 +77,15 @@ export function formatBinding(binding: string): string[] {
   if (!binding) return []
   const parts = binding.split('+')
   const code = parts.pop() ?? ''
-  const keys = parts.map((part) => {
+  // macOS lists modifiers as Control, Option, Shift, Command.
+  const order = ['ctrl', 'alt', 'shift', 'mod']
+  const keys = (isMac ? [...parts].sort((a, b) => order.indexOf(a) - order.indexOf(b)) : parts).map((part) => {
     if (part === 'mod') return isMac ? '⌘' : 'Ctrl'
     if (part === 'ctrl') return isMac ? '⌃' : 'Ctrl'
     if (part === 'alt') return isMac ? '⌥' : 'Alt'
     return isMac ? '⇧' : 'Shift'
   })
-  const label = code.startsWith('Key') ? code.slice(3) : code.startsWith('Digit') ? code.slice(5) : (({ Comma: ',', Backquote: '`' } as Record<string, string>)[code] ?? code)
+  const label = code.startsWith('Key') ? code.slice(3) : code.startsWith('Digit') ? code.slice(5) : (({ Comma: ',', Backquote: '`', Semicolon: ';' } as Record<string, string>)[code] ?? code)
   return [...keys, label]
 }
 
