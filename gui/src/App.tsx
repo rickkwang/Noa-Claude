@@ -1,5 +1,5 @@
 import { ElicitationCard } from "./components/ElicitationCard"
-import { useEffect, useMemo, useRef, useState } from "react"
+import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { useEvent } from "./hooks/useEvent"
 import { useAgent } from "./agent/useAgent"
 import { isSubagentTask } from "./agent/reducer"
@@ -57,6 +57,9 @@ import { ListDetails, PanelRight, X } from "./lib/icons"
 // Noa's default layout widths.
 const SIDEBAR_DEFAULT_WIDTH = 340
 const DAY_MS = 864e5
+// Keeps a subtree's last render while a pane or the window is being resized. Nothing inside depends on the widths,
+// and re-rendering the sidebar, transcript and right panel on every drag frame made resizing stutter.
+const HoldWhileResizing = memo(({ children }: { children: ReactNode; held: boolean }) => children, (_, next) => next.held)
 // Per project: the subject each coordinator prompt had when last used or dismissed, and how long dismissal hides them.
 const STEPS_SEEN_KEY = "noa-agent.coordinatorSteps"
 const MAX_STEP_DISMISSALS = 3
@@ -915,7 +918,6 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
       className="noa-app-shell h-screen w-screen flex flex-col isolate bg-[var(--bg-sidebar,#FBFBF9)] text-[var(--text-primary,#2D2D2B)] font-ui overflow-hidden relative selection:bg-[color-mix(in_srgb,var(--text-primary)_14%,transparent)]"
       style={
         {
-          "--noa-sidebar-width": `${sidebar.width}px`,
           "--noa-sidebar-material-width": `${sidebarWidth}px`,
         } as React.CSSProperties
       }
@@ -935,32 +937,34 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
           className="h-full transition-opacity duration-500 ease-in-out"
           style={{ width: sidebarOpen ? "100%" : sidebarTarget, opacity: sidebarOpen ? 1 : 0 }}
         >
-          <Sidebar
-            projects={projects}
-            sessions={sessionsByProject}
-            loadedProjects={loadedProjects}
-            active={{ cwd: session.cwd, id: customizeOpen ? undefined : activeId }}
-            onNewSession={(dir) => { setPage(undefined); newSession(dir) }}
-            onSelect={(dir, id) => { setPage(undefined); selectSession(dir, id) }}
-            onAddProject={() => {
-              setEditingProject(undefined)
-              setAddingProject(true)
-            }}
-            onEditProject={(project) => {
-              setAddingProject(false)
-              setEditingProject(project)
-            }}
-            onRemoveProject={removeProjectPath}
-            onRevealProject={revealProject}
-            onOpenCoordinator={(path) => { setPage(undefined); openCoordinator(path).then((id) => selectSession(path, id), (error) => confirm({ title: "Could not open the coordinator", description: (error as Error).message, confirmLabel: "OK", cancelLabel: "Close" })) }}
-            onDeleteSession={removeSession}
-            onSearch={() => setSearchOpen(true)}
-            onSettings={() => setSettingsOpen(true)}
-            onCustomize={() => setPage("customize")}
-            customizeOpen={page === "customize"}
-            onSchedule={() => setPage("schedule")}
-            scheduleOpen={page === "schedule"}
-          />
+          <HoldWhileResizing held={moving}>
+            <Sidebar
+              projects={projects}
+              sessions={sessionsByProject}
+              loadedProjects={loadedProjects}
+              active={{ cwd: session.cwd, id: customizeOpen ? undefined : activeId }}
+              onNewSession={(dir) => { setPage(undefined); newSession(dir) }}
+              onSelect={(dir, id) => { setPage(undefined); selectSession(dir, id) }}
+              onAddProject={() => {
+                setEditingProject(undefined)
+                setAddingProject(true)
+              }}
+              onEditProject={(project) => {
+                setAddingProject(false)
+                setEditingProject(project)
+              }}
+              onRemoveProject={removeProjectPath}
+              onRevealProject={revealProject}
+              onOpenCoordinator={(path) => { setPage(undefined); openCoordinator(path).then((id) => selectSession(path, id), (error) => confirm({ title: "Could not open the coordinator", description: (error as Error).message, confirmLabel: "OK", cancelLabel: "Close" })) }}
+              onDeleteSession={removeSession}
+              onSearch={() => setSearchOpen(true)}
+              onSettings={() => setSettingsOpen(true)}
+              onCustomize={() => setPage("customize")}
+              customizeOpen={page === "customize"}
+              onSchedule={() => setPage("schedule")}
+              scheduleOpen={page === "schedule"}
+            />
+          </HoldWhileResizing>
         </div>
       </div>
       {/* The content surface rides over the sidebar floor, so its left edge is a rounded card edge instead of a
@@ -1025,37 +1029,39 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
           className="noa-edge-fade-left absolute inset-y-0 right-0 h-full transition-opacity duration-500 ease-in-out"
           style={{ width: rightTarget, opacity: rightOpen ? 1 : 0 }}
         >
-          <RightPanel
-            shortcuts={settings.shortcuts}
-            state={state}
-            onStopTask={stopTask}
-            cwd={session.cwd}
-            open={rightOpen}
-            tabs={rightTabs}
-            onTabs={setRightTabs}
-            newTab={rightNewTab}
-            onNewTab={setRightNewTab}
-            tab={rightTab}
-            onTab={setRightTab}
-            terminalFocusKey={rightTerminalFocus}
-            onBottomTerminal={showBottomTerminal}
-            onReference={(path) => setReference({ path, key: Date.now() })}
-            onWorkspaceChange={() => setRefreshTick((n) => n + 1)}
-            workspaceRefreshKey={refreshTick}
-            focusChange={focusChange}
-            focusFile={focusFile}
-            focusTask={focusTask}
-            turnDiff={turnDiff}
-            sessions={sessionsByProject[worktreeOf ?? session.cwd] ?? []}
-            activeSessionId={activeId}
-            sideChat={{ key: sideChatKey, ready: sideChatReady, draftKey: session.runtimeId, request, focusKey: sideChatFocus }}
-            onRemindThread={coordinatorId ? remindThread : undefined}
-            onResolveThread={coordinatorId ? resolveThread : undefined}
-            onSelectSession={(id) => inCoordinator ? openThread(id) : selectSession(sessionsByProject[worktreeOf ?? session.cwd]?.find((s) => s.id === id)?.cwd ?? worktreeOf ?? session.cwd, id)}
-            thread={paneThread}
-            onOpenThreadFull={() => paneThread && selectSession(paneThread.cwd, paneThread.id)}
-            onCloseThread={() => setThreadPaneId(undefined)}
-          />
+          <HoldWhileResizing held={moving}>
+            <RightPanel
+              shortcuts={settings.shortcuts}
+              state={state}
+              onStopTask={stopTask}
+              cwd={session.cwd}
+              open={rightOpen}
+              tabs={rightTabs}
+              onTabs={setRightTabs}
+              newTab={rightNewTab}
+              onNewTab={setRightNewTab}
+              tab={rightTab}
+              onTab={setRightTab}
+              terminalFocusKey={rightTerminalFocus}
+              onBottomTerminal={showBottomTerminal}
+              onReference={(path) => setReference({ path, key: Date.now() })}
+              onWorkspaceChange={() => setRefreshTick((n) => n + 1)}
+              workspaceRefreshKey={refreshTick}
+              focusChange={focusChange}
+              focusFile={focusFile}
+              focusTask={focusTask}
+              turnDiff={turnDiff}
+              sessions={sessionsByProject[worktreeOf ?? session.cwd] ?? []}
+              activeSessionId={activeId}
+              sideChat={{ key: sideChatKey, ready: sideChatReady, draftKey: session.runtimeId, request, focusKey: sideChatFocus }}
+              onRemindThread={coordinatorId ? remindThread : undefined}
+              onResolveThread={coordinatorId ? resolveThread : undefined}
+              onSelectSession={(id) => inCoordinator ? openThread(id) : selectSession(sessionsByProject[worktreeOf ?? session.cwd]?.find((s) => s.id === id)?.cwd ?? worktreeOf ?? session.cwd, id)}
+              thread={paneThread}
+              onOpenThreadFull={() => paneThread && selectSession(paneThread.cwd, paneThread.id)}
+              onCloseThread={() => setThreadPaneId(undefined)}
+            />
+          </HoldWhileResizing>
         </div>
       </div>
 
@@ -1149,44 +1155,46 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
             {isNewTask && <DigitalWavesBackground theme={settings.appearance.theme} />}
             {draggingFiles && <FileDropOverlay />}
             {hasTurns ? (
-              <MessageList
-                key={session.key}
-                dockMotion={dockMotion}
-                threadTitles={threadTitles}
-                onOpenThread={inCoordinator ? openThread : undefined}
-                cwd={session.cwd}
-                sessionId={activeId}
-                historyBefore={state.historyBefore}
-                historyLoading={state.historyLoading}
-                onLoadEarlier={loadEarlier}
-                onOpenFile={openFile}
-                turns={state.turns}
-                busy={state.busy}
-                result={state.result}
-                readingWidth={readingWidth}
-                liveDiff={state.liveDiff}
-                onTurnDiff={(diff, path) => {
-                  setTurnDiff({ diff, path, key: Date.now() })
-                  setRightOpen(true)
-                  setRightTab("changes")
-                }}
-                onTurnDiffAction={(diff, action) => {
-                  if (diff.turnIndex === undefined) return
-                  setPendingDiffAction(diff.turnIndex)
-                  turnDiffAction(diff.turnIndex, action)
-                }}
-                diffActionPending={pendingDiffAction}
-                onRetry={retryLast}
-                onEdit={editMessage}
-                onRewind={state.external ? undefined : startRewind}
-                rewindBlocked={rewindBlocked}
-                onUndoRewind={state.external ? undefined : undoRewind}
-                onQuote={text => setQuote({ text, key: Date.now() })}
-                tasks={state.tasks}
-                onStopTask={stopTask}
-                onOpenTask={openTask}
-                transcriptView={transcriptView}
-              />
+              <HoldWhileResizing held={moving}>
+                <MessageList
+                  key={session.key}
+                  dockMotion={dockMotion}
+                  threadTitles={threadTitles}
+                  onOpenThread={inCoordinator ? openThread : undefined}
+                  cwd={session.cwd}
+                  sessionId={activeId}
+                  historyBefore={state.historyBefore}
+                  historyLoading={state.historyLoading}
+                  onLoadEarlier={loadEarlier}
+                  onOpenFile={openFile}
+                  turns={state.turns}
+                  busy={state.busy}
+                  result={state.result}
+                  readingWidth={readingWidth}
+                  liveDiff={state.liveDiff}
+                  onTurnDiff={(diff, path) => {
+                    setTurnDiff({ diff, path, key: Date.now() })
+                    setRightOpen(true)
+                    setRightTab("changes")
+                  }}
+                  onTurnDiffAction={(diff, action) => {
+                    if (diff.turnIndex === undefined) return
+                    setPendingDiffAction(diff.turnIndex)
+                    turnDiffAction(diff.turnIndex, action)
+                  }}
+                  diffActionPending={pendingDiffAction}
+                  onRetry={retryLast}
+                  onEdit={editMessage}
+                  onRewind={state.external ? undefined : startRewind}
+                  rewindBlocked={rewindBlocked}
+                  onUndoRewind={state.external ? undefined : undoRewind}
+                  onQuote={text => setQuote({ text, key: Date.now() })}
+                  tasks={state.tasks}
+                  onStopTask={stopTask}
+                  onOpenTask={openTask}
+                  transcriptView={transcriptView}
+                />
+              </HoldWhileResizing>
             ) : resumingEmpty ? (
               <div className="flex-1" />
             ) : (

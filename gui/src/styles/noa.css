@@ -255,11 +255,11 @@ body[data-pane-dragging="row"] * { cursor: row-resize !important; user-select: n
 :root[data-desktop="true"] { --noa-titlebar-lift: calc(22px / var(--noa-zoom-factor, 1) - 22px); }
 /* TopBar's left cluster: sidebar toggle, gap-0.5, back + forward (each h-6 w-6), then 10px before the lifted tab strip.
 
-/* Must never be transitioned: an animated inherited registered property re-invalidates the whole subtree each frame.
-   Veils animate transform instead. */
+/* Not inherited: set on the app shell, an inherited value would restyle the whole app on every sidebar drag frame.
+   The shell's ::before veil, its only reader, inherits it explicitly. */
 @property --noa-sidebar-material-width {
   syntax: '<length>';
-  inherits: true;
+  inherits: false;
   initial-value: 0px;
 }
 
@@ -546,6 +546,7 @@ html[data-translucent-sidebar="enabled"] .noa-app-shell::before {
   position: absolute;
   /* Top and bottom borders sit just outside the window so the corner arcs keep their full width. */
   inset: -0.5px 0;
+  --noa-sidebar-material-width: inherit;
   left: var(--noa-sidebar-material-width);
   z-index: -1;
   pointer-events: none;
