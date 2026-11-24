@@ -131,7 +131,9 @@ export const MoreHorizontal = glyph("ellipsis-horizontal");
 // The graph's "hide isolated nodes" toggle: linked nodes.
 export const Palette = glyph("paint-palette");
 export const Pin = glyph("pin");
-export const PanelLeft = glyph("sidebar");
+// Sidebar toggles: the open state shows the panel divider, the closed state a filled panel bar. The right toggle mirrors them.
+export const SidebarOpen = vectorIcon("sidebar-open-16");
+export const SidebarClosed = vectorIcon("sidebar-closed-16");
 // Only a left sidebar glyph exists; the right panel toggle is its mirror.
 export const PanelRight = glyph("sidebar", true);
 export const Plug = glyph("plugin");

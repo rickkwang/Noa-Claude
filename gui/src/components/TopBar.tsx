@@ -1,5 +1,5 @@
 import type { CSSProperties, ReactNode } from "react"
-import { ArrowLeft, ArrowRight, PanelLeft } from "../lib/icons"
+import { ArrowLeft, ArrowRight, SidebarClosed, SidebarOpen } from "../lib/icons"
 
 const dragRegion = { WebkitAppRegion: "drag" } as CSSProperties
 const noDragRegion = { WebkitAppRegion: "no-drag" } as CSSProperties
@@ -60,7 +60,7 @@ export default function TopBar({
             aria-label="Toggle sidebar"
             aria-pressed={sidebarOpen}
           >
-            <PanelLeft size={16} />
+            {sidebarOpen ? <SidebarOpen size={16} /> : <SidebarClosed size={16} />}
           </button>
           <button
             type="button"

@@ -53,7 +53,7 @@ import { SearchDialog } from "./components/SearchDialog"
 import { matchesShortcut } from "./lib/shortcuts"
 import { rateLimitKey } from "./components/RateLimitNotice"
 import type { AppSettings } from "./types"
-import { ListDetails, PanelRight, X } from "./lib/icons"
+import { ListDetails, SidebarClosed, SidebarOpen, X } from "./lib/icons"
 
 // Noa's default layout widths.
 const SIDEBAR_DEFAULT_WIDTH = 340
@@ -345,7 +345,7 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
       aria-label="Right panel"
       aria-pressed={rightOpen}
     >
-      <PanelRight size={16} />
+      {rightOpen ? <SidebarOpen size={16} style={{ transform: "scaleX(-1)" }} /> : <SidebarClosed size={16} style={{ transform: "scaleX(-1)" }} />}
     </button>
   )
 
