@@ -33,7 +33,7 @@ export type ExecResult = {
 export type ShellCommand = {
   background: (backgroundTaskId: string) => boolean
   result: Promise<ExecResult>
-  kill: () => void
+  kill: () => Promise<void> | void
   status: 'running' | 'backgrounded' | 'completed' | 'killed'
   /**
    * Cleans up stream resources (event listeners).
@@ -63,6 +63,114 @@ const PS_OPTIONS = {
 }
 const SAMPLE_INTERVAL_MS = 500
 const KILL_ESCALATION_MS = 5000
+const KILL_BACKSTOP_TIMEOUT_MS = 1500
+
+const liveShellCommands = new Set<ShellCommandImpl>()
+const pendingKillBackstops = new Set<Promise<void>>()
+const dyingProcesses = new Map<number, ChildProcess>()
+let exitSweepInstalled = false
+
+function killProcessGroupSync(pid: number, onlyGroup = false): void {
+  if (process.platform === 'win32' || pid <= 1) return
+  try {
+    process.kill(-pid, 'SIGKILL')
+  } catch {
+    // Group already gone or process is not a group leader
+  }
+  if (!onlyGroup) {
+    try {
+      process.kill(pid, 'SIGKILL')
+    } catch {
+      // Process already exited
+    }
+  }
+}
+
+function killChildProcessGroupSync(pid: number, child: ChildProcess): void {
+  if (process.platform === 'win32' || pid <= 1) return
+  const reaped = child.exitCode !== null || child.signalCode !== null
+  if (!reaped) {
+    killProcessGroupSync(pid)
+    return
+  }
+  // Child itself was reaped, so its pid may already be reused; only signal
+  // the process group if a live member still holds the group id reserved.
+  try {
+    process.kill(-pid, 0)
+    killProcessGroupSync(pid, true)
+  } catch {
+    // Process group is empty
+  }
+}
+
+function sweepLiveShellCommandsOnExit(): void {
+  const activePids = new Set<number>()
+  for (const [pid, child] of dyingProcesses) {
+    const reaped = child.exitCode !== null || child.signalCode !== null
+    if (!reaped) {
+      activePids.add(pid)
+    } else {
+      // Child itself was reaped, but its process group may still hold live members.
+      try {
+        process.kill(-pid, 0)
+        killProcessGroupSync(pid, true)
+      } catch {
+        // Process group is empty
+      }
+    }
+  }
+  for (const cmd of liveShellCommands) {
+    const pid = cmd.getActivePid()
+    if (pid !== undefined && pid > 1) {
+      activePids.add(pid)
+    }
+  }
+  for (const pid of activePids) {
+    killProcessGroupSync(pid)
+  }
+}
+
+function ensureExitSweepInstalled(): void {
+  if (exitSweepInstalled || process.platform === 'win32') return
+  exitSweepInstalled = true
+  process.prependListener('exit', sweepLiveShellCommandsOnExit)
+}
+
+/**
+ * Terminate all live shell commands (foreground and background).
+ * Used during graceful shutdown so detached shells and monitors do not
+ * survive as orphans after the parent process exits.
+ */
+export function killAllLiveShellCommands(): void {
+  for (const cmd of Array.from(liveShellCommands)) {
+    if (cmd.status === 'running' || cmd.status === 'backgrounded') {
+      void cmd.kill()
+    }
+  }
+}
+
+/**
+ * Wait for in-flight shell kill operations to finish (bounded by timeoutMs)
+ * before process.exit() terminates the event loop.
+ */
+export async function waitForPendingShellKills(
+  timeoutMs = KILL_BACKSTOP_TIMEOUT_MS,
+): Promise<void> {
+  if (pendingKillBackstops.size === 0) return
+  const pending = Promise.allSettled(Array.from(pendingKillBackstops))
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    await Promise.race([
+      pending,
+      new Promise<void>(resolve => {
+        timer = setTimeout(resolve, timeoutMs)
+        timer.unref()
+      }),
+    ])
+  } finally {
+    if (timer !== undefined) clearTimeout(timer)
+  }
+}
 
 type ProcessTable = Map<number, { ppid: number; start: string }>
 
@@ -248,6 +356,15 @@ class ShellCommandImpl implements ShellCommand {
     }
 
     this.result = this.#createResultPromise()
+    liveShellCommands.add(this)
+    ensureExitSweepInstalled()
+  }
+
+  getActivePid(): number | undefined {
+    const child = this.#childProcess
+    if (!child?.pid) return undefined
+    if (child.exitCode !== null || child.signalCode !== null) return undefined
+    return child.pid
   }
 
   get status(): 'running' | 'backgrounded' | 'completed' | 'killed' {
@@ -483,6 +600,7 @@ class ShellCommandImpl implements ShellCommand {
   }
 
   async #handleExit(code: number): Promise<void> {
+    liveShellCommands.delete(this)
     this.#cleanupListeners()
     if (this.#status === 'running' || this.#status === 'backgrounded') {
       this.#status = 'completed'
@@ -528,16 +646,17 @@ class ShellCommandImpl implements ShellCommand {
     }
   }
 
-  #doKill(code?: number): void {
+  #doKill(code?: number): Promise<void> {
     if (
       !this.#childProcess ||
       this.#status === 'completed' ||
       this.#status === 'killed'
     ) {
-      return
+      return Promise.resolve()
     }
     this.#status = 'killed'
     this.#killCode = code ?? SIGKILL
+    liveShellCommands.delete(this)
     const pid = this.#childProcess.pid
     // Once the shell has been reaped its pid may already be reused, so signal
     // neither its group nor its tree.
@@ -545,28 +664,50 @@ class ShellCommandImpl implements ShellCommand {
       this.#childProcess.exitCode !== null ||
       this.#childProcess.signalCode !== null
     if (pid && !reaped) {
-      // Enumerate and kill the tree before killing its process group. A shell
-      // with job control can put children in other groups; killing the shell
-      // first reparents those children before treeKill can discover them.
-      treeKill(pid, 'SIGKILL', () => {
-        // A detached shell leads its own group. Also stop group members that
-        // were already reparented and therefore absent from the tree walk.
-        if (process.platform !== 'win32' && pid > 1) {
-          try {
-            process.kill(-pid, 'SIGKILL')
-          } catch {
-            // Not a group leader (non-detached spawn) or group already gone
+      const child = this.#childProcess
+      dyingProcesses.set(pid, child)
+      const killPromise = new Promise<void>(resolve => {
+        let settled = false
+        const finish = (): void => {
+          if (settled) return
+          settled = true
+          clearTimeout(backstopTimer)
+          if (dyingProcesses.get(pid) === child) {
+            dyingProcesses.delete(pid)
           }
+          this.#resolveExitCode(code ?? SIGKILL)
+          resolve()
         }
-        this.#resolveExitCode(code ?? SIGKILL)
+        // Bound treeKill wait so a stalled process-table walk never blocks
+        // shutdown or delays signalling the process group.
+        const backstopTimer = setTimeout(() => {
+          killChildProcessGroupSync(pid, child)
+          finish()
+        }, KILL_BACKSTOP_TIMEOUT_MS)
+        backstopTimer.unref()
+
+        // Enumerate and kill the tree before killing its process group. A shell
+        // with job control can put children in other groups; killing the shell
+        // first reparents those children before treeKill can discover them.
+        treeKill(pid, 'SIGKILL', () => {
+          // A detached shell leads its own group. Also stop group members that
+          // were already reparented and therefore absent from the tree walk.
+          killChildProcessGroupSync(pid, child)
+          finish()
+        })
       })
-      return
+      pendingKillBackstops.add(killPromise)
+      void killPromise.finally(() => {
+        pendingKillBackstops.delete(killPromise)
+      })
+      return killPromise
     }
     this.#resolveExitCode(code ?? SIGKILL)
+    return Promise.resolve()
   }
 
-  kill(): void {
-    this.#doKill()
+  kill(): Promise<void> {
+    return this.#doKill()
   }
 
   background(taskId: string): boolean {
@@ -589,6 +730,7 @@ class ShellCommandImpl implements ShellCommand {
   }
 
   cleanup(): void {
+    liveShellCommands.delete(this)
     this.#stdoutWrapper?.cleanup()
     this.#stderrWrapper?.cleanup()
     this.taskOutput.clear()

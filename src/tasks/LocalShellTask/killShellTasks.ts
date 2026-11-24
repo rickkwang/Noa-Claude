@@ -14,7 +14,35 @@ import { isLocalShellTask } from './guards.js'
 
 type SetAppStateFn = (updater: (prev: AppState) => AppState) => void
 
+const stopHooks = new Map<string, () => void>()
+
+/**
+ * Register a synchronous callback to run immediately when killTask() stops
+ * this task (before the child process finishes exiting). Returns an unregister
+ * function for normal completion cleanup.
+ */
+export function registerShellTaskStopHook(
+  taskId: string,
+  onStop: () => void,
+): () => void {
+  stopHooks.set(taskId, onStop)
+  return () => {
+    if (stopHooks.get(taskId) === onStop) {
+      stopHooks.delete(taskId)
+    }
+  }
+}
+
 export function killTask(taskId: string, setAppState: SetAppStateFn): void {
+  const onStop = stopHooks.get(taskId)
+  if (onStop) {
+    stopHooks.delete(taskId)
+    try {
+      onStop()
+    } catch (error) {
+      logError(error)
+    }
+  }
   updateTaskState(taskId, setAppState, task => {
     if (task.status !== 'running' || !isLocalShellTask(task)) {
       return task

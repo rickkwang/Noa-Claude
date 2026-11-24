@@ -386,6 +386,8 @@ import { unassignTeammateTasks } from '../utils/tasks.js'
 import { getRunningTasks } from '../utils/task/framework.js'
 import { isBackgroundTask } from '../tasks/types.js'
 import { isLocalAgentTask } from '../tasks/LocalAgentTask/LocalAgentTask.js'
+import { isLocalShellTask } from '../tasks/LocalShellTask/guards.js'
+import { killTask } from '../tasks/LocalShellTask/killShellTasks.js'
 import { stopTask } from '../tasks/stopTask.js'
 import { drainSdkEvents } from '../utils/sdkEventQueue.js'
 import { initializeGrowthBook } from '../services/analytics/growthbook.js'
@@ -2488,9 +2490,15 @@ function runHeadlessStreaming(
           const state = getAppState()
           // A completed background agent still owes its notification while
           // the handoff review and worktree cleanup run; exiting then drops it.
+          // Exclude monitor tasks from keeping non-interactive runs alive on
+          // their own: monitors watch unbounded streams (tail -f / loops) and
+          // would otherwise block exit until timeout or forever if persistent.
           const hasRunningBg =
             getRunningTasks(state).some(
-              t => isBackgroundTask(t) && t.type !== 'in_process_teammate',
+              t =>
+                isBackgroundTask(t) &&
+                t.type !== 'in_process_teammate' &&
+                !(isLocalShellTask(t) && t.kind === 'monitor'),
             ) ||
             Object.values(state.tasks).some(
               t => isLocalAgentTask(t) && t.isBackgrounded && !t.notified,
@@ -2504,6 +2512,16 @@ function runHeadlessStreaming(
               await sleep(100)
             }
             // Loop back to drain any newly queued commands
+          } else if (inputClosed) {
+            // Input stream is closed and no non-monitor work remains: stop
+            // lingering monitors cleanly before exiting so their watchers and
+            // child processes do not leak. When inputClosed is false (multi-turn
+            // stream-json / GUI sessions), keep monitors alive across turns.
+            for (const t of getRunningTasks(state)) {
+              if (isLocalShellTask(t) && t.kind === 'monitor') {
+                killTask(t.id, setAppState)
+              }
+            }
           }
         }
       } while (waitingForAgents)

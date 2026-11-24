@@ -36,6 +36,10 @@ import {
 } from '../services/analytics/index.js'
 import type { AppState } from '../state/AppState.js'
 import { runCleanupFunctions } from './cleanupRegistry.js'
+import {
+  killAllLiveShellCommands,
+  waitForPendingShellKills,
+} from './ShellCommand.js'
 import { getPreferredCliCommandName } from './commandName.js'
 import { logForDebugging } from './debug.js'
 import { logForDiagnosticsNoPII } from './diagLogs.js'
@@ -507,6 +511,18 @@ export async function gracefulShutdown(
     clearTimeout(cleanupTimeoutId)
   }
 
+  // Ensure any remaining shell/monitor child processes are signalled and
+  // their process-group kills settle before hooks or process.exit() run.
+  // Bounded to 500ms per sweep so cleanup (2s) + hooks (1.5s) + both sweeps
+  // stay inside the 5s failsafe budget; any still-live group is caught by the
+  // synchronous process 'exit' sweep.
+  try {
+    killAllLiveShellCommands()
+    await waitForPendingShellKills(500)
+  } catch {
+    // Best-effort cleanup
+  }
+
   // Execute SessionEnd hooks. Bound both the per-hook default timeout and the
   // overall execution via a single budget (CLAUDE_CODE_SESSIONEND_HOOKS_TIMEOUT_MS,
   // default 1.5s). hook.timeout in settings is respected up to this cap.
@@ -518,6 +534,14 @@ export async function gracefulShutdown(
     })
   } catch {
     // Ignore SessionEnd hook exceptions (including AbortError on timeout)
+  }
+
+  // Re-sweep in case hooks spawned shell commands or prior kills were still settling.
+  try {
+    killAllLiveShellCommands()
+    await waitForPendingShellKills(500)
+  } catch {
+    // Best-effort cleanup
   }
 
   // Log startup perf before analytics shutdown flushes/cancels timers

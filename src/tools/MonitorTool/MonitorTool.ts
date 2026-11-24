@@ -1,5 +1,6 @@
 import { closeSync, fstatSync, openSync, readSync, statSync } from 'fs'
 import { z } from 'zod/v4'
+import { getIsNonInteractiveSession } from '../../bootstrap/state.js'
 import { buildTool, type ToolDef } from '../../Tool.js'
 import {
   EVENT_TAG,
@@ -16,7 +17,10 @@ import {
   markTaskNotified,
   spawnShellTask,
 } from '../../tasks/LocalShellTask/LocalShellTask.js'
-import { killTask } from '../../tasks/LocalShellTask/killShellTasks.js'
+import {
+  killTask,
+  registerShellTaskStopHook,
+} from '../../tasks/LocalShellTask/killShellTasks.js'
 import { enqueuePendingNotification } from '../../utils/messageQueueManager.js'
 import { lazySchema } from '../../utils/lazySchema.js'
 import { exec } from '../../utils/Shell.js'
@@ -46,6 +50,12 @@ const TRUNCATED_MARK = '...(truncated)'
 const READ_CHUNK_BYTES = 64 * 1024
 const MAX_READS_PER_TICK = 16
 const MAX_DRAIN_BYTES = 16 * 1024 * 1024
+// Token bucket for outgoing monitor event notifications: allows short bursts
+// while preventing a firehose from flooding the conversation queue.
+const RATE_LIMIT_BURST = 10
+const RATE_LIMIT_REFILL_MS = 1_000
+// Cap monitor lifetime in non-interactive runs even if persistent is requested.
+const MAX_NON_INTERACTIVE_MONITOR_TIMEOUT_MS = 600_000
 // Shell-level timeout is disabled (the shell would otherwise default to 30
 // minutes); the monitor's own timeout_ms or persistent setting decides when it stops.
 const NO_SHELL_TIMEOUT_MS = 2_147_483_647
@@ -93,7 +103,7 @@ function watchTaskOutput(
   description: string,
   toolUseId: string | undefined,
   agentId: Parameters<typeof spawnShellTask>[0]['agentId'],
-): { finish(): void; stop(): void } {
+): { finish(): void; stop(discardPending?: boolean): void } {
   const outputPath = getTaskOutputPath(taskId)
   let stopped = false
   let offset = 0
@@ -102,6 +112,50 @@ function watchTaskOutput(
   let pending: string[] = []
   let pendingChars = 0
   let firstPendingAt = 0
+  let tokens = RATE_LIMIT_BURST
+  let lastRefillAt = Date.now()
+  let suppressedEvents = 0
+  let suppressedTail = ''
+
+  const tryConsumeToken = (): boolean => {
+    const now = Date.now()
+    const elapsed = now - lastRefillAt
+    if (elapsed >= RATE_LIMIT_REFILL_MS) {
+      const gained = Math.floor(elapsed / RATE_LIMIT_REFILL_MS)
+      tokens = Math.min(RATE_LIMIT_BURST, tokens + gained)
+      lastRefillAt += gained * RATE_LIMIT_REFILL_MS
+    }
+    if (tokens > 0) {
+      tokens--
+      return true
+    }
+    return false
+  }
+
+  const enqueueEvent = (body: string): void => {
+    const toolUseIdLine = toolUseId
+      ? `\n<${TOOL_USE_ID_TAG}>${toolUseId}</${TOOL_USE_ID_TAG}>`
+      : ''
+    enqueuePendingNotification({
+      mode: 'task-notification',
+      priority: 'next',
+      agentId,
+      value: `<${TASK_NOTIFICATION_TAG}>
+<${TASK_ID_TAG}>${taskId}</${TASK_ID_TAG}>${toolUseIdLine}
+<${SUMMARY_TAG}>${escapeXml(`Monitor event: "${description}"`)}</${SUMMARY_TAG}>
+<${EVENT_TAG}>${escapeXml(body)}</${EVENT_TAG}>
+</${TASK_NOTIFICATION_TAG}>`,
+    })
+  }
+
+  const flushSuppressed = (): void => {
+    if (suppressedEvents === 0) return
+    const notice = `[suppressed ${suppressedEvents} events — output rate exceeded]`
+    const body = suppressedTail ? `${notice}\n${suppressedTail}` : notice
+    suppressedEvents = 0
+    suppressedTail = ''
+    enqueueEvent(body)
+  }
 
   // Reads at most READ_CHUNK_BYTES past `offset`. Returns '' when nothing new.
   const readNew = (): string => {
@@ -131,24 +185,21 @@ function watchTaskOutput(
     }
   }
 
-  const flush = (): void => {
-    if (pending.length === 0) return
+  const flush = (bypassRateLimit = false): void => {
+    if (pending.length === 0) {
+      if (bypassRateLimit) flushSuppressed()
+      return
+    }
     const body = pending.join('\n')
     pending = []
     pendingChars = 0
-    const toolUseIdLine = toolUseId
-      ? `\n<${TOOL_USE_ID_TAG}>${toolUseId}</${TOOL_USE_ID_TAG}>`
-      : ''
-    enqueuePendingNotification({
-      mode: 'task-notification',
-      priority: 'next',
-      agentId,
-      value: `<${TASK_NOTIFICATION_TAG}>
-<${TASK_ID_TAG}>${taskId}</${TASK_ID_TAG}>${toolUseIdLine}
-<${SUMMARY_TAG}>${escapeXml(`Monitor event: "${description}"`)}</${SUMMARY_TAG}>
-<${EVENT_TAG}>${escapeXml(body)}</${EVENT_TAG}>
-</${TASK_NOTIFICATION_TAG}>`,
-    })
+    if (!bypassRateLimit && !tryConsumeToken()) {
+      suppressedEvents++
+      suppressedTail = body.slice(-MAX_CHARS_PER_LINE)
+      return
+    }
+    flushSuppressed()
+    enqueueEvent(body)
   }
 
   const addLine = (line: string): void => {
@@ -193,6 +244,12 @@ function watchTaskOutput(
     collect(MAX_READS_PER_TICK)
     if (pending.length > 0 && Date.now() - firstPendingAt >= FLUSH_INTERVAL_MS) {
       flush()
+    } else if (
+      pending.length === 0 &&
+      suppressedEvents > 0 &&
+      tryConsumeToken()
+    ) {
+      flushSuppressed()
     }
   }, POLL_INTERVAL_MS)
   timer.unref()
@@ -207,20 +264,30 @@ function watchTaskOutput(
       addLine(partial)
       partial = ''
     }
-    flush()
+    flush(true)
   }
 
   return {
     finish() {
       if (stopped) return
+      stopped = true
       finishReading(MAX_DRAIN_BYTES)
     },
-    // Flushes what was read so far, then ignores lines the process writes while
-    // it is being killed, so nothing follows the timeout notice.
-    stop() {
+    // Flushes what was read so far (unless discarded on explicit stop/kill),
+    // then ignores lines the process writes while it is being killed.
+    stop(discardPending = false) {
       if (stopped) return
-      finishReading(READ_CHUNK_BYTES * MAX_READS_PER_TICK)
       stopped = true
+      clearInterval(timer)
+      if (discardPending) {
+        pending = []
+        pendingChars = 0
+        partial = ''
+        suppressedEvents = 0
+        suppressedTail = ''
+        return
+      }
+      finishReading(READ_CHUNK_BYTES * MAX_READS_PER_TICK)
     },
   }
 }
@@ -315,10 +382,17 @@ export const MonitorTool = buildTool({
   async call(input, toolUseContext) {
     const { abortController, getAppState, setAppState, toolUseId, agentId } =
       toolUseContext
-    const timeoutMs = input.persistent
-      ? null
-      : (input.timeout_ms ?? DEFAULT_MONITOR_TIMEOUT_MS)
-    // Events carry stdout only, as upstream does. stderr is discarded here:
+    const isNonInteractive = getIsNonInteractiveSession()
+    const timeoutMs =
+      input.persistent && !isNonInteractive
+        ? null
+        : Math.min(
+            input.timeout_ms ?? DEFAULT_MONITOR_TIMEOUT_MS,
+            isNonInteractive
+              ? MAX_NON_INTERACTIVE_MONITOR_TIMEOUT_MS
+              : MAX_MONITOR_TIMEOUT_MS,
+          )
+    // Events carry stdout only. stderr is discarded here:
     // in file mode it would share the output file and show up as events.
     const shellCommand = await exec(`exec 2>/dev/null\n${input.command}`, abortController.signal, 'bash', {
       timeout: NO_SHELL_TIMEOUT_MS,
@@ -343,7 +417,7 @@ export const MonitorTool = buildTool({
       timeoutMs === null
         ? undefined
         : setTimeout(() => {
-            watcher.stop()
+            watcher.stop(false)
             stopTimedOutMonitor(
               taskId,
               input.description,
@@ -354,9 +428,14 @@ export const MonitorTool = buildTool({
             )
           }, timeoutMs)
     timer?.unref()
+    const unregisterStopHook = registerShellTaskStopHook(taskId, () => {
+      clearTimeout(timer)
+      watcher.stop(true)
+    })
     // Registered after spawnShellTask's own completion handler, so the last
     // lines are queued just before the task's completion notification.
     void shellCommand.result.then(() => {
+      unregisterStopHook()
       clearTimeout(timer)
       watcher.finish()
     })
