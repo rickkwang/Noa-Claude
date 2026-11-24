@@ -389,7 +389,11 @@ import { isLocalAgentTask } from '../tasks/LocalAgentTask/LocalAgentTask.js'
 import { isLocalShellTask } from '../tasks/LocalShellTask/guards.js'
 import { killTask } from '../tasks/LocalShellTask/killShellTasks.js'
 import { stopTask } from '../tasks/stopTask.js'
-import { drainSdkEvents } from '../utils/sdkEventQueue.js'
+import {
+  drainSdkEvents,
+  emitTaskTerminatedSdk,
+} from '../utils/sdkEventQueue.js'
+import { getTaskOutputPath } from '../utils/task/diskOutput.js'
 import { initializeGrowthBook } from '../services/analytics/growthbook.js'
 import { errorMessage, toError } from '../utils/errors.js'
 import { sleep } from '../utils/sleep.js'
@@ -2019,6 +2023,60 @@ function runHeadlessStreaming(
     // queue re-checks at the bottom of run().
     const isMainThread = (cmd: QueuedCommand) => cmd.agentId === undefined
 
+    const hasRunningNonMonitorBg = (state: AppState): boolean =>
+      getRunningTasks(state).some(
+        t =>
+          isBackgroundTask(t) &&
+          t.type !== 'in_process_teammate' &&
+          !(isLocalShellTask(t) && t.kind === 'monitor'),
+      ) ||
+      Object.values(state.tasks).some(
+        t => isLocalAgentTask(t) && t.isBackgrounded && !t.notified,
+      )
+
+    const isNotificationForTaskIds = (
+      cmd: QueuedCommand,
+      taskIds: ReadonlySet<string>,
+    ): boolean => {
+      if (cmd.mode !== 'task-notification' || typeof cmd.value !== 'string') {
+        return false
+      }
+      const match = cmd.value.match(/<task-id>([^<]+)<\/task-id>/)
+      return match !== null && taskIds.has(match[1]!)
+    }
+
+    const stopLingeringMonitorsIfDone = (): boolean => {
+      if (!inputClosed) return false
+      const state = getAppState()
+      if (hasRunningNonMonitorBg(state)) return false
+      const runningMonitors = getRunningTasks(state).filter(
+        t => isLocalShellTask(t) && t.kind === 'monitor',
+      )
+      if (runningMonitors.length === 0) return false
+      const monitorIds = new Set(runningMonitors.map(t => t.id))
+      // Keep monitors alive while non-monitor main-thread work is still queued.
+      if (
+        peek(
+          cmd => isMainThread(cmd) && !isNotificationForTaskIds(cmd, monitorIds),
+        ) !== undefined
+      ) {
+        return false
+      }
+      for (const t of runningMonitors) {
+        killTask(t.id, setAppState)
+        emitTaskTerminatedSdk(t.id, 'stopped', {
+          toolUseId: t.toolUseId,
+          summary: `Monitor "${t.description}" stopped`,
+          outputFile: getTaskOutputPath(t.id),
+        })
+      }
+      // Events already queued are still delivered; stopping only ends new ones.
+      for (const event of drainSdkEvents()) {
+        output.enqueue(event)
+      }
+      return true
+    }
+
     try {
       let command: QueuedCommand | undefined
       let waitingForAgents = false
@@ -2461,6 +2519,11 @@ function runHeadlessStreaming(
           logHeadlessProfilerTurn()
           logQueryProfileReport()
           headlessProfilerStartTurn()
+
+          // If input is closed and no non-monitor work remains, stop lingering
+          // monitors so continuous monitor output cannot loop headless turns
+          // indefinitely; events queued before the stop are still delivered.
+          stopLingeringMonitorsIfDone()
         }
       }
 
@@ -2487,22 +2550,12 @@ function runHeadlessStreaming(
         // doesn't hit this.
         waitingForAgents = false
         {
+          // Stop lingering monitors if input is closed and no non-monitor work
+          // remains, emitting SDK terminal notifications before deciding
+          // whether to keep looping.
+          stopLingeringMonitorsIfDone()
           const state = getAppState()
-          // A completed background agent still owes its notification while
-          // the handoff review and worktree cleanup run; exiting then drops it.
-          // Exclude monitor tasks from keeping non-interactive runs alive on
-          // their own: monitors watch unbounded streams (tail -f / loops) and
-          // would otherwise block exit until timeout or forever if persistent.
-          const hasRunningBg =
-            getRunningTasks(state).some(
-              t =>
-                isBackgroundTask(t) &&
-                t.type !== 'in_process_teammate' &&
-                !(isLocalShellTask(t) && t.kind === 'monitor'),
-            ) ||
-            Object.values(state.tasks).some(
-              t => isLocalAgentTask(t) && t.isBackgrounded && !t.notified,
-            )
+          const hasRunningBg = hasRunningNonMonitorBg(state)
           const hasMainThreadQueued = peek(isMainThread) !== undefined
           if (hasRunningBg || hasMainThreadQueued) {
             waitingForAgents = true
@@ -2512,16 +2565,6 @@ function runHeadlessStreaming(
               await sleep(100)
             }
             // Loop back to drain any newly queued commands
-          } else if (inputClosed) {
-            // Input stream is closed and no non-monitor work remains: stop
-            // lingering monitors cleanly before exiting so their watchers and
-            // child processes do not leak. When inputClosed is false (multi-turn
-            // stream-json / GUI sessions), keep monitors alive across turns.
-            for (const t of getRunningTasks(state)) {
-              if (isLocalShellTask(t) && t.kind === 'monitor') {
-                killTask(t.id, setAppState)
-              }
-            }
           }
         }
       } while (waitingForAgents)

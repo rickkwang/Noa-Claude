@@ -20,7 +20,7 @@ const model = 'claude-sonnet-4-6';
 // A 200k-window model, so a gateway naming a 1M model in its responses offers a "larger window".
 const modelFor = scenario => option('--model') || (scenario === 'gateway-model-name' ? 'claude-haiku-4-5' : scenario === 'preserved-thinking' || scenario === 'mode-bypass-opus55' ? 'claude-opus-5-5' : scenario === 'opus-1m-cache-off' ? 'claude-opus-4-6[1m]' : scenario === 'mandatory-thinking' ? 'kimi/k3.1-pro' : (scenario === 'agent-effort-plan' || scenario === 'plan-compact-overflow') ? 'opusplan' : scenario.startsWith('openai-responses') ? 'gpt-6.1-sol' : model);
 const sentinel = 'KEEP_IDENTIFIER=loop-sentinel-42';
-const cases = ['agent-nested', 'agent-budget', 'agent-budget-resume', 'agent-stop-pending', 'agent-owned-results', 'agent-owned-auto', 'auto-plan-race', 'auto-stage2-error', 'agent-cascade-stop', 'agent-schema', 'agent-schema-bg', 'hook-output', 'hook-output-null', 'blocking-limit', 'image-error', 'small-window-overflow', 'read', 'read-repeat', 'large-output', 'max-turns', 'malformed', 'empty', 'alternating', 'fallback', 'provider-quota', 'refusal', 'refusal-repeat', 'truncated', 'tool-input-streaming', 'tool-input-nonstream', 'stale-signature', 'budget-streaming', 'budget-nonstream', 'permission-deny', 'deny-rule', 'mode-auto', 'mode-bypass', 'mode-bypass-off', 'mode-bypass-opus55', 'hook-block', 'compact-resume', 'task-crud', 'task-metadata-race', 'task-dependency-race', 'goal-child-usage', 'agent-custom-fork', 'agent-bypass-blocked', 'agent-bypass-auto', 'agent-effort', 'agent-effort-plan', 'hook-composition', 'tombstone-resume', 'concurrency-streaming', 'concurrency-nonstream', 'background-deadline', 'monitor', 'monitor-timeout', 'monitor-persistent', 'cron', 'cron-disabled', 'cron-durable', 'cron-wakeup', 'cron-resume', 'cron-resume-compact', 'cron-resume-missed', 'cron-wrapper', 'openai-overflow', 'openai-usage', 'openai-usage-nonstream', 'openai-tools', 'openai-max-tokens-cap', 'openai-max-tokens-vllm', 'openai-responses', 'openai-responses-effort', 'bedrock-overflow', 'bedrock-bare-overflow', 'bedrock-media-overflow', 'request-body-overflow', 'request-body-with-media-overflow', 'plan-compact-overflow', 'pdf-batch-reject', 'opus-1m-cache-off', 'field-reject', 'gateway-model-name', 'preserved-thinking', 'mandatory-thinking'].filter(name => !option('--case') || name === option('--case')).filter((_, i) => {
+const cases = ['agent-nested', 'agent-budget', 'agent-budget-resume', 'agent-stop-pending', 'agent-owned-results', 'agent-owned-auto', 'auto-plan-race', 'auto-stage2-error', 'agent-cascade-stop', 'agent-schema', 'agent-schema-bg', 'hook-output', 'hook-output-null', 'blocking-limit', 'image-error', 'small-window-overflow', 'read', 'read-repeat', 'large-output', 'max-turns', 'malformed', 'empty', 'alternating', 'fallback', 'provider-quota', 'refusal', 'refusal-repeat', 'truncated', 'tool-input-streaming', 'tool-input-nonstream', 'stale-signature', 'budget-streaming', 'budget-nonstream', 'permission-deny', 'deny-rule', 'mode-auto', 'mode-bypass', 'mode-bypass-off', 'mode-bypass-opus55', 'hook-block', 'compact-resume', 'task-crud', 'task-metadata-race', 'task-dependency-race', 'goal-child-usage', 'agent-custom-fork', 'agent-bypass-blocked', 'agent-bypass-auto', 'agent-effort', 'agent-effort-plan', 'hook-composition', 'tombstone-resume', 'concurrency-streaming', 'concurrency-nonstream', 'background-deadline', 'monitor', 'monitor-timeout', 'monitor-persistent', 'monitor-after-turn', 'cron', 'cron-disabled', 'cron-durable', 'cron-wakeup', 'cron-resume', 'cron-resume-compact', 'cron-resume-missed', 'cron-wrapper', 'openai-overflow', 'openai-usage', 'openai-usage-nonstream', 'openai-tools', 'openai-max-tokens-cap', 'openai-max-tokens-vllm', 'openai-responses', 'openai-responses-effort', 'bedrock-overflow', 'bedrock-bare-overflow', 'bedrock-media-overflow', 'request-body-overflow', 'request-body-with-media-overflow', 'plan-compact-overflow', 'pdf-batch-reject', 'opus-1m-cache-off', 'field-reject', 'gateway-model-name', 'preserved-thinking', 'mandatory-thinking'].filter(name => !option('--case') || name === option('--case')).filter((_, i) => {
   // --shard K/N runs every Nth case starting at K, so CI can split the suite across runners.
   const shard = option('--shard')?.match(/^(\d+)\/(\d+)$/);
   return !shard || i % Number(shard[2]) === Number(shard[1]) - 1;
@@ -421,6 +421,14 @@ const server = createServer(async (req, res) => {
       else if (done('cron_list_1')) content = [{ type: 'text', text: 'AUDIT_OK' }];
       else if (done('cron_create')) step('cron_list_1', 'CronList', {});
       else step('cron_create', 'CronCreate', { cron: '* * * * *', prompt: active.case === 'cron-wrapper' ? '/loop 5m CRON_FIRE_MARKER_42' : 'CRON_FIRE_MARKER_42', recurring: true, ...(active.case === 'cron-durable' ? { durable: true } : {}) });
+    } else if (active.case === 'monitor-after-turn' && n <= 2) {
+      // The turn ends while the monitor still runs; lines that arrive during the
+      // slow final response must reach the model before the monitor is stopped.
+      if (n === 2) await delay(2500);
+      content = n === 1
+        ? [{ type: 'tool_use', id: 'monitor_start', name: 'Monitor', input: { command: 'echo AFTER_TURN_1; sleep 1; echo AFTER_TURN_2; sleep 60', description: 'fixture after-turn monitor', timeout_ms: 60000 } }]
+        : [{ type: 'text', text: 'TURN_ONE_DONE' }];
+      if (n === 1) stop = 'tool_use';
     } else if (active.case.startsWith('monitor') && n <= 2) {
       const start = active.case === 'monitor-timeout'
         ? { command: 'echo MONITOR_BEFORE_TIMEOUT; sleep 30', description: 'fixture timeout monitor', timeout_ms: 1000 }
@@ -1138,6 +1146,12 @@ try {
             const followUp = JSON.stringify(main[1]?.body.messages);
             assert.ok(followUp.includes('HOOK_BLOCKED_42'), 'hook block reason did not reach the model');
             assert.ok(!followUp.includes('LOCAL_FIXTURE_42'), 'Read ran despite the blocking hook');
+          } else if (scenario === 'monitor-after-turn') {
+            // Exiting before the 20s run timeout shows the monitor (sleep 60) was stopped.
+            assert.equal(runResult.code, 0); assert.equal(runResult.result.result, 'AUDIT_OK');
+            const later = JSON.stringify(main.slice(2).map(r => r.body.messages));
+            const eventBodies = [...later.matchAll(/<event>(.*?)<\/event>/gs)].map(m => m[1]).join('\n');
+            for (const line of ['AFTER_TURN_1', 'AFTER_TURN_2']) assert.ok(eventBodies.includes(line), `${line} queued after the turn was dropped`);
           } else if (scenario === 'monitor-persistent') {
             assert.equal(runResult.code, 0); assert.equal(runResult.result.result, 'AUDIT_OK');
             assert.ok(JSON.stringify(active.requests[1].body.messages).includes('persistent'), 'persistent monitor result text missing');

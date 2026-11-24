@@ -73,12 +73,14 @@ const inputSchema = lazySchema(() =>
       .max(MAX_MONITOR_TIMEOUT_MS)
       .optional()
       .describe(
-        `Stop the monitor after this many milliseconds (default ${DEFAULT_MONITOR_TIMEOUT_MS}, max ${MAX_MONITOR_TIMEOUT_MS}). Ignored when persistent is true.`,
+        `Stop the monitor after this many milliseconds (default ${DEFAULT_MONITOR_TIMEOUT_MS}, max ${MAX_MONITOR_TIMEOUT_MS}; capped at ${MAX_NON_INTERACTIVE_MONITOR_TIMEOUT_MS}ms in non-interactive sessions). Ignored when persistent is true.`,
       ),
     persistent: z
       .boolean()
       .optional()
-      .describe('Run until TaskStop or the session ends instead of stopping at a timeout'),
+      .describe(
+        `Run until TaskStop or the session ends instead of stopping at a timeout (in non-interactive sessions, capped at ${MAX_NON_INTERACTIVE_MONITOR_TIMEOUT_MS}ms)`,
+      ),
   }),
 )
 type InputSchema = ReturnType<typeof inputSchema>
@@ -198,7 +200,16 @@ function watchTaskOutput(
       suppressedTail = body.slice(-MAX_CHARS_PER_LINE)
       return
     }
-    flushSuppressed()
+    if (suppressedEvents > 0) {
+      const notice = `[suppressed ${suppressedEvents} events — output rate exceeded]`
+      const merged = suppressedTail
+        ? `${notice}\n${suppressedTail}\n${body}`
+        : `${notice}\n${body}`
+      suppressedEvents = 0
+      suppressedTail = ''
+      enqueueEvent(merged)
+      return
+    }
     enqueueEvent(body)
   }
 
@@ -383,15 +394,16 @@ export const MonitorTool = buildTool({
     const { abortController, getAppState, setAppState, toolUseId, agentId } =
       toolUseContext
     const isNonInteractive = getIsNonInteractiveSession()
-    const timeoutMs =
-      input.persistent && !isNonInteractive
-        ? null
-        : Math.min(
-            input.timeout_ms ?? DEFAULT_MONITOR_TIMEOUT_MS,
-            isNonInteractive
-              ? MAX_NON_INTERACTIVE_MONITOR_TIMEOUT_MS
-              : MAX_MONITOR_TIMEOUT_MS,
-          )
+    const timeoutMs = input.persistent
+      ? isNonInteractive
+        ? MAX_NON_INTERACTIVE_MONITOR_TIMEOUT_MS
+        : null
+      : Math.min(
+          input.timeout_ms ?? DEFAULT_MONITOR_TIMEOUT_MS,
+          isNonInteractive
+            ? MAX_NON_INTERACTIVE_MONITOR_TIMEOUT_MS
+            : MAX_MONITOR_TIMEOUT_MS,
+        )
     // Events carry stdout only. stderr is discarded here:
     // in file mode it would share the output file and show up as events.
     const shellCommand = await exec(`exec 2>/dev/null\n${input.command}`, abortController.signal, 'bash', {
