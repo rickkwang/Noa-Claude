@@ -25,7 +25,7 @@ export function EmptyState({
           aria-haspopup="menu"
           aria-expanded={pickerOpen}
           title={cwd}
-          className="inline-block max-w-full cursor-pointer break-words whitespace-normal align-baseline underline decoration-dotted decoration-[1px] decoration-[var(--text-secondary,#7B7974)] underline-offset-4 hover:text-[var(--text-secondary,#7B7974)]"
+          className="inline-block max-w-full cursor-pointer break-words whitespace-normal align-baseline underline decoration-dotted decoration-[1px] decoration-[var(--text-secondary,#60605E)] underline-offset-4 hover:text-[var(--text-secondary,#60605E)]"
         >
           {name}?
         </button>

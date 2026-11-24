@@ -10,7 +10,7 @@ export interface NewTabTool {
 
 // A shortcut as separate key glyphs with a little space between them.
 export function ShortcutKeys({ keys }: { keys: string[] }) {
-  return <span className="flex shrink-0 items-center gap-[3px] text-[length:var(--text-chat-sm)] text-[var(--text-secondary,#7B7974)]">{keys.map((key, index) => <span key={index}>{key}</span>)}</span>
+  return <span className="flex shrink-0 items-center gap-[3px] text-[length:var(--text-chat-sm)] text-[var(--text-secondary,#60605E)]">{keys.map((key, index) => <span key={index}>{key}</span>)}</span>
 }
 
 // An empty panel: the tools that can open as a tab, as one centered list with each tool's shortcut.

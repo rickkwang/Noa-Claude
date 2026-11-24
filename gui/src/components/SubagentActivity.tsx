@@ -27,7 +27,7 @@ export function SubagentActivity({ blocks, tasks = [], onOpenTask, details, trac
   const action = entries.some(({ block, task }) => block.status === "running" && (!task || task.status === "running")) ? "Creating" : blocks.some(block => block.status === "error") ? "Failed to create" : blocks.some(block => block.status === "stopped") ? "Stopped creating" : "Created"
   const label = `${action} ${blocks.length === 1 ? "an agent" : `${blocks.length} agents`}`
   return <div data-subagent-group className="not-prose flex min-w-0 flex-col gap-2 text-[length:var(--font-text-md-size)] leading-5">
-    <button type="button" aria-expanded={open} onClick={() => setOpen(value => !value)} className="group/agents flex min-w-0 items-center gap-1.5 text-left text-[color-mix(in_srgb,var(--text-primary)_60%,transparent)] hover:text-[var(--text-primary)]">
+    <button type="button" aria-expanded={open} onClick={() => setOpen(value => !value)} className="group/agents flex min-w-0 items-center gap-1.5 text-left text-[var(--text-secondary)] hover:text-[var(--text-primary)]">
       <Users size={16} className="shrink-0" />
       <span className={action === "Creating" ? "noa-shimmer" : ""}>{label}</span>
       <ChevronRight size={12} className={`shrink-0 opacity-0 group-hover/agents:opacity-100 group-focus-visible/agents:opacity-100 ${open ? "rotate-90" : ""}`} />

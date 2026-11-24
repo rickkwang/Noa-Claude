@@ -71,7 +71,7 @@ export function ToolCard({ block, step: stepProp, defaultOpen = false, active = 
           userToggled.current = true
           setOpen((value) => !value)
         }}
-        className="-mx-3 flex min-h-7 w-[calc(100%+1.5rem)] min-w-0 cursor-pointer items-center gap-1.5 overflow-hidden whitespace-nowrap rounded-sm px-3 py-1.5 text-left text-[length:var(--text-chat-sm)] leading-5 select-none text-[color-mix(in_srgb,var(--text-primary)_45%,transparent)] hover:bg-[var(--fill-hover)] hover:text-[var(--text-primary,#2D2D2B)]">
+        className="-mx-3 flex min-h-7 w-[calc(100%+1.5rem)] min-w-0 cursor-pointer items-center gap-1.5 overflow-hidden whitespace-nowrap rounded-sm px-3 py-1.5 text-left text-[length:var(--text-chat-sm)] leading-5 select-none text-[var(--text-tertiary)] hover:bg-[var(--fill-hover)] hover:text-[var(--text-primary,#2D2D2B)]">
         <Icon size={14} className="shrink-0" aria-hidden="true" />
         <span className={`min-w-0 flex-1 truncate ${live ? "noa-shimmer" : ""}`}>
           <span>{label.action}</span>
@@ -319,7 +319,7 @@ function TaskChecklist({ block, active }: { block: ToolBlock; active: boolean })
       const status = str(entry.status) || (block.name === "TaskUpdate" ? "" : "pending")
       return <li key={index} className="flex items-start gap-2 text-[var(--text-secondary)]">
         {status && <span aria-label={status.replaceAll("_", " ")} className={active && status === "in_progress" ? "noa-shimmer" : undefined}>{status === "completed" ? "✓" : status === "in_progress" ? "◉" : status === "deleted" ? "−" : "○"}</span>}
-        <span className={status === "completed" ? "opacity-60" : undefined}>{text}</span>
+        <span className={status === "completed" ? "text-[var(--text-tertiary)]" : undefined}>{text}</span>
       </li>
     })}
   </ul>

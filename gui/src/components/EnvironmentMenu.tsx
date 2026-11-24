@@ -180,7 +180,7 @@ export function EnvironmentMenu({ cwd, branch, onBranchChange, worktree, canTogg
           {view === "branches" && git && (
             <>
               {/* Menu search: the row padding, a leading tertiary search icon, no field chrome. */}
-              <label className="flex items-center gap-1.5 px-2 py-[5px] text-[color-mix(in_srgb,var(--text-primary)_50%,transparent)]">
+              <label className="flex items-center gap-1.5 px-2 py-[5px] text-[var(--text-tertiary)]">
                 <Search size={16} className="shrink-0" />
                 <input
                   autoFocus
@@ -188,7 +188,7 @@ export function EnvironmentMenu({ cwd, branch, onBranchChange, worktree, canTogg
                   onChange={(event) => setSearch(event.target.value)}
                   placeholder="Search branches"
                   aria-label="Search branches"
-                  className="min-w-0 flex-1 bg-transparent text-body text-[var(--text-primary)] outline-none placeholder:text-[color-mix(in_srgb,var(--text-primary)_50%,transparent)]"
+                  className="min-w-0 flex-1 bg-transparent text-body text-[var(--text-primary)] outline-none placeholder:text-[var(--text-tertiary)]"
                 />
               </label>
               <div role="menu" aria-label="Branches" className="max-h-60 overflow-y-auto">
@@ -205,7 +205,7 @@ export function EnvironmentMenu({ cwd, branch, onBranchChange, worktree, canTogg
                       <span className="flex min-w-0 flex-1 flex-col">
                         <span className="truncate">{name}</span>
                         {name === git.current && git.uncommitted > 0 && (
-                          <span className="text-xs text-[color-mix(in_srgb,var(--text-primary)_50%,transparent)]">Uncommitted: {files(git.uncommitted)}</span>
+                          <span className="text-xs text-[var(--text-tertiary)]">Uncommitted: {files(git.uncommitted)}</span>
                         )}
                       </span>
                       {name === git.current && <Check size={14} className="noa-popup-menu-trailing" />}

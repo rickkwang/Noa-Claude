@@ -1079,7 +1079,7 @@ function ActivityGroup({ blocks, pending, tasks, onStopTask, onOpenTask, verbose
         type="button"
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
-        className="group/activity relative inline-flex max-w-full min-w-0 cursor-pointer items-center gap-1 p-0 text-left text-[length:var(--font-text-md-size)] font-normal leading-5 text-[color-mix(in_srgb,var(--text-primary)_60%,transparent)] select-none hover:text-[var(--text-primary,#2D2D2B)]"
+        className="group/activity relative inline-flex max-w-full min-w-0 cursor-pointer items-center gap-1 p-0 text-left text-[length:var(--font-text-md-size)] font-normal leading-5 text-[var(--text-secondary)] select-none hover:text-[var(--text-primary,#2D2D2B)]"
       >
         <span className="inline-flex min-w-0 items-center gap-1.5">
           {live && liveLabel === "Thinking"
@@ -1478,7 +1478,7 @@ function ProgressStatus({ block }: { block: Extract<Block, { kind: "compaction" 
   const label = block.kind === "retry" ? `Retrying ${block.attempt}/${block.maxRetries} · ${block.errorStatus ? `HTTP ${block.errorStatus} · ` : ""}${Math.ceil(block.delayMs / 1000)}s delay`
     : block.status === "running" ? `Compacting context${delayed ? " · This can take a few minutes" : ""}`
       : block.status === "unknown" ? "Compaction connection lost" : block.status === "stopped" ? "Compaction interrupted" : block.trigger === "auto" ? "Context automatically compacted" : "Context compacted"
-  return <div role="status" className="flex items-center gap-1.5 text-[length:var(--font-text-md-size)] leading-5 text-[color-mix(in_srgb,var(--text-primary)_60%,transparent)]"><span aria-hidden="true">{block.kind === "compaction" ? <ListCollapseIcon /> : <AlertTriangle size={16} />}</span><span className={live ? "noa-shimmer" : undefined}>{label}</span></div>
+  return <div role="status" className="flex items-center gap-1.5 text-[length:var(--font-text-md-size)] leading-5 text-[var(--text-secondary)]"><span aria-hidden="true">{block.kind === "compaction" ? <ListCollapseIcon /> : <AlertTriangle size={16} />}</span><span className={live ? "noa-shimmer" : undefined}>{label}</span></div>
 }
 
 const RewindMarkerContext = createContext<{ live?: Block; blocked?: string; onUndo?: () => Promise<void> }>({})
@@ -1498,7 +1498,7 @@ function RewindMarker({ block }: { block: Extract<Block, { kind: "rewind" }> }) 
     setError(undefined)
     void action().catch(error => setError((error as Error).message)).finally(() => setPending(false))
   }
-  return <div role="status" className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[length:var(--font-text-md-size)] leading-5 text-[color-mix(in_srgb,var(--text-primary)_60%,transparent)]">
+  return <div role="status" className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[length:var(--font-text-md-size)] leading-5 text-[var(--text-secondary)]">
     <RotateCcw size={14} aria-hidden="true" />
     <span>{isLive ? "Rewound to here" : "Rewound here · later messages were removed"}{block.at !== undefined && <> · <time dateTime={new Date(block.at).toISOString()}>{formatSentAt(block.at)}</time></>}</span>
     {action && <>

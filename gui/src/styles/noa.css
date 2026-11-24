@@ -631,7 +631,7 @@ html[data-translucent-sidebar="enabled"] [data-sidebar-container] .noa-sidebar-t
   font-size: 11px;
   font-weight: 500;
   line-height: 14px;
-  color: color-mix(in srgb, var(--text-primary, #1A1C1F) 48%, transparent);
+  color: var(--text-tertiary);
 }
 .noa-approval-list {
   display: flex;
@@ -661,7 +661,7 @@ html[data-translucent-sidebar="enabled"] [data-sidebar-container] .noa-sidebar-t
 [data-theme="dark"] .noa-approval-item[aria-pressed="true"] { background-color: rgba(255, 255, 255, .07); }
 [data-theme="dark"] .noa-approval-item:hover,
 [data-theme="dark"] .noa-approval-item:focus-visible { background-color: rgba(255, 255, 255, .1); }
-.noa-approval-icon { display: inline-flex; width: 14px; height: 16px; flex: none; align-items: center; justify-content: center; color: color-mix(in srgb, var(--text-primary) 72%, transparent); }
+.noa-approval-icon { display: inline-flex; width: 14px; height: 16px; flex: none; align-items: center; justify-content: center; color: var(--text-secondary); }
 .noa-approval-icon svg { width: 14px; height: 14px; }
 .noa-approval-text { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 1px; }
 .noa-approval-desc {
@@ -669,7 +669,7 @@ html[data-translucent-sidebar="enabled"] [data-sidebar-container] .noa-sidebar-t
   font-weight: 400;
   line-height: 15px;
   white-space: normal;
-  color: color-mix(in srgb, var(--text-primary, #1A1C1F) 55%, transparent);
+  color: var(--text-tertiary);
 }
 .noa-approval-check { flex: none; width: 14px; height: 14px; margin-left: 4px; color: color-mix(in srgb, var(--text-primary) 80%, transparent); }
 .noa-approval-item:has(.noa-approval-desc) .noa-approval-check { margin-top: 1px; }
@@ -707,20 +707,6 @@ html[data-translucent-sidebar="enabled"] [data-sidebar-container] .noa-sidebar-t
 [data-theme="dark"] .bg-\[\#2D2D2B\]\/20 { background-color: rgba(249,249,247,0.10) !important; }
 
 /* ── Text ── */
-[data-theme="dark"] .text-\[\#2D2D2B\]      { color: #F0EFEC !important; }
-[data-theme="dark"] .text-\[\#2D2D2B\]\/10  { color: rgba(249,249,247,0.10) !important; }
-[data-theme="dark"] .text-\[\#2D2D2B\]\/15  { color: rgba(249,249,247,0.15) !important; }
-[data-theme="dark"] .text-\[\#2D2D2B\]\/20  { color: rgba(249,249,247,0.20) !important; }
-[data-theme="dark"] .text-\[\#2D2D2B\]\/30  { color: rgba(249,249,247,0.30) !important; }
-[data-theme="dark"] .text-\[\#2D2D2B\]\/35  { color: rgba(249,249,247,0.35) !important; }
-[data-theme="dark"] .text-\[\#2D2D2B\]\/40  { color: rgba(249,249,247,0.40) !important; }
-[data-theme="dark"] .text-\[\#2D2D2B\]\/50  { color: rgba(249,249,247,0.50) !important; }
-[data-theme="dark"] .text-\[\#2D2D2B\]\/60  { color: rgba(249,249,247,0.60) !important; }
-[data-theme="dark"] .text-\[\#2D2D2B\]\/70  { color: rgba(220,220,214,0.70) !important; }
-[data-theme="dark"] .text-\[\#2D2D2B\]\/75  { color: rgba(220,220,214,0.75) !important; }
-[data-theme="dark"] .text-\[\#2D2D2B\]\/80  { color: rgba(220,220,214,0.80) !important; }
-[data-theme="dark"] .text-\[\#2D2D2B\]\/85  { color: rgba(220,220,214,0.85) !important; }
-[data-theme="dark"] .text-\[\#2D2D2B\]\/90  { color: rgba(220,220,214,0.90) !important; }
 [data-theme="dark"] .text-\[\#CC7D5E\]      { color: #CC7D5E !important; }
 
 /* ── Status dots: 3px markers need the same lift as status text or they vanish on the dark floor ── */
@@ -959,7 +945,7 @@ html[data-translucent-sidebar="enabled"] [data-sidebar-container] .noa-sidebar-t
 
 /* The close button sits 2px inside the tab's right edge, whatever the tab's inset. */
 
-.noa-tab-close { color: var(--text-secondary, #7B7974); transition: color 60ms var(--ease-out), background-color 60ms var(--ease-out); }
+.noa-tab-close { color: var(--text-secondary, #60605E); transition: color 60ms var(--ease-out), background-color 60ms var(--ease-out); }
 /* A title cut off at 140px fades out over its last 1rem instead of ending in an ellipsis. */
 .noa-tab-title { display: block; min-width: 0; max-width: 140px; overflow: hidden; white-space: nowrap; text-overflow: clip; }
 .noa-tab-title[data-overflow] { mask-image: linear-gradient(to right, #000 calc(100% - 1rem), transparent); }
@@ -1068,14 +1054,14 @@ html[data-translucent-sidebar="enabled"] [data-sidebar-container] .noa-sidebar-t
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: color-mix(in srgb, var(--text-primary) 65%, transparent);
+  color: var(--text-secondary);
   font-size: 13px;
   line-height: 18px;
 }
 .noa-model-picker-labels > svg {
   grid-area: 1 / 3;
   justify-self: end;
-  color: color-mix(in srgb, var(--text-primary) 48%, transparent);
+  color: var(--text-tertiary);
 }
 .noa-model-picker-view:hover .noa-model-picker-labels,
 .noa-model-picker-reset:not(:disabled):hover {
@@ -1092,7 +1078,7 @@ html[data-translucent-sidebar="enabled"] [data-sidebar-container] .noa-sidebar-t
   width: 28px;
   height: 28px;
   border-radius: 7px;
-  color: color-mix(in srgb, var(--text-primary) 48%, transparent);
+  color: var(--text-tertiary);
 }
 .noa-model-picker-reset:disabled { opacity: .4; }
 .noa-model-picker-slider { padding: 8px 8px 6px; }
@@ -1164,7 +1150,7 @@ html[data-translucent-sidebar="enabled"] [data-sidebar-container] .noa-sidebar-t
   padding: 2px 9px 5px;
   border-radius: 8px 8px 0 0;
   background: linear-gradient(var(--effort-track), var(--effort-track)), var(--effort-menu);
-  color: color-mix(in srgb, var(--text-primary) 65%, transparent);
+  color: var(--text-secondary);
   font-size: 11px;
   line-height: 14px;
   white-space: nowrap;
@@ -1982,7 +1968,7 @@ body.noa-session-dragging * { cursor: grabbing !important; }
   margin-inline: 0;
   padding: 0;
   font-size: var(--font-text-md-size);
-  color: color-mix(in srgb, var(--text-primary) 60%, transparent);
+  color: var(--text-secondary);
 }
 .noa-activity-list > [data-tool-activity] > button:hover { color: var(--text-primary); }
 .noa-activity-list > [data-tool-activity] > button > svg:first-child { width: 16px; height: 16px; }
@@ -2740,7 +2726,7 @@ html[data-translucent-sidebar="enabled"] .noa-confirm-scrim { backdrop-filter: n
 .noa-terminal-host .xterm { height: 100%; }
 /* xterm paints the viewport black below the last whole row; the panel surface shows there instead. */
 .noa-terminal-host .xterm-viewport { background-color: transparent !important; }
-.noa-terminal-action { color: var(--text-tertiary, #A3A19B); transition: background-color 120ms ease, color 120ms ease; }
+.noa-terminal-action { color: var(--text-tertiary, #7F7F7D); transition: background-color 120ms ease, color 120ms ease; }
 .noa-terminal-action:hover { background-color: var(--fill-hover); color: var(--text-primary, #2D2D2B); }
 
 /* Panel New tab page: tool rows on a faint fill, shortcuts as keycaps tinted from the row's secondary text. */

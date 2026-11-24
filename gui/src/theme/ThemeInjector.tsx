@@ -36,8 +36,8 @@ export default function ThemeInjector({ settings }: ThemeInjectorProps) {
     // `border-default` separators do; the lighter tier is kept for rules inside a card or list.
     const divider = alpha(isDark ? inkAlpha(0.03, 0.02, contrast) : inkAlpha(0.04, 0.02, contrast));
     const border = alpha(inkAlpha(0.06, 0.04, contrast));
-    const textSecondary = alpha(inkAlpha(0.65, 0.1, contrast));
-    const textTertiary = alpha(isDark ? inkAlpha(0.42, 0.13, contrast) : inkAlpha(0.45, 0.1, contrast));
+    const textSecondary = alpha(inkAlpha(0.75, 0.1, contrast));
+    const textTertiary = alpha(isDark ? inkAlpha(0.57, 0.13, contrast) : inkAlpha(0.6, 0.1, contrast));
     const borderStrong = alpha(isDark ? inkAlpha(0.12, 0.06, contrast) : inkAlpha(0.09, 0.06, contrast));
     // Ghost hover is the control surface's hover tier, which moves with contrast; the pressed tier is a
     // fixed 12%/16% wash, so it does not.
@@ -194,18 +194,7 @@ export default function ThemeInjector({ settings }: ThemeInjectorProps) {
       .bg-\\[\\#EFEAE3\\]\\/50 { background-color: color-mix(in srgb, var(--bg-secondary) 50%, transparent) !important; }
       .bg-\\[\\#CC7D5E\\]\\/10 { background-color: color-mix(in srgb, var(--accent-color) 10%, transparent) !important; }
 
-      .text-\\[\\#2D2D2B\\]     { color: var(--text-primary) !important; }
       .text-\\[\\#CC7D5E\\]     { color: var(--accent-color) !important; }
-      .text-\\[\\#2D2D2B\\]\\/50 { color: color-mix(in srgb, var(--text-primary) 50%, transparent) !important; }
-      .text-\\[\\#2D2D2B\\]\\/60 { color: color-mix(in srgb, var(--text-primary) 60%, transparent) !important; }
-      .text-\\[\\#2D2D2B\\]\\/70 { color: color-mix(in srgb, var(--text-primary) 70%, transparent) !important; }
-      .text-\\[\\#2D2D2B\\]\\/30 { color: color-mix(in srgb, var(--text-primary) 30%, transparent) !important; }
-      .text-\\[\\#2D2D2B\\]\\/35 { color: color-mix(in srgb, var(--text-primary) 35%, transparent) !important; }
-      .text-\\[\\#2D2D2B\\]\\/40 { color: color-mix(in srgb, var(--text-primary) 40%, transparent) !important; }
-      .text-\\[\\#2D2D2B\\]\\/75 { color: color-mix(in srgb, var(--text-primary) 75%, transparent) !important; }
-      .text-\\[\\#2D2D2B\\]\\/80 { color: color-mix(in srgb, var(--text-primary) 80%, transparent) !important; }
-      .text-\\[\\#2D2D2B\\]\\/85 { color: color-mix(in srgb, var(--text-primary) 85%, transparent) !important; }
-      .text-\\[\\#2D2D2B\\]\\/90 { color: color-mix(in srgb, var(--text-primary) 90%, transparent) !important; }
       .hover\\:text-\\[\\#CC7D5E\\]:hover { color: var(--accent-color) !important; }
       .hover\\:text-\\[\\#2D2D2B\\]:hover { color: var(--text-primary) !important; }
       .group:hover .group-hover\\:text-\\[\\#CC7D5E\\] { color: var(--accent-color) !important; }

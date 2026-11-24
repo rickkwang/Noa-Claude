@@ -80,8 +80,8 @@ function terminalTheme(): ITheme {
   document.body.appendChild(probe)
   const accents = document.documentElement.dataset.theme === "dark" ? ACCENTS.dark : ACCENTS.light
   const foreground = cssColor(probe, "--text-primary", "#2D2D2B")
-  const secondary = cssColor(probe, "--text-secondary", "#7B7974")
-  const tertiary = cssColor(probe, "--text-tertiary", "#A3A19B")
+  const secondary = cssColor(probe, "--text-secondary", "#60605E")
+  const tertiary = cssColor(probe, "--text-tertiary", "#7F7F7D")
   const background = cssColor(probe, "--surface-page", "#F9F9F7")
   probe.remove()
   return {

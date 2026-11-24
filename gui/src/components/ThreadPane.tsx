@@ -74,7 +74,7 @@ export function ThreadPane({ thread, onOpenFull }: { thread: { id: string; cwd: 
               event.preventDefault()
               submit()
             }}
-            className="noa-scroll-fade [field-sizing:content] max-h-[min(25dvh,240px)] min-h-[40px] w-full resize-none border-none bg-transparent pt-[10px] pb-[8px] pl-3 pr-[42px] text-[length:var(--transcript-text-size,var(--text-body))] leading-[1.45] outline-none placeholder:text-[color-mix(in_srgb,var(--text-primary)_50%,transparent)]"
+            className="noa-scroll-fade [field-sizing:content] max-h-[min(25dvh,240px)] min-h-[40px] w-full resize-none border-none bg-transparent pt-[10px] pb-[8px] pl-3 pr-[42px] text-[length:var(--transcript-text-size,var(--text-body))] leading-[1.45] outline-none placeholder:text-[var(--text-tertiary)]"
           />
           <button
             type="button"

@@ -200,7 +200,7 @@ export function PanelTabStrip({ tabs, activeKey, label, onSelect, onClose, onCon
                       title={tab.title}
                       onClick={() => onSelect(tab.key)}
                       onAuxClick={(event) => { if (event.button === 1) onClose(tab.key) }}
-                      className={`relative z-10 flex h-full min-w-0 flex-1 items-center rounded-[inherit] ps-[14px] pe-[30px] text-start text-[length:var(--text-chat-sm)] ${selected ? "text-[var(--text-primary,#2D2D2B)]" : "text-[var(--text-secondary,#7B7974)] hover:text-[var(--text-primary,#2D2D2B)]"}`}
+                      className={`relative z-10 flex h-full min-w-0 flex-1 items-center rounded-[inherit] ps-[14px] pe-[30px] text-start text-[length:var(--text-chat-sm)] ${selected ? "text-[var(--text-primary,#2D2D2B)]" : "text-[var(--text-secondary,#60605E)] hover:text-[var(--text-primary,#2D2D2B)]"}`}
                     >
                       <span className="flex min-w-0 flex-1 items-center gap-1.5">
                         <Icon size={16} className="shrink-0" />
