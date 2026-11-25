@@ -10,7 +10,9 @@ interface MascotFrame {
   branches?: { weight: number; to: number }[]
   exitBranch?: number
 }
-interface MascotAnimation { frames: MascotFrame[] }
+// An animation with loopFrom repeats from that frame while play() was asked to loop; after
+// stopLooping() it plays to the end and holds its last frame instead of returning to RestPose.
+interface MascotAnimation { frames: MascotFrame[]; loopFrom?: number }
 interface MascotCharacter {
   id: string
   spritesheet: { path: string; cellWidth: number; cellHeight: number }
@@ -57,7 +59,7 @@ function loadCharacter(id: string): Promise<MascotCharacter> {
   return cached
 }
 
-interface ActiveRun { anim: MascotAnimation; index: number; exiting: boolean }
+interface ActiveRun { anim: MascotAnimation; index: number; exiting: boolean; looping: boolean }
 
 class MascotPlayer {
   private frameTimer: ReturnType<typeof setTimeout> | null = null
@@ -82,18 +84,25 @@ class MascotPlayer {
     return Boolean(this.c.animations[name])
   }
 
-  play(name: string): void {
+  play(name: string, loop = false): void {
     if (this.destroyed) return
     const anim = this.c.animations[name]
     if (!anim) return
     this.clearTimers()
     const totalMs = anim.frames.reduce((sum, f) => sum + f.duration, 0)
-    const run: ActiveRun = { anim, index: 0, exiting: false }
+    const looping = loop && anim.loopFrom !== undefined
+    const run: ActiveRun = { anim, index: 0, exiting: false, looping }
     this.current = run
-    this.exitTimer = setTimeout(() => {
-      if (this.current === run) run.exiting = true
-    }, Math.max(4500, totalMs))
+    if (!looping) {
+      this.exitTimer = setTimeout(() => {
+        if (this.current === run) run.exiting = true
+      }, Math.max(4500, totalMs))
+    }
     this.show(0)
+  }
+
+  stopLooping(): void {
+    if (this.current) this.current.looping = false
   }
 
   destroy(): void {
@@ -129,7 +138,10 @@ class MascotPlayer {
         roll -= b.weight
       }
     }
-    if (next >= cur.anim.frames.length) this.finish()
+    if (next >= cur.anim.frames.length && cur.anim.loopFrom !== undefined) {
+      if (cur.looping) this.show(cur.anim.loopFrom)
+      else { this.clearTimers(); this.current = null }
+    } else if (next >= cur.anim.frames.length) this.finish()
     else this.show(next)
   }
 
@@ -195,6 +207,11 @@ function SpeechBubble({ children, style, leaving, onDismiss }: { children: React
   )
 }
 
+// After a minute without a click or key in the window Clawd dozes off, focused or not; two minutes later the snoring
+// stops on the last frame. Any click or key while asleep makes it stretch awake.
+const DOZE_AFTER_MS = 60_000
+const SNORE_MS = 120_000
+
 // The page greets on its own at most once every half hour; clicking the mascot always answers.
 const AUTO_GREET_INTERVAL_MS = 30 * 60_000
 const BUBBLE_MS = 10_000
@@ -211,6 +228,7 @@ function MascotItem({ spec, greeting, typing }: { spec: MascotSpec; greeting?: G
   const [bubble, setBubble] = useState<string>()
   const [leaving, setLeaving] = useState(false)
   const leaveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const wokeAt = useRef(-Infinity)
   // Fade out before unmounting, so the bubble leaves as softly as it arrives.
   const hide = () => {
     clearTimeout(hideTimer.current)
@@ -266,9 +284,48 @@ function MascotItem({ spec, greeting, typing }: { spec: MascotSpec; greeting?: G
     }
   }, [spec.id])
 
+  useEffect(() => {
+    const player = playerRef.current
+    if (!ready || !player?.has("Snooze")) return
+    let timer: ReturnType<typeof setTimeout> | undefined
+    let asleep = false
+    const reduced = () => document.documentElement.dataset.reduceMotion === "true" || window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    const arm = () => {
+      clearTimeout(timer)
+      timer = asleep
+        ? setTimeout(() => player.stopLooping(), SNORE_MS)
+        : setTimeout(() => {
+          if (reduced()) return
+          asleep = true
+          hide()
+          player.play("Snooze", true)
+          arm()
+        }, DOZE_AFTER_MS)
+    }
+    const onInput = () => {
+      if (asleep) {
+        asleep = false
+        wokeAt.current = performance.now()
+        player.play("Stretching")
+      }
+      arm()
+    }
+    const opts = { capture: true, passive: true }
+    window.addEventListener("pointerdown", onInput, opts)
+    window.addEventListener("keydown", onInput, opts)
+    arm()
+    return () => {
+      clearTimeout(timer)
+      window.removeEventListener("pointerdown", onInput, opts)
+      window.removeEventListener("keydown", onInput, opts)
+    }
+  }, [ready]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const handleClick = () => {
     const player = playerRef.current
     const pool = poolRef.current
+    // The pointerdown that woke Clawd already started its stretch; let it finish.
+    if (performance.now() - wokeAt.current < 1000) return
     if (!player || !pool.length) return
     const fresh = pool.length > 1 && lastAnimRef.current ? pool.filter((n) => n !== lastAnimRef.current) : pool
     const next = fresh[Math.floor(Math.random() * fresh.length)]

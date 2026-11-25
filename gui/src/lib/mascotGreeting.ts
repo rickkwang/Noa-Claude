@@ -35,7 +35,7 @@ const ANIMATION: Record<keyof typeof LINES, string> = {
   away: "Excited",
   recent: "Waving",
   friday: "Sunglasses",
-  weekend: "DancingHappy",
+  weekend: "Laptop",
   early: "Coffee",
   morning: "Waving",
   afternoon: "Waving",
