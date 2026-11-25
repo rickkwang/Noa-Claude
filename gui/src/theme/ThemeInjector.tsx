@@ -175,6 +175,10 @@ export default function ThemeInjector({ settings }: ThemeInjectorProps) {
     face ? `${quoteFamily(faceFamilyName(face))}, ${stack}` : stack;
   const fontFamilyStyle = withFace(uiFace, resolveFontFamily(uiFamily));
   const contentFontFamilyStyle = withFace(contentFace, resolveFontFamily(contentFamily));
+  const responseFamily = settings.appearance.responseFont ?? CONTENT_SAME_AS_UI;
+  const responseFontFamilyStyle = responseFamily === CONTENT_SAME_AS_UI
+    ? 'var(--font-content)'
+    : resolveFontFamily(responseFamily);
   const codeFontFamilyStyle = withFace(codeFace, resolveFontFamily(codeFamily, MONO_FONT_STACK));
   const uiFontSize = settings.appearance.uiFontSize;
   const textScale = uiFontSize / 14;
@@ -246,6 +250,7 @@ export default function ThemeInjector({ settings }: ThemeInjectorProps) {
         --code-font-size: ${settings.appearance.codeFontSize}px;
         --font-mono: ${codeFontFamilyStyle};
         --font-serif: ${resolveFontFamily(settings.appearance.serifFont ?? SYSTEM_DEFAULT_FONT, SERIF_FONT_STACK)};
+        --font-response: ${responseFontFamilyStyle};
         /* Conversation typeface: turn items read these so the composer and chrome stay on the UI font. */
         --font-content: ${contentFontFamilyStyle};
         --content-font-weight: 400;

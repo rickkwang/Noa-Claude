@@ -257,6 +257,10 @@ export function AppearancePage({
     [[SYSTEM_DEFAULT_FONT, "System serif"], ...fontFamilies.map((f) => familyOption(f.family))],
     appearance.serifFont ?? SYSTEM_DEFAULT_FONT,
   )
+  const responseFamilyOptions = withStoredFamily(
+    [[CONTENT_SAME_AS_UI, "Same as Content font"], [SYSTEM_DEFAULT_FONT, "System default"], ...fontFamilies.map((f) => familyOption(f.family))],
+    appearance.responseFont ?? CONTENT_SAME_AS_UI,
+  )
   const faceOptions = (family: string, face: ThemeFontFace | undefined, fallbackLabel: string): [string, string][] => {
     const faces = facesFor(family)
     if (!faces.length) return [["", fallbackLabel]]
@@ -503,6 +507,16 @@ export function AppearancePage({
         </Row>
         <Row label="Content font" description={`Typeface for messages and page content in ${variant} mode.`}>
           {fontPair({ role: "content", label: "Content font", family: activeFonts.content, face: activeFonts.contentFace, options: contentFamilyOptions })}
+        </Row>
+        <Row label="Response font" description="Typeface for assistant replies.">
+          <Select
+            value={appearance.responseFont ?? CONTENT_SAME_AS_UI}
+            options={responseFamilyOptions}
+            label="Response font"
+            searchable
+            searchPlaceholder="Search fonts…"
+            onChange={(responseFont) => change({ responseFont })}
+          />
         </Row>
         <Row label="Code font" description={`Typeface for code blocks and diffs in ${variant} mode.`}>
           {fontPair({ role: "code", label: "Code font", family: activeFonts.code, face: activeFonts.codeFace, options: codeFamilyOptions })}

@@ -1321,7 +1321,7 @@ function MessageActions({ text, kind = "assistant", onEdit, onRewind, rewindBloc
           aria-label="Edit message"
           title="Edit message"
         >
-          <Edit2 size={14} />
+          <Edit2 size={13} />
         </button>
       )}
       </div>
@@ -1443,7 +1443,7 @@ function PacedMarkdown({ text, streaming, fresh, streamKey }: { text: string; st
   const { threadTitles } = use(OutputContext)
   const done = caughtUp && !streaming
   const linked = useMemo(() => done && threadTitles ? linkThreads(text, threadTitles) : text, [done, text, threadTitles])
-  return <Markdown text={caughtUp ? linked : text.slice(0, shown)} streaming={streaming || !caughtUp} streamKey={streamKey} />
+  return <div className="noa-response-text"><Markdown text={caughtUp ? linked : text.slice(0, shown)} streaming={streaming || !caughtUp} streamKey={streamKey} /></div>
 }
 
 function BlockView({ block, streaming, streamKey }: { block: Block; streaming?: boolean; streamKey?: string }) {

@@ -24,6 +24,7 @@ export const defaultSettings: AppSettings = {
     transcriptView: 'normal',
     codeFontSize: 12,
     serifFont: SYSTEM_DEFAULT_FONT,
+    responseFont: CONTENT_SAME_AS_UI,
     fontSmoothing: true,
   },
   composer: { sendShortcut: 'enter', followUpMode: 'queue', showFullAccess: true, showContextUsage: true, systemCaret: false, streamSound: { enabled: false, preset: 'classic', volume: 100 }, mascot: 'clawd' },
@@ -75,6 +76,7 @@ export function isDefaultAppearance(appearance: AppSettings['appearance']): bool
     appearance.uiFontSize === def.uiFontSize &&
     appearance.codeFontSize === def.codeFontSize &&
     (appearance.serifFont ?? SYSTEM_DEFAULT_FONT) === def.serifFont &&
+    (appearance.responseFont ?? CONTENT_SAME_AS_UI) === def.responseFont &&
     appearance.transcriptTextSize === def.transcriptTextSize &&
     appearance.transcriptView === def.transcriptView &&
     appearance.fontSmoothing === def.fontSmoothing &&

@@ -104,6 +104,7 @@ export function buildSettingsSearchIndex({
         { label: "Contrast", keywords: ["border", "divider"] },
         { label: "UI font", keywords: ["font style", "face", "family"] },
         { label: "Content font", keywords: ["message", "prose", "face"] },
+        { label: "Response font", keywords: ["assistant", "reply", "answer"] },
         { label: "Code font", keywords: ["monospace", "face"] },
         { label: "UI font size" },
         { label: "Code font size" },

@@ -24,6 +24,7 @@ describe("settings search index", () => {
       "Composer mascot",
       "Default terminal location",
       "Terminal font",
+      "Response font",
       "Default transcript view",
       "Translucent sidebar",
       "Ollama",

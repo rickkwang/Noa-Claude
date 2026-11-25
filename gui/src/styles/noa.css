@@ -1909,6 +1909,10 @@ body.noa-session-dragging * { cursor: grabbing !important; }
   font-style: var(--content-font-style, normal);
   animation: noa-turn-in 180ms cubic-bezier(.19,1,.22,1);
 }
+/* Assistant reply text; the Response font setting, falling back to the conversation typeface. */
+.noa-response-text {
+  font-family: var(--font-response, var(--font-content, var(--font-ui)));
+}
 .noa-virtual-turn {
   content-visibility: visible;
   animation: none;

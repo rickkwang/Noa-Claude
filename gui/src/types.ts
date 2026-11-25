@@ -59,6 +59,8 @@ export interface AppSettings {
     codeFontSize: number;
     /** Typeface for serif headings: SYSTEM_DEFAULT_FONT or an installed family. */
     serifFont: string;
+    /** Typeface for assistant replies: an installed family, SYSTEM_DEFAULT_FONT, or CONTENT_SAME_AS_UI to follow the content font. */
+    responseFont?: string;
     fontSmoothing: boolean;
   };
   composer: {
