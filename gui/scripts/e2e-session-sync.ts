@@ -53,11 +53,11 @@ const server = Bun.serve({
     ])
     if (url.pathname === "/fixture/start-unsaved") {
       runningUnsaved = true
+      holdHistory = true
       return new Response("ok")
     }
     if (url.pathname === "/fixture/stop-unsaved") {
       runningUnsaved = false
-      holdHistory = true
       return new Response("ok")
     }
     if (url.pathname === "/fixture/release-history") {
@@ -164,11 +164,23 @@ app.whenReady().then(async()=>{
    await fetch('/fixture/release-slow');
    await fetch('/fixture/start-unsaved');
    await wait(()=>taskRow('SYNC_UNSAVED_RUN')?.querySelector('[aria-label="Running"]'));
+   taskRow('SYNC_UNSAVED_RUN').click();
+   const currentId=()=>JSON.parse(localStorage.getItem('noa-agent.current')||'null')?.resume;
+   const unsavedId=${JSON.stringify(temporaryRun)};
+   await wait(()=>currentId()===unsavedId);
+   const unsavedDraft='noa-agent.draft:'+${JSON.stringify(cwd)}+':'+unsavedId;
+   const composer=()=>document.querySelector('textarea[aria-label="Task instruction"]');
+   await wait(()=>composer()&&!composer().disabled);
+   composer().focus();
+   if(!document.execCommand('insertText',false,'unsaved run draft'))throw new Error('Could not type a draft in the composer');
+   await wait(()=>localStorage.getItem(unsavedDraft)==='unsaved run draft');
+   await fetch('/fixture/create');
+   await fetch('/fixture/release-history');
+   await wait(()=>taskRow('SYNC_CREATED'));
+   if(currentId()!==unsavedId||localStorage.getItem(unsavedDraft)!=='unsaved run draft')throw new Error('History without a running task closed it or cleared its draft');
    await fetch('/fixture/stop-unsaved');
    await wait(()=>!taskRow('SYNC_UNSAVED_RUN'));
-   await fetch('/fixture/release-history');
-   await fetch('/fixture/create');
-   await wait(()=>text().includes('SYNC_CREATED'));
+   if(currentId()!==unsavedId||localStorage.getItem(unsavedDraft)!=='unsaved run draft')throw new Error('Finishing a run before its history appears closed it or cleared its draft');
    taskRow('SYNC_CREATED').click();
    await wait(()=>text().includes('SYNC_ORIGINAL'));
    await fetch('/fixture/append');
@@ -179,7 +191,7 @@ app.whenReady().then(async()=>{
    await fetch('/fixture/unavailable');
    await wait(()=>text().includes('SYNC_OTHER_UPDATED'));
    if(!text().includes('SYNC_RENAMED'))throw new Error('Transient failure cleared the sidebar');
-   if(taskRow('SYNC_RENAMED')?.querySelector('[role="status"]')?.getAttribute('aria-label')!=='Running')throw new Error('Failed project list blocked live run status');
+   await wait(()=>taskRow('SYNC_RENAMED')?.querySelector('[aria-label="Running"]'));
    const draftKey='noa-agent.draft:'+${JSON.stringify(cwd)}+':'+${JSON.stringify(id)};
    const bookmarkKey='noa-agent.bookmarks.v2.'+${JSON.stringify(id)};
    localStorage.setItem(draftKey,'stale draft');

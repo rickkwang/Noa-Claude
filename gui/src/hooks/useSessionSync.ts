@@ -50,7 +50,7 @@ export function useSessionSync({
   activeId: string | undefined
   state: Pick<AgentState, "busy" | "connection" | "result">
 }) {
-  const [sessionsByProject, setSessionsByProject] = useState<Record<string, SessionSummary[]>>({})
+  const [sessionsByProject, setSessionsByProject] = useState<Record<string, SidebarSession[]>>({})
   const [loadedProjects, setLoadedProjects] = useState<ReadonlySet<string>>(() => new Set())
   const activeSessionKey = activeId ? sessionUpdateKey(session.cwd, activeId) : undefined
   const activeSessionRef = useRef({ cwd: session.cwd, id: activeId, runtimeId: session.runtimeId })
@@ -66,13 +66,14 @@ export function useSessionSync({
   const expectedSessionUpdatesRef = useRef(new Set(session.resume ? [sessionUpdateKey(session.cwd, session.resume)] : []))
   const seedSessionUpdate = (dir: string, id: string) => {
     const key = sessionUpdateKey(dir, id)
-    const summary = Object.values(sessionsByProject).flat().find((item) => item.id === id)
-    if (summary) {
+    for (const [path, items] of Object.entries(sessionsByProject)) {
+      const summary = items.find((item) => !item[RUN_ONLY] && item.id === id && (item.cwd ?? path) === dir)
+      if (!summary) continue
       seenSessionUpdatesRef.current.set(key, summary.updatedAt)
       expectedSessionUpdatesRef.current.delete(key)
-    } else {
-      expectedSessionUpdatesRef.current.add(key)
+      return
     }
+    expectedSessionUpdatesRef.current.add(key)
   }
 
   useEffect(() => {
