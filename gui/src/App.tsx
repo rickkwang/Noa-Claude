@@ -23,6 +23,7 @@ import {
 import { greetingFor } from "./lib/mascotGreeting"
 import { AddProjectDialog } from "./components/AddProjectDialog"
 import { useConfirm } from "./components/ConfirmDialog"
+import { openPath } from "./components/FileMenu"
 import { Composer } from "./components/Composer"
 import { DigitalWavesBackground } from "./components/DigitalWavesBackground"
 import { EmptyState } from "./components/EmptyState"
@@ -659,10 +660,51 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
   async function forkSession() {
     setForkPending(true)
     try {
-      const result = await request({ subtype: "session_action", action: "fork" })
+      const result = await request({ subtype: "session_action", action: "fork", ...(title && { title: forkTitle(title) }) })
       setRefreshTick(n => n + 1)
       selectSession(session.cwd, result.sessionId)
     } finally { setForkPending(false) }
+  }
+  function forkOrExplain() {
+    if (forkBlocked) void confirm({ title: "Can't fork right now", description: "Wait for the current turn, queued messages and background tasks to finish.", confirmLabel: "OK", cancelLabel: "Close" })
+    else forkSession().catch((error) => confirm({ title: "Could not fork the task", description: (error as Error).message, confirmLabel: "OK", cancelLabel: "Close" }))
+  }
+  // A fork from the sidebar of a task that is not open opens it first and forks once it is ready; leaving it cancels.
+  const [pendingFork, setPendingFork] = useState<{ id: string; opened: boolean }>()
+  useEffect(() => {
+    if (!pendingFork) return
+    if (activeId !== pendingFork.id) {
+      if (pendingFork.opened) setPendingFork(undefined)
+      return
+    }
+    if (state.connection !== "ready") {
+      if (!pendingFork.opened) setPendingFork({ ...pendingFork, opened: true })
+      return
+    }
+    setPendingFork(undefined)
+    forkOrExplain()
+  }, [pendingFork, activeId, state.connection])
+  function forkTask(cwd: string, id: string) {
+    if (id === activeId) return forkOrExplain()
+    setPendingFork({ id, opened: false })
+    selectSession(cwd, id)
+  }
+  async function renameTask(cwd: string, id: string, name: string) {
+    try {
+      if (id === activeId) expectSessionUpdate(cwd, id)
+      await renameSession(cwd, id, name)
+    } catch (error) {
+      await confirm({ title: "Could not rename the task", description: (error as Error).message, confirmLabel: "OK", cancelLabel: "Close" })
+      return
+    }
+    const owner = projects.find((project) => sessionsByProject[project.path]?.some((item) => item.id === id))?.path ?? cwd
+    const updated = await fetchSessions(owner).catch(() => undefined)
+    if (updated) setSessionsByProject((all) => ({ ...all, [owner]: updated }))
+  }
+  // "Title" forks as "Title (fork)", "Title (fork)" as "Title (fork 2)".
+  function forkTitle(title: string) {
+    const match = title.match(/^(.*) \(fork(?: (\d+))?\)$/)
+    return match ? `${match[1]} (fork ${match[2] ? Number(match[2]) + 1 : 2})` : `${title} (fork)`
   }
   // In a project with a coordinator, forking a thread asks the coordinator for a new thread that picks up from it.
   async function forkThread(direction?: string) {
@@ -806,8 +848,7 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
         if (inCoordinator) void confirm({ title: "Open a thread to fork it", description: "/fork starts a new thread from the thread you are in. In the project chat, describe the new work instead.", confirmLabel: "OK", cancelLabel: "Close" })
         else if (!activeId) void confirm({ title: "Nothing to fork yet", description: "Send a message first, then fork the task.", confirmLabel: "OK", cancelLabel: "Close" })
         else if (coordinatorId) void forkThread(value)
-        else if (forkBlocked) void confirm({ title: "Can't fork right now", description: "Wait for the current turn, queued messages and background tasks to finish.", confirmLabel: "OK", cancelLabel: "Close" })
-        else forkSession().catch((error) => confirm({ title: "Could not fork the task", description: (error as Error).message, confirmLabel: "OK", cancelLabel: "Close" }))
+        else forkOrExplain()
       } else if (action === "btw") {
         setRightOpen(true)
         setRightNewTab(false)
@@ -977,6 +1018,9 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
               onRevealProject={revealProject}
               onOpenCoordinator={(path) => { setPage(undefined); openCoordinator(path).then((id) => selectSession(path, id), (error) => confirm({ title: "Could not open the coordinator", description: (error as Error).message, confirmLabel: "OK", cancelLabel: "Close" })) }}
               onDeleteSession={removeSession}
+              onRenameSession={renameTask}
+              onForkSession={(dir, id) => { setPage(undefined); forkTask(dir, id) }}
+              onOpenSessionIn={(dir, target) => openPath(dir, "", target).catch((error) => confirm({ title: "Could not open the task folder", description: (error as Error).message, confirmLabel: "OK", cancelLabel: "Close" }))}
               onSearch={() => setSearchOpen(true)}
               onSettings={() => setSettingsOpen(true)}
               onCustomize={() => setPage("customize")}

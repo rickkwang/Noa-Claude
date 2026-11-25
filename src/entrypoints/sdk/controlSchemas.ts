@@ -584,6 +584,8 @@ export const SDKControlSessionActionRequestSchema = lazySchema(() =>
     user_message_id: z.string().optional(),
     mode: z.enum(['conversation', 'files', 'both']).optional(),
     dry_run: z.boolean().optional(),
+    // fork only: the fork's title, used as given.
+    title: z.string().optional(),
   }),
 )
 

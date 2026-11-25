@@ -170,8 +170,10 @@ export type ConversationForkResult = {
   forkLog: LogOption
 }
 
+// `exactTitle` names the fork as given; otherwise the name gets a unique " (Branch)" suffix.
 export async function createConversationFork(
   customTitle?: string,
+  exactTitle?: string,
 ): Promise<ConversationForkResult> {
   const originalSessionId = getSessionId()
   const {
@@ -185,7 +187,7 @@ export async function createConversationFork(
   const now = new Date()
   const firstPrompt = deriveFirstPrompt(serializedMessages)
   const baseName = title ?? firstPrompt
-  const effectiveTitle = await getUniqueForkName(baseName)
+  const effectiveTitle = exactTitle ?? (await getUniqueForkName(baseName))
   await saveCustomTitle(sessionId, effectiveTitle, forkPath)
 
   const forkLog: LogOption = {

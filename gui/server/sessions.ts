@@ -25,6 +25,7 @@ interface SessionSummaryCacheEntry {
   progress?: string
   lastPromptId?: string
   pr?: SessionPullRequest
+  forkedFrom?: string
 }
 
 const sessionSummaryCaches = new Map<string, Map<string, SessionSummaryCacheEntry>>()
@@ -51,6 +52,8 @@ export interface SessionSummary {
   // Why the last turn failed, when it did.
   error?: string
   pr?: SessionPullRequest
+  // The session this one was forked from.
+  forkedFrom?: string
 }
 
 export function canonicalCwd(cwd: string): string {
@@ -169,6 +172,7 @@ interface Entry {
   mcpMeta?: Record<string, unknown>
   customTitle?: string
   aiTitle?: string
+  forkedFrom?: { sessionId?: string }
   lastPrompt?: string
   prNumber?: number
   prUrl?: string
@@ -326,6 +330,7 @@ export function listSessions(cwd: string): SessionSummary[] {
         progress: currentStep(entries),
         lastPromptId: entries.findLast((entry) => userText(entry) !== null)?.uuid,
         pr: pullRequest(entries),
+        forkedFrom: entries.find((entry) => entry.forkedFrom?.sessionId)?.forkedFrom?.sessionId,
       }
       cache.set(file.path, cached)
     }
@@ -340,6 +345,7 @@ export function listSessions(cwd: string): SessionSummary[] {
       ...(cached.progress && { progress: cached.progress }),
       ...turnError(dir, file.id, cached.lastPromptId),
       ...(cached.pr && { pr: { ...cached.pr, state: pullRequestState(cached.pr.url) } }),
+      ...(cached.forkedFrom && { forkedFrom: cached.forkedFrom }),
     })
   }
   for (const path of cache.keys()) if (!seen.has(path)) cache.delete(path)

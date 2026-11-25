@@ -21,6 +21,8 @@ export interface SessionSummary {
   remindAt?: number
   // When the thread was marked resolved; unset once it runs again.
   resolvedAt?: number
+  // The session this one was forked from.
+  forkedFrom?: string
 }
 
 export interface ProjectInfo {

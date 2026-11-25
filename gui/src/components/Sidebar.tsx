@@ -14,6 +14,7 @@ import { MarqueeText } from "./MarqueeText"
 import { UpdateButton } from "./UpdateButton"
 import { useSessionHoverCard } from "./SessionHoverCard"
 import { Collapsible } from "./Collapsible"
+import { loadEditors, revealLabel, type Editor } from "./FileMenu"
 import type { ProjectInfo, SessionSummary } from "../api"
 import {
   ArrowUpDown,
@@ -22,13 +23,11 @@ import {
   FolderOpen,
   FolderPlus,
   MoreHorizontal,
-  Pin,
   Clock,
   Magnifier,
   SlidersHorizontal,
   Settings,
   SquarePen,
-  Trash2,
 } from "../lib/icons"
 
 // Tasks shown per project before "Show more".
@@ -47,6 +46,8 @@ type SessionPrefs = {
   order: Record<string, string[]>
   // Project paths in the user's drag order.
   projects: string[]
+  // Per project, tasks whose forks are hidden.
+  forksHidden: Record<string, Record<string, true>>
 }
 const SESSION_PREFS_KEY = "noa-agent.sessionPrefs"
 
@@ -70,9 +71,9 @@ function loadRecentsPrefs(): RecentsPrefs {
 function loadSessionPrefs(): SessionPrefs {
   try {
     const raw = JSON.parse(localStorage.getItem(SESSION_PREFS_KEY) ?? "{}") as Partial<SessionPrefs>
-    return { pinned: raw.pinned ?? {}, pinnedOrder: raw.pinnedOrder ?? [], order: raw.order ?? {}, projects: raw.projects ?? [] }
+    return { pinned: raw.pinned ?? {}, pinnedOrder: raw.pinnedOrder ?? [], order: raw.order ?? {}, projects: raw.projects ?? [], forksHidden: raw.forksHidden ?? {} }
   } catch {
-    return { pinned: {}, pinnedOrder: [], order: {}, projects: [] }
+    return { pinned: {}, pinnedOrder: [], order: {}, projects: [], forksHidden: {} }
   }
 }
 
@@ -101,6 +102,26 @@ function orderedSessions(prefs: SessionPrefs, path: string, sessions: SessionSum
   })
 }
 
+// Each fork goes under the oldest task in its fork chain that is in the list; a fork of a fork does not nest deeper.
+function nestForks(sessions: SessionSummary[]): { session: SessionSummary; forks: SessionSummary[] }[] {
+  const byId = new Map(sessions.map((session) => [session.id, session]))
+  const rootOf = (session: SessionSummary) => {
+    const seen = new Set([session.id])
+    let root = session
+    for (let parent = byId.get(root.forkedFrom ?? ""); parent && !seen.has(parent.id); parent = byId.get(parent.forkedFrom ?? "")) {
+      seen.add(parent.id)
+      root = parent
+    }
+    return root
+  }
+  const families = new Map(sessions.filter((session) => rootOf(session) === session).map((session) => [session.id, { session, forks: [] as SessionSummary[] }]))
+  for (const session of sessions) {
+    const root = rootOf(session)
+    if (root !== session) families.get(root.id)!.forks.push(session)
+  }
+  return [...families.values()]
+}
+
 interface ActiveSession {
   cwd: string
   id?: string
@@ -122,6 +143,10 @@ interface SidebarProps {
   onRevealProject: (path: string) => void
   onOpenCoordinator: (path: string) => void
   onDeleteSession: (cwd: string, id: string, title: string) => void
+  onRenameSession: (cwd: string, id: string, title: string) => Promise<void>
+  onForkSession: (cwd: string, id: string) => void
+  // `target` is an editor type, or "finder" to reveal the task's folder.
+  onOpenSessionIn: (cwd: string, target: string) => void
   onSearch: () => void
   onSettings: () => void
   onCustomize: () => void
@@ -146,6 +171,9 @@ export function Sidebar({
   onRevealProject,
   onOpenCoordinator,
   onDeleteSession,
+  onRenameSession,
+  onForkSession,
+  onOpenSessionIn,
   onSearch,
   onSettings,
   onCustomize,
@@ -181,6 +209,7 @@ export function Sidebar({
       let changed = false
       const pinned = { ...current.pinned }
       const order = { ...current.order }
+      const forksHidden = { ...current.forksHidden }
       const currentProjects = new Set(projects.map((project) => project.path))
       for (const path of loadedProjects) {
         if (!currentProjects.has(path)) continue
@@ -194,6 +223,15 @@ export function Sidebar({
             else delete pinned[path]
           }
         }
+        const currentHidden = current.forksHidden[path]
+        if (currentHidden) {
+          const nextHidden = Object.fromEntries(Object.entries(currentHidden).filter(([id]) => ids.has(id)))
+          if (Object.keys(nextHidden).length !== Object.keys(currentHidden).length) {
+            changed = true
+            if (Object.keys(nextHidden).length) forksHidden[path] = nextHidden
+            else delete forksHidden[path]
+          }
+        }
         const currentOrder = current.order[path]
         if (currentOrder) {
           const nextOrder = currentOrder.filter((id) => ids.has(id))
@@ -204,7 +242,7 @@ export function Sidebar({
           }
         }
       }
-      return changed ? { ...current, pinned, order, pinnedOrder: current.pinnedOrder.filter(id => Object.values(pinned).some(group => group[id])) } : current
+      return changed ? { ...current, pinned, order, forksHidden, pinnedOrder: current.pinnedOrder.filter(id => Object.values(pinned).some(group => group[id])) } : current
     })
   }, [loadedProjects, projects, sessions])
 
@@ -242,15 +280,36 @@ export function Sidebar({
     () =>
       sortedProjects.map((project) => {
         const all = orderedSessions(prefs, project.path, sessions[project.path] ?? []).filter(session => !prefs.pinned[project.path]?.[session.id])
-        return { project, visible: all }
+        return { project, families: nestForks(all) }
       }),
     [sortedProjects, sessions, prefs],
   )
 
   const isPinned = (path: string, id: string) => !!prefs.pinned[path]?.[id]
 
+  // The task menu's actions, the same wherever the task is listed. A working task can't be renamed or forked yet.
+  function taskActions(project: ProjectInfo, session: SessionSummary) {
+    const cwd = session.cwd ?? project.path
+    return {
+      onTogglePin: () => togglePin(project.path, session.id),
+      onDelete: () => onDeleteSession(cwd, session.id, session.title),
+      onRename: session.status ? undefined : (title: string) => onRenameSession(cwd, session.id, title),
+      onFork: session.status ? undefined : () => onForkSession(cwd, session.id),
+      onOpenIn: (target: string) => onOpenSessionIn(cwd, target),
+    }
+  }
+
   function saveOrder(path: string, order: string[]) {
     setPrefs((current) => ({ ...current, order: { ...current.order, [path]: order } }))
+  }
+
+  function toggleForks(path: string, id: string) {
+    setPrefs((current) => {
+      const hidden = { ...current.forksHidden[path] }
+      if (hidden[id]) delete hidden[id]
+      else hidden[id] = true
+      return { ...current, forksHidden: { ...current.forksHidden, [path]: hidden } }
+    })
   }
 
   function togglePin(path: string, id: string) {
@@ -287,7 +346,7 @@ export function Sidebar({
   // Alt+↑/↓ moves a task inside its own block (pinned or recent).
   function moveBy(path: string, id: string, direction: -1 | 1) {
     const group = isPinned(path, id) ? pinnedSessions.map(({ session }) => session)
-      : orderedSessions(prefs, path, sessions[path] ?? []).filter(session => !isPinned(path, session.id))
+      : nestForks(orderedSessions(prefs, path, sessions[path] ?? []).filter(session => !isPinned(path, session.id))).map(({ session }) => session)
     const position = group.findIndex((session) => session.id === id)
     const target = group[position + direction]
     if (!target) return
@@ -518,8 +577,7 @@ export function Sidebar({
                   dragging={dragging?.kind === "session" && dragging.id === session.id}
                   dropEdge={dropTarget?.kind === "session" && dropTarget.id === session.id ? dropTarget.edge : undefined}
                   onClick={() => selectSession(session.cwd ?? project.path, session.id)}
-                  onTogglePin={() => togglePin(project.path, session.id)}
-                  onDelete={() => onDeleteSession(session.cwd ?? project.path, session.id, session.title)}
+                  {...taskActions(project, session)}
                   onMove={direction => moveBy(project.path, session.id, direction)}
                   onPointerDown={event => startDrag(event, "session", project.path, session.id, session.title)}
                   onPointerMove={moveDrag}
@@ -562,8 +620,9 @@ export function Sidebar({
           )}
           <Collapsible open={projectsOpen} duration={300} fade>
             <div data-project-list className="flex flex-col gap-px pt-1">
-            {groups.map(({ project, visible }) => {
+            {groups.map(({ project, families }) => {
               const isOpen = expanded.has(project.path)
+              const forksHidden = prefs.forksHidden[project.path] ?? {}
               return (
                 <div
                   key={project.path}
@@ -591,36 +650,67 @@ export function Sidebar({
                   />
                   <Collapsible open={isOpen} duration={300} fade>
                     <div data-session-list={project.path} className="flex flex-col gap-px pb-2 pt-1">
-                      {(unfolded.has(project.path) ? visible : visible.slice(0, TASK_PREVIEW)).map((session) => (
+                      {(unfolded.has(project.path) ? families : families.slice(0, TASK_PREVIEW)).map(({ session, forks }) => (
+                        <div key={session.id} className="relative flex flex-col gap-px">
                         <SessionRow
-                          key={session.id}
                           id={session.id}
                           path={project.path}
                           title={session.title}
                           updatedAt={session.updatedAt}
                           projectName={project.name}
                           worktree={worktreeName(session, project)}
-                          status={session.status}
+                          // Hidden forks that are working or waiting still show on the task they sit under.
+                          status={session.status ?? (forksHidden[session.id] ? forks.find((fork) => fork.status)?.status : undefined)}
                           active={active.cwd === (session.cwd ?? project.path) && session.id === active.id}
                           indent
                           pinned={isPinned(project.path, session.id)}
                           dragging={dragging?.kind === "session" && dragging.path === project.path && dragging.id === session.id}
+                          // Dropping after a task with its forks shown marks the end of the forks, where the task lands.
                           dropEdge={
                             dropTarget?.kind === "session" && dropTarget.path === project.path && dropTarget.id === session.id
+                              && !(dropTarget.edge === "after" && forks.length && !forksHidden[session.id])
                               ? dropTarget.edge
                               : undefined
                           }
                           onClick={() => selectSession(session.cwd ?? project.path, session.id)}
-                          onTogglePin={() => togglePin(project.path, session.id)}
-                          onDelete={() => onDeleteSession(session.cwd ?? project.path, session.id, session.title)}
+                          {...taskActions(project, session)}
                           onMove={(direction) => moveBy(project.path, session.id, direction)}
                           onPointerDown={(event) => startDrag(event, "session", project.path, session.id, session.title)}
                           onPointerMove={moveDrag}
                           onPointerUp={endDrag}
                           onPointerCancel={cancelDrag}
+                          forks={forks.length ? { open: !forksHidden[session.id], onToggle: () => toggleForks(project.path, session.id) } : undefined}
                         />
+                        {forks.length > 0 && (
+                          <Collapsible open={!forksHidden[session.id]} duration={200} openDuration={200} ease="cubic-bezier(.4,0,.2,1)" fade>
+                            <div className="flex flex-col gap-px">
+                              {forks.map((fork) => (
+                                <SessionRow
+                                  key={fork.id}
+                                  id={fork.id}
+                                  path={project.path}
+                                  title={fork.title}
+                                  updatedAt={fork.updatedAt}
+                                  projectName={project.name}
+                                  worktree={worktreeName(fork, project)}
+                                  status={fork.status}
+                                  active={active.cwd === (fork.cwd ?? project.path) && fork.id === active.id}
+                                  indent
+                                  nested
+                                  pinned={false}
+                                  onClick={() => selectSession(fork.cwd ?? project.path, fork.id)}
+                                  {...taskActions(project, fork)}
+                                />
+                              ))}
+                            </div>
+                          </Collapsible>
+                        )}
+                        {forks.length > 0 && !forksHidden[session.id] && dropTarget?.kind === "session" && dropTarget.path === project.path && dropTarget.id === session.id && dropTarget.edge === "after" && (
+                          <DropIndicator edge="after" indented className="inset-x-2" />
+                        )}
+                        </div>
                       ))}
-                      {visible.length > TASK_PREVIEW && (
+                      {families.length > TASK_PREVIEW && (
                         <button
                           type="button"
                           onClick={() => toggleUnfolded(project.path)}
@@ -744,8 +834,7 @@ export function Sidebar({
                       active={active.cwd === (session.cwd ?? project.path) && session.id === active.id}
                       pinned={isPinned(project.path, session.id)}
                       onClick={() => selectSession(session.cwd ?? project.path, session.id)}
-                      onTogglePin={() => togglePin(project.path, session.id)}
-                      onDelete={() => onDeleteSession(session.cwd ?? project.path, session.id, session.title)}
+                      {...taskActions(project, session)}
                     />
                   ))}
                   {recents.length > RECENTS_PREVIEW && (
@@ -896,7 +985,7 @@ function ProjectRow({
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerCancel}
-        className={`noa-sidebar-tree-row noa-agent-sidebar-row group flex h-[30px] items-center gap-[7px] pl-[6px] pr-2 mx-2 rounded-lg cursor-pointer select-none ${menu ? "is-active" : ""} ${dragging ? "noa-session-row-dragging" : ""}`}
+        className={`noa-sidebar-tree-row noa-agent-sidebar-row group flex h-[30px] items-center gap-[7px] pl-[6px] pr-1 mx-2 rounded-lg cursor-pointer select-none ${menu ? "is-active" : ""} ${dragging ? "noa-session-row-dragging" : ""}`}
       >
         {/* A 16px folder icon in the row ink, centred on the New task icon's column so names line up
             with the search and New task labels. Open folders swap to the open shape. */}
@@ -921,15 +1010,14 @@ function ProjectRow({
             aria-label={`Project actions for ${project.name}`}
             aria-haspopup="menu"
             aria-expanded={!!menu}
-            title="Project actions"
             onClick={(event) => {
               event.stopPropagation()
               const trigger = event.currentTarget
               setMenu((current) => (current ? undefined : { anchor: anchorBelow(trigger), trigger }))
             }}
-            className="flex size-6 items-center justify-center rounded-md text-[var(--sidebar-text-muted)] hover:text-[var(--sidebar-text)]"
+            className="flex size-6 items-center justify-center rounded-md noa-sidebar-hover-surface text-[var(--sidebar-text-muted,#898781)] hover:text-[var(--text-primary,#2D2D2B)] noa-press"
           >
-            <MoreHorizontal size={14} />
+            <MoreHorizontal size={16} />
           </button>
           {menu && (
             <PopupMenu
@@ -954,14 +1042,13 @@ function ProjectRow({
             <button
               type="button"
               aria-label="New task in project"
-              title={`New task in ${project.name}`}
               onClick={(event) => {
                 event.stopPropagation()
                 onNewSession()
               }}
-              className="flex size-6 items-center justify-center rounded-md text-[var(--sidebar-text-muted,#898781)] hover:text-[var(--text-primary,#2D2D2B)] noa-press"
+              className="flex size-6 items-center justify-center rounded-md noa-sidebar-hover-surface text-[var(--sidebar-text-muted,#898781)] hover:text-[var(--text-primary,#2D2D2B)] noa-press"
             >
-              <SquarePen size={14} />
+              <SquarePen size={13} />
             </button>
           )}
         </span>
@@ -985,12 +1072,17 @@ function SessionRow({
   status,
   active,
   indent,
+  nested,
+  forks,
   pinned,
   dragging,
   dropEdge,
   onClick,
   onTogglePin,
   onDelete,
+  onRename,
+  onFork,
+  onOpenIn,
   onMove,
   onPointerDown,
   onPointerMove,
@@ -1007,12 +1099,20 @@ function SessionRow({
   status?: "running" | "waiting" | "queued"
   active: boolean
   indent?: boolean
+  // A fork shown under the task it came from.
+  nested?: boolean
+  // Set on a task that has forks nested under it.
+  forks?: { open: boolean; onToggle: () => void }
   pinned: boolean
   dragging?: boolean
   dropEdge?: "before" | "after"
   onClick?: () => void
   onTogglePin?: () => void
   onDelete?: () => void
+  // Unset while the task can't be renamed or forked.
+  onRename?: (title: string) => Promise<void>
+  onFork?: () => void
+  onOpenIn?: (target: string) => void
   onMove?: (direction: -1 | 1) => void
   onPointerDown?: (event: PointerEvent<HTMLElement>) => void
   onPointerMove?: (event: PointerEvent<HTMLElement>) => void
@@ -1033,6 +1133,38 @@ function SessionRow({
   }
   const hoverCard = useSessionHoverCard({ title, updatedAt, project: projectName, worktree }, !dragging)
   const [menu, setMenu] = useState<{ anchor: PopupMenuAnchor; trigger?: Element }>()
+  const [editors, setEditors] = useState<Editor[]>([])
+  useEffect(() => { if (menu) void loadEditors(path).then(setEditors) }, [menu, path])
+  // The draft name while the title is being edited in place.
+  const [draft, setDraft] = useState<string>()
+  // Escape or Enter ends the edit before the input's blur can run with the old draft.
+  const renameDone = useRef(false)
+  function finishRename(save: boolean) {
+    if (renameDone.current) return
+    renameDone.current = true
+    const name = draft?.trim()
+    setDraft(undefined)
+    if (save && name && name !== title) void onRename?.(name)
+  }
+  const titleText = draft === undefined ? title : (
+    <input
+      autoFocus
+      data-session-action
+      aria-label="Task name"
+      value={draft}
+      maxLength={120}
+      onFocus={(event) => event.currentTarget.select()}
+      onChange={(event) => setDraft(event.target.value)}
+      onClick={(event) => event.stopPropagation()}
+      onBlur={() => finishRename(true)}
+      onKeyDown={(event) => {
+        if (event.nativeEvent.isComposing) return
+        if (event.key === "Enter") finishRename(true)
+        else if (event.key === "Escape") finishRename(false)
+      }}
+      className="min-w-0 w-full bg-transparent text-[var(--text-primary,#2D2D2B)] outline-none"
+    />
+  )
   return (
     <div className="font-ui mb-0.5 noa-sidebar-tree-item">
       <div
@@ -1059,10 +1191,29 @@ function SessionRow({
         className={`noa-sidebar-tree-row relative flex h-[30px] items-center justify-between py-0 px-2 mx-2 rounded-lg cursor-pointer select-none group ${
           active ? "noa-agent-sidebar-row is-active" : "noa-agent-sidebar-row"
         } ${dragging ? "noa-session-row-dragging" : ""}`}
-        style={{ paddingLeft: indent ? "29px" : "7px" }}
+        style={{ paddingLeft: nested ? "47px" : indent ? "29px" : "7px" }}
       >
         {dropEdge && <DropIndicator edge={dropEdge} indented={indent} className="inset-x-0" />}
-        <MarqueeText className={status ? "" : "-mr-2 group-hover:mr-6 group-focus-within:mr-6"}>{title}</MarqueeText>
+        {forks ? (
+          <span className={`flex min-w-0 flex-1 items-center gap-1 ${status ? "" : "-mr-2 group-hover:mr-6 group-focus-within:mr-6"}`}>
+            {draft === undefined ? <MarqueeText className="flex-initial! w-auto!">{title}</MarqueeText> : titleText}
+            <button
+              type="button"
+              data-session-action
+              aria-expanded={forks.open}
+              aria-label={forks.open ? "Hide nested sessions" : "Show nested sessions"}
+              onClick={(event) => {
+                event.stopPropagation()
+                forks.onToggle()
+              }}
+              className="-m-0.5 flex shrink-0 items-center justify-center rounded-md p-0.5 text-[var(--sidebar-text-muted,#898781)] noa-sidebar-hover-surface hover:text-[var(--text-primary,#2D2D2B)] noa-press"
+            >
+              <ChevronRight size={14} className={`transition-transform duration-200 ease-[cubic-bezier(.4,0,.2,1)] ${forks.open ? "rotate-90" : ""}`} />
+            </button>
+          </span>
+        ) : (
+          draft === undefined ? <MarqueeText className={status ? "" : "-mr-2 group-hover:mr-6 group-focus-within:mr-6"}>{title}</MarqueeText> : <span className="flex min-w-0 flex-1 mr-6">{titleText}</span>
+        )}
         <span className={`${status ? "ml-2 flex shrink-0" : "absolute inset-y-0 right-2 flex"} items-center gap-1`}>
           {status && <span role="status" aria-label={status === "waiting" ? "Approval required" : status === "running" ? "Running" : "Queued"} title={status} className={`size-1.5 shrink-0 rounded-full ${status === "running" ? "noa-status-running" : status === "waiting" ? "bg-amber-500" : "animate-pulse bg-[var(--accent-color)]"}`} />}
           <button
@@ -1077,7 +1228,7 @@ function SessionRow({
               const trigger = event.currentTarget
               setMenu((current) => (current ? undefined : { anchor: anchorBelow(trigger), trigger }))
             }}
-            className={`flex size-6 items-center justify-center rounded-md text-[var(--sidebar-text-muted,#898781)] hover:text-[var(--text-primary,#2D2D2B)] noa-press ${
+            className={`flex size-6 items-center justify-center rounded-md noa-sidebar-hover-surface text-[var(--sidebar-text-muted,#898781)] hover:text-[var(--text-primary,#2D2D2B)] noa-press ${
               status
                 // Collapsed to nothing while hidden so the status dot sits at the row's edge, not left of an invisible button.
                 ? "-ml-1 w-0 overflow-hidden opacity-0 group-hover:ml-0 group-hover:w-6 group-hover:opacity-100 group-focus-within:ml-0 group-focus-within:w-6 group-focus-within:opacity-100 aria-expanded:ml-0 aria-expanded:w-6 aria-expanded:opacity-100"
@@ -1092,13 +1243,27 @@ function SessionRow({
       {menu && (
         <PopupMenu
           label="Task options"
+          minWidth={160}
           anchor={menu.anchor}
           trigger={menu.trigger}
           onClose={() => setMenu(undefined)}
           entries={[
-            { label: pinned ? "Unpin" : "Pin", icon: Pin, onSelect: onTogglePin },
+            ...(onOpenIn ? [
+              {
+                label: "Open in",
+                submenu: [
+                  ...editors.map((editor) => ({ key: editor.type, label: editor.name, onSelect: () => onOpenIn(editor.type) })),
+                  ...(editors.length ? [{ kind: "separator" as const }] : []),
+                  { key: "finder", label: revealLabel, onSelect: () => onOpenIn("finder") },
+                ],
+              },
+              { kind: "separator" as const },
+            ] : []),
+            { label: pinned ? "Unpin" : "Pin", shortcut: "p", onSelect: onTogglePin },
+            { label: "Rename", shortcut: "r", disabled: !onRename, onSelect: () => { renameDone.current = false; setDraft(title) } },
+            { label: "Fork", shortcut: "f", disabled: !onFork, onSelect: onFork },
             { kind: "separator" },
-            { label: "Delete", icon: Trash2, danger: true, onSelect: onDelete },
+            { label: "Delete", danger: true, shortcut: "d", onSelect: onDelete },
           ]}
         />
       )}

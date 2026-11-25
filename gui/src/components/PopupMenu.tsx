@@ -15,6 +15,8 @@ type PopupMenuEntry =
       checked?: boolean
       disabled?: boolean
       danger?: boolean
+      // A letter that picks the item while the menu is open; shown at the row's end.
+      shortcut?: string
       onSelect?: () => void
       // A close button at the row's end; the menu stays open.
       onRemove?: () => void
@@ -62,6 +64,8 @@ export function PopupMenu({
   queryRef.current = query
   const closeRef = useRef(onClose)
   closeRef.current = onClose
+  const entriesRef = useRef(entries)
+  entriesRef.current = entries
 
   const normalizedQuery = query.trim().toLowerCase()
   const filteredEntries = searchable && normalizedQuery
@@ -103,7 +107,18 @@ export function PopupMenu({
       if (!root.current?.contains(target) && !trigger?.contains(target)) closeRef.current()
     }
     const key = (event: globalThis.KeyboardEvent) => {
-      if (event.key !== "Escape" || event.isComposing || event.keyCode === 229) return
+      if (event.isComposing || event.keyCode === 229) return
+      if (!searchable && !event.metaKey && !event.ctrlKey && !event.altKey && event.key.length === 1) {
+        const entry = entriesRef.current.find((entry) => entry.kind !== "separator" && entry.kind !== "heading" && !entry.disabled && !entry.submenu && entry.shortcut === event.key.toLowerCase())
+        if (entry && entry.kind !== "separator" && entry.kind !== "heading") {
+          event.preventDefault()
+          event.stopPropagation()
+          closeRef.current()
+          entry.onSelect?.()
+        }
+        return
+      }
+      if (event.key !== "Escape") return
       event.preventDefault()
       event.stopPropagation()
       if (searchable && queryRef.current) {
@@ -193,6 +208,7 @@ export function PopupMenu({
             {entry.leading}
             <span className="noa-popup-menu-label">{entry.label}</span>
             {entry.checked && <Check size={14} className="noa-popup-menu-trailing" />}
+            {entry.shortcut && <kbd className="noa-review-menu-hint">{entry.shortcut.toUpperCase()}</kbd>}
             {hasSubmenu && <ChevronRight size={14} className="noa-popup-menu-trailing noa-popup-menu-chevron" />}
           </button>
           {entry.onRemove && (

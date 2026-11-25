@@ -286,7 +286,7 @@ export type Outgoing =
 
 export type ControlRequest =
   | { subtype: "configuration"; kind: "permissions" | "mcp"; scope: "user" | "project" | "local"; action: "get" | "save" | "remove"; revision?: string; name?: string; value?: Record<string, unknown> }
-  | { subtype: "session_action"; action: "fork" | "rewind" | "undo_rewind"; user_message_id?: string; mode?: "conversation" | "files" | "both"; dry_run?: boolean }
+  | { subtype: "session_action"; action: "fork" | "rewind" | "undo_rewind"; user_message_id?: string; mode?: "conversation" | "files" | "both"; dry_run?: boolean; title?: string }
   | { subtype: "initialize" }
   | { subtype: "interrupt" }
   | { subtype: "stop_task"; task_id: string }

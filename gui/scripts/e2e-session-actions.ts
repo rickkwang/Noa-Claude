@@ -90,6 +90,42 @@ app.whenReady().then(async () => {
     const fork = await evaluate(() => JSON.parse(localStorage.getItem('noa-agent.current')).resume)
     if (!fork) throw new Error('Fork did not open a saved conversation')
     console.log('PASS task menu forks and opens a separate conversation')
+    await evaluate(() => { const row = document.querySelector('[data-project-group] > div > [aria-expanded=false]'); if (row) row.click() })
+    const forkRow = () => [...document.querySelectorAll('[data-project-list] [role=button]')].find(row => row.querySelector('.noa-marquee-content')?.textContent.endsWith(' (fork)') && row.closest('[data-session-list]') && !row.dataset.sessionId)
+    await wait(forkRow)
+    const nesting = await evaluate(original => {
+      const parent = document.querySelector('[data-project-list] [data-session-id=' + JSON.stringify(original) + ']')
+      const child = [...document.querySelectorAll('[data-project-list] [role=button]')].find(row => row.querySelector('.noa-marquee-content')?.textContent.endsWith(' (fork)'))
+      const toggle = parent?.querySelector('[aria-label="Hide nested sessions"]')
+      return {
+        parentTitle: parent?.querySelector('.noa-marquee-content')?.textContent,
+        childTitle: child?.querySelector('.noa-marquee-content')?.textContent,
+        sameFamily: !!parent && parent.parentElement.parentElement === child?.closest('[data-session-list] > div'),
+        deeper: parseFloat(child?.style.paddingLeft) > parseFloat(parent?.style.paddingLeft),
+        toggle: !!toggle,
+      }
+    }, original)
+    if (!nesting.sameFamily || !nesting.deeper || !nesting.toggle || nesting.childTitle !== nesting.parentTitle + ' (fork)') throw new Error('Fork is not nested under its task: ' + JSON.stringify(nesting))
+    await capture('fork-nested')
+    await click('Hide nested sessions')
+    await wait(() => !!document.querySelector('[aria-label="Show nested sessions"]') && ![...document.querySelectorAll('[data-project-list] [role=button]')].some(row => row.querySelector('.noa-marquee-content')?.textContent.endsWith(' (fork)')))
+    await capture('fork-hidden')
+    await click('Show nested sessions')
+    await wait(forkRow)
+    console.log('PASS the fork is titled "<task> (fork)", nests under its task and hides and shows with the toggle')
+    const taskMenu = id => evaluate(id => document.querySelector('[data-project-list] [data-session-id=' + JSON.stringify(id) + '] [aria-label="Task options"]').click(), id)
+    const key = keyCode => { win.webContents.sendInputEvent({ type: 'keyDown', keyCode }); win.webContents.sendInputEvent({ type: 'keyUp', keyCode }) }
+    await taskMenu(original)
+    await wait(() => !!document.querySelector('[role=menu][aria-label="Task options"]'))
+    const menuItems = await evaluate(() => [...document.querySelectorAll('[role=menu][aria-label="Task options"] > .noa-context-menu-entry > [role=menuitem]')].map(item => item.textContent.trim()))
+    if (JSON.stringify(menuItems) !== JSON.stringify(['Open in', 'PinP', 'RenameR', 'ForkF', 'DeleteD'])) throw new Error('Task menu items: ' + JSON.stringify(menuItems))
+    await capture('task-row-menu')
+    key('R')
+    await wait(() => document.activeElement?.getAttribute('aria-label') === 'Task name')
+    await evaluate(() => { const e = document.activeElement; Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(e, 'GUI renamed task'); e.dispatchEvent(new Event('input', { bubbles: true })) })
+    key('Enter')
+    await wait(id => document.querySelector('[data-project-list] [data-session-id=' + JSON.stringify(id) + '] .noa-marquee-content')?.textContent === 'GUI renamed task', original)
+    console.log('PASS the task menu lists Open in, Pin, Rename, Fork and Delete with letter keys, and R renames the task in place')
     await wait(() => [...document.querySelectorAll('[data-rewind]')].filter(button => !button.disabled).length === 2)
     // No files changed after the message, so rewinding needs no choice: it happens at once.
     await evaluate(() => [...document.querySelectorAll('[data-rewind]')].at(-1).click())
@@ -209,6 +245,14 @@ app.whenReady().then(async () => {
     await click('Run task')
     await wait(() => document.querySelector('textarea')?.value === '' && [...document.querySelectorAll('[data-virtual-turn-id]')].some(element => element.textContent.includes('Side question: keep the draft until acknowledgment')))
     console.log('PASS project /btw keeps an unconfirmed draft and clears it after acceptance')
+    // Forking a task that is not open opens it and forks once it is ready.
+    await wait(() => !!document.querySelector('[aria-label="Task actions"]') && !document.querySelector('[aria-label="Task actions"]').disabled)
+    const coordinator = await evaluate(() => JSON.parse(localStorage.getItem('noa-agent.current')).resume)
+    await taskMenu(original)
+    await wait(() => !!document.querySelector('[role=menu][aria-label="Task options"]'))
+    key('F')
+    await wait(ids => { const id = JSON.parse(localStorage.getItem('noa-agent.current')).resume; return !ids.includes(id) && document.querySelector('[data-project-list] [data-session-id=' + JSON.stringify(ids[0]) + ']')?.closest('[data-session-list] > div')?.textContent.includes('GUI renamed task (fork)') }, [original, fork, coordinator])
+    console.log('PASS Fork in the menu of a task that is not open forks that task')
     fs.writeFileSync(output + '/result.json', JSON.stringify({ pass: true, original, fork }))
     app.quit()
   } catch (error) {

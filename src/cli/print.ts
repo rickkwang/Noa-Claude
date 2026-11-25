@@ -3359,7 +3359,7 @@ function runHeadlessStreaming(
             }
             await flushSessionStorage()
             if (request.action === 'fork') {
-              const fork = await createConversationFork()
+              const fork = await createConversationFork(undefined, request.title)
               sendControlResponseSuccess(message, { sessionId: fork.sessionId })
             } else if (request.action === 'undo_rewind') {
               // Undo works from the transcript on disk, so it survives a restart of this process. It takes back
