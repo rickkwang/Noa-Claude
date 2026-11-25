@@ -43,7 +43,10 @@ export function PanelTabStrip({ tabs, activeKey, label, onSelect, onClose, onCon
   const listRef = useRef<HTMLDivElement>(null)
   const rowRef = useRef<HTMLDivElement>(null)
   const [hidden, setHidden] = useState<string[]>([])
-  const shown = tabs.filter((tab) => !hidden.includes(tab.key))
+  // `hidden` lags a render behind `tabs`; when it covers every tab (the last visible one was closed) the fit below
+  // has no title to measure, so show them all for that pass and let it recompute.
+  const visible = tabs.filter((tab) => !hidden.includes(tab.key))
+  const shown = visible.length > 0 || tabs.length === 0 ? visible : tabs
   const [moreMenu, setMoreMenu] = useState<{ anchor: PopupMenuAnchor; trigger: Element }>()
   // Pointer drag along the strip: the held tab follows the pointer, the others slide aside, and the order commits on release.
   const [drag, setDrag] = useState<{ key: string; dx: number; target: number; settling?: boolean }>()
