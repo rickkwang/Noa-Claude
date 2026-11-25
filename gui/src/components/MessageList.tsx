@@ -1291,8 +1291,8 @@ function MessageActions({ text, kind = "assistant", onEdit, onRewind, rewindBloc
   if (!text || !complete) return null
   const copyLabel = kind === "user" ? "Copy message" : "Copy response"
   return (
-    <div className={`${kind === "assistant" ? "-ml-1 mt-0.5 min-h-5 gap-0.5" : "mx-1 items-center gap-2"} flex leading-4 opacity-0 transition-opacity group-hover/message:opacity-100 focus-within:opacity-100`}>
-      {kind === "user" && sentAt !== undefined && <time dateTime={new Date(sentAt).toISOString()} className="text-xs text-[var(--text-tertiary)]">{formatSentAt(sentAt)}</time>}
+    <div className={`${kind === "assistant" ? "-ml-1 mt-0.5 min-h-5 gap-0.5" : "mx-1 items-center gap-1.5"} flex leading-4 opacity-0 transition-opacity group-hover/message:opacity-100 focus-within:opacity-100`}>
+      {kind === "user" && sentAt !== undefined && <time dateTime={new Date(sentAt).toISOString()} className="text-caption text-[var(--text-tertiary)]">{formatSentAt(sentAt)}</time>}
       <div className={kind === "user" ? "flex items-center" : "contents"}>
       <button
         type="button"
@@ -1305,11 +1305,11 @@ function MessageActions({ text, kind = "assistant", onEdit, onRewind, rewindBloc
           setCopied(true)
           setTimeout(() => setCopied(false), 2000)
         }}
-        className={`${kind === "assistant" ? "size-5" : "size-7"} flex items-center justify-center rounded-md text-[var(--text-secondary,#5D5D5D)] hover:bg-[var(--fill-hover)] hover:text-[var(--text-primary,#2D2D2B)] noa-press`}
+        className={`${kind === "assistant" ? "size-5" : "size-6"} flex items-center justify-center rounded-md text-[var(--text-secondary,#5D5D5D)] hover:bg-[var(--fill-hover)] hover:text-[var(--text-primary,#2D2D2B)] noa-press`}
         aria-label={copied ? "Copied" : copyLabel}
         title={copied ? "Copied" : copyLabel}
       >
-        {copied ? <Check size={kind === "assistant" ? 16 : 14} /> : <Copy size={kind === "assistant" ? 16 : 14} />}
+        {copied ? <Check size={kind === "assistant" ? 16 : 13} /> : <Copy size={kind === "assistant" ? 16 : 13} />}
       </button>
       {copyError && <span role="status" className="self-center text-caption text-[#C24444]">Could not copy. Try again.</span>}
       {onRewind && <RewindButton blocked={rewindBlocked} onClick={onRewind} />}
@@ -1317,7 +1317,7 @@ function MessageActions({ text, kind = "assistant", onEdit, onRewind, rewindBloc
         <button
           type="button"
           onClick={onEdit}
-          className="flex size-7 items-center justify-center rounded-md text-[var(--text-secondary,#5D5D5D)] hover:bg-[var(--fill-hover)] hover:text-[var(--text-primary,#2D2D2B)] noa-press"
+          className="flex size-6 items-center justify-center rounded-md text-[var(--text-secondary,#5D5D5D)] hover:bg-[var(--fill-hover)] hover:text-[var(--text-primary,#2D2D2B)] noa-press"
           aria-label="Edit message"
           title="Edit message"
         >

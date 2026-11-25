@@ -41,7 +41,7 @@ export function SessionActions({ disabled, transcriptView, onTranscriptViewChang
 
 export function RewindButton({ blocked, onClick }: { blocked?: string; onClick: () => void }) {
   const label = blocked ?? "Rewind: take back this message and everything after it"
-  return <button type="button" data-rewind disabled={!!blocked} aria-label={label} title={label} onClick={onClick} className="flex size-7 items-center justify-center rounded-md text-[var(--text-secondary)] hover:bg-[var(--fill-hover)] disabled:opacity-40"><RotateCcw size={14} /></button>
+  return <button type="button" data-rewind disabled={!!blocked} aria-label={label} title={label} onClick={onClick} className="flex size-6 items-center justify-center rounded-md text-[var(--text-secondary)] hover:bg-[var(--fill-hover)] disabled:opacity-40"><RotateCcw size={13} /></button>
 }
 
 export type RewindPreview = { canRewind?: boolean; filesChanged?: string[]; insertions?: number; deletions?: number; turnsRemoved?: number }
