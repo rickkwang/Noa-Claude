@@ -4,6 +4,11 @@ import type { AgentState } from "../agent/reducer"
 import { fetchSessions, type ProjectInfo, type SessionSummary } from "../api"
 
 const SESSION_LIST_LIMIT = 200
+const SESSION_REQUEST_TIMEOUT = 8000
+const RUN_ONLY = Symbol("run-only session")
+
+type SidebarSession = SessionSummary & { [RUN_ONLY]?: true }
+type SessionRun = { cwd: string; sessionId?: string; title?: string; coordinator?: boolean; busy: boolean; waiting: boolean; waitingFor?: string; queued: number }
 
 interface SessionTarget {
   cwd: string
@@ -54,6 +59,7 @@ export function useSessionSync({
   busyRef.current = state.busy
   const connectionRef = useRef(state.connection)
   connectionRef.current = state.connection
+  const runsRef = useRef<SessionRun[]>([])
   const seenSessionUpdatesRef = useRef(new Map<string, number>())
   const pendingSessionReloadRef = useRef<string | undefined>(undefined)
   const localBusySessionRef = useRef<string | undefined>(undefined)
@@ -70,112 +76,127 @@ export function useSessionSync({
   }
 
   useEffect(() => {
-    let cancelled = false
-    let refreshing = false
-    const refresh = async () => {
-      if (refreshing) return
-      refreshing = true
+    const controller = new AbortController()
+    const paths = projects.map((project) => project.path)
+    const inFlight = new Map<string, Promise<SessionSummary[] | undefined>>()
+    let runsInFlight = false
+    let round = 0
+    const requestSignal = () => AbortSignal.any([controller.signal, AbortSignal.timeout(SESSION_REQUEST_TIMEOUT)])
+
+    const updateList = (path: string, prev: SidebarSession[], base: SidebarSession[], runs: SessionRun[]) => {
+      const visible = base.filter((session) => !session[RUN_ONLY]).map((session): SidebarSession => {
+        const run = runs.find((r) => r.cwd === (session.cwd ?? path) && r.sessionId === session.id)
+        return { ...session, status: run?.waiting ? "waiting" : run?.busy ? "running" : run?.queued ? "queued" : undefined, waitingFor: run?.waiting ? run.waitingFor : undefined }
+      })
+      for (const run of runs) {
+        if (run.cwd !== path || !run.sessionId || visible.some((s) => s.id === run.sessionId)) continue
+        const existing = prev.find((s) => s.id === run.sessionId)
+        const now = Date.now()
+        visible.unshift({
+          [RUN_ONLY]: true,
+          id: run.sessionId,
+          title: run.title ?? "New task",
+          coordinator: run.coordinator,
+          updatedAt: existing?.updatedAt ?? now,
+          createdAt: existing?.createdAt ?? now,
+          status: run.waiting ? "waiting" : run.busy ? "running" : run.queued ? "queued" : undefined,
+          waitingFor: run.waiting ? run.waitingFor : undefined,
+        })
+      }
+      return prev.length === visible.length && prev.every((s, i) => {
+        const v = visible[i]!
+        // PR state refreshes from GitHub without touching the transcript, so updatedAt alone misses it.
+        return s[RUN_ONLY] === v[RUN_ONLY] && s.id === v.id && s.title === v.title && s.updatedAt === v.updatedAt && s.status === v.status && s.cwd === v.cwd && s.summary === v.summary && s.error === v.error && s.pr?.state === v.pr?.state && s.waitingFor === v.waitingFor && s.resolvedAt === v.resolvedAt && s.remindAt === v.remindAt
+      }) ? prev : visible
+    }
+
+    const refreshRuns = async () => {
+      if (runsInFlight) return
+      runsInFlight = true
       try {
-        const runsResponse = await fetch("/api/runs")
-        const runs = await runsResponse.json() as { cwd: string; sessionId?: string; title?: string; coordinator?: boolean; busy: boolean; waiting: boolean; waitingFor?: string; queued: number }[]
-        const results = await Promise.allSettled(projects.map((project) => fetchSessions(project.path)))
-        const completeResults = results.map((result) => result.status === "fulfilled" && result.value.length < SESSION_LIST_LIMIT)
-        const active = activeSessionRef.current
-        const activeKey = active.id ? sessionUpdateKey(active.cwd, active.id) : undefined
-        let activeSummary: SessionSummary | undefined
-        for (let index = 0; index < projects.length; index++) {
-          const project = projects[index]!
-          const result = results[index]!
-          if (result.status !== "fulfilled") continue
-          activeSummary = result.value.find((item) => (item.cwd ?? project.path) === active.cwd && item.id === active.id)
-          if (activeSummary) break
-        }
-        let reloadActive = false
-        let deletedActive = false
-        if (activeKey && activeSummary) {
-          const previous = seenSessionUpdatesRef.current.get(activeKey)
-          if (previous === undefined) {
-            seenSessionUpdatesRef.current.set(activeKey, activeSummary.updatedAt)
-            expectedSessionUpdatesRef.current.delete(activeKey)
-          } else if (previous !== activeSummary.updatedAt) {
-            const expected = expectedSessionUpdatesRef.current.delete(activeKey)
-            if (!expected && localBusySessionRef.current !== activeKey) {
-              if (connectionRef.current === "ready" && !busyRef.current) reloadActive = true
-              else if (!busyRef.current) pendingSessionReloadRef.current = activeKey
-            }
-            seenSessionUpdatesRef.current.set(activeKey, activeSummary.updatedAt)
+        const response = await fetch("/api/runs", { signal: requestSignal() })
+        if (!response.ok) return
+        const runs = await response.json() as SessionRun[]
+        if (controller.signal.aborted) return
+        runsRef.current = runs
+        setSessionsByProject((current) => {
+          const next: Record<string, SessionSummary[]> = {}
+          for (const path of paths) {
+            const prev = current[path] ?? []
+            next[path] = updateList(path, prev, prev, runs)
+          }
+          return paths.length === Object.keys(current).length && paths.every((path) => next[path] === current[path]) ? current : next
+        })
+      } catch {} finally { runsInFlight = false }
+    }
+
+    const refreshProject = async (path: string) => {
+      const sessions = await fetchSessions(path, requestSignal()).catch(() => undefined)
+      if (controller.signal.aborted) return
+      const complete = sessions !== undefined && sessions.length < SESSION_LIST_LIMIT
+      setLoadedProjects((current) => {
+        if (current.has(path) === complete) return current
+        const next = new Set(current)
+        if (complete) next.add(path)
+        else next.delete(path)
+        return next
+      })
+      if (!sessions) return
+      const history = sessions
+      const runs = runsRef.current
+      setSessionsByProject((current) => {
+        const prev = current[path] ?? []
+        const visible = updateList(path, prev, history, runs)
+        return visible === current[path] ? current : { ...current, [path]: visible }
+      })
+
+      const active = activeSessionRef.current
+      const summary = history.find((item) => (item.cwd ?? path) === active.cwd && item.id === active.id)
+      if (summary) {
+        const key = sessionUpdateKey(active.cwd, summary.id)
+        const previous = seenSessionUpdatesRef.current.get(key)
+        seenSessionUpdatesRef.current.set(key, summary.updatedAt)
+        const expected = expectedSessionUpdatesRef.current.delete(key)
+        if (previous !== undefined && previous !== summary.updatedAt && !expected && localBusySessionRef.current !== key && !busyRef.current) {
+          if (connectionRef.current === "ready") {
+            pendingSessionReloadRef.current = undefined
+            expectedSessionUpdatesRef.current.add(key)
+            setSession((current) => current.runtimeId === active.runtimeId ? { ...current, key: current.key + 1 } : current)
           } else {
-            expectedSessionUpdatesRef.current.delete(activeKey)
-          }
-        } else if (
-          activeKey &&
-          (projects.length > 0 && completeResults.every(Boolean) ||
-            projects.some((project, index) => project.path === active.cwd && completeResults[index])) &&
-          seenSessionUpdatesRef.current.has(activeKey)
-        ) {
-          deletedActive = true
-          seenSessionUpdatesRef.current.delete(activeKey)
-        }
-        if (!cancelled) {
-          setLoadedProjects((current) => {
-            const next = new Set(current)
-            for (let index = 0; index < projects.length; index++) {
-              const path = projects[index]!.path
-              if (completeResults[index]) next.add(path)
-              else next.delete(path)
-            }
-            return next.size === current.size && [...next].every((path) => current.has(path)) ? current : next
-          })
-          setSessionsByProject((current) => {
-            const next: Record<string, SessionSummary[]> = {}
-            let changed = Object.keys(current).length !== projects.length
-            for (let index = 0; index < projects.length; index++) {
-              const project = projects[index]!
-              const prev = current[project.path] ?? []
-              const result = results[index]!
-              const base = result.status === "fulfilled" ? result.value : prev
-              const visible = base.map((session): SessionSummary => {
-                const run = runs.find((r) => r.cwd === (session.cwd ?? project.path) && r.sessionId === session.id)
-                return { ...session, status: run?.waiting ? "waiting" : run?.busy ? "running" : run?.queued ? "queued" : undefined, ...(run?.waiting && run.waitingFor && { waitingFor: run.waitingFor }) }
-              })
-              for (const run of runs.filter((r) => r.cwd === project.path && r.sessionId)) {
-                if (!visible.some((s) => s.id === run.sessionId)) {
-                  const existing = prev.find((s) => s.id === run.sessionId)
-                  const now = Date.now()
-                  visible.unshift({
-                    id: run.sessionId!,
-                    title: run.title ?? "New task",
-                    coordinator: run.coordinator,
-                    updatedAt: existing?.updatedAt ?? now,
-                    createdAt: existing?.createdAt ?? now,
-                    status: run.waiting ? "waiting" : run.busy ? "running" : run.queued ? "queued" : undefined,
-                    ...(run.waiting && run.waitingFor && { waitingFor: run.waitingFor }),
-                  })
-                }
-              }
-              const sameList =
-                prev.length === visible.length &&
-                prev.every((s, i) => {
-                  const v = visible[i]!
-                  // PR state refreshes from GitHub without touching the transcript, so updatedAt alone misses it.
-                  return s.id === v.id && s.title === v.title && s.updatedAt === v.updatedAt && s.status === v.status && s.cwd === v.cwd && s.summary === v.summary && s.error === v.error && s.pr?.state === v.pr?.state && s.waitingFor === v.waitingFor && s.resolvedAt === v.resolvedAt && s.remindAt === v.remindAt
-                })
-              next[project.path] = sameList ? prev : visible
-              if (!sameList) changed = true
-            }
-            return changed ? next : current
-          })
-          if (reloadActive && activeKey) {
-            pendingSessionReloadRef.current = undefined
-            expectedSessionUpdatesRef.current.add(activeKey)
-            setSession((current) => ({ ...current, key: current.key + 1 }))
-          } else if (deletedActive && active.id) {
-            pendingSessionReloadRef.current = undefined
-            removeSessionBrowserState(active.cwd, active.id)
-            setSession((current) => ({ cwd: current.cwd, runtimeId: crypto.randomUUID(), key: current.key + 1 }))
+            pendingSessionReloadRef.current = key
           }
         }
-      } catch {} finally { refreshing = false }
+      }
+      return history
+    }
+
+    setLoadedProjects((current) => {
+      const next = new Set(paths.filter((path) => current.has(path)))
+      return next.size === current.size ? current : next
+    })
+    const refresh = async () => {
+      void refreshRuns()
+      const currentRound = ++round
+      // Share outstanding reads so deletion never treats a pending project as absent.
+      const results = await Promise.all(paths.map((path) => {
+        const pending = inFlight.get(path)
+        if (pending) return pending
+        const request = refreshProject(path).finally(() => inFlight.delete(path))
+        inFlight.set(path, request)
+        return request
+      }))
+      if (controller.signal.aborted || currentRound !== round) return
+      const active = activeSessionRef.current
+      if (!active.id) return
+      const activeKey = sessionUpdateKey(active.cwd, active.id)
+      if (!seenSessionUpdatesRef.current.has(activeKey)) return
+      const complete = results.map((result) => result !== undefined && result.length < SESSION_LIST_LIMIT)
+      if (!(paths.length > 0 && complete.every(Boolean) || complete[paths.indexOf(active.cwd)])) return
+      if (results.some((result, i) => result?.some((item) => (item.cwd ?? paths[i]) === active.cwd && item.id === active.id))) return
+      seenSessionUpdatesRef.current.delete(activeKey)
+      pendingSessionReloadRef.current = undefined
+      removeSessionBrowserState(active.cwd, active.id)
+      setSession((current) => current.runtimeId === active.runtimeId ? { cwd: current.cwd, runtimeId: crypto.randomUUID(), key: current.key + 1 } : current)
     }
     const refreshVisible = () => { if (document.visibilityState === "visible") void refresh() }
     void refresh()
@@ -183,7 +204,7 @@ export function useSessionSync({
     window.addEventListener("focus", refreshVisible)
     document.addEventListener("visibilitychange", refreshVisible)
     return () => {
-      cancelled = true
+      controller.abort()
       clearInterval(timer)
       window.removeEventListener("focus", refreshVisible)
       document.removeEventListener("visibilitychange", refreshVisible)

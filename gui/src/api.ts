@@ -30,8 +30,8 @@ export interface ProjectInfo {
   missing: boolean
 }
 
-export async function fetchSessions(cwd: string | undefined): Promise<SessionSummary[]> {
-  const response = await fetch(`/api/sessions${query(cwd)}`)
+export async function fetchSessions(cwd: string | undefined, signal?: AbortSignal): Promise<SessionSummary[]> {
+  const response = await fetch(`/api/sessions${query(cwd)}`, { signal })
   if (!response.ok) throw new Error(`Could not list tasks (HTTP ${response.status})`)
   return (await response.json()) as SessionSummary[]
 }

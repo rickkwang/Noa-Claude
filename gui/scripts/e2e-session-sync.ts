@@ -25,33 +25,59 @@ const otherId = crypto.randomUUID()
 const otherFile = join(projectDir(otherCwd), `${otherId}.jsonl`)
 writeFileSync(otherFile, JSON.stringify({ type: "user", uuid: crypto.randomUUID(), cwd: otherCwd, timestamp: new Date().toISOString(), message: { content: "SYNC_OTHER_SAVED" } }) + "\n")
 let unavailable = false
+const temporaryRun = crypto.randomUUID()
+let runningUnsaved = false
+const heldHistory = Promise.withResolvers<void>()
+let holdHistory = false
 let requests = 0
-let delayMissingProject = true
 let slowProjectPending = false
+const slowProject = Promise.withResolvers<void>()
 const server = Bun.serve({
   hostname: "127.0.0.1", port: 0,
   async fetch(request) {
     const url = new URL(request.url)
     if (url.pathname === "/fixture/progress") return Response.json({ slowProjectPending })
+    if (url.pathname === "/fixture/release-slow") {
+      slowProject.resolve()
+      return new Response("ok")
+    }
+    if (url.pathname === "/fixture/rename-other") {
+      appendFileSync(otherFile, JSON.stringify({ type: "custom-title", sessionId: otherId, customTitle: "SYNC_OTHER_WHILE_SLOW" }) + "\n")
+      return new Response("ok")
+    }
     if (url.pathname === "/api/info") return Response.json({ cwd })
     if (url.pathname === "/api/projects") return Response.json([
       { path: cwd, name: "Sync fixture", sources: [cwd], missing: false },
       { path: otherCwd, name: "Other fixture", sources: [otherCwd], missing: false },
       { path: missingCwd, name: "Missing fixture", sources: [missingCwd], missing: true },
     ])
-    if (url.pathname === "/api/runs") return Response.json(unavailable ? [{ runtimeId: id, cwd, sessionId: id, busy: true, waiting: false, queued: 0 }] : [])
+    if (url.pathname === "/fixture/start-unsaved") {
+      runningUnsaved = true
+      return new Response("ok")
+    }
+    if (url.pathname === "/fixture/stop-unsaved") {
+      runningUnsaved = false
+      holdHistory = true
+      return new Response("ok")
+    }
+    if (url.pathname === "/fixture/release-history") {
+      heldHistory.resolve()
+      return new Response("ok")
+    }
+    if (url.pathname === "/api/runs") {
+      const sessionId = runningUnsaved ? temporaryRun : unavailable ? id : undefined
+      return Response.json(sessionId ? [{ runtimeId: sessionId, cwd, sessionId, title: runningUnsaved ? "SYNC_UNSAVED_RUN" : undefined, busy: true, waiting: false, queued: 0 }] : [])
+    }
     if (url.pathname === "/api/sessions") {
       requests++
       if (url.searchParams.get("cwd") === missingCwd) {
-        if (delayMissingProject) {
-          delayMissingProject = false
-          slowProjectPending = true
-          await Bun.sleep(1500)
-          slowProjectPending = false
-        }
+        slowProjectPending = true
+        await slowProject.promise
+        slowProjectPending = false
         return Response.json({ error: "cwd is not a directory" }, { status: 400 })
       }
       if (url.searchParams.get("cwd") === otherCwd) return Response.json(listSessions(otherCwd))
+      if (holdHistory) await heldHistory.promise
       return unavailable ? Response.json({ error: "Temporarily unavailable" }, { status: 503 }) : Response.json(listSessions(cwd))
     }
     if (request.method === "DELETE" && url.pathname === `/api/sessions/${id}`) {
@@ -132,7 +158,15 @@ app.whenReady().then(async()=>{
    await wait(()=>text().includes('Sync fixture'));
    await wait(()=>text().includes('SYNC_OTHER_SAVED'));
    if(!(await (await fetch('/fixture/progress')).json()).slowProjectPending)throw new Error('A slow project delayed the ready project list');
-   await pause(300);
+   await fetch('/fixture/rename-other');
+   await wait(()=>text().includes('SYNC_OTHER_WHILE_SLOW'));
+   if(!(await (await fetch('/fixture/progress')).json()).slowProjectPending)throw new Error('A slow project blocked later refreshes of the ready project');
+   await fetch('/fixture/release-slow');
+   await fetch('/fixture/start-unsaved');
+   await wait(()=>taskRow('SYNC_UNSAVED_RUN')?.querySelector('[aria-label="Running"]'));
+   await fetch('/fixture/stop-unsaved');
+   await wait(()=>!taskRow('SYNC_UNSAVED_RUN'));
+   await fetch('/fixture/release-history');
    await fetch('/fixture/create');
    await wait(()=>text().includes('SYNC_CREATED'));
    taskRow('SYNC_CREATED').click();
@@ -329,6 +363,8 @@ app.whenReady().then(async()=>{
   console.log(`PASS Electron session sync with live history reload, missing/failed projects, run status, browser-state cleanup, Codex colors, and global font smoothing (${requests} reads)`)
   }
 } finally {
+  slowProject.resolve()
+  heldHistory.resolve()
   server.stop(true)
   if (originalConfig === undefined) delete process.env.CLAUDE_CONFIG_DIR
   else process.env.CLAUDE_CONFIG_DIR = originalConfig
