@@ -11,7 +11,8 @@ const repo = join(dir, 'repo')
 const port = 19587
 const git = (...args) => execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8' }).trim()
 await mkdir(repo)
-const child = spawn('bun', ['run', 'server/main.ts'], { cwd: join(root, 'gui'), env: { ...process.env, NOA_GUI_PORT: String(port), NOA_GUI_INSECURE: '1', CLAUDE_CONFIG_DIR: join(dir, 'config') }, stdio: ['ignore', 'pipe', 'pipe'] })
+const config = join(dir, 'config')
+const child = spawn('bun', ['run', 'server/main.ts'], { cwd: join(root, 'gui'), env: { ...process.env, NOA_GUI_PORT: String(port), NOA_GUI_INSECURE: '1', CLAUDE_CONFIG_DIR: config, CLAUDE_CODE_PRODUCT_DIR: config }, stdio: ['ignore', 'pipe', 'pipe'] })
 let log = ''
 child.stdout.on('data', (data) => { log += data })
 child.stderr.on('data', (data) => { log += data })
