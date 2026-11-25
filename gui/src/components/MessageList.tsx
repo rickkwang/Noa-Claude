@@ -544,7 +544,7 @@ export function MessageList({ turns, dockMotion, threadTitles, onOpenThread, cwd
         const turn = event.target instanceof Element ? event.target.closest<HTMLElement>("[data-virtual-turn-id]") : null
         if (turn?.dataset.virtualTurnId) focusedTurn.current = turn.dataset.virtualTurnId
       }}
-      className="noa-agent-scroll scrollbar-on-scroll noa-scroll-fade relative flex-1 min-h-0 overflow-y-auto overscroll-contain"
+      className="noa-agent-scroll noa-scroll-fade relative flex-1 min-h-0 overflow-y-auto overscroll-contain"
     >
       {/* The rail is shown only when the centered column leaves enough room. */}
       <div ref={contentRef} className="noa-conversation-column flex flex-col gap-4 px-5 pt-8" style={{ maxWidth: readingWidth, paddingBottom: "calc(var(--composer-overlay, 0px) + 32px)" }}>
@@ -1090,7 +1090,7 @@ function ActivityGroup({ blocks, pending, tasks, onStopTask, onOpenTask, verbose
         <ChevronRight size={14} className={`shrink-0 opacity-0 transition-[transform,opacity] duration-300 group-hover/activity:opacity-100 group-focus-visible/activity:opacity-100 ${open ? "rotate-90" : ""}`} />
       </button>
       <Collapsible open={open}>
-        <div ref={activityRef} onScroll={(event) => { const e = event.currentTarget; following.current = e.scrollHeight - e.clientHeight - e.scrollTop <= 24 }} className={`noa-activity-list ms-2 mt-2 flex flex-col gap-1 overflow-x-hidden border-l border-[var(--divider-subtle)] ps-3 focus-visible:outline-auto ${verbose ? "" : "noa-activity-scroll scrollbar-on-scroll noa-scroll-fade [--edge-fade-distance:24px] max-h-56 overflow-y-auto overscroll-contain"}`} role="region" aria-label="Tool activity" tabIndex={open ? 0 : -1}>
+        <div ref={activityRef} onScroll={(event) => { const e = event.currentTarget; following.current = e.scrollHeight - e.clientHeight - e.scrollTop <= 24 }} className={`noa-activity-list ms-2 mt-2 flex flex-col gap-1 overflow-x-hidden border-l border-[var(--divider-subtle)] ps-3 focus-visible:outline-auto ${verbose ? "" : "noa-activity-scroll noa-scroll-fade [--edge-fade-distance:24px] max-h-56 overflow-y-auto overscroll-contain"}`} role="region" aria-label="Tool activity" tabIndex={open ? 0 : -1}>
           {blocks.flatMap((block, i) => {
             if (block.kind === "thinking") return [<ThinkingActivity key={`thinking-${i}`} block={block} expanded={showThinking} />]
             // A command that only reads, searches or lists shows one row per action once it finishes;

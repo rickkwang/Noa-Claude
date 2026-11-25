@@ -52,7 +52,7 @@ export function SideChat({ chatKey, ready, draftKey, request, focusKey }: { chat
   return (
     <div role="group" aria-label="Side chat" className="flex h-full min-h-0 flex-col pt-3 font-ui">
       {started ? (
-        <div ref={scrollRef} className="noa-agent-scroll scrollbar-on-scroll flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-5 pt-3 pb-6">
+        <div ref={scrollRef} className="noa-agent-scroll flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-5 pt-3 pb-6">
           {chat.messages.map((message, index) => message.role === "user"
             ? <div key={index} className="flex flex-col items-end"><UserBubble text={message.text} /></div>
             : <div key={index} className="noa-selectable min-w-0"><Markdown text={message.text} /></div>)}

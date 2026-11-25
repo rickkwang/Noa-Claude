@@ -92,7 +92,7 @@ export function SlashCommandMenu({
         id="noa-slash-commands"
         role="listbox"
         aria-label={title ?? "Commands and skills"}
-        className="noa-slash-list scrollbar-on-scroll noa-scroll-fade [--edge-fade-distance:24px] max-h-[min(420px,55vh)] overflow-y-auto py-1 pl-2"
+        className="noa-slash-list noa-scroll-fade [--edge-fade-distance:24px] max-h-[min(420px,55vh)] overflow-y-auto py-1 pl-2"
       >
         {!items.length && (
           <p className="m-0 px-3 py-5 text-center text-body text-[var(--sidebar-text-muted)]">

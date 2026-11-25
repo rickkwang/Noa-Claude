@@ -486,7 +486,7 @@ export function Sidebar({
         Customize
       </button>
 
-      <div className="noa-sidebar-scroll scrollbar-on-scroll noa-sidebar-scroll-fade group/tree flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
+      <div className="noa-sidebar-scroll noa-sidebar-scroll-fade group/tree flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
         <div className="pb-2">
           {pinnedSessions.length > 0 && (
             <section aria-label="Pinned" className="mb-2">

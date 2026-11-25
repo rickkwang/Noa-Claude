@@ -172,7 +172,7 @@ export function TurnDiffCard({ diff, onOpen, onAction, pending }: {
           <span className="min-w-0 flex-1"><MiddlePath path={previewFile.path} /></span><RowStats file={previewFile} />
           <button type="button" aria-label="Close diff preview" onClick={hidePreview}><X size={14} /></button>
         </div>
-        <div className="noa-panel-body is-code scrollbar-on-scroll"><CodeView path={previewFile.path} content={previewPatch} diff /></div>
+        <div className="noa-panel-body is-code"><CodeView path={previewFile.path} content={previewPatch} diff /></div>
       </div>}
       {dialog}
     </div>

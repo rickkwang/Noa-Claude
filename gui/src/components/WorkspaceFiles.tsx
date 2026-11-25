@@ -595,19 +595,19 @@ export function WorkspaceFiles({ cwd, changes = false, scope: scopeProp, focus, 
       <div className="noa-files-main">
         <div className="noa-panel-toolbar noa-file-header noa-files-head">{selected ? fileHeaderItems : <>{rootChip}<span className="noa-panel-title" />{rootMenu}{treeToggle}</>}</div>
         {notices}
-        <div className={`noa-panel-body ${selected && !editing ? "is-code" : "scrollbar-on-scroll"}`}>{selected ? previewBody : <div className="noa-panel-empty noa-files-placeholder"><Folder size={20} /><p>Open files appear here</p><span>Pick a file in the tree.</span></div>}</div>
+        <div className={`noa-panel-body ${selected && !editing ? "is-code" : ""}`}>{selected ? previewBody : <div className="noa-panel-empty noa-files-placeholder"><Folder size={20} /><p>Open files appear here</p><span>Pick a file in the tree.</span></div>}</div>
         {current?.truncated && <p className="noa-panel-notice">Preview limit reached; some content is omitted.</p>}
       </div>
       <div className="noa-files-tree" style={{ width: shownTreeWidth }}>
         <div className="noa-files-resize" role="separator" aria-orientation="vertical" aria-label="Resize file tree" onPointerDown={startTreeResize} />
         {searchBar}
-        <div className="noa-panel-body scrollbar-on-scroll">{listBody}</div>
+        <div className="noa-panel-body">{listBody}</div>
         {truncated && <p className="noa-panel-notice">Preview limit reached; some content is omitted.</p>}
       </div>
     </div> : <>
     {!selected && treeTop}
     {notices}
-    <div className={`noa-panel-body ${selected && !editing ? "is-code" : "scrollbar-on-scroll"}`}>
+    <div className={`noa-panel-body ${selected && !editing ? "is-code" : ""}`}>
       {selected ? previewBody : listBody}
     </div>
     {(current?.truncated || !selected && truncated) && <p className="noa-panel-notice">Preview limit reached; some content is omitted.</p>}

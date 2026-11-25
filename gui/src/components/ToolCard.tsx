@@ -166,7 +166,7 @@ function TaskTranscript({ blocks, tasks, active, completed, durationMs }: { bloc
         <ChevronRight size={12} className={`shrink-0 ${open ? "rotate-90" : ""}`} />
       </button>
       <Collapsible open={open}>
-        <div className="noa-activity-list noa-activity-scroll scrollbar-on-scroll noa-scroll-fade [--edge-fade-distance:24px] mt-2 flex max-h-56 flex-col gap-1 overflow-x-hidden overflow-y-auto leading-5">
+        <div className="noa-activity-list noa-activity-scroll noa-scroll-fade [--edge-fade-distance:24px] mt-2 flex max-h-56 flex-col gap-1 overflow-x-hidden overflow-y-auto leading-5">
           {blocks.map((block, index) => <TaskBlock key={index} block={block} tasks={tasks} active={active} />)}
         </div>
       </Collapsible>

@@ -282,7 +282,7 @@ export function SettingsDialog({
             </button>
           )}
         </label>
-        <div className="scrollbar-on-scroll noa-scroll-fade [--edge-fade-distance:24px] mt-2 min-h-0 flex-1 overflow-y-auto">
+        <div className="noa-scroll-fade [--edge-fade-distance:24px] mt-2 min-h-0 flex-1 overflow-y-auto">
           {query.trim() ? (
             <>
               {searchResults.length === 0 && (
@@ -353,7 +353,7 @@ export function SettingsDialog({
       {/* The content card has no titlebar of its own, so this strip keeps the top of the window draggable. */}
       <div aria-hidden className="absolute inset-x-0 top-0 z-10 h-11" style={{ ...dragRegion, left: navWidth }} />
       <div className="noa-settings-main flex min-w-0 flex-1 flex-col overflow-hidden bg-[var(--bg-primary,#FCFCFB)]">
-        <main className="noa-settings-scroll scrollbar-on-scroll noa-scroll-fade min-h-0 flex-1 overflow-y-auto px-5 pt-16 pb-16">
+        <main className="noa-settings-scroll noa-scroll-fade min-h-0 flex-1 overflow-y-auto px-5 pt-16 pb-16">
         <div className="mx-auto flex max-w-3xl flex-col gap-8">
           <div className="flex items-center justify-between gap-4">
             <h1 className="noa-serif text-[26px] leading-8">{current?.label}</h1>
