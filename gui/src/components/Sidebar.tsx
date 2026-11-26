@@ -38,12 +38,10 @@ const RECENTS_PREVIEW = 10
 const dragRegion = { WebkitAppRegion: "drag" } as CSSProperties
 const noDragRegion = { WebkitAppRegion: "no-drag" } as CSSProperties
 
-// Pins and manual ordering live in the browser: the server keeps producing
-// newest-first lists, and the sidebar layers the user's arrangement over them.
+// Pins and the pinned/project drag order live in the browser. Unpinned tasks keep the server's newest-first order.
 type SessionPrefs = {
   pinned: Record<string, Record<string, true>>
   pinnedOrder: string[]
-  order: Record<string, string[]>
   // Project paths in the user's drag order.
   projects: string[]
   // Per project, tasks whose forks are hidden.
@@ -71,35 +69,18 @@ function loadRecentsPrefs(): RecentsPrefs {
 function loadSessionPrefs(): SessionPrefs {
   try {
     const raw = JSON.parse(localStorage.getItem(SESSION_PREFS_KEY) ?? "{}") as Partial<SessionPrefs>
-    return { pinned: raw.pinned ?? {}, pinnedOrder: raw.pinnedOrder ?? [], order: raw.order ?? {}, projects: raw.projects ?? [], forksHidden: raw.forksHidden ?? {} }
+    return { pinned: raw.pinned ?? {}, pinnedOrder: raw.pinnedOrder ?? [], projects: raw.projects ?? [], forksHidden: raw.forksHidden ?? {} }
   } catch {
-    return { pinned: {}, pinnedOrder: [], order: {}, projects: [], forksHidden: {} }
+    return { pinned: {}, pinnedOrder: [], projects: [], forksHidden: {} }
   }
 }
 
-// Stored ids first, in their saved order; sessions the server added since are appended newest-first.
-function resolveOrder(prefs: SessionPrefs, path: string, sessions: SessionSummary[]): string[] {
-  const ids = sessions.map((session) => session.id)
-  const stored = (prefs.order[path] ?? []).filter((id) => ids.includes(id))
-  const seen = new Set(stored)
-  return [...stored, ...ids.filter((id) => !seen.has(id))]
-}
-
-// Same rule for projects: the stored drag order first, projects added since keep the server's order.
+// The stored drag order first; projects added since keep the server's order.
 function orderedProjects(prefs: SessionPrefs, projects: ProjectInfo[]): ProjectInfo[] {
   const byPath = new Map(projects.map((project) => [project.path, project]))
   const stored = prefs.projects.flatMap((path) => byPath.get(path) ?? [])
   const seen = new Set(stored)
   return [...stored, ...projects.filter((project) => !seen.has(project))]
-}
-
-function orderedSessions(prefs: SessionPrefs, path: string, sessions: SessionSummary[]): SessionSummary[] {
-  const index = new Map(resolveOrder(prefs, path, sessions).map((id, position) => [id, position]))
-  const pinned = prefs.pinned[path] ?? {}
-  return [...sessions].sort((a, b) => {
-    const group = Number(!pinned[a.id]) - Number(!pinned[b.id])
-    return group || (index.get(a.id) ?? 0) - (index.get(b.id) ?? 0)
-  })
 }
 
 // Each fork goes under the oldest task in its fork chain that is in the list; a fork of a fork does not nest deeper.
@@ -208,7 +189,6 @@ export function Sidebar({
     setPrefs((current) => {
       let changed = false
       const pinned = { ...current.pinned }
-      const order = { ...current.order }
       const forksHidden = { ...current.forksHidden }
       const currentProjects = new Set(projects.map((project) => project.path))
       for (const path of loadedProjects) {
@@ -232,17 +212,8 @@ export function Sidebar({
             else delete forksHidden[path]
           }
         }
-        const currentOrder = current.order[path]
-        if (currentOrder) {
-          const nextOrder = currentOrder.filter((id) => ids.has(id))
-          if (nextOrder.length !== currentOrder.length) {
-            changed = true
-            if (nextOrder.length) order[path] = nextOrder
-            else delete order[path]
-          }
-        }
       }
-      return changed ? { ...current, pinned, order, forksHidden, pinnedOrder: current.pinnedOrder.filter(id => Object.values(pinned).some(group => group[id])) } : current
+      return changed ? { ...current, pinned, forksHidden, pinnedOrder: current.pinnedOrder.filter(id => Object.values(pinned).some(group => group[id])) } : current
     })
   }, [loadedProjects, projects, sessions])
 
@@ -270,7 +241,7 @@ export function Sidebar({
   const sortedProjects = useMemo(() => orderedProjects(prefs, projects), [prefs, projects])
   const pinnedSessions = useMemo(() => {
     const index = new Map(prefs.pinnedOrder.map((id, position) => [id, position]))
-    return sortedProjects.flatMap(project => orderedSessions(prefs, project.path, sessions[project.path] ?? [])
+    return sortedProjects.flatMap(project => (sessions[project.path] ?? [])
       .filter(session => prefs.pinned[project.path]?.[session.id])
       .map(session => ({ project, session })))
       .sort((a, b) => (index.get(a.session.id) ?? index.size) - (index.get(b.session.id) ?? index.size))
@@ -279,7 +250,7 @@ export function Sidebar({
   const groups = useMemo(
     () =>
       sortedProjects.map((project) => {
-        const all = orderedSessions(prefs, project.path, sessions[project.path] ?? []).filter(session => !prefs.pinned[project.path]?.[session.id])
+        const all = (sessions[project.path] ?? []).filter(session => !prefs.pinned[project.path]?.[session.id])
         return { project, families: nestForks(all) }
       }),
     [sortedProjects, sessions, prefs],
@@ -297,10 +268,6 @@ export function Sidebar({
       onFork: session.status ? undefined : () => onForkSession(cwd, session.id),
       onOpenIn: (target: string) => onOpenSessionIn(cwd, target),
     }
-  }
-
-  function saveOrder(path: string, order: string[]) {
-    setPrefs((current) => ({ ...current, order: { ...current.order, [path]: order } }))
   }
 
   function toggleForks(path: string, id: string) {
@@ -329,28 +296,26 @@ export function Sidebar({
     })
   }
 
-  function reorder(path: string, fromId: string, toId: string, edge: "before" | "after") {
+  // Only pinned tasks are reordered by hand; the rest follow the server's newest-first order.
+  function reorder(fromId: string, toId: string, edge: "before" | "after") {
     if (fromId === toId) return
-    const pinned = isPinned(path, fromId)
-    const order = pinned ? pinnedSessions.map(({ session }) => session.id) : resolveOrder(prefs, path, sessions[path] ?? [])
+    const order = pinnedSessions.map(({ session }) => session.id)
     const from = order.indexOf(fromId)
     if (from < 0) return
     order.splice(from, 1)
     const to = order.indexOf(toId)
     if (to < 0) return
     order.splice(edge === "before" ? to : to + 1, 0, fromId)
-    if (pinned) setPrefs(current => ({ ...current, pinnedOrder: order }))
-    else saveOrder(path, order)
+    setPrefs(current => ({ ...current, pinnedOrder: order }))
   }
 
-  // Alt+↑/↓ moves a task inside its own block (pinned or recent).
-  function moveBy(path: string, id: string, direction: -1 | 1) {
-    const group = isPinned(path, id) ? pinnedSessions.map(({ session }) => session)
-      : nestForks(orderedSessions(prefs, path, sessions[path] ?? []).filter(session => !isPinned(path, session.id))).map(({ session }) => session)
+  // Alt+↑/↓ moves a pinned task one place.
+  function moveBy(id: string, direction: -1 | 1) {
+    const group = pinnedSessions.map(({ session }) => session)
     const position = group.findIndex((session) => session.id === id)
     const target = group[position + direction]
     if (!target) return
-    reorder(path, id, target.id, direction < 0 ? "before" : "after")
+    reorder(id, target.id, direction < 0 ? "before" : "after")
   }
 
   function reorderProject(fromPath: string, toPath: string, edge: "before" | "after") {
@@ -412,8 +377,7 @@ export function Sidebar({
       const path = slot?.item.dataset.projectGroup
       return slot && path ? { kind: start.kind, path: "", id: path, edge: slot.edge } : undefined
     }
-    const listKey = isPinned(start.path, start.id) ? "pinned" : start.path
-    const container = [...document.querySelectorAll<HTMLElement>("[data-session-list]")].find((el) => el.dataset.sessionList === listKey)
+    const container = document.querySelector<HTMLElement>('[data-session-list="pinned"]') ?? undefined
     const rows = container ? [...container.querySelectorAll<HTMLElement>("[data-session-id]")] : []
     const slot = findDropSlot(container, rows, x, y, (row) => row.dataset.sessionId === start.id)
     return slot ? { kind: start.kind, path: slot.item.dataset.sessionPath!, id: slot.item.dataset.sessionId!, edge: slot.edge } : undefined
@@ -457,7 +421,7 @@ export function Sidebar({
     setDropTarget(undefined)
     if (!target || target.kind !== start.kind) return
     if (start.kind === "project") reorderProject(start.id, target.id, target.edge)
-    else if (target.path === start.path || isPinned(start.path, start.id)) reorder(start.path, start.id, target.id, target.edge)
+    else reorder(start.id, target.id, target.edge)
   }
 
   function cancelDrag() {
@@ -578,7 +542,7 @@ export function Sidebar({
                   dropEdge={dropTarget?.kind === "session" && dropTarget.id === session.id ? dropTarget.edge : undefined}
                   onClick={() => selectSession(session.cwd ?? project.path, session.id)}
                   {...taskActions(project, session)}
-                  onMove={direction => moveBy(project.path, session.id, direction)}
+                  onMove={direction => moveBy(session.id, direction)}
                   onPointerDown={event => startDrag(event, "session", project.path, session.id, session.title)}
                   onPointerMove={moveDrag}
                   onPointerUp={endDrag}
@@ -649,7 +613,7 @@ export function Sidebar({
                     onOpenCoordinator={() => onOpenCoordinator(project.path)}
                   />
                   <Collapsible open={isOpen} duration={300} fade>
-                    <div data-session-list={project.path} className="flex flex-col gap-px pb-2 pt-1">
+                    <div className="flex flex-col gap-px pb-2 pt-1">
                       {(unfolded.has(project.path) ? families : families.slice(0, TASK_PREVIEW)).map(({ session, forks }) => (
                         <div key={session.id} className="relative flex flex-col gap-px">
                         <SessionRow
@@ -664,21 +628,8 @@ export function Sidebar({
                           active={active.cwd === (session.cwd ?? project.path) && session.id === active.id}
                           indent
                           pinned={isPinned(project.path, session.id)}
-                          dragging={dragging?.kind === "session" && dragging.path === project.path && dragging.id === session.id}
-                          // Dropping after a task with its forks shown marks the end of the forks, where the task lands.
-                          dropEdge={
-                            dropTarget?.kind === "session" && dropTarget.path === project.path && dropTarget.id === session.id
-                              && !(dropTarget.edge === "after" && forks.length && !forksHidden[session.id])
-                              ? dropTarget.edge
-                              : undefined
-                          }
                           onClick={() => selectSession(session.cwd ?? project.path, session.id)}
                           {...taskActions(project, session)}
-                          onMove={(direction) => moveBy(project.path, session.id, direction)}
-                          onPointerDown={(event) => startDrag(event, "session", project.path, session.id, session.title)}
-                          onPointerMove={moveDrag}
-                          onPointerUp={endDrag}
-                          onPointerCancel={cancelDrag}
                           forks={forks.length ? { open: !forksHidden[session.id], onToggle: () => toggleForks(project.path, session.id) } : undefined}
                         />
                         {forks.length > 0 && (
