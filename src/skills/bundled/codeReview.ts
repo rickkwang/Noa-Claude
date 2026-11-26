@@ -130,15 +130,15 @@ const DEDUP = `Dedup only candidates describing the same defect, same location, 
 
 function gatherSection(bugsOnly: boolean): string {
   const committed = bugsOnly
-    ? `Then run \`git diff origin/HEAD...HEAD\` by itself, exactly as written: the whole branch against the default branch. Add \`git diff HEAD\` for staged and unstaged changes. Only if that fails, or it and \`git diff HEAD\` both print nothing, run \`git diff main...HEAD\` with the default branch's name in place of \`main\` if it has another (\`git branch -a\` lists the branches), or \`git diff HEAD~1\` if you cannot tell the base.`
-    : `Then gather \`git diff @{upstream}...HEAD\`, plus \`git diff HEAD\` for staged and unstaged changes. If there is no upstream, diff against the default branch (\`main\` or \`master\`) with \`git diff <default>...HEAD\`, or use \`git diff HEAD~1\`.`
+    ? `Run \`git diff origin/HEAD...HEAD\` by itself, exactly as written: the whole branch against the default branch. Add \`git diff HEAD\` for staged and unstaged changes. Only if that fails, or it and \`git diff HEAD\` both print nothing, run \`git diff main...HEAD\` with the default branch's name in place of \`main\` if it has another (\`git branch -a\` lists the branches), or \`git diff HEAD~1\` if you cannot tell the base.`
+    : `Gather \`git diff @{upstream}...HEAD\`, plus \`git diff HEAD\` for staged and unstaged changes. If there is no upstream, diff against the default branch (\`main\` or \`master\`) with \`git diff <default>...HEAD\`, or use \`git diff HEAD~1\`.`
   return `## Phase 0 — Gather the diff
 Get the unified diff under review:
-- Default (no target): first run \`git status --short\` and \`git ls-files --others --exclude-standard\`. Read non-ignored untracked files as new-file changes. ${committed}
+- Default (no target): ${committed} Untracked files are not part of the default scope.
 - PR (number, \`#number\`, or URL): \`gh pr view <target>\` for context and \`gh pr diff <target>\` for the diff.
 - Branch name: \`git diff <base>...<branch>\`, where \`<base>\` is the default branch.
-- File path: restrict the diff and untracked-file discovery to that path; read untracked files in that scope as new-file changes.
-Stop only when both the diff and in-scope untracked-file list are empty. Do not stop while untracked files remain unread. If a file cannot be read, disclose the coverage gap rather than declaring there is nothing to review.${bugsOnly ? `
+- File path: restrict the diff to that path, and read the non-ignored untracked files under it (\`git ls-files --others --exclude-standard -- <path>\`) as new-file changes.
+If there is nothing in scope, say there is nothing to review and stop. If a file cannot be read, disclose the coverage gap rather than declaring there is nothing to review.${bugsOnly ? `
 Three forms need permission, so never write them: \`@{upstream}\` or \`@{u}\` next to \`..\` or \`...\`, commands grouped in parentheses, and shell variables such as \`$?\`.` : ''}`
 }
 
@@ -224,7 +224,7 @@ function outputSection(cap: number | 'all', floor?: number, severity = false): s
 ${target}Return ${size} as a JSON array in a \`\`\`json block, ranked most severe first. Each entry has \`file\` (repo-relative path), \`line\`, ${fields}. If nothing survives, return \`[]\`. ${NO_REPORT_TOOL} This review's output contract is the JSON block above.${severity ? `\n\n${SEVERITY_SPEC}` : ''}`
 }
 
-const LOW_READ = `Read the diff and in-scope untracked files as new-file additions. No subagents, no full-file reads.`
+const LOW_READ = `Read the diff. With a path target, also read its untracked files as new-file additions. No subagents, no full-file reads.`
 const LOW_SKIP_TESTS = ` Skip test and fixture hunks (\`test/\`, \`spec/\`, \`__tests__/\`, \`*_test.*\`, \`*.test.*\`, \`fixtures/\`, \`testdata/\`); test-file changes are not reviewed at this level.`
 const LOW_BUG_FLAGS = `Flag runtime-correctness bugs visible from the hunk alone: inverted or wrong conditions, off-by-one, null/undefined dereference where the adjacent lines show the value can be absent, removed guards, falsy-zero checks, missing \`await\`, wrong-variable copy-paste, errors swallowed in a catch that should propagate.`
 const LOW_CLEANUP_FLAGS = ` Also flag, still from the hunk alone, new code that duplicates a helper visible in the diff context, and dead code the diff leaves behind.`
