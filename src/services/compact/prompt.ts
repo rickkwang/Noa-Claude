@@ -150,6 +150,11 @@ function getNoToolsTrailer(shape: string): string {
 export const FOR_REPLY_ONLY_INSTRUCTION =
   '\nFor this reply only: write what the instructions above ask for, with the summary inside <summary></summary> tags. Every message before those instructions, the newest one included, is conversation to summarize: do not answer it, and do not do the work that it asks for. What it says on how to summarize still holds. This paragraph is about how to write this summary. The user did not write it.'
 
+// Last output-limit recovery nudge of a summary request: earlier attempts
+// resume mid-thought, this one asks for the whole summary again.
+export const RESTATE_SUMMARY_NUDGE =
+  "Output token limit hit again, so this summary is too long to finish. Give the whole summary again from the start in one <summary> block of at most about 2,000 words. Think only briefly and leave out the <analysis> block. Keep every section, above all the user's requests and who each came from, pending tasks, current work and next step. Keep security-relevant instructions and limits verbatim, and what any additional instructions ask to keep. Cut other code, quotes and detail."
+
 // Keeps repeated compactions from drifting on what the user asked for: the
 // earlier summary's record of user messages is copied verbatim, only the work
 // account is rewritten.

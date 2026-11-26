@@ -20,7 +20,7 @@ const model = 'claude-sonnet-4-6';
 // A 200k-window model, so a gateway naming a 1M model in its responses offers a "larger window".
 const modelFor = scenario => option('--model') || (scenario === 'gateway-model-name' ? 'claude-haiku-4-5' : scenario === 'preserved-thinking' || scenario === 'mode-bypass-opus55' ? 'claude-opus-5-5' : scenario === 'opus-1m-cache-off' ? 'claude-opus-4-6[1m]' : scenario === 'mandatory-thinking' ? 'kimi/k3.1-pro' : (scenario === 'agent-effort-plan' || scenario === 'plan-compact-overflow') ? 'opusplan' : scenario.startsWith('openai-responses') ? 'gpt-6.1-sol' : model);
 const sentinel = 'KEEP_IDENTIFIER=loop-sentinel-42';
-const cases = ['agent-nested', 'agent-budget', 'agent-budget-resume', 'agent-stop-pending', 'agent-owned-results', 'agent-owned-auto', 'auto-plan-race', 'auto-stage2-error', 'agent-cascade-stop', 'agent-schema', 'agent-schema-bg', 'hook-output', 'hook-output-null', 'blocking-limit', 'image-error', 'small-window-overflow', 'read', 'read-repeat', 'large-output', 'max-turns', 'malformed', 'empty', 'alternating', 'fallback', 'provider-quota', 'refusal', 'refusal-repeat', 'truncated', 'tool-input-streaming', 'tool-input-nonstream', 'stale-signature', 'budget-streaming', 'budget-nonstream', 'permission-deny', 'deny-rule', 'mode-auto', 'mode-bypass', 'mode-bypass-off', 'mode-bypass-opus55', 'hook-block', 'compact-resume', 'task-crud', 'task-metadata-race', 'task-dependency-race', 'goal-child-usage', 'agent-custom-fork', 'agent-bypass-blocked', 'agent-bypass-auto', 'agent-effort', 'agent-effort-plan', 'hook-composition', 'tombstone-resume', 'concurrency-streaming', 'concurrency-nonstream', 'background-deadline', 'monitor', 'monitor-timeout', 'monitor-persistent', 'monitor-after-turn', 'cron', 'cron-disabled', 'cron-durable', 'cron-wakeup', 'cron-resume', 'cron-resume-compact', 'cron-resume-missed', 'cron-wrapper', 'openai-overflow', 'openai-usage', 'openai-usage-nonstream', 'openai-tools', 'openai-max-tokens-cap', 'openai-max-tokens-vllm', 'openai-responses', 'openai-responses-effort', 'bedrock-overflow', 'bedrock-bare-overflow', 'bedrock-media-overflow', 'request-body-overflow', 'request-body-with-media-overflow', 'plan-compact-overflow', 'pdf-batch-reject', 'opus-1m-cache-off', 'field-reject', 'gateway-model-name', 'preserved-thinking', 'mandatory-thinking'].filter(name => !option('--case') || name === option('--case')).filter((_, i) => {
+const cases = ['agent-nested', 'agent-budget', 'agent-budget-resume', 'agent-stop-pending', 'agent-owned-results', 'agent-owned-auto', 'auto-plan-race', 'auto-stage2-error', 'agent-cascade-stop', 'agent-schema', 'agent-schema-bg', 'hook-output', 'hook-output-null', 'blocking-limit', 'image-error', 'small-window-overflow', 'read', 'read-repeat', 'large-output', 'max-turns', 'malformed', 'empty', 'alternating', 'fallback', 'provider-quota', 'refusal', 'refusal-repeat', 'truncated', 'tool-input-streaming', 'tool-input-nonstream', 'stale-signature', 'budget-streaming', 'budget-nonstream', 'permission-deny', 'deny-rule', 'mode-auto', 'mode-bypass', 'mode-bypass-off', 'mode-bypass-opus55', 'hook-block', 'compact-resume', 'task-crud', 'task-metadata-race', 'task-dependency-race', 'goal-child-usage', 'agent-custom-fork', 'agent-bypass-blocked', 'agent-bypass-auto', 'agent-effort', 'agent-effort-plan', 'hook-composition', 'tombstone-resume', 'concurrency-streaming', 'concurrency-nonstream', 'background-deadline', 'monitor', 'monitor-timeout', 'monitor-persistent', 'monitor-after-turn', 'cron', 'cron-disabled', 'cron-durable', 'cron-wakeup', 'cron-resume', 'cron-resume-compact', 'cron-resume-missed', 'cron-wrapper', 'openai-overflow', 'openai-usage', 'openai-usage-nonstream', 'openai-tools', 'openai-max-tokens-cap', 'openai-max-tokens-vllm', 'openai-responses', 'openai-responses-effort', 'bedrock-overflow', 'bedrock-bare-overflow', 'bedrock-media-overflow', 'request-body-overflow', 'request-body-with-media-overflow', 'compact-summary-cutoff-overflow', 'compact-summary-resume-overflow', 'plan-compact-overflow', 'pdf-batch-reject', 'opus-1m-cache-off', 'field-reject', 'gateway-model-name', 'preserved-thinking', 'mandatory-thinking'].filter(name => !option('--case') || name === option('--case')).filter((_, i) => {
   // --shard K/N runs every Nth case starting at K, so CI can split the suite across runners.
   const shard = option('--shard')?.match(/^(\d+)\/(\d+)$/);
   return !shard || i % Number(shard[2]) === Number(shard[1]) - 1;
@@ -66,7 +66,7 @@ const server = createServer(async (req, res) => {
       }
     }
     const lastText = textOf(body.messages?.at(-1)?.content);
-    const summary = lastText.startsWith('CRITICAL: Respond with TEXT ONLY.') || /create a detailed continuation summary|summarize the recent messages|summary of the conversation|summarizing.*conversation/i.test(lastText);
+    const summary = lastText.startsWith('CRITICAL: Respond with TEXT ONLY.') || /create a detailed continuation summary|summarize the recent messages|summary of the conversation|summarizing.*conversation/i.test(lastText) || (active.case.startsWith('compact-summary-') && lastText.startsWith('Output token limit hit'));
     active.requests.push({ path: req.url, body, summary, auth: req.headers.authorization, sessionHeader: req.headers['session-id'] });
     writeFileSync(join(active.dir, 'requests.json'), JSON.stringify(active.requests, null, 2));
     const harness = active.case.startsWith('task-') || active.case === 'goal-child-usage' || active.case==='agent-custom-fork' || active.case.startsWith('agent-bypass-') || active.case.startsWith('agent-effort') || active.case==='agent-nested' || active.case.startsWith('agent-owned-') || active.case==='agent-cascade-stop' || active.case==='agent-stop-pending' || active.case.startsWith('agent-budget') || active.case.startsWith('agent-schema');
@@ -164,7 +164,7 @@ const server = createServer(async (req, res) => {
       error(400, 'invalid_request_error', 'Input is too long.');
       return;
     }
-    if (!summary && ((active.case === 'request-body-overflow' && n === 2) || (active.case === 'request-body-with-media-overflow' && n === 3))) {
+    if (!summary && ((['request-body-overflow', 'compact-summary-cutoff-overflow', 'compact-summary-resume-overflow'].includes(active.case) && n === 2) || (active.case === 'request-body-with-media-overflow' && n === 3))) {
       error(413, 'request_too_large', 'Request body too large');
       return;
     }
@@ -340,6 +340,15 @@ const server = createServer(async (req, res) => {
       active.summaries++;
       assert.ok(JSON.stringify(body.messages).includes(sentinel), 'summary request lost original constraint');
       content = [{ type: 'text', text: `<summary>Original project constraint: ${sentinel}. Continue the active task; bulky pasted data is omitted.</summary>` }];
+      if (active.case === 'compact-summary-cutoff-overflow' && !lastText.includes('Give the whole summary again')) {
+        content = [{ type: 'text', text: '<summary>Incomplete summary' }];
+        stop = 'max_tokens';
+      }
+      // A resumed tail lacks the opening tag; the head reply must stay the summary.
+      if (active.case === 'compact-summary-resume-overflow') {
+        content = [{ type: 'text', text: lastText.startsWith('Output token limit hit') ? 'TAIL_FRAGMENT and next steps.</summary>' : `<summary>SUMMARY_HEAD ${sentinel}. Continue the active task` }];
+        if (!lastText.startsWith('Output token limit hit')) stop = 'max_tokens';
+      }
     } else if (active.case === 'gateway-model-name' && n === 1) {
       content = [{ type: 'tool_use', id: 'gateway_read', name: 'Read', input: { file_path: join(active.dir, 'fixture.txt') } }]; stop = 'tool_use';
     } else if (active.case === 'large-output') {
@@ -898,8 +907,12 @@ try {
           } else if (scenario.endsWith('-overflow')) {
             assert.equal(runResult.code, 0, `overflow surfaced as: ${runResult.result.result}`); assert.equal(runResult.result.result, 'AUDIT_OK');
             if (scenario === 'openai-overflow') assert.ok(active.requests.every(r => r.path.includes('/chat/completions')), 'request left the OpenAI-compatible transport');
-            assert.equal(active.summaries, 1, 'context overflow did not trigger reactive compact');
-            assert.equal(count, ['small-window-overflow', 'request-body-with-media-overflow'].includes(scenario) ? 5 : scenario === 'plan-compact-overflow' ? 3 : 4);
+            assert.equal(active.summaries, scenario === 'compact-summary-cutoff-overflow' ? 5 : scenario === 'compact-summary-resume-overflow' ? 3 : 1, 'unexpected number of summary requests');
+            assert.equal(count, ['small-window-overflow', 'request-body-with-media-overflow'].includes(scenario) ? 5 : scenario === 'compact-summary-cutoff-overflow' ? 8 : scenario === 'compact-summary-resume-overflow' ? 6 : scenario === 'plan-compact-overflow' ? 3 : 4);
+            if (scenario === 'compact-summary-resume-overflow') {
+              const retried = JSON.stringify(active.requests.at(-1).body.messages);
+              assert.ok(retried.includes('SUMMARY_HEAD') && !retried.includes('TAIL_FRAGMENT'), 'compaction kept the resumed tail instead of the summary head');
+            }
             if (scenario === 'plan-compact-overflow') {
               assert.ok(active.requests[1].summary, 'expected proactive compaction before the second answer');
               assert.deepEqual([...new Set(active.requests.map(r => r.body.model))], ['claude-opus-4-6']);

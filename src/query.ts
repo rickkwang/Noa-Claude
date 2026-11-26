@@ -19,6 +19,7 @@ import { buildPostCompactMessages } from './services/compact/compact.js'
 import { CONTEXT_MANAGEMENT_BETA_HEADER } from './constants/betas.js'
 import { getModelBetas } from './utils/betas.js'
 import { CLEARED_RESULTS_ANTI_REDO_NOTICE } from './services/compact/microCompact.js'
+import { RESTATE_SUMMARY_NUDGE } from './services/compact/prompt.js'
 import {
   hasClearedResultsNoticeSinceLastAssistant,
   IDLE_RESUMED_CLEARED_RESULTS_NOTICE,
@@ -1815,8 +1816,10 @@ async function* queryLoop(
         if (maxOutputTokensRecoveryCount < MAX_OUTPUT_TOKENS_RECOVERY_LIMIT) {
           const recoveryMessage = createUserMessage({
             content:
-              `Output token limit hit. Resume directly — no apology, no recap of what you were doing. ` +
-              `Pick up mid-thought if that is where the cut happened. Break remaining work into smaller pieces.`,
+              querySource === 'compact' && maxOutputTokensRecoveryCount === MAX_OUTPUT_TOKENS_RECOVERY_LIMIT - 1
+                ? RESTATE_SUMMARY_NUDGE
+                : `Output token limit hit. Resume directly — no apology, no recap of what you were doing. ` +
+                  `Pick up mid-thought if that is where the cut happened. Break remaining work into smaller pieces.`,
             isMeta: true,
           })
           yield recoveryMessage

@@ -127,6 +127,7 @@ import {
   getCompactUserSummaryMessage,
   getPartialCompactPrompt,
   hasSummaryBlock,
+  RESTATE_SUMMARY_NUDGE,
 } from './prompt.js'
 import { modelThinkingCannotBeDisabled } from '../../utils/thinking.js'
 
@@ -1848,6 +1849,30 @@ export function createCompactCanUseTool(): CanUseToolFn {
 }
 
 /**
+ * The summary reply of a fork that may have gone through output-limit
+ * recovery: a resumed tail lacks the opening <summary> tag, so prefer the
+ * last reply that has one. After the restate nudge, only the restated reply
+ * counts, unless what follows it is itself only a resumed tail.
+ */
+function pickSummaryReply(messages: Message[]): AssistantMessage | undefined {
+  const restateAt = messages.findLastIndex(
+    m => m.type === 'user' && m.message.content === RESTATE_SUMMARY_NUDGE,
+  )
+  if (restateAt !== -1) {
+    const after = messages.slice(restateAt + 1)
+    const text = after
+      .map(m => (m.type === 'assistant' && !m.isApiErrorMessage ? getAssistantMessageText(m) ?? '' : ''))
+      .join('')
+    if (!(text.includes('</summary>') && !text.includes('<summary>'))) messages = after
+  }
+  const replies = messages.filter(
+    (m): m is AssistantMessage =>
+      m.type === 'assistant' && !m.isApiErrorMessage && !!getAssistantMessageText(m),
+  )
+  return replies.findLast(m => getAssistantMessageText(m)!.includes('<summary>')) ?? replies.at(-1)
+}
+
+/**
  * The first session fallback model that is not the model already in use —
  * falling back to the same model would only repeat the overloaded request.
  */
@@ -1923,7 +1948,13 @@ export async function streamCompactSummary({
           shareSetResponseLength: true,
         },
       })
-      const assistantMsg = getLastAssistantMessage(result.messages)
+      // Only a fork whose last reply is not an API error (e.g. an Esc abort
+      // during output-limit recovery) may pick an earlier reply as the summary.
+      const lastAssistant = getLastAssistantMessage(result.messages)
+      const assistantMsg =
+        lastAssistant && !lastAssistant.isApiErrorMessage
+          ? (pickSummaryReply(result.messages) ?? lastAssistant)
+          : lastAssistant
       const assistantText = assistantMsg
         ? getAssistantMessageText(assistantMsg)
         : null
