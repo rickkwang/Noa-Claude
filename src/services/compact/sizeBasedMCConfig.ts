@@ -1,15 +1,12 @@
 /**
  * Provider-neutral, env-driven config for size-based microcompact.
  *
- * Unlike timeBasedMCConfig (GrowthBook-gated, defaults off), this is
- * local-first: it gives every user — on any provider — incremental
+ * Local-first: it gives every user — on any provider — incremental
  * tool-result clearing once the conversation grows past a fraction of the
  * model's effective context window.
  *
- * Why it's needed: the time-based trigger only fires after a wall-clock pause
- * (the server cache has expired anyway). An active, uninterrupted session
- * never pauses, so it would otherwise get no relief until the blocking full
- * compact. The cached-microcompact path that handled the size dimension is
+ * Why it's needed: without it a session gets no relief until the blocking
+ * full compact. The cached-microcompact path that handled the size dimension is
  * Anthropic-internal (USER_TYPE === 'ant') and a no-op in external builds, so
  * size-driven clearing is missing for normal users. This fills that gap with a
  * purely client-side mechanism — no API beta, no GrowthBook, no Anthropic

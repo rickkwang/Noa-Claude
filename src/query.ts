@@ -876,21 +876,19 @@ async function* queryLoop(
     // turn's history and invalidate any precompute armed over it.
     if (!compactionResult) {
       const clearedResultsNotice =
-        microcompactResult.trigger === 'time'
-          ? IDLE_RESUMED_CLEARED_RESULTS_NOTICE
-          : microcompactResult.trigger === 'size'
-            ? CLEARED_RESULTS_ANTI_REDO_NOTICE
-            : shouldInjectIdleClearedNotice({
-                  messages: messagesForQuery,
-                  querySource,
-                  isSubagent: Boolean(toolUseContext.agentId),
-                  supportsContextManagement: () =>
-                    getModelBetas(compactModel).includes(
-                      CONTEXT_MANAGEMENT_BETA_HEADER,
-                    ),
-                })
-              ? IDLE_RESUMED_CLEARED_RESULTS_NOTICE
-              : undefined
+        microcompactResult.trigger === 'size'
+          ? CLEARED_RESULTS_ANTI_REDO_NOTICE
+          : shouldInjectIdleClearedNotice({
+                messages: messagesForQuery,
+                querySource,
+                isSubagent: Boolean(toolUseContext.agentId),
+                supportsContextManagement: () =>
+                  getModelBetas(compactModel).includes(
+                    CONTEXT_MANAGEMENT_BETA_HEADER,
+                  ),
+              })
+            ? IDLE_RESUMED_CLEARED_RESULTS_NOTICE
+            : undefined
       // Size-based clearing repeats on every later iteration, so its notice is
       // injected once per compaction cycle (messagesForQuery starts at the last
       // compact boundary); the idle notice is deduped per assistant turn.

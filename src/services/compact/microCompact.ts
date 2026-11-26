@@ -24,10 +24,6 @@ import {
   suppressCompactWarning,
 } from './compactWarningState.js'
 import {
-  getTimeBasedMCConfig,
-  type TimeBasedMCConfig,
-} from './timeBasedMCConfig.js'
-import {
   getSizeBasedMCConfig,
   shouldSizeTrigger,
 } from './sizeBasedMCConfig.js'
@@ -186,12 +182,12 @@ export function estimateMessageTokens(messages: Message[]): number {
 
 export type MicrocompactResult = {
   messages: Message[]
-  trigger?: 'time' | 'size'
+  trigger?: 'size'
 }
 
 /**
  * Walk messages and collect tool_use IDs whose tool name is compactable,
- * in encounter order. Shared by both microcompact paths.
+ * in encounter order.
  */
 function collectCompactableToolIds(messages: Message[]): string[] {
   const ids: string[] = []
@@ -226,22 +222,10 @@ export async function microcompactMessages(
   // Clear suppression flag at start of new microcompact attempt
   clearCompactWarningSuppression()
 
-  // Time-based trigger runs first and short-circuits. If the gap since the
-  // last assistant message exceeds the threshold, the server cache has expired
-  // and the full prefix will be rewritten regardless — so content-clear old
-  // tool results now, before the request, to shrink what gets rewritten.
-  const timeBasedResult = await maybeTimeBasedMicrocompact(
-    messages,
-    querySource,
-  )
-  if (timeBasedResult) {
-    return timeBasedResult
-  }
-
-  // Size-based fallback (provider-neutral, client-side). An active session that
-  // never pauses gets no time-based relief, so without this it grows straight
-  // into the blocking full compact. Clear old tool results once the context
-  // crosses a fraction of the window, below the autocompact threshold.
+  // Size-based clearing (provider-neutral, client-side). Without it a session
+  // grows straight into the blocking full compact. Clear old tool results once
+  // the context crosses a fraction of the window, below the autocompact
+  // threshold.
   const sizeBasedResult = await maybeSizeBasedMicrocompact(
     messages,
     querySource,
@@ -253,40 +237,6 @@ export async function microcompactMessages(
 
   // Otherwise no compaction happens here; autocompact handles context pressure.
   return { messages }
-}
-
-/**
- * Check whether the time-based trigger should fire for this request.
- *
- * Returns the measured gap (minutes since last assistant message) when the
- * trigger fires, or null when it doesn't (disabled, wrong source, under
- * threshold, no prior assistant, unparseable timestamp).
- *
- * Extracted so other pre-request paths (e.g. snip force-apply) can consult
- * the same predicate without coupling to the tool-result clearing action.
- */
-export function evaluateTimeBasedTrigger(
-  messages: Message[],
-  querySource: QuerySource | undefined,
-): { gapMinutes: number; config: TimeBasedMCConfig } | null {
-  const config = getTimeBasedMCConfig()
-  // Require an explicit main-thread querySource. isMainThreadSource treats
-  // undefined as main-thread, but several callers (/context, /compact,
-  // analyzeContext) invoke microcompactMessages without a source for
-  // analysis-only purposes — they should not trigger.
-  if (!config.enabled || !querySource || !isMainThreadSource(querySource)) {
-    return null
-  }
-  const lastAssistant = messages.findLast(m => m.type === 'assistant')
-  if (!lastAssistant) {
-    return null
-  }
-  const gapMinutes =
-    (Date.now() - new Date(lastAssistant.timestamp).getTime()) / 60_000
-  if (!Number.isFinite(gapMinutes) || gapMinutes < config.gapThresholdMinutes) {
-    return null
-  }
-  return { gapMinutes, config }
 }
 
 /**
@@ -502,7 +452,7 @@ async function clearOldToolResultsWithPersistence(
 }
 
 /**
- * Pure transform shared by both microcompact triggers: content-clear every
+ * Pure transform behind size-based microcompact: content-clear every
  * compactable tool result except the last `keepRecent`. Returns null when
  * nothing is actually cleared (no clearable results, or all already cleared).
  *
@@ -671,7 +621,7 @@ export function clearOldToolResults(
 }
 
 /**
- * Shared side-effects after a content-clear, identical for both triggers:
+ * Side-effects after a content-clear:
  * suppress the imminent compact warning and tell the cache-break detector to
  * expect a low cache read next turn.
  */
@@ -690,58 +640,10 @@ function finalizeContentClear(querySource: QuerySource | undefined): void {
 }
 
 /**
- * Time-based microcompact: when the gap since the last main-loop assistant
- * message exceeds the configured threshold, content-clear all but the most
- * recent N compactable tool results.
- *
- * Returns null when the trigger doesn't fire (disabled, wrong source, gap
- * under threshold, nothing to clear) — caller falls through to other paths.
- *
- * This mutates message content directly. The cache is cold by the time the
- * trigger fires, so there is no warm prefix to preserve.
- */
-async function maybeTimeBasedMicrocompact(
-  messages: Message[],
-  querySource: QuerySource | undefined,
-): Promise<MicrocompactResult | null> {
-  const trigger = evaluateTimeBasedTrigger(messages, querySource)
-  if (!trigger) {
-    return null
-  }
-  const { gapMinutes, config } = trigger
-
-  const cleared = await clearOldToolResultsWithPersistence(
-    messages,
-    config.keepRecent,
-  )
-  if (!cleared) {
-    return null
-  }
-
-  logEvent('tengu_time_based_microcompact', {
-    gapMinutes: Math.round(gapMinutes),
-    gapThresholdMinutes: config.gapThresholdMinutes,
-    toolsCleared: cleared.cleared,
-    toolsKept: cleared.kept,
-    keepRecent: config.keepRecent,
-    tokensSaved: cleared.tokensSaved,
-  })
-
-  logForDebugging(
-    `[TIME-BASED MC] gap ${Math.round(gapMinutes)}min > ${config.gapThresholdMinutes}min, cleared ${cleared.cleared} tool results (~${cleared.tokensSaved} tokens), kept last ${cleared.kept}`,
-  )
-
-  finalizeContentClear(querySource)
-
-  return { messages: cleared.messages, trigger: 'time' }
-}
-
-/**
  * Size-based microcompact: the provider-neutral, client-side path.
  *
- * The time-based trigger only fires after a wall-clock pause; an active session
- * never pauses, so without this it grows unchecked until the blocking full
- * compact. Once estimated tokens cross a fraction of the effective context
+ * Without it a session grows unchecked until the blocking full compact. Once
+ * estimated tokens cross a fraction of the effective context
  * window (below the auto-compact threshold), clear old tool results to buy
  * headroom and defer — or skip — the full compact.
  */
