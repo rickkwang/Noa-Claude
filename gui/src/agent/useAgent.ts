@@ -15,6 +15,7 @@ import type {
   SlashCommand,
 } from "./protocol"
 import { initialState, reducer, type Permission, type AgentState, type McpAction } from "./reducer"
+import { readCachedHistory, writeCachedHistory } from "./historyCache"
 
 interface AgentOptions {
   cwd?: string
@@ -61,7 +62,12 @@ function readModelPreview(cwd?: string): ModelPreview {
 const INITIALIZE_TIMEOUT_MS = 20_000
 
 export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermissionMode, defaultOutputStyle, persistPreview = true }: AgentOptions) {
-  const [state, dispatch] = useReducer(reducer, undefined, () => ({ ...initialState, ...readModelPreview(cwd), ...(defaultPermissionMode ? { permissionMode: defaultPermissionMode } : {}) }))
+  const [state, dispatch] = useReducer(reducer, undefined, () => ({
+    ...initialState,
+    ...readModelPreview(cwd),
+    ...(defaultPermissionMode ? { permissionMode: defaultPermissionMode } : {}),
+    ...(resume ? readCachedHistory(cwd, resume) : undefined),
+  }))
   // Bumped when another process releases the task this view was following, to attach a CLI of its own.
   const [followEnded, setFollowEnded] = useState(0)
   const queuedSelection = useRef<{ model?: string; effort?: string | null; mode?: PermissionMode }>({})
@@ -77,6 +83,24 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
       localStorage.setItem(`noa-agent.modelPreview:${cwd ?? ""}`, JSON.stringify({ models: state.models, model: state.model, effort: state.effort, permissionMode: state.permissionMode }))
     } catch {}
   }, [persistPreview, cwd, state.connection, state.models, state.model, state.effort, state.permissionMode])
+  const sessionToken = `${sessionKey}\0${cwd ?? ""}\0${resume ?? ""}\0${followEnded}`
+  const [renderedToken, setRenderedToken] = useState(sessionToken)
+  if (renderedToken !== sessionToken) {
+    setRenderedToken(sessionToken)
+    dispatch({
+      type: "reset",
+      modelPreview: { ...readModelPreview(cwd), ...(defaultPermissionMode ? { permissionMode: defaultPermissionMode } : {}) },
+      cachedHistory: resume ? readCachedHistory(cwd, resume) : undefined,
+    })
+  }
+  const syncedTokenRef = useRef(sessionToken)
+  useEffect(() => {
+    // Skip writes until the reset effect below has aligned state to the current session.
+    if (syncedTokenRef.current !== sessionToken) return
+    const id = resume ?? state.sessionId
+    if (!cwd || !id || state.turns.length === 0) return
+    writeCachedHistory(cwd, id, { turns: state.turns, historyBefore: state.historyBefore, tasks: state.tasks })
+  }, [sessionToken, cwd, resume, state.sessionId, state.turns, state.historyBefore, state.tasks])
   const ownerRef = useRef(runtimeId)
   const defaultModeRef = useRef(defaultPermissionMode)
   defaultModeRef.current = defaultPermissionMode
@@ -167,7 +191,7 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
   useEffect(() => {
     ownerRef.current = runtimeId
     modelPreviewCwdRef.current = cwd
-    dispatch({ type: "reset", modelPreview: { ...readModelPreview(cwd), ...(defaultModeRef.current ? { permissionMode: defaultModeRef.current } : {}) } })
+    syncedTokenRef.current = sessionToken
     queuedSelection.current = {}
     pendingRef.current.clear()
     for (const pending of requestsRef.current.values()) {

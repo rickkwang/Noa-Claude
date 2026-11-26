@@ -183,6 +183,16 @@ export function SplitPane({
   }, [sideState.open, terminalOpen])
 
   const rightMetrics = paneRightWidth(paneWidth, sideState.widthRatio)
+  // Delay the loading shimmer so fast cached/local history loads never flash placeholder bars.
+  const [showSkeleton, setShowSkeleton] = useState(false)
+  useEffect(() => {
+    if (state.turns.length > 0 || state.connection !== "connecting") {
+      setShowSkeleton(false)
+      return
+    }
+    const timer = setTimeout(() => setShowSkeleton(true), 220)
+    return () => clearTimeout(timer)
+  }, [state.turns.length, state.connection])
   const rightWidth = sideState.open && paneWidth > 0 ? rightMetrics.width : 0
   const overviewDocked = chatWide
   const overviewDockedVisible = overviewShown && overviewDocked
@@ -378,6 +388,7 @@ export function SplitPane({
               onClick={toggleOverview}
               title="Overview"
               aria-label="Overview"
+              data-overview-toggle=""
               aria-pressed={overviewVisible}
             >
               <ListDetails size={16} />
@@ -390,6 +401,7 @@ export function SplitPane({
                   onClick={() => setRightOpen(true)}
                   title="Right panel"
                   aria-label="Right panel"
+                  data-right-panel-toggle=""
                   aria-pressed={false}
                 >
                   <SidebarClosed size={16} style={{ transform: "scaleX(-1)" }} />
@@ -428,6 +440,12 @@ export function SplitPane({
               onLoadEarlier={loadEarlier}
               transcriptView={settings.appearance.transcriptView}
             />
+          ) : showSkeleton ? (
+            <div className="flex flex-1 flex-col gap-3 px-6 pt-6" aria-busy="true" aria-label="Loading conversation">
+              <div className="h-3.5 w-2/5 animate-pulse rounded bg-[var(--fill-hover)]" />
+              <div className="h-3.5 w-3/4 animate-pulse rounded bg-[var(--fill-hover)]" />
+              <div className="h-3.5 w-3/5 animate-pulse rounded bg-[var(--fill-hover)]" />
+            </div>
           ) : (
             <div className="flex-1" />
           )}
@@ -614,6 +632,7 @@ export function SplitPane({
                     onClick={() => setRightOpen(false)}
                     title="Hide right panel"
                     aria-label="Hide right panel"
+                    data-right-panel-toggle=""
                     aria-pressed={true}
                   >
                     <SidebarOpen size={16} style={{ transform: "scaleX(-1)" }} />

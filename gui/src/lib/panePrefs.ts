@@ -14,7 +14,11 @@ const VALID_PANEL_TABS = new Set<PanelTab>(["files", "changes", "subagents", "th
 const MAX_STORED = 64
 const DEFAULT_RATIO = 0.44
 
-type StoredMap = Record<string, Partial<PaneSideState> & { updatedAt?: number }>
+// Keep per-session open state in memory only so newly opened split panes start closed,
+// while moving an already-open session between primary and split panes preserves its sidebar.
+const liveOpenState = new Map<string, boolean>()
+
+type StoredMap = Record<string, Partial<Omit<PaneSideState, "open">> & { updatedAt?: number }>
 
 function readAll(): StoredMap {
   try {
@@ -42,9 +46,10 @@ export function loadPaneSideState(sessionKey: string | undefined, fallbackOpen =
   if (!sessionKey) {
     return { open: fallbackOpen, widthRatio: DEFAULT_RATIO, tabs: DEFAULT_RIGHT_TABS, tab: DEFAULT_RIGHT_TABS[0] ?? "files" }
   }
+  const open = liveOpenState.has(sessionKey) ? liveOpenState.get(sessionKey)! : fallbackOpen
   const saved = readAll()[sessionKey]
   if (!saved) {
-    return { open: fallbackOpen, widthRatio: DEFAULT_RATIO, tabs: DEFAULT_RIGHT_TABS, tab: DEFAULT_RIGHT_TABS[0] ?? "files" }
+    return { open, widthRatio: DEFAULT_RATIO, tabs: DEFAULT_RIGHT_TABS, tab: DEFAULT_RIGHT_TABS[0] ?? "files" }
   }
   const tabs = Array.isArray(saved.tabs)
     ? saved.tabs.filter((t): t is PanelTab => VALID_PANEL_TABS.has(t as PanelTab))
@@ -54,7 +59,7 @@ export function loadPaneSideState(sessionKey: string | undefined, fallbackOpen =
     : DEFAULT_RATIO
   const tab: RightTab = typeof saved.tab === "string" ? (saved.tab as RightTab) : (tabs[0] ?? "files")
   return {
-    open: typeof saved.open === "boolean" ? saved.open : fallbackOpen,
+    open,
     widthRatio,
     tabs: tabs.length ? tabs : DEFAULT_RIGHT_TABS,
     tab,
@@ -63,9 +68,15 @@ export function loadPaneSideState(sessionKey: string | undefined, fallbackOpen =
 
 export function savePaneSideState(sessionKey: string | undefined, state: PaneSideState) {
   if (!sessionKey) return
+  liveOpenState.set(sessionKey, state.open)
   const map = readAll()
-  map[sessionKey] = { ...state, updatedAt: Date.now() }
+  map[sessionKey] = { widthRatio: state.widthRatio, tabs: state.tabs, tab: state.tab, updatedAt: Date.now() }
   writeAll(map)
+}
+
+export function clearPaneSideOpen(sessionKey: string | undefined) {
+  if (!sessionKey) return
+  liveOpenState.delete(sessionKey)
 }
 
 // Clamps a pane's right sidebar width. When the pane is narrow, the chat column stays at its 320px

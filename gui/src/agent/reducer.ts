@@ -162,7 +162,7 @@ type Action =
   | { type: "context-error"; error: string }
   | { type: "history"; items: HistoryItem[]; before?: number; prepend?: boolean }
   | { type: "history-loading" }
-  | { type: "reset"; modelPreview?: Pick<AgentState, "models" | "model" | "effort" | "permissionMode"> }
+  | { type: "reset"; modelPreview?: Pick<AgentState, "models" | "model" | "effort" | "permissionMode">; cachedHistory?: Pick<AgentState, "turns" | "historyBefore" | "tasks"> }
   | { type: "queue"; messages: QueuedMessage[]; paused?: boolean }
   | { type: "connection"; status: AgentState["connection"] }
   | { type: "external"; pid: number; status?: string }
@@ -228,8 +228,26 @@ export function reducer(state: AgentState, action: Action): AgentState {
         else if (item.kind === "turn-diff") restored = reducer(restored, { type: "turn-diff", diff: item.diff })
         else restored = reducer(restored, { type: "agent", message: item.message })
       }
-      const turns = settlePending(restored.turns, "unknown").map(turn => turn.role === "assistant" && turn.blocks.some(block => block.kind === "tool" && block.status === "unknown") ? { ...turn, incomplete: true } : turn)
+      let turns = settlePending(restored.turns, "unknown").map(turn => turn.role === "assistant" && turn.blocks.some(block => block.kind === "tool" && block.status === "unknown") ? { ...turn, incomplete: true } : turn)
       const tasks = restored.tasks.map(task => ({ ...task, turns: settlePending(task.turns, "unknown") }))
+      // Reuse existing turn IDs when hydrating over a cached snapshot so React keeps mounted rows and scroll heights stable.
+      if (!action.prepend && state.turns.length > 0) {
+        turns = turns.map((turn, i) => {
+          const prev = state.turns[i]
+          if (!prev || prev.role !== turn.role) return turn
+          if (turn.role === "assistant" && prev.id !== turn.id) return { ...turn, id: prev.id }
+          return turn
+        })
+        if (
+          action.before === state.historyBefore &&
+          turns.length === state.turns.length &&
+          tasks.length === state.tasks.length &&
+          JSON.stringify(turns) === JSON.stringify(state.turns) &&
+          JSON.stringify(tasks) === JSON.stringify(state.tasks)
+        ) {
+          return state.historyLoading ? { ...state, historyLoading: false } : state
+        }
+      }
       let combined = action.prepend ? [...turns, ...state.turns] : turns
       if (action.prepend) {
         const latest = new Map<string, ToolBlock>()
@@ -265,7 +283,7 @@ export function reducer(state: AgentState, action: Action): AgentState {
     case "queue":
       return { ...state, queue: action.messages, queuePaused: action.paused ?? state.queuePaused }
     case "reset":
-      return { ...initialState, ...action.modelPreview }
+      return { ...initialState, ...action.modelPreview, ...action.cachedHistory }
     case "external":
       return { ...state, external: { pid: action.pid, status: action.status }, error: undefined }
     case "compaction":

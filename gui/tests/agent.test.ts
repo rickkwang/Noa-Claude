@@ -904,3 +904,16 @@ test("per-theme fonts migrate to one set shared by both themes, keeping the cust
   expect(migrateAppearance({ fonts: custom }).fonts).toEqual(custom)
   expect(migrateAppearance({ fontFamily: "Inter", codeFontFamily: "Menlo" }).fonts).toEqual({ ui: "Inter", content: CONTENT_SAME_AS_UI, code: "Menlo" })
 })
+
+test("loadHistory invalidates its cache when gui-events.jsonl changes", async () => {
+  const { appendTimelineEvent } = await import("../server/sessions")
+  const cwd = "/private/tmp/history-cache-gui-events"
+  const id = transcript(cwd, [
+    { type: "user", uuid: "u1", parentUuid: null, timestamp: "2026-01-01T00:00:00Z", message: { content: "Hello" } },
+  ])
+  const before = (await loadHistory(cwd, id))!
+  expect(before.some(item => item.kind === "agent" && item.message.type === "system" && item.message.subtype === "hook_started")).toBe(false)
+  appendTimelineEvent(cwd, id, { turn: 1, afterUuid: "u1", message: { type: "system", subtype: "hook_started", hook_id: "h1", hook_name: "PostHook", hook_event: "PostToolUse" } })
+  const after = (await loadHistory(cwd, id))!
+  expect(after.some(item => item.kind === "agent" && item.message.type === "system" && item.message.subtype === "hook_started" && item.message.hook_id === "h1")).toBe(true)
+})

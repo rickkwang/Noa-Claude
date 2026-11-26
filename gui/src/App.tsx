@@ -3,6 +3,7 @@ import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type React
 import { createPortal } from "react-dom"
 import { useEvent } from "./hooks/useEvent"
 import { useAgent } from "./agent/useAgent"
+import { prefetchSessionHistory } from "./agent/historyCache"
 import { isSubagentTask } from "./agent/reducer"
 import type { ControlRequest, ImageAttachment, ImageBlock, TurnDiff, UserContent } from "./agent/protocol"
 import {
@@ -52,7 +53,7 @@ import { SchedulePage } from "./components/SchedulePage"
 import { SessionActions, RewindDialog, type RewindPreview } from "./components/SessionActions"
 import { SessionTitle } from "./components/SessionTitle"
 import { SplitPane } from "./components/SplitPane"
-import { PANE_CHAT_OVERFLOW_MIN, PANE_LEFT_PEEK_MIN, PANE_RIGHT_MIN, paneRightWidth } from "./lib/panePrefs"
+import { PANE_CHAT_OVERFLOW_MIN, PANE_LEFT_PEEK_MIN, PANE_RIGHT_MIN, clearPaneSideOpen, loadPaneSideState, paneRightWidth, savePaneSideState } from "./lib/panePrefs"
 import {
   ROW_SPLIT,
   SPLIT_CONSTRAINED_WIDTH,
@@ -158,7 +159,8 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
   const [projects, setProjects] = useState<ProjectInfo[]>([])
   const [refreshTick, setRefreshTick] = useState(0)
   const [sidebarOpen, setSidebarOpen] = useState(true)
-  const [rightOpen, setRightOpen] = useState(false)
+  const [rightOpen, setRightOpen] = useState(() => loadPaneSideState(session.resume, false).open)
+  const [primarySideRatio, setPrimarySideRatio] = useState(() => loadPaneSideState(session.resume, false).widthRatio)
   const [searchOpen, setSearchOpen] = useState(false)
   // The translucent veil animates only for dock motion (never on first paint, when the flag is still off). The flag is derived
   // while rendering, so it lands in the same commit as the new material width; set from an effect it would arrive a
@@ -166,16 +168,7 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
   const [dockMotion, setDockMotion] = useState(false)
   const [dockedOpen, setDockedOpen] = useState(sidebarOpen)
   const [dockedRightOpen, setDockedRightOpen] = useState(rightOpen)
-  if (dockedOpen !== sidebarOpen || dockedRightOpen !== rightOpen) {
-    setDockedOpen(sidebarOpen)
-    setDockedRightOpen(rightOpen)
-    setDockMotion(true)
-  }
-  useEffect(() => {
-    if (!dockMotion) return
-    const timer = setTimeout(() => setDockMotion(false), 520)
-    return () => clearTimeout(timer)
-  }, [dockMotion, sidebarOpen, rightOpen])
+  const [splitMotionSuppressed, setSplitMotionSuppressed] = useState(false)
   // The bottom terminal panel: hiding it keeps its shells running.
   const [terminalOpen, setTerminalOpen] = useState(false)
   const [terminalFocus, setTerminalFocus] = useState(0)
@@ -210,6 +203,7 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
   const [pendingDiffAction, setPendingDiffAction] = useState<number>()
   // The right panel's open tools, remembered per viewer; terminals and the New tab are not.
   const [rightTabs, setRightTabs] = useState<PanelTab[]>(() => {
+    if (session.resume) return loadPaneSideState(session.resume, false).tabs
     try {
       const saved = JSON.parse(localStorage.getItem("noa-agent.rightTabs") ?? "null")
       return Array.isArray(saved) ? saved.filter((tab): tab is PanelTab => ["files", "changes", "subagents", "threads"].includes(tab)) : DEFAULT_RIGHT_TABS
@@ -219,7 +213,7 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
     try { localStorage.setItem("noa-agent.rightTabs", JSON.stringify(rightTabs)) } catch { /* Storage unavailable. */ }
   }, [rightTabs])
   const [rightNewTab, setRightNewTab] = useState(false)
-  const [rightTab, selectRightTab] = useState<RightTab>(() => rightTabs[0] ?? "new")
+  const [rightTab, selectRightTab] = useState<RightTab>(() => (session.resume ? loadPaneSideState(session.resume, false).tab : (rightTabs[0] ?? "new")))
   // Showing a tool opens its tab when it was closed.
   const setRightTab = (tab: RightTab) => {
     if (tab !== "new" && tab !== "terminal" && tab !== "browser") setRightTabs((tabs) => tabs.includes(tab) ? tabs : [...tabs, tab])
@@ -258,6 +252,28 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
   const [withdrawDraft, setWithdrawDraft] = useState<{ text: string; key: number }>()
   useEffect(() => setRewindMessage(undefined), [session.key])
   const activeId = state.sessionId ?? session.resume
+  // Keep primary pane's right-sidebar state attached to its session so moving a session between primary and split panes preserves it.
+  const [syncedSideKey, setSyncedSideKey] = useState(session.key)
+  if (syncedSideKey !== session.key) {
+    setSyncedSideKey(session.key)
+    const nextSide = loadPaneSideState(session.resume, false)
+    setRightOpen(nextSide.open)
+    setPrimarySideRatio(nextSide.widthRatio)
+    setRightTabs(nextSide.tabs)
+    selectRightTab(nextSide.tab)
+  }
+  const prevSideSessionKeyRef = useRef(session.key)
+  useEffect(() => {
+    if (syncedSideKey !== session.key) return
+    // On the first commit after a session switch, state.sessionId can still belong to the outgoing session
+    // and rightOpen/tabs were just loaded from storage, so skip saving until a subsequent change.
+    if (prevSideSessionKeyRef.current !== session.key) {
+      prevSideSessionKeyRef.current = session.key
+      return
+    }
+    if (session.resume && state.sessionId && state.sessionId !== session.resume) return
+    savePaneSideState(session.resume ?? state.sessionId, { open: rightOpen, widthRatio: primarySideRatio, tabs: rightTabs, tab: rightTab })
+  }, [syncedSideKey, session.key, session.resume, state.sessionId, rightOpen, primarySideRatio, rightTabs, rightTab])
   const [sideChatFocus, setSideChatFocus] = useState(0)
   // A side chat belongs to its session; until the session has an id, questions queue under its runtime.
   const runtimeSideChatKey = `runtime:${session.runtimeId}`
@@ -401,6 +417,7 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
     const index = history.index + step
     const target = history.entries[index]
     if (!target) return
+    clearPaneSideOpen(activeId)
     resetSessionTracking()
     if (target.resume) seedSessionUpdate(target.cwd, target.resume)
     setHistory({ ...history, index })
@@ -439,6 +456,7 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
     }
   }
   const newSession = (dir?: string) => {
+    clearPaneSideOpen(activeId)
     setQuote(undefined)
     setReference(undefined)
     setEditDraft(undefined)
@@ -448,8 +466,9 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
     pushHistory({ cwd: dir ?? session.cwd, runtimeId })
     setSession((s) => ({ cwd: dir ?? s.cwd, resume: undefined, runtimeId, key: s.key + 1 }))
   }
-  const selectSession = (dir: string, id: string) => {
+  const selectSession = (dir: string, id: string, opts?: { keepOutgoingSideOpen?: boolean }) => {
     if (dir === session.cwd && id === activeId) return
+    if (!opts?.keepOutgoingSideOpen) clearPaneSideOpen(activeId)
     setQuote(undefined)
     setReference(undefined)
     setEditDraft(undefined)
@@ -548,8 +567,9 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
   }, [splitActive, isMacPlatform])
   // Opening a task that sits in a pane focuses or swaps it with the main task.
   const showTask = (dir: string, id: string) => {
-    if (split.panes.some((pane) => sameTask(pane, { cwd: dir, id }))) setSplit((layout) => promotePane(layout, { cwd: dir, id }, primaryTask))
-    selectSession(dir, id)
+    const promotedFromSplit = split.panes.some((pane) => sameTask(pane, { cwd: dir, id }))
+    if (promotedFromSplit) setSplit((layout) => promotePane(layout, { cwd: dir, id }, primaryTask))
+    selectSession(dir, id, { keepOutgoingSideOpen: promotedFromSplit })
   }
   const openInSplit = (dir: string, id: string) => {
     setSplit((layout) => openTaskInSplit(layout, { cwd: dir, id }, primaryTask, maxColumnsFor(paneHostSize.width || window.innerWidth)))
@@ -557,14 +577,20 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
   const closePrimary = () => {
     const result = closePrimaryPane(shownSplit)
     if (!result) return
+    clearPaneSideOpen(activeId)
     setSplit(result.layout)
     selectSession(result.promoted.cwd, result.promoted.id)
+  }
+  const closeSecondaryByIndex = (paneIdx: number) => {
+    const target = shownSplit.panes[paneIdx - 1]
+    if (target) clearPaneSideOpen(target.id)
+    setSplit((layout) => closePaneByIndex(layout, paneIdx))
   }
   const movePaneTo = (paneIndex: number, target: PanePos) => {
     const result = moveOrSwapPane(shownSplit, paneIndex, target, primaryTask, maxColumnsFor(paneHostSize.width || window.innerWidth))
     if (!result) return
     setSplit(result.layout)
-    if (result.promoted) selectSession(result.promoted.cwd, result.promoted.id)
+    if (result.promoted) selectSession(result.promoted.cwd, result.promoted.id, { keepOutgoingSideOpen: true })
   }
   const splitMenuFor = (dir: string, id: string) => {
     if (!splitActive) return undefined
@@ -576,7 +602,7 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
     }))
     return {
       moves,
-      onClose: () => (paneIdx === 0 ? closePrimary() : setSplit((layout) => closePaneByIndex(layout, paneIdx))),
+      onClose: () => (paneIdx === 0 ? closePrimary() : closeSecondaryByIndex(paneIdx)),
     }
   }
   const startPaneDrag = useEvent((event: React.PointerEvent<HTMLElement>, paneIndex: number, label: string) => {
@@ -629,6 +655,7 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
     const open = (primaryTask && sameTask(task, primaryTask)) || shownSplit.panes.some((pane) => sameTask(pane, task))
     const hover = phase === "cancel" || customizeOpen || open ? undefined : findSplitTarget(x, y, { ...shownSplit, rowSplit: splitRow }, !!primaryTask)
     if (phase === "move") {
+      if (hover) prefetchSessionHistory(task.cwd, task.id)
       setSplitHover((current) => JSON.stringify(current) === JSON.stringify(hover) ? current : hover)
       return !!hover
     }
@@ -637,7 +664,10 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
     const placed = placeTask(shownSplit, task, hover.target, primaryTask, maxColumnsFor(paneHostSize.width || window.innerWidth))
     if (!placed) return true
     setSplit(placed.layout)
-    if (placed.primary) selectSession(placed.primary.cwd, placed.primary.id)
+    if (placed.primary) {
+      const keepOutgoingSideOpen = !!(primaryTask && placed.layout.panes.some((pane) => sameTask(pane, primaryTask)))
+      selectSession(placed.primary.cwd, placed.primary.id, { keepOutgoingSideOpen })
+    }
     return true
   })
   const [focusChange, setFocusChange] = useState<{ path: string; at: number }>()
@@ -694,7 +724,7 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
         if (splitMod && e.code === "KeyW") {
           e.preventDefault()
           if (focusedIndex === 0) closePrimary()
-          else setSplit((layout) => closePaneByIndex(layout, focusedIndex))
+          else closeSecondaryByIndex(focusedIndex)
           return
         }
         if (splitMod && (e.code === "ArrowLeft" || e.code === "ArrowRight" || e.code === "ArrowUp" || e.code === "ArrowDown")) {
@@ -1140,10 +1170,40 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
     window.addEventListener("resize", resize)
     return () => { window.removeEventListener("resize", resize); clearTimeout(timer) }
   }, [])
-  const moving = resizing || windowResizing
+  const outerRightOpen = rightOpen && !splitActive
+  const [prevSplitActive, setPrevSplitActive] = useState(splitActive)
+  const splitJustChanged = prevSplitActive !== splitActive
+  if (splitJustChanged) {
+    setPrevSplitActive(splitActive)
+    setSplitMotionSuppressed(true)
+  }
+  useEffect(() => {
+    if (!splitMotionSuppressed) return
+    let frame2 = 0
+    const frame1 = requestAnimationFrame(() => {
+      frame2 = requestAnimationFrame(() => setSplitMotionSuppressed(false))
+    })
+    return () => {
+      cancelAnimationFrame(frame1)
+      if (frame2) cancelAnimationFrame(frame2)
+    }
+  }, [splitMotionSuppressed])
+  const sidebarJustChanged = dockedOpen !== sidebarOpen
+  const rightJustChanged = dockedRightOpen !== outerRightOpen
+  if (sidebarJustChanged || rightJustChanged) {
+    setDockedOpen(sidebarOpen)
+    setDockedRightOpen(outerRightOpen)
+    if (sidebarJustChanged || (!splitJustChanged && !splitMotionSuppressed)) setDockMotion(true)
+  }
+  useEffect(() => {
+    if (!dockMotion) return
+    const timer = setTimeout(() => setDockMotion(false), 520)
+    return () => clearTimeout(timer)
+  }, [dockMotion, sidebarOpen, outerRightOpen])
+  const moving = resizing || windowResizing || splitMotionSuppressed
   const animate = moving ? "" : "transition-[width,--noa-edge-fade,border-radius,--noa-right-edge] duration-500 ease-in-out"
   // Closed panes keep their content width while the outer edge slides away.
-  const sidebarTarget = Math.round(Math.max(240, Math.min(sidebar.width, windowSize.width - (rightOpen ? 320 + 352 : 352))))
+  const sidebarTarget = Math.round(Math.max(240, Math.min(sidebar.width, windowSize.width - (outerRightOpen ? 320 + 352 : 352))))
   const sidebarWidth = sidebarOpen ? sidebarTarget : 0
   const workspaceWidth = windowSize.width - sidebarWidth
   const rightMax = Math.max(320, workspaceWidth - 352)
@@ -1153,17 +1213,13 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
   useEffect(() => {
     if (rightRatio === null && rightWindowMax > 320) setRightRatio(defaultRatio)
   }, [rightRatio, rightWindowMax, defaultRatio])
-  const outerRightOpen = rightOpen && !splitActive
   const rightDesired = Math.round(320 + (rightRatio ?? defaultRatio) * (rightWindowMax - 320))
   const rightTarget = Math.min(rightDesired, rightMax)
   const rightWidth = outerRightOpen ? rightTarget : 0
   // When split view is active, the primary pane owns its own inline right sidebar sized within column 0.
-  const [primarySideRatio, setPrimarySideRatio] = useState(0.44)
   const [primaryInlineRightMounted, setPrimaryInlineRightMounted] = useState(() => splitActive && rightOpen)
-  useEffect(() => {
-    if (splitActive && rightOpen && !primaryInlineRightMounted) setPrimaryInlineRightMounted(true)
-    if (!splitActive && primaryInlineRightMounted) setPrimaryInlineRightMounted(false)
-  }, [splitActive, rightOpen, primaryInlineRightMounted])
+  if (splitActive && rightOpen && !primaryInlineRightMounted) setPrimaryInlineRightMounted(true)
+  if (!splitActive && primaryInlineRightMounted) setPrimaryInlineRightMounted(false)
   const primaryRightMetrics = paneRightWidth(primaryPaneWidth, primarySideRatio)
   const primaryInlineRightWidth = splitActive && rightOpen && primaryPaneWidth > 0 ? primaryRightMetrics.width : 0
   // The overview docks as a column while the chat area is wide enough;
@@ -1484,7 +1540,7 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
         }
       >
         <div
-          className="noa-edge-fade-left absolute inset-y-0 right-0 h-full transition-opacity duration-500 ease-in-out"
+          className={`noa-edge-fade-left absolute inset-y-0 right-0 h-full ${moving ? "" : "transition-opacity duration-500 ease-in-out"}`}
           style={{ width: rightTarget, opacity: outerRightOpen ? 1 : 0 }}
         >
           {!splitActive && (
@@ -1584,8 +1640,8 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
         <div
           ref={chatColumnRef}
           inert={customizeOpen ? true : undefined}
-          // Split panes in the top row rise into the titlebar band, so the column stacks above the titlebar then.
-          className={`relative ${splitActive ? "z-[21]" : "z-0"} flex min-w-0 flex-1 flex-col ${customizeOpen ? "invisible" : ""} ${moving ? "" : "transition-[margin-left,margin-right] duration-500 ease-in-out"}`}
+          // Always stack above the titlebar (top 44px is pointer-events-none) so entering/exiting split view never re-layers the workspace.
+          className={`relative z-[21] flex min-w-0 flex-1 flex-col ${customizeOpen ? "invisible" : ""} ${moving ? "" : splitActive ? "transition-[margin-left] duration-500 ease-in-out" : "transition-[margin-left,margin-right] duration-500 ease-in-out"}`}
           style={{ marginLeft: sidebarWidth, marginRight: rightWidth }}
         >
           {/* Split view: CSS Grid pane host spanning full height including the titlebar band. */}
@@ -2043,7 +2099,7 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
                   sessions={sessionsByProject[pane.cwd] ?? []}
                   onSelectSession={(targetId) => showTask(pane.cwd, targetId)}
                   onRename={(name) => renameTask(pane.cwd, pane.id, name)}
-                  onClose={() => setSplit((layout) => removePane(layout, task))}
+                  onClose={() => { clearPaneSideOpen(task.id); setSplit((layout) => removePane(layout, task)) }}
                   onGripPointerDown={(event) => startPaneDrag(event, paneIndex, paneTitle ?? "Task")}
                 />
               </div>

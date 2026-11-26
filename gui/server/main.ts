@@ -2,7 +2,7 @@
 import { existsSync, statSync } from "node:fs"
 import { resolve, sep } from "node:path"
 import type { ServerWebSocket } from "bun"
-import { SESSION_ID, deleteSession, listSessions, loadHistory, renameSession } from "./sessions"
+import { SESSION_ID, deleteSession, historyPage, listSessions, loadHistory, renameSession } from "./sessions"
 import { addProject, listProjects, removeProject } from "./projects"
 import { isManagedWorktree, mediaResponse, projectWorktrees, workspaceRequest } from "./workspace"
 import { listPlugins, pluginAction } from "./plugins"
@@ -152,6 +152,17 @@ cwdRoutes["/api/sessions"] = {
     return json(sessions
       .map((session) => ({ ...session, ...(remindAt.has(session.id) && { remindAt: remindAt.get(session.id) }), ...(resolvedAt.has(session.id) && { resolvedAt: resolvedAt.get(session.id) }) }))
       .sort((a, b) => b.updatedAt - a.updatedAt))
+  },
+}
+
+cwdRoutes["/api/session-history"] = {
+  methods: ["GET"],
+  async handler({ cwd, url }) {
+    const id = url.searchParams.get("id") ?? ""
+    if (!id) return json({ error: "Missing session id" }, 400)
+    const items = await loadHistory(cwd, id)
+    if (!items) return json({ items: [], before: 0 })
+    return json(historyPage(items))
   },
 }
 

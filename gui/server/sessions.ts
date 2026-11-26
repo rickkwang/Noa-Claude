@@ -258,10 +258,16 @@ function userText(entry: Entry): string | null {
  * keeps numbering turns the way the transcript does, instead of restarting
  * from the highest stored diff.
  */
+const TURN_COUNT_CACHE_MAX = 128
+const turnCountCache = new Map<string, { size: number; mtimeMs: number; count: number }>()
+
 export function countUserTurns(cwd: string, id: string): number {
   if (!SESSION_ID.test(id)) return 0
   const file = transcriptPath(cwd, id)
   if (!existsSync(file)) return 0
+  const info = statSync(file)
+  const cached = turnCountCache.get(file)
+  if (cached && cached.size === info.size && cached.mtimeMs === info.mtimeMs) return cached.count
   let count = 0
   for (const entry of scanEntries(file)) {
     if (entry.isSidechain) continue
@@ -283,6 +289,11 @@ export function countUserTurns(cwd: string, id: string): number {
       !content.some((block: any) => block?.type === "tool_result")
     )
       count++
+  }
+  turnCountCache.set(file, { size: info.size, mtimeMs: info.mtimeMs, count })
+  if (turnCountCache.size > TURN_COUNT_CACHE_MAX) {
+    const oldest = turnCountCache.keys().next().value
+    if (oldest !== undefined) turnCountCache.delete(oldest)
   }
   return count
 }
@@ -571,15 +582,72 @@ async function restoreAgentHistory(items: HistoryItem[], cwd: string, session: s
   }
 }
 
+const HISTORY_CACHE_MAX = 32
+const historyCache = new Map<string, { key: string; items: HistoryItem[] }>()
+const historyInFlight = new Map<string, Promise<HistoryItem[] | null>>()
+
+function fileStamp(path: string): string {
+  try {
+    const info = statSync(path)
+    return `${info.size}:${info.mtimeMs}`
+  } catch {
+    return ""
+  }
+}
+
+function subagentsStamp(dir: string): string {
+  if (!existsSync(dir)) return ""
+  try {
+    const names = readdirSync(dir).filter((name) => name.endsWith(".jsonl")).sort()
+    return names.map((name) => `${name}=${fileStamp(join(dir, name))}`).join(",")
+  } catch {
+    return ""
+  }
+}
+
 export async function loadHistory(cwd: string, id: string): Promise<HistoryItem[] | null> {
   if (!SESSION_ID.test(id)) return null
-  const file = join(projectDir(cwd), `${id}.jsonl`)
+  const dir = projectDir(cwd)
+  const file = join(dir, `${id}.jsonl`)
   if (!existsSync(file)) return null
+  const ownerKey = `${canonicalCwd(cwd)}\0${file}`
+  const cacheKey = `${fileStamp(file)}|${fileStamp(join(dir, `${id}.turn-diffs.jsonl`))}|${fileStamp(join(dir, `${id}.turn-results.jsonl`))}|${fileStamp(join(dir, `${id}.gui-events.jsonl`))}|${subagentsStamp(join(dir, id, "subagents"))}`
+  const cached = historyCache.get(ownerKey)
+  if (cached && cached.key === cacheKey) {
+    historyCache.delete(ownerKey)
+    historyCache.set(ownerKey, cached)
+    return cached.items
+  }
+  const inflightKey = `${ownerKey}\0${cacheKey}`
+  const existing = historyInFlight.get(inflightKey)
+  if (existing) return existing
+  const promise = loadHistoryUncached(cwd, id, file)
+    .then((items) => {
+      if (items) {
+        if (historyCache.has(ownerKey)) historyCache.delete(ownerKey)
+        historyCache.set(ownerKey, { key: cacheKey, items })
+        while (historyCache.size > HISTORY_CACHE_MAX) {
+          const oldest = historyCache.keys().next().value
+          if (oldest !== undefined) historyCache.delete(oldest)
+        }
+      }
+      return items
+    })
+    .finally(() => {
+      historyInFlight.delete(inflightKey)
+    })
+  historyInFlight.set(inflightKey, promise)
+  return promise
+}
 
+async function loadHistoryUncached(cwd: string, id: string, file: string): Promise<HistoryItem[] | null> {
   const entries = await conversationChain(file)
-  // A rewind that was later undone left no cut; its undo marker may sit on a branch the chain no longer follows.
+  // A rewind that was later undone left no cut; only rescan the file if any rewindUndoMetadata marker exists.
   const undoneRewinds = new Set<string>()
-  for (const entry of scanEntries(file)) for (const uuid of entry.rewindUndoMetadata?.rewindUuids ?? []) undoneRewinds.add(uuid)
+  const rawText = await Bun.file(file).text()
+  if (rawText.includes("rewindUndoMetadata")) {
+    for (const entry of scanEntries(file)) for (const uuid of entry.rewindUndoMetadata?.rewindUuids ?? []) undoneRewinds.add(uuid)
+  }
   const owner = entries.find((entry) => typeof entry.cwd === "string")?.cwd
   if (owner && canonicalCwd(owner) !== canonicalCwd(cwd)) return null
 
