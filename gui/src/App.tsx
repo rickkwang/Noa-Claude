@@ -1242,6 +1242,8 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
     const pair = weights[col - 1]! + weights[col]!
     const span = left.width + right.width
     splitDraggingRef.current = true
+    handle.dataset.resizing = "true"
+    document.body.dataset.paneDragging = "true"
     host.setAttribute("data-pane-resizing", "")
     const move = (e: PointerEvent) => {
       const leftWidth = Math.min(span - 240, Math.max(240, left.width + e.clientX - startX))
@@ -1255,6 +1257,8 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
       handle.removeEventListener("pointermove", move)
       handle.removeEventListener("pointerup", end)
       handle.removeEventListener("pointercancel", end)
+      delete handle.dataset.resizing
+      delete document.body.dataset.paneDragging
       splitDraggingRef.current = false
       host.removeAttribute("data-pane-resizing")
       setSplit((layout) => ({ ...layout, weights: liveWeights }))
@@ -1276,6 +1280,8 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
     handle.setPointerCapture(event.pointerId)
     let liveRow = splitRow
     splitDraggingRef.current = true
+    handle.dataset.resizing = "true"
+    document.body.dataset.paneDragging = "row"
     host.setAttribute("data-pane-resizing", "")
     const move = (e: PointerEvent) => {
       const nextRow = Math.min(ROW_SPLIT.max, Math.max(ROW_SPLIT.min, rowSplitFor((e.clientY - column.top) / column.height, column.height)))
@@ -1287,6 +1293,8 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
       handle.removeEventListener("pointermove", move)
       handle.removeEventListener("pointerup", end)
       handle.removeEventListener("pointercancel", end)
+      delete handle.dataset.resizing
+      delete document.body.dataset.paneDragging
       splitDraggingRef.current = false
       host.removeAttribute("data-pane-resizing")
       setSplit((layout) => ({ ...layout, rowSplit: liveRow }))
@@ -1314,6 +1322,8 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
     const pair = weights[col]! + weights[col + 1]!
     const span = left.width + right.width
     splitDraggingRef.current = true
+    handle.dataset.resizing = "true"
+    document.body.dataset.paneDragging = "corner"
     host.setAttribute("data-pane-resizing", "")
     const move = (e: PointerEvent) => {
       const leftWidth = Math.min(span - 240, Math.max(240, left.width + e.clientX - startX))
@@ -1331,6 +1341,8 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
       handle.removeEventListener("pointermove", move)
       handle.removeEventListener("pointerup", end)
       handle.removeEventListener("pointercancel", end)
+      delete handle.dataset.resizing
+      delete document.body.dataset.paneDragging
       splitDraggingRef.current = false
       host.removeAttribute("data-pane-resizing")
       setSplit((layout) => ({ ...layout, weights: liveWeights, rowSplit: liveRow }))
@@ -2057,7 +2069,9 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
                     style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
                     onPointerDown={(event) => resizeColumns(event, col)}
                     onDoubleClick={() => setSplit((layout) => ({ ...layout, weights: Array.from({ length: splitColumns }, () => 1) }))}
-                  />
+                  >
+                    <span aria-hidden="true" className="noa-resize-indicator" />
+                  </div>
                 )}
                 {stacked && (
                   <div
@@ -2068,7 +2082,9 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
                     style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
                     onPointerDown={(event) => resizeRows(event)}
                     onDoubleClick={() => setSplit((layout) => ({ ...layout, rowSplit: ROW_SPLIT.default }))}
-                  />
+                  >
+                    <span aria-hidden="true" className="noa-resize-indicator" />
+                  </div>
                 )}
                 {hasCorner && (
                   <div
@@ -2090,7 +2106,16 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
             )
           })}
           {(splitHover ?? paneDrag?.hover) && (
-            <div aria-hidden="true" className="noa-split-drop" style={(splitHover ?? paneDrag?.hover)!.rect}>
+            <div
+              aria-hidden="true"
+              className="noa-split-drop"
+              style={{
+                left: (splitHover ?? paneDrag?.hover)!.rect.left,
+                top: (splitHover ?? paneDrag?.hover)!.rect.top,
+                width: Math.max(0, (splitHover ?? paneDrag?.hover)!.rect.width - 16),
+                height: Math.max(0, (splitHover ?? paneDrag?.hover)!.rect.height - 16),
+              }}
+            >
               <span className="noa-split-drop-label">{(splitHover ?? paneDrag?.hover)!.label}</span>
             </div>
           )}
