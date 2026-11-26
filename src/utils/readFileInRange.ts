@@ -38,7 +38,7 @@
 //     that fits; sets truncatedByBytes in the result.  Never throws.
 // ---------------------------------------------------------------------------
 
-import { createReadStream, fstat } from 'fs'
+import { close, constants, createReadStream, fstat, open, read } from 'fs'
 import { stat as fsStat, readFile } from 'fs/promises'
 import { formatFileSize } from './format.js'
 
@@ -119,6 +119,7 @@ export async function readFileInRange(
     maxBytes,
     truncateOnByteLimit,
     stats.isFile() ? stats.size : 0,
+    stats.isFIFO(),
     signal,
   )
 }
@@ -351,11 +352,42 @@ function readFileInRangeStreaming(
   maxBytes: number | undefined,
   truncateOnByteLimit: boolean,
   sizeOnDisk: number,
+  isPipe: boolean,
   signal?: AbortSignal,
 ): Promise<ReadFileRangeResult> {
   return new Promise((resolve, reject) => {
+    let sawWriter = false
+    let pipeDeadline = performance.now() + 20_000
     const state: StreamState = {
       stream: createReadStream(filePath, {
+        // A blocking FIFO open cannot be interrupted by destroying the stream.
+        ...(isPipe && {
+          flags: constants.O_RDONLY | constants.O_NONBLOCK,
+          fs: {
+            open,
+            close,
+            read(fd, buffer, offset, length, _position, callback) {
+              function poll() {
+                if (state.stream.destroyed) return callback(null, 0, buffer)
+                read(fd, buffer, offset, length, null, (error, bytesRead) => {
+                  if (error?.code === 'EAGAIN') sawWriter = true
+                  else if (error || bytesRead > 0 || sawWriter) {
+                    if (bytesRead > 0) {
+                      sawWriter = true
+                      pipeDeadline = performance.now() + 20_000
+                    }
+                    return callback(error, bytesRead, buffer)
+                  }
+                  if (performance.now() >= pipeDeadline) {
+                    return callback(new Error('Timed out waiting for data from the named pipe. Check that the writer is running and unlocked.'))
+                  }
+                  setTimeout(poll, 25)
+                })
+              }
+              poll()
+            },
+          },
+        }),
         encoding: 'utf8',
         highWaterMark: 512 * 1024,
         ...(signal ? { signal } : undefined),

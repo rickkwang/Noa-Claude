@@ -259,6 +259,27 @@ try {
     writeFileSync(png, Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', 'base64'))
     assert.equal((await readImageWithTokenBudget(png)).type, 'image')
   })
+  await maintenance('text-pipe-timeout-and-live-writer', async () => {
+    if (process.platform === 'win32') return
+    const fifo = join(artifacts, 'input.txt')
+    execFileSync('mkfifo', [fifo])
+    const source = resolve(import.meta.dir, '../src/utils/readFileInRange.ts')
+    const output = execFileSync('bun', ['-e', `
+      import assert from 'node:assert/strict';
+      import { writeFile } from 'node:fs/promises';
+      const { readFileInRange } = await import(${JSON.stringify(source)});
+      const fifo = ${JSON.stringify(fifo)};
+      await assert.rejects(readFileInRange(fifo, 0, 1, 1024, AbortSignal.timeout(150)), { name: 'AbortError' });
+      const liveRead = readFileInRange(fifo, 0, 1, 1024, AbortSignal.timeout(3000));
+      const [result] = await Promise.all([liveRead, writeFile(fifo, 'FIFO_PAYLOAD\\n')]);
+      assert.equal(result.content, 'FIFO_PAYLOAD');
+      const start = performance.now();
+      await assert.rejects(readFileInRange(fifo, 0, 1, 1024), /Timed out waiting for data from the named pipe/);
+      assert.ok(performance.now() - start >= 20_000);
+      console.log('FIFO_TIMEOUT_AND_LIVE_WRITER_OK');
+    `], { encoding: 'utf8', timeout: 25_000 })
+    assert.match(output, /FIFO_TIMEOUT_AND_LIVE_WRITER_OK/)
+  })
   await maintenance('transcript-torn-tail-sync-and-async', async () => {
     const { saveCustomTitle, getAgentTranscriptPath } = await import('../src/utils/sessionStorage.js')
     const transcript = join(artifacts, 'torn.jsonl')
