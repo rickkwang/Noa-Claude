@@ -4,7 +4,11 @@ import {
   getClassifierProbeState,
   tryBeginClassifierProbe,
 } from '../../utils/permissions/autoModeState.js'
-import { getDefaultSonnetModel } from '../../utils/model/model.js'
+import { getAgentModel } from '../../utils/model/agent.js'
+import {
+  getDefaultOpusModel,
+  getDefaultSonnetModel,
+} from '../../utils/model/model.js'
 import {
   _setBedrockInferenceProfileLoaderForTesting,
   ensureModelStringsInitialized,
@@ -16,6 +20,11 @@ const ENV_KEYS = [
   'ANTHROPIC_API_KEY',
   'ANTHROPIC_BASE_URL',
   'ANTHROPIC_DEFAULT_SONNET_MODEL',
+  'ANTHROPIC_DEFAULT_OPUS_MODEL',
+  'ANTHROPIC_DEFAULT_HAIKU_MODEL',
+  'ANTHROPIC_BEDROCK_REGION_PREFIX',
+  'AWS_REGION',
+  'AWS_DEFAULT_REGION',
   'CLAUDE_CODE_USE_BEDROCK',
   'CLAUDE_CODE_USE_VERTEX',
   'CLAUDE_CODE_USE_FOUNDRY',
@@ -29,6 +38,10 @@ beforeEach(() => {
   // built-in default — an ambient value (e.g. from an active provider
   // profile) would replace the 'claude-sonnet-5-5' these tests assert.
   delete process.env.ANTHROPIC_DEFAULT_SONNET_MODEL
+  delete process.env.ANTHROPIC_DEFAULT_OPUS_MODEL
+  delete process.env.ANTHROPIC_DEFAULT_HAIKU_MODEL
+  delete process.env.ANTHROPIC_BEDROCK_REGION_PREFIX
+  delete process.env.AWS_DEFAULT_REGION
   delete process.env.CLAUDE_CODE_USE_BEDROCK
   delete process.env.CLAUDE_CODE_USE_VERTEX
   delete process.env.CLAUDE_CODE_USE_FOUNDRY
@@ -126,5 +139,45 @@ describe('provider switch cache clearing', () => {
     await staleInitialization
 
     expect(getDefaultSonnetModel()).toBe('claude-sonnet-5-5')
+  })
+})
+
+describe('Bedrock inference profile selection', () => {
+  async function useBedrock(region: string, profiles: string[]): Promise<void> {
+    process.env.CLAUDE_CODE_USE_BEDROCK = '1'
+    process.env.AWS_REGION = region
+    _setBedrockInferenceProfileLoaderForTesting(async () => profiles)
+    clearProviderSwitchCaches()
+    await ensureModelStringsInitialized()
+  }
+
+  test("prefers the region's profile group", async () => {
+    await useBedrock('eu-west-1', [
+      'us.anthropic.claude-opus-5-5',
+      'eu.anthropic.claude-opus-5-5',
+    ])
+    expect(getDefaultOpusModel()).toBe('eu.anthropic.claude-opus-5-5')
+  })
+
+  test("a subagent keeps its own profile when the parent's group lacks it", async () => {
+    await useBedrock('eu-west-1', [
+      'eu.anthropic.claude-opus-5-5',
+      'global.anthropic.claude-haiku-4-5-20251001-v1:0',
+      'us.anthropic.claude-haiku-4-5-20251001-v1:0',
+    ])
+    expect(getAgentModel('haiku', 'eu.anthropic.claude-opus-5-5')).toBe(
+      'global.anthropic.claude-haiku-4-5-20251001-v1:0',
+    )
+  })
+
+  test("a subagent takes the parent's group when the account has it", async () => {
+    await useBedrock('us-east-1', [
+      'eu.anthropic.claude-opus-5-5',
+      'eu.anthropic.claude-haiku-4-5-20251001-v1:0',
+      'us.anthropic.claude-haiku-4-5-20251001-v1:0',
+    ])
+    expect(getAgentModel('haiku', 'eu.anthropic.claude-opus-5-5')).toBe(
+      'eu.anthropic.claude-haiku-4-5-20251001-v1:0',
+    )
   })
 })

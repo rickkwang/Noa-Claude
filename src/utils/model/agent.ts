@@ -2,12 +2,17 @@
 import type { PermissionMode } from '../permissions/PermissionMode.js'
 import { capitalize } from '../stringUtils.js'
 import { MODEL_ALIASES, type ModelAlias } from './aliases.js'
-import { applyBedrockRegionPrefix, getBedrockRegionPrefix } from './bedrock.js'
+import {
+  applyBedrockRegionPrefix,
+  extractModelIdFromArn,
+  getBedrockRegionPrefix,
+} from './bedrock.js'
 import {
   getCanonicalName,
   getRuntimeMainLoopModel,
   parseUserSpecifiedModel,
 } from './model.js'
+import { getDiscoveredBedrockProfiles } from './modelStrings.js'
 import { getAPIProvider } from './providers.js'
 
 export const AGENT_MODEL_OPTIONS = [...MODEL_ALIASES, 'inherit'] as const
@@ -51,13 +56,22 @@ export function getAgentModel(
   // region prefix (e.g., "eu.anthropic.…"), we preserve it instead of overwriting
   // with the parent's prefix. This prevents silent data-residency violations when
   // an agent config intentionally pins to a different region than the parent.
+  // When discovery shows the account has the parent's profile but not the
+  // subagent model in that group, the subagent keeps its own discovered profile.
   const applyParentRegionPrefix = (
     resolvedModel: string,
     originalSpec: string,
   ): string => {
     if (parentRegionPrefix && getAPIProvider() === 'bedrock') {
       if (getBedrockRegionPrefix(originalSpec)) return resolvedModel
-      return applyBedrockRegionPrefix(resolvedModel, parentRegionPrefix)
+      const prefixed = applyBedrockRegionPrefix(resolvedModel, parentRegionPrefix)
+      const profiles = getDiscoveredBedrockProfiles()
+      const listed = (id: string) =>
+        profiles?.includes(extractModelIdFromArn(id.replace(/\[1m\]$/i, ''))) ===
+        true
+      return !profiles?.length || listed(prefixed) || !listed(parentModel)
+        ? prefixed
+        : resolvedModel
     }
     return resolvedModel
   }

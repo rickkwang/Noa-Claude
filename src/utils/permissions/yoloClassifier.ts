@@ -2485,10 +2485,8 @@ function getTwoStageMode(): TwoStageMode {
 //     input that never occurs; auto_mode_system_prompt.txt pins its absence.
 //   - unavailableOuterRetries outer retry loop — upstream's own default is 0,
 //     so omitting it genuinely matches
-//   - auto-as-default-permission-mode rollout (tengu_harbor_willow /
-//     meadow_lantern) and the "Set up auto mode for your environment?"
-//     customization flow — upstream GB defaults off; this fork keeps the
-//     explicit AutoModeOptInDialog instead
+//   - the "Set up auto mode for your environment?" customization flow (auto
+//     as the default permission mode is implemented in permissionSetup.ts)
 // The transcript is JSONL by default: upstream writes it that way with
 // GrowthBook off too. CLAUDE_CODE_JSONL_TRANSCRIPT=0 keeps the text transcript.
 function isJsonlTranscriptEnabled(): boolean {

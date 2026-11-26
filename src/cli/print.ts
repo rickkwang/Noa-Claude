@@ -4637,10 +4637,13 @@ function runHeadlessStreaming(
         value: await resolveAndPrepend(message, message.message.content),
         uuid: message.uuid,
         priority: message.priority,
+        // A host-forwarded message nobody typed: the model sees it, but it is
+        // not a human turn (no title, no prompt count).
+        ...(message.isSynthetic && { isMeta: true }),
       })
       // Increment prompt count for attribution tracking and save snapshot
       // The snapshot persists promptCount so it survives compaction
-      if (feature('COMMIT_ATTRIBUTION')) {
+      if (feature('COMMIT_ATTRIBUTION') && !message.isSynthetic) {
         setAppState(prev => ({
           ...prev,
           attribution: incrementPromptCount(prev.attribution, snapshot => {

@@ -1988,6 +1988,7 @@ async function run(): Promise<CommanderCommand> {
     // Ink root is only needed for interactive sessions — patchConsole in the
     // Ink constructor would swallow console output in headless mode.
     let root!: Root;
+    let thirdPartyFallbackLines: string[] = [];
     let getFpsMetrics!: () => FpsMetrics | undefined;
     let stats!: StatsStore;
 
@@ -2016,6 +2017,9 @@ async function run(): Promise<CommanderCommand> {
       logForDebugging('[STARTUP] Running showSetupScreens()...');
       const setupScreensStart = Date.now();
       const onboardingShown = await showSetupScreens(root, permissionMode, allowDangerouslySkipPermissions, commands, devChannels);
+      // Bedrock/Vertex: a tier whose default model this account can't reach
+      // falls back to an older one for the session.
+      thirdPartyFallbackLines = await import('./utils/model/thirdPartyDefaultFallback.js').then(m => m.checkThirdPartyDefaultModels()).catch(() => []);
       toolPermissionContext = syncProjectGrants(toolPermissionContext, getOriginalCwd());
       logForDebugging(`[STARTUP] showSetupScreens() completed in ${Date.now() - setupScreensStart}ms`);
 
@@ -2755,6 +2759,14 @@ async function run(): Promise<CommanderCommand> {
       initialNotifications.push({
         key: 'permission-mode-notification',
         text: permissionModeNotification,
+        priority: 'high'
+      });
+    }
+    for (const line of thirdPartyFallbackLines) {
+      initialNotifications.push({
+        key: `3p-default-fallback:${line}`,
+        text: line,
+        color: 'warning',
         priority: 'high'
       });
     }

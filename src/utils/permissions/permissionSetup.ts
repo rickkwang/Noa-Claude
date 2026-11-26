@@ -2,6 +2,7 @@
 import { feature } from 'bun:bundle'
 import { relative } from 'path'
 import {
+  getIsNonInteractiveSession,
   getOriginalCwd,
   handleAutoModeTransition,
   handlePlanModeTransition,
@@ -724,6 +725,13 @@ function isDefaultModeGrantedByTrustedSettings(mode: PermissionMode): boolean {
   )
 }
 
+let permissionModeFromAutoDefault = false
+
+/** True when the startup mode is auto only because nothing else chose a mode. */
+export function isPermissionModeFromAutoDefault(): boolean {
+  return permissionModeFromAutoDefault
+}
+
 export function initialPermissionModeFromCLI({
   permissionModeCli,
   dangerouslySkipPermissions,
@@ -885,6 +893,20 @@ export function initialPermissionModeFromCLI({
 
     result = { mode, notification } // Use the first valid mode
     break
+  }
+
+  // Nothing chose a mode: an interactive session starts in auto when it can
+  // enter it (not disabled by settings or the circuit breaker, model supported).
+  if (
+    !result &&
+    feature('AUTO_MODE') &&
+    !getIsNonInteractiveSession() &&
+    !isEnvTruthy(process.env.CLAUDE_CODE_REMOTE) &&
+    !autoModeCircuitBrokenSync &&
+    isAutoModeGateEnabled()
+  ) {
+    permissionModeFromAutoDefault = true
+    result = { mode: 'auto', notification }
   }
 
   if (!result) {

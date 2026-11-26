@@ -49,8 +49,12 @@ describe('per-provider alias defaults match the upstream catalog', () => {
     expect(getDefaultHaikuModel()).toContain('claude-haiku-5-5')
   })
 
-  test('Bedrock and Vertex get current Opus — not a trailing generation', () => {
-    for (const env of ['CLAUDE_CODE_USE_BEDROCK', 'CLAUDE_CODE_USE_VERTEX']) {
+  test('every cloud provider gets current Opus — not a trailing generation', () => {
+    for (const env of [
+      'CLAUDE_CODE_USE_BEDROCK',
+      'CLAUDE_CODE_USE_VERTEX',
+      'CLAUDE_CODE_USE_FOUNDRY',
+    ]) {
       useProvider(env)
       expect(getDefaultOpusModel()).toContain('claude-opus-5-5')
     }
@@ -67,19 +71,12 @@ describe('per-provider alias defaults match the upstream catalog', () => {
     }
   })
 
-  test('Foundry pins Opus to 4.6 — two generations back, as upstream does', () => {
-    useProvider('CLAUDE_CODE_USE_FOUNDRY')
-    expect(getDefaultOpusModel()).toContain('claude-opus-4-6')
-  })
-
-  test('every cloud provider pins Sonnet to 4.5, not 4.6', () => {
-    for (const env of [
-      'CLAUDE_CODE_USE_BEDROCK',
-      'CLAUDE_CODE_USE_VERTEX',
-      'CLAUDE_CODE_USE_FOUNDRY',
-    ]) {
+  test('Bedrock keeps Sonnet on 4.5; Vertex and Foundry get Sonnet 5.5', () => {
+    useProvider('CLAUDE_CODE_USE_BEDROCK')
+    expect(getDefaultSonnetModel()).toContain('claude-sonnet-4-5')
+    for (const env of ['CLAUDE_CODE_USE_VERTEX', 'CLAUDE_CODE_USE_FOUNDRY']) {
       useProvider(env)
-      expect(getDefaultSonnetModel()).toContain('claude-sonnet-4-5')
+      expect(getDefaultSonnetModel()).toBe('claude-sonnet-5-5')
     }
   })
 

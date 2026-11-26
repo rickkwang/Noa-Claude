@@ -132,16 +132,10 @@ export function getBestModel(): ModelName {
  * its `per_provider` entry when the current provider has one, and to `default`
  * otherwise — the same lookup upstream performs.
  *
- * This replaces an earlier local guess (`provider !== 'firstParty'` → trail one
- * generation), which was wrong in both directions. Two rows look like typos and
- * are not:
- *
- *   - **Foundry's opus trails two generations, to 4.6.** Not a transcription
- *     slip: upstream really pins it there, and the previous code's `opus48` for
- *     Foundry was *ahead* of upstream. A comment here used to flag that as
- *     unverified pending a live Foundry endpoint; the catalog settles it.
- *   - **Every cloud provider's sonnet trails to 4.5, not 4.6.** Also upstream's
- *     value. Noa previously sent `sonnet-4-6` to all three.
+ * Cloud rows trail the first-party default where upstream's catalog does:
+ * Bedrock's sonnet stays on 4.5, and every cloud haiku on 4.5. Vertex and
+ * Foundry sonnet, and Foundry opus, follow the 5.5 default. A tier the account
+ * cannot reach falls back at startup (`thirdPartyDefaultFallback.ts`).
  *
  * Providers absent from a row take `default`, which is upstream's behaviour for
  * any provider key it does not list — `fable` has no cloud-provider entry at
@@ -160,14 +154,14 @@ export function getBestModel(): ModelName {
 const ALIAS_DEFAULTS = {
   opus: {
     default: 'opus55',
-    perProvider: { bedrock: 'opus55', vertex: 'opus55', foundry: 'opus46' },
+    perProvider: { bedrock: 'opus55', vertex: 'opus55', foundry: 'opus55' },
   },
   sonnet: {
     default: 'sonnet55',
     perProvider: {
       bedrock: 'sonnet45',
-      vertex: 'sonnet45',
-      foundry: 'sonnet45',
+      vertex: 'sonnet55',
+      foundry: 'sonnet55',
     },
   },
   haiku: {
@@ -192,12 +186,20 @@ const ALIAS_FALLBACK_IDS: Record<ModelKey, string> = Object.fromEntries(
   ]),
 ) as Record<ModelKey, string>
 
-function resolveAliasDefault(family: keyof typeof ALIAS_DEFAULTS): ModelName {
+/** The catalog key an unpinned alias resolves to on the current provider. */
+export function getAliasDefaultKey(
+  family: keyof typeof ALIAS_DEFAULTS,
+): ModelKey {
   const entry = ALIAS_DEFAULTS[family]
-  const key: ModelKey =
+  return (
     (entry.perProvider as Partial<Record<APIProvider, ModelKey>>)[
       getAPIProvider()
     ] ?? entry.default
+  )
+}
+
+function resolveAliasDefault(family: keyof typeof ALIAS_DEFAULTS): ModelName {
+  const key = getAliasDefaultKey(family)
   return getModelStrings()[key] || ALIAS_FALLBACK_IDS[key]
 }
 

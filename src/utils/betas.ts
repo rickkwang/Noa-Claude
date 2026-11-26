@@ -347,15 +347,11 @@ export function modelSupportsStructuredOutputs(model: string): boolean {
 // @[MODEL LAUNCH]: auto mode is allow-by-default — only add a model here if it
 // does NOT support auto mode (specifically PI probes).
 /**
- * Mirrors upstream's model gate: a denylist of known-unsupported models
- * rather than an allowlist, so newer families (fable, opus/sonnet 4.7+, …) are
- * supported by default without a code change on every launch.
- *
- * Upstream additionally short-circuits on a provider predicate, but that
- * predicate returns true for every provider, so it is omitted here.
- * The narrower provider rule below (non-first-party can't run 4-6 or haiku) is
- * the only provider gating that actually fires. Auto mode's separate
- * provider/plan/settings gates still apply upstream of this check.
+ * Mirrors upstream's model gate: a denylist of the models released before
+ * Opus 4.6, so newer families are supported by default without a code change
+ * on every launch. Upstream also drops non-5.5 Haiku on cloud providers and
+ * custom base URLs, which this list already covers (Haiku 4.5 is on it).
+ * Auto mode's separate settings and circuit-breaker gates still apply.
  */
 export function modelSupportsAutoMode(model: string): boolean {
   if (feature('AUTO_MODE')) {
@@ -369,16 +365,6 @@ export function modelSupportsAutoMode(model: string): boolean {
       m === 'claude-sonnet-4-0' ||
       m === 'claude-sonnet-4-5' ||
       m === 'claude-haiku-4-5'
-    ) {
-      return false
-    }
-    // Upstream gates this on `firstParty || anthropicAws`; this fork has no
-    // anthropicAws provider, so first-party is the equivalent set.
-    if (
-      getAPIProvider() !== 'firstParty' &&
-      (m === 'claude-opus-4-6' ||
-        m === 'claude-sonnet-4-6' ||
-        m.includes('haiku'))
     ) {
       return false
     }

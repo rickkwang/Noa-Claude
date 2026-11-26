@@ -243,6 +243,8 @@ export type GlobalConfig = {
   hasSeenUndercoverAutoNotice?: boolean // ant-only: whether the one-time auto-undercover explainer has been shown
   hasSeenUltraplanTerms?: boolean // ant-only: whether the one-time CCR terms notice has been shown in the ultraplan launch dialog
   hasResetAutoModeOptInForDefaultOffer?: boolean // ant-only: one-shot migration guard, re-prompts churned auto-mode users
+  // Bedrock/Vertex default-model availability verdicts, keyed provider|region|model
+  thirdPartyModelAccess?: Record<string, { ok: boolean; at: number }>
   oauthAccount?: AccountInfo
   // Durable launcher routing choice; unlike oauthAccount, this is written only
   // after credentials are persisted and reset explicitly on logout.

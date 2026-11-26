@@ -47,21 +47,45 @@ export const getBedrockInferenceProfiles = memoize(async function (): Promise<
  * both profiles are enabled. Prefer a match where the needle is not followed by
  * another `-<digit>` version segment; fall back to any substring match so an
  * unexpected profile shape still resolves rather than falling back to the
- * hardcoded ID.
+ * hardcoded ID. With `preferredPrefix`, a profile in that region group wins
+ * over an equally good match elsewhere.
  */
 export function findFirstMatch(
   profiles: string[],
   substring: string,
+  preferredPrefix?: BedrockRegionPrefix,
 ): string | null {
   const isVersionExtension = (profile: string): boolean => {
     const idx = profile.indexOf(substring)
     return idx !== -1 && /^-\d/.test(profile.slice(idx + substring.length))
   }
-  return (
-    profiles.find(p => p.includes(substring) && !isVersionExtension(p)) ??
-    profiles.find(p => p.includes(substring)) ??
-    null
-  )
+  const preferred = preferredPrefix
+    ? profiles.filter(p => p.startsWith(`${preferredPrefix}.`))
+    : []
+  for (const list of [preferred, profiles]) {
+    const exact = list.find(p => p.includes(substring) && !isVersionExtension(p))
+    if (exact) return exact
+  }
+  return profiles.find(p => p.includes(substring)) ?? null
+}
+
+/**
+ * The cross-region profile group for an AWS region: `ANTHROPIC_BEDROCK_REGION_PREFIX`
+ * when set (except in GovCloud, which only has `us-gov.` profiles), else the
+ * group the region belongs to, else `global`.
+ */
+export function getBedrockPreferredRegionPrefix(
+  region: string = getAWSRegion(),
+): BedrockRegionPrefix {
+  if (region.startsWith('us-gov-')) return 'us-gov'
+  const override = process.env.ANTHROPIC_BEDROCK_REGION_PREFIX
+  if (override && (BEDROCK_REGION_PREFIXES as readonly string[]).includes(override)) {
+    return override as BedrockRegionPrefix
+  }
+  if (region.startsWith('us-')) return 'us'
+  if (region.startsWith('eu-')) return 'eu'
+  if (region.startsWith('ap-')) return 'apac'
+  return 'global'
 }
 
 async function createBedrockClient() {
@@ -203,7 +227,15 @@ export function isFoundationModel(modelId: string): boolean {
  * Cross-region inference profile prefixes for Bedrock.
  * These prefixes allow routing requests to models in specific regions.
  */
-const BEDROCK_REGION_PREFIXES = ['us', 'eu', 'apac', 'global'] as const
+const BEDROCK_REGION_PREFIXES = [
+  'us',
+  'eu',
+  'apac',
+  'jp',
+  'au',
+  'us-gov',
+  'global',
+] as const
 
 /**
  * Extract the model/inference profile ID from a Bedrock ARN.

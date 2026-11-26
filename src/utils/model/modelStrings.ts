@@ -7,7 +7,12 @@ import {
 import { logError } from '../log.js'
 import { sequential } from '../sequential.js'
 import { getInitialSettings } from '../settings/settings.js'
-import { findFirstMatch, getBedrockInferenceProfiles } from './bedrock.js'
+import {
+  applyBedrockRegionPrefix,
+  findFirstMatch,
+  getBedrockInferenceProfiles,
+  getBedrockPreferredRegionPrefix,
+} from './bedrock.js'
 import {
   ALL_MODEL_CONFIGS,
   CANONICAL_ID_TO_KEY,
@@ -28,6 +33,12 @@ let modelStringsGeneration = 0
 type BedrockInferenceProfileLoader = () => Promise<string[]>
 let loadBedrockInferenceProfiles: BedrockInferenceProfileLoader =
   getBedrockInferenceProfiles
+let discoveredBedrockProfiles: string[] | undefined
+
+/** The Bedrock profile list from the last finished discovery, if any. */
+export function getDiscoveredBedrockProfiles(): string[] | undefined {
+  return discoveredBedrockProfiles
+}
 
 function setCachedModelStrings(
   provider: APIProvider,
@@ -40,6 +51,7 @@ function setCachedModelStrings(
 export function clearModelStringsCache(): void {
   modelStringsGeneration += 1
   modelStringsProvider = undefined
+  discoveredBedrockProfiles = undefined
   clearModelStringsState()
 }
 
@@ -60,15 +72,21 @@ function clearCacheForChangedProvider(provider: APIProvider): void {
 }
 
 function getBuiltinModelStrings(provider: APIProvider): ModelStrings {
+  // Built-in Bedrock ids carry `us.`; move them to the region's profile group.
+  const prefix =
+    provider === 'bedrock' ? getBedrockPreferredRegionPrefix() : undefined
   const out = {} as ModelStrings
   for (const key of MODEL_KEYS) {
-    out[key] = ALL_MODEL_CONFIGS[key][provider] ?? ALL_MODEL_CONFIGS[key].firstParty
+    const id =
+      ALL_MODEL_CONFIGS[key][provider] ?? ALL_MODEL_CONFIGS[key].firstParty
+    out[key] = prefix ? applyBedrockRegionPrefix(id, prefix) : id
   }
   return out
 }
 
 async function getBedrockModelStrings(): Promise<ModelStrings> {
   const fallback = getBuiltinModelStrings('bedrock')
+  const generation = modelStringsGeneration
   let profiles: string[] | undefined
   try {
     profiles = await loadBedrockInferenceProfiles()
@@ -79,14 +97,17 @@ async function getBedrockModelStrings(): Promise<ModelStrings> {
   if (!profiles?.length) {
     return fallback
   }
+  // A provider switch during the fetch made this list stale.
+  if (generation === modelStringsGeneration) discoveredBedrockProfiles = profiles
   // Each config's firstParty ID is the canonical substring we search for in the
   // user's inference profile list (e.g. "claude-opus-4-6" matches
-  // "eu.anthropic.claude-opus-4-6-v1"). Fall back to the hardcoded bedrock ID
-  // when no matching profile is found.
+  // "eu.anthropic.claude-opus-4-6-v1"), preferring the region's profile group.
+  // Fall back to the built-in bedrock ID when no matching profile is found.
+  const prefix = getBedrockPreferredRegionPrefix()
   const out = {} as ModelStrings
   for (const key of MODEL_KEYS) {
     const needle = ALL_MODEL_CONFIGS[key].firstParty
-    out[key] = findFirstMatch(profiles, needle) || fallback[key]
+    out[key] = findFirstMatch(profiles, needle, prefix) || fallback[key]
   }
   return out
 }
