@@ -2775,3 +2775,26 @@ input[type="number"]::-webkit-inner-spin-button {
   font-weight: var(--serif-weight);
   letter-spacing: var(--serif-tracking);
 }
+
+/* Split view: drop overlay, focus dimming, pane drag grip, and resize handles. */
+.noa-split-drop { position: absolute; z-index: 40; display: flex; align-items: center; justify-content: center; border-radius: 10px; background: color-mix(in srgb, var(--accent-color, #CC7D5E) 10%, transparent); box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--accent-color, #CC7D5E) 55%, transparent); pointer-events: none; transition: left 120ms ease, top 120ms ease, width 120ms ease, height 120ms ease; }
+.noa-split-drop-label { padding: 3px 10px; border-radius: 999px; background: var(--bg-card, #FFFFFF); box-shadow: 0 1px 4px rgb(0 0 0 / 0.12); color: var(--text-primary, #2D2D2B); font-size: var(--text-caption, 12px); }
+
+[data-pane-host] { grid-template-columns: var(--noa-col-tracks, minmax(0, 1fr)); grid-template-rows: var(--noa-pane-row-tracks, minmax(0, 1fr)); }
+[data-pane-host] [data-pane] { contain: layout; transition: filter 120ms ease-out; }
+[data-pane-host][data-split] [data-pane]:not([data-focused]) { filter: opacity(0.75) saturate(0.85); }
+[data-pane-host][data-pane-resizing] [data-pane] { transition: none; }
+[data-pane-host][data-pane-resizing] .noa-pane-grip { pointer-events: none; }
+
+[data-pane-host][data-split] [data-pane]::before { content: ""; position: absolute; inset: 0; border-radius: 8px; box-shadow: inset 0 0 0 2px var(--accent-color, #CC7D5E); opacity: 0; pointer-events: none; transition: opacity 100ms ease-out; z-index: 45; }
+[data-pane-host][data-cmd-held][data-split]:not([data-pane-dragging]) [data-pane]:hover { cursor: move; }
+[data-pane-host][data-cmd-held][data-split]:not([data-pane-dragging]) [data-pane]:hover::before { opacity: 1; transition-delay: 200ms; }
+[data-pane-host][data-pane-dragging] .noa-pane-grip { pointer-events: none; }
+
+.noa-pane-grip { position: absolute; top: 0; left: calc(50% - 22px); width: 44px; height: 10px; padding: 0; border: 0; background: transparent; cursor: move; touch-action: none; z-index: 35; }
+.noa-pane-grip::before { content: ""; position: absolute; top: 3px; left: 6px; width: 32px; height: 3px; border-radius: 999px; background: color-mix(in srgb, var(--text-primary, #2D2D2B) 24%, transparent); opacity: 0; transition: opacity 120ms ease-out; }
+.noa-pane-grip:hover::before { opacity: 1; }
+
+.noa-pane-resize-col { position: absolute; top: 0; bottom: 0; left: -5px; width: 10px; cursor: col-resize; z-index: 30; pointer-events: auto; }
+.noa-pane-resize-row { position: absolute; left: 0; right: 0; top: calc(var(--noa-pane-row, 0.5) * 100%); height: 10px; transform: translateY(-50%); cursor: row-resize; z-index: 30; pointer-events: auto; }
+.noa-pane-resize-corner { position: absolute; right: -6px; top: calc(var(--noa-pane-row, 0.5) * 100%); width: 12px; height: 12px; transform: translateY(-50%); cursor: move; z-index: 32; pointer-events: auto; }

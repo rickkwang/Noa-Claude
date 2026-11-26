@@ -32,7 +32,7 @@ interface PanelTabStripProps {
 const TITLE_MAX = 140
 const TAB_CHROME = 14 + 16 + 6 + 30 + 3
 const TAB_FLOOR = 112
-const ROW_INSET = 3 + 8
+const ROW_INSET = 3 + 8 + 4
 const CONTROL_WIDTH = 28 + 4
 const measureCanvas = document.createElement("canvas")
 
@@ -171,10 +171,10 @@ export function PanelTabStrip({ tabs, activeKey, label, onSelect, onClose, onCon
               // The wrapper keeps 3px between tabs. Long tabs shrink to 7rem before any move to the menu; shorter ones keep their width.
               <div
                 key={tab.key}
-                className="relative isolate flex min-w-[7rem] items-center data-[short]:min-w-max"
+                className={`relative isolate flex items-center ${shown.length === 1 ? "min-w-0 max-w-full" : "min-w-[7rem] data-[short]:min-w-max"}`}
                 ref={(element) => {
                   const title = element?.querySelector<HTMLElement>(".noa-tab-title")
-                  if (element && title) element.toggleAttribute("data-short", element.offsetWidth - title.clientWidth + title.scrollWidth <= 112)
+                  if (element && title) element.toggleAttribute("data-short", shown.length > 1 && element.offsetWidth - title.clientWidth + title.scrollWidth <= 112)
                 }}
                 onPointerDown={(event) => onPointerDown(event, tab.key)}
                 onPointerMove={onPointerMove}

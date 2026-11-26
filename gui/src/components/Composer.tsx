@@ -538,16 +538,27 @@ export const Composer = memo(function Composer({
     return () => window.removeEventListener("keydown", onEscape, true)
   }, [menuOpen])
 
-  // Grow the textarea with its content, up to the CSS max-height.
+  // Grow the textarea with its content, up to the CSS max-height. Re-measure when the pane resizes too.
   const [multiline, setMultiline] = useState(false)
   useEffect(() => {
     const el = textareaRef.current
     if (!el) return
-    el.style.height = "auto"
-    const h = el.scrollHeight
-    el.style.height = `${h}px`
-    const lineHeight = parseFloat(getComputedStyle(el).lineHeight) || 20
-    setMultiline(h > lineHeight * 1.6 + 20)
+    const syncHeight = () => {
+      if (!text) {
+        el.style.height = ""
+        setMultiline(false)
+        return
+      }
+      el.style.height = "auto"
+      const h = el.scrollHeight
+      el.style.height = `${h}px`
+      const lineHeight = parseFloat(getComputedStyle(el).lineHeight) || 20
+      setMultiline(h > lineHeight * 1.6 + 20)
+    }
+    syncHeight()
+    const observer = new ResizeObserver(syncHeight)
+    observer.observe(el)
+    return () => observer.disconnect()
   }, [text])
 
   // Typing never waits for the CLI to start; a send made while it is still connecting

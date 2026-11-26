@@ -79,7 +79,7 @@ export function SessionTitle({
             setError(undefined)
             setEditing(true)
           }}
-          className="inline-flex h-7 max-w-[min(28vw,320px)] items-center rounded-md px-1 text-[length:var(--text-chat-sm)] leading-none text-[var(--sidebar-text)] enabled:hover:bg-[var(--fill-hover)]"
+          className="inline-flex h-7 min-w-0 max-w-[min(28vw,320px)] items-center rounded-md px-1 text-[length:var(--text-chat-sm)] leading-none text-[var(--sidebar-text)] enabled:hover:bg-[var(--fill-hover)]"
         >
           <span className="truncate">{name}</span>
         </button>

@@ -1,5 +1,5 @@
 import { defaultShortcuts, formatBinding, type ShortcutBindings } from "../lib/shortcuts"
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties } from "react"
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from "react"
 import { isSubagentTask, type AgentState } from "../agent/reducer"
 import type { TurnDiff } from "../agent/protocol"
 import { MessageCircle, MoreHorizontal, PaneBrowser, PaneChanges, PaneFiles, PaneSideChat, PaneSubagents, PaneTerminal, PaneThreads, PanelBottom, Plus } from "../lib/icons"
@@ -79,10 +79,14 @@ interface RightPanelProps {
   thread?: { id: string; cwd: string; title: string }
   onOpenThreadFull?: () => void
   onCloseThread?: () => void
+  // Controls rendered at the trailing end of the tab strip (used in split panes).
+  headerActions?: ReactNode
+  // Uses a compact 36px tab strip when hosted inside a lower-row split pane.
+  compactHeader?: boolean
 }
 
 // Right column: one pane under a tab strip.
-export function RightPanel({ shortcuts = defaultShortcuts, state, onStopTask, cwd, open = true, tabs, onTabs, newTab, onNewTab, tab, onTab, terminalFocusKey, onBottomTerminal, onReference, onWorkspaceChange, workspaceRefreshKey, focusChange, focusFile, turnDiff, focusTask, sessions, activeSessionId, onSelectSession, onRemindThread, onResolveThread, sideChat, thread, onOpenThreadFull, onCloseThread }: RightPanelProps) {
+export function RightPanel({ shortcuts = defaultShortcuts, state, onStopTask, cwd, open = true, tabs, onTabs, newTab, onNewTab, tab, onTab, terminalFocusKey, onBottomTerminal, onReference, onWorkspaceChange, workspaceRefreshKey, focusChange, focusFile, turnDiff, focusTask, sessions, activeSessionId, onSelectSession, onRemindThread, onResolveThread, sideChat, thread, onOpenThreadFull, onCloseThread, headerActions, compactHeader = false }: RightPanelProps) {
   useSyncExternalStore(subscribeTerminals, terminalsVersion, terminalsVersion)
   useSyncExternalStore(subscribeBrowser, browserVersion, browserVersion)
   const browser = projectBrowser(cwd)
@@ -227,9 +231,10 @@ export function RightPanel({ shortcuts = defaultShortcuts, state, onStopTask, cw
     <div className="flex h-full min-h-0 w-full flex-col bg-[var(--surface-page,#F9F9F7)] font-ui">
       {/* Level with the window controls; the right inset clears the header buttons fixed over this corner. */}
       <PanelTabStrip
-        className="h-11 pr-[100px]"
-        style={dragRegion}
+        className={compactHeader ? "h-9 pr-2" : headerActions ? "h-11 pr-2" : "h-11 pr-[100px]"}
+        style={compactHeader ? noDragRegion : dragRegion}
         controlStyle={noDragRegion}
+        trailing={headerActions}
         label="Panel tabs"
         tabs={stripKeys.map((key) => {
           if (key === "new") return { key, title: "New tab", icon: Plus }

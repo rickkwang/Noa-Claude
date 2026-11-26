@@ -1,5 +1,6 @@
 import { ElicitationCard } from "./components/ElicitationCard"
-import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react"
+import { createPortal } from "react-dom"
 import { useEvent } from "./hooks/useEvent"
 import { useAgent } from "./agent/useAgent"
 import { isSubagentTask } from "./agent/reducer"
@@ -50,6 +51,40 @@ import { CustomizePage } from "./components/CustomizePage"
 import { SchedulePage } from "./components/SchedulePage"
 import { SessionActions, RewindDialog, type RewindPreview } from "./components/SessionActions"
 import { SessionTitle } from "./components/SessionTitle"
+import { SplitPane } from "./components/SplitPane"
+import { PANE_CHAT_OVERFLOW_MIN, PANE_LEFT_PEEK_MIN, PANE_RIGHT_MIN, paneRightWidth } from "./lib/panePrefs"
+import {
+  ROW_SPLIT,
+  SPLIT_CONSTRAINED_WIDTH,
+  adjacentPaneIndex,
+  closePaneByIndex,
+  closePrimaryPane,
+  columnCount,
+  cyclePaneIndex,
+  findPaneDragTarget,
+  findSplitTarget,
+  isColStacked,
+  loadSplitLayout,
+  maxColumnsFor,
+  moveOrSwapPane,
+  moveTargetsForPane,
+  openTaskInSplit,
+  paneAt,
+  paneIndexOf,
+  placeTask,
+  promotePane,
+  removePane,
+  rowSplitFor,
+  sameTask,
+  saveSplitLayout,
+  setFocusedPane,
+  setSplitConstrained,
+  type PaneDragHover,
+  type PanePos,
+  type SplitHover,
+  type SplitLayout,
+  type SplitTask,
+} from "./lib/splitPanes"
 import { SearchDialog } from "./components/SearchDialog"
 import { matchesShortcut } from "./lib/shortcuts"
 import { rateLimitKey } from "./components/RateLimitNotice"
@@ -425,6 +460,186 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
     pushHistory({ cwd: dir, resume: id, runtimeId })
     setSession((s) => ({ cwd: dir, resume: id, runtimeId, key: s.key + 1 }))
   }
+  // Split view: tasks opened beside the main one via drag, Alt+Click, or menu.
+  const [split, setSplit] = useState<SplitLayout>(loadSplitLayout)
+  useEffect(() => saveSplitLayout(split), [split])
+  const [splitHover, setSplitHover] = useState<SplitHover>()
+  const [paneDrag, setPaneDrag] = useState<{ paneIndex: number; label: string; left: number; top: number; hover?: PaneDragHover }>()
+  const [cmdHeld, setCmdHeld] = useState(false)
+  const paneHostRef = useRef<HTMLDivElement>(null)
+  const primaryPaneRef = useRef<HTMLDivElement>(null)
+  const primaryCellRef = useRef<HTMLDivElement>(null)
+  const splitDraggingRef = useRef(false)
+  const [paneHostSize, setPaneHostSize] = useState({ width: 0, height: 0 })
+  const [primaryPaneWidth, setPrimaryPaneWidth] = useState(0)
+  useEffect(() => {
+    const host = paneHostRef.current
+    const primary = primaryPaneRef.current
+    let frame = 0
+    const sync = () => {
+      frame = 0
+      if (splitDraggingRef.current) return
+      if (host) {
+        const w = host.offsetWidth
+        const h = host.offsetHeight
+        setPaneHostSize((cur) => (cur.width === w && cur.height === h ? cur : { width: w, height: h }))
+      }
+      if (primary) {
+        const pw = primary.offsetWidth
+        setPrimaryPaneWidth((cur) => (cur === pw ? cur : pw))
+      }
+    }
+    const schedule = () => {
+      if (!frame) frame = requestAnimationFrame(sync)
+    }
+    sync()
+    const observer = new ResizeObserver(schedule)
+    if (host) observer.observe(host)
+    if (primary) observer.observe(primary)
+    return () => {
+      if (frame) cancelAnimationFrame(frame)
+      observer.disconnect()
+    }
+  }, [])
+  const primaryTask: SplitTask | undefined = activeId ? { cwd: session.cwd, id: activeId } : undefined
+  // Automatically park extra panes while the window is too narrow for split view, and restore them when widened.
+  useEffect(() => {
+    if (!paneHostSize.width) return
+    setSplit((layout) => setSplitConstrained(layout, paneHostSize.width < SPLIT_CONSTRAINED_WIDTH, primaryTask))
+  }, [paneHostSize.width])
+  // A pane showing the main task (reached through history, say) steps aside while it is the main one; the columns
+  // close up around it.
+  const shownSplit = primaryTask && split.panes.some((pane) => sameTask(pane, primaryTask)) ? removePane(split, primaryTask) : split
+  const splitActive = shownSplit.panes.length > 0
+  const focusedIndex = Math.min(shownSplit.focusedIndex, shownSplit.panes.length)
+  const focusPane = (index: number) => setSplit((layout) => setFocusedPane(layout, index))
+  const openTaskList = shownSplit.panes.map((pane) => `${pane.cwd}\0${pane.id}`).join("\n")
+  const openTaskKeys = useMemo(() => new Set(openTaskList ? openTaskList.split("\n") : []), [openTaskList])
+  const splitColumns = columnCount(shownSplit.panes)
+  const hasStackedSplit = shownSplit.panes.some((pane) => pane.pos.row === 1)
+  // The rows as drawn: the stored split, held so each pane keeps a usable height.
+  const splitRow = rowSplitFor(shownSplit.rowSplit, paneHostSize.height || window.innerHeight)
+  const splitWeights = shownSplit.weights.length === splitColumns ? shownSplit.weights : Array.from({ length: splitColumns }, () => 1)
+  const colTracksValue = splitWeights.map((weight) => `minmax(0, ${weight}fr)`).join(" ")
+  const rowTracksValue = hasStackedSplit ? `minmax(0, ${splitRow * 100}%) minmax(0, 1fr)` : "minmax(0, 1fr)"
+  // Sync CSS grid variables imperatively (never via JSX style) so React re-renders cannot clobber live drag values.
+  useLayoutEffect(() => {
+    const host = paneHostRef.current
+    if (!host || splitDraggingRef.current) return
+    host.style.setProperty("--noa-col-tracks", colTracksValue)
+    host.style.setProperty("--noa-pane-row", String(splitRow))
+    host.style.setProperty("--noa-pane-row-tracks", rowTracksValue)
+  }, [colTracksValue, splitRow, rowTracksValue])
+  // Track modifier key while split view is open to enable Cmd/Ctrl+drag anywhere on a pane.
+  const isMacPlatform = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform)
+  useEffect(() => {
+    if (!splitActive) { setCmdHeld(false); return }
+    const onKeyDown = (e: KeyboardEvent) => { if (isMacPlatform ? e.key === "Meta" : e.key === "Control") setCmdHeld(true) }
+    const onKeyUp = (e: KeyboardEvent) => { if (isMacPlatform ? e.key === "Meta" : e.key === "Control") setCmdHeld(false) }
+    const onBlur = () => setCmdHeld(false)
+    window.addEventListener("keydown", onKeyDown)
+    window.addEventListener("keyup", onKeyUp)
+    window.addEventListener("blur", onBlur)
+    return () => {
+      window.removeEventListener("keydown", onKeyDown)
+      window.removeEventListener("keyup", onKeyUp)
+      window.removeEventListener("blur", onBlur)
+    }
+  }, [splitActive, isMacPlatform])
+  // Opening a task that sits in a pane focuses or swaps it with the main task.
+  const showTask = (dir: string, id: string) => {
+    if (split.panes.some((pane) => sameTask(pane, { cwd: dir, id }))) setSplit((layout) => promotePane(layout, { cwd: dir, id }, primaryTask))
+    selectSession(dir, id)
+  }
+  const openInSplit = (dir: string, id: string) => {
+    setSplit((layout) => openTaskInSplit(layout, { cwd: dir, id }, primaryTask, maxColumnsFor(paneHostSize.width || window.innerWidth)))
+  }
+  const closePrimary = () => {
+    const result = closePrimaryPane(shownSplit)
+    if (!result) return
+    setSplit(result.layout)
+    selectSession(result.promoted.cwd, result.promoted.id)
+  }
+  const movePaneTo = (paneIndex: number, target: PanePos) => {
+    const result = moveOrSwapPane(shownSplit, paneIndex, target, primaryTask, maxColumnsFor(paneHostSize.width || window.innerWidth))
+    if (!result) return
+    setSplit(result.layout)
+    if (result.promoted) selectSession(result.promoted.cwd, result.promoted.id)
+  }
+  const splitMenuFor = (dir: string, id: string) => {
+    if (!splitActive) return undefined
+    const paneIdx = paneIndexOf(shownSplit.panes, { cwd: dir, id }, primaryTask)
+    if (paneIdx === undefined) return undefined
+    const moves = moveTargetsForPane(shownSplit.panes, paneIdx, maxColumnsFor(paneHostSize.width || window.innerWidth), !!primaryTask).map((item) => ({
+      label: item.label,
+      onSelect: () => movePaneTo(paneIdx, item.target),
+    }))
+    return {
+      moves,
+      onClose: () => (paneIdx === 0 ? closePrimary() : setSplit((layout) => closePaneByIndex(layout, paneIdx))),
+    }
+  }
+  const startPaneDrag = useEvent((event: React.PointerEvent<HTMLElement>, paneIndex: number, label: string) => {
+    if (event.button !== 0 || !splitActive) return
+    event.preventDefault()
+    event.stopPropagation()
+    const startX = event.clientX
+    const startY = event.clientY
+    let moved = false
+    let latestHover: PaneDragHover | undefined
+    const onMove = (e: PointerEvent) => {
+      if (!moved) {
+        if (Math.hypot(e.clientX - startX, e.clientY - startY) < 4) return
+        moved = true
+        document.body.classList.add("noa-session-dragging")
+      }
+      latestHover = findPaneDragTarget(e.clientX, e.clientY, { ...shownSplit, rowSplit: splitRow }, paneIndex)
+      setPaneDrag({ paneIndex, label, left: e.clientX, top: e.clientY, hover: latestHover })
+    }
+    const onEnd = (e: PointerEvent) => {
+      window.removeEventListener("pointermove", onMove)
+      window.removeEventListener("pointerup", onEnd)
+      window.removeEventListener("pointercancel", onCancel)
+      document.body.classList.remove("noa-session-dragging")
+      setPaneDrag(undefined)
+      if (!moved) return
+      const finalHover = findPaneDragTarget(e.clientX, e.clientY, { ...shownSplit, rowSplit: splitRow }, paneIndex) ?? latestHover
+      if (finalHover) movePaneTo(paneIndex, finalHover.target)
+    }
+    const onCancel = () => {
+      window.removeEventListener("pointermove", onMove)
+      window.removeEventListener("pointerup", onEnd)
+      window.removeEventListener("pointercancel", onCancel)
+      document.body.classList.remove("noa-session-dragging")
+      setPaneDrag(undefined)
+    }
+    window.addEventListener("pointermove", onMove)
+    window.addEventListener("pointerup", onEnd)
+    window.addEventListener("pointercancel", onCancel)
+  })
+  const onPaneModifierDrag = useEvent((event: React.PointerEvent<HTMLElement>, paneIndex: number, label: string) => {
+    if (!splitActive || event.button !== 0) return
+    if (!(isMacPlatform ? event.metaKey : event.ctrlKey)) return
+    const target = event.target as HTMLElement | null
+    if (target?.closest("button, a, input, textarea, [contenteditable='true'], .xterm")) return
+    startPaneDrag(event, paneIndex, label)
+  })
+  const onTaskDrag = useEvent((phase: "move" | "end" | "cancel", x: number, y: number, task: SplitTask) => {
+    // A task already open, as the main task or in a pane, has nowhere new to go.
+    const open = (primaryTask && sameTask(task, primaryTask)) || shownSplit.panes.some((pane) => sameTask(pane, task))
+    const hover = phase === "cancel" || customizeOpen || open ? undefined : findSplitTarget(x, y, { ...shownSplit, rowSplit: splitRow }, !!primaryTask)
+    if (phase === "move") {
+      setSplitHover((current) => JSON.stringify(current) === JSON.stringify(hover) ? current : hover)
+      return !!hover
+    }
+    setSplitHover(undefined)
+    if (phase === "cancel" || !hover) return false
+    const placed = placeTask(shownSplit, task, hover.target, primaryTask, maxColumnsFor(paneHostSize.width || window.innerWidth))
+    if (!placed) return true
+    setSplit(placed.layout)
+    if (placed.primary) selectSession(placed.primary.cwd, placed.primary.id)
+    return true
+  })
   const [focusChange, setFocusChange] = useState<{ path: string; at: number }>()
   const [focusFile, setFocusFile] = useState<{ path: string; at: number; line?: number; endLine?: number }>()
   const openFile = (path: string, line?: number, endLine?: number) => {
@@ -453,6 +668,7 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
       return
     }
     removeSessionBrowserState(cwd, id)
+    setSplit((layout) => layout.panes.filter((pane) => pane.id === id).reduce(removePane, layout))
     const owner = projects.find((project) => sessionsByProject[project.path]?.some((item) => item.id === id))?.path ?? cwd
     const updated = await fetchSessions(owner).catch(() => undefined)
     if (updated) setSessionsByProject((all) => ({ ...all, [owner]: updated }))
@@ -470,6 +686,31 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const bindings = settings.shortcuts
+      // Split-view navigation and close shortcuts.
+      if (splitActive && !document.querySelector('dialog[open], [role="dialog"]')) {
+        const splitMod = isMacPlatform
+          ? e.metaKey && e.ctrlKey && !e.altKey && !e.shiftKey
+          : e.ctrlKey && e.altKey && !e.metaKey && !e.shiftKey
+        if (splitMod && e.code === "KeyW") {
+          e.preventDefault()
+          if (focusedIndex === 0) closePrimary()
+          else setSplit((layout) => closePaneByIndex(layout, focusedIndex))
+          return
+        }
+        if (splitMod && (e.code === "ArrowLeft" || e.code === "ArrowRight" || e.code === "ArrowUp" || e.code === "ArrowDown")) {
+          const next = adjacentPaneIndex(shownSplit.panes, focusedIndex, e.code)
+          if (next !== undefined && next !== focusedIndex) {
+            e.preventDefault()
+            focusPane(next)
+          }
+          return
+        }
+        if (e.ctrlKey && !e.metaKey && !e.altKey && e.key === "Tab") {
+          e.preventDefault()
+          focusPane(cyclePaneIndex(shownSplit.panes, focusedIndex, e.shiftKey ? -1 : 1))
+          return
+        }
+      }
       // Bindings match the physical key (KeyboardEvent.code), so input sources that remap the backtick (e.g. Chinese "·") still open the terminal.
       if (matchesShortcut(e, bindings.newTask)) {
         e.preventDefault()
@@ -478,32 +719,35 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
       } else if (matchesShortcut(e, bindings.findTasks)) {
         e.preventDefault()
         setSearchOpen(open => !open)
-      } else if (matchesShortcut(e, bindings.bottomPanel)) {
-        e.preventDefault()
-        setTerminalOpen(open => !open)
-      } else if (matchesShortcut(e, bindings.terminal)) {
-        e.preventDefault()
-        openDefaultTerminal()
-      } else if (matchesShortcut(e, bindings.changes)) {
-        e.preventDefault()
-        showPanelTool("changes")
-      } else if (matchesShortcut(e, bindings.files)) {
-        e.preventDefault()
-        showPanelTool("files")
-      } else if (matchesShortcut(e, bindings.browser) && window.noaDesktop?.preview) {
-        e.preventDefault()
-        if (projectBrowser(session.cwd).tabs.length === 0) openBrowser(session.cwd)
-        else showPanelTool("browser")
-      } else if (matchesShortcut(e, bindings.sideChat)) {
-        e.preventDefault()
-        showPanelTool("sidechat")
-        setSideChatFocus((n) => n + 1)
       } else if (matchesShortcut(e, bindings.settings)) {
         e.preventDefault()
         setSearchOpen(false)
         setSettingsOpen(true)
+      } else if (focusedIndex === 0) {
+        if (matchesShortcut(e, bindings.bottomPanel)) {
+          e.preventDefault()
+          setTerminalOpen(open => !open)
+        } else if (matchesShortcut(e, bindings.terminal)) {
+          e.preventDefault()
+          openDefaultTerminal()
+        } else if (matchesShortcut(e, bindings.changes)) {
+          e.preventDefault()
+          showPanelTool("changes")
+        } else if (matchesShortcut(e, bindings.files)) {
+          e.preventDefault()
+          showPanelTool("files")
+        } else if (matchesShortcut(e, bindings.browser) && window.noaDesktop?.preview) {
+          e.preventDefault()
+          if (projectBrowser(session.cwd).tabs.length === 0) openBrowser(session.cwd)
+          else showPanelTool("browser")
+        } else if (matchesShortcut(e, bindings.sideChat)) {
+          e.preventDefault()
+          showPanelTool("sidechat")
+          setSideChatFocus((n) => n + 1)
+        }
       }
       if (
+        focusedIndex === 0 &&
         e.key === "Escape" &&
         state.busy &&
         !e.defaultPrevented &&
@@ -516,7 +760,7 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
     }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
-  }, [state.busy, activeId, session, history, settings.terminal.defaultLocation, settings.shortcuts])
+  }, [state.busy, activeId, session, history, settings.terminal.defaultLocation, settings.shortcuts, splitActive, focusedIndex, shownSplit.panes, isMacPlatform])
 
   // The terminal shortcut opens the bottom panel or a right-panel terminal, as settings choose.
   function openDefaultTerminal() {
@@ -909,9 +1153,19 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
   useEffect(() => {
     if (rightRatio === null && rightWindowMax > 320) setRightRatio(defaultRatio)
   }, [rightRatio, rightWindowMax, defaultRatio])
+  const outerRightOpen = rightOpen && !splitActive
   const rightDesired = Math.round(320 + (rightRatio ?? defaultRatio) * (rightWindowMax - 320))
   const rightTarget = Math.min(rightDesired, rightMax)
-  const rightWidth = rightOpen ? rightTarget : 0
+  const rightWidth = outerRightOpen ? rightTarget : 0
+  // When split view is active, the primary pane owns its own inline right sidebar sized within column 0.
+  const [primarySideRatio, setPrimarySideRatio] = useState(0.44)
+  const [primaryInlineRightMounted, setPrimaryInlineRightMounted] = useState(() => splitActive && rightOpen)
+  useEffect(() => {
+    if (splitActive && rightOpen && !primaryInlineRightMounted) setPrimaryInlineRightMounted(true)
+    if (!splitActive && primaryInlineRightMounted) setPrimaryInlineRightMounted(false)
+  }, [splitActive, rightOpen, primaryInlineRightMounted])
+  const primaryRightMetrics = paneRightWidth(primaryPaneWidth, primarySideRatio)
+  const primaryInlineRightWidth = splitActive && rightOpen && primaryPaneWidth > 0 ? primaryRightMetrics.width : 0
   // The overview docks as a column while the chat area is wide enough;
   // otherwise it floats over the chat as a popover.
   // Measure the chat column itself: window-size state lags a live resize and the sidebar animates, so a
@@ -924,10 +1178,13 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
   useEffect(() => {
     const el = chatColumnRef.current
     if (!el) return
-    const measure = () => { if (!dockMotion) setMeasuredChatWide(el.offsetWidth >= 611); setChatHeight(el.offsetHeight) }
+    // The overview docks beside the main task, so in split view it measures that pane rather than the whole column.
+    const cell = primaryCellRef.current
+    const measure = () => { if (!dockMotion) setMeasuredChatWide((cell ?? el).offsetWidth >= 611); setChatHeight(el.offsetHeight) }
     measure()
     const observer = new ResizeObserver(measure)
     observer.observe(el)
+    if (cell) observer.observe(cell)
     return () => observer.disconnect()
   }, [dockMotion])
   // The right panel opening does not undock it by itself: the docked column rides the chat edge while the panel slides
@@ -961,6 +1218,127 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
     setRightOpen(true)
     setRightTab("subagents")
     setFocusTask({ id, key: Date.now() })
+  }
+
+  // Column 0 stacks when a pane sits below the main task; other columns when they hold two panes.
+  const splitStacked = (col: number) => isColStacked(shownSplit.panes, col)
+  const sessionTitles = (task: SplitTask) => sessionsByProject[task.cwd]?.find((item) => item.id === task.id)?.title
+    ?? Object.values(sessionsByProject).flat().find((item) => item.id === task.id)?.title
+  // Dragging a column edge mutates CSS grid tracks directly during drag and commits to state once on release.
+  function resizeColumns(event: React.PointerEvent<HTMLElement>, col: number) {
+    if (event.button !== 0) return
+    event.preventDefault()
+    const host = paneHostRef.current
+    if (!host) return
+    const handle = event.currentTarget
+    handle.setPointerCapture(event.pointerId)
+    const cols = [...host.querySelectorAll<HTMLElement>(":scope > [data-pane-col]")]
+    const left = cols[col - 1]?.getBoundingClientRect()
+    const right = cols[col]?.getBoundingClientRect()
+    if (!left || !right) return
+    const startX = event.clientX
+    const weights = splitWeights.slice()
+    let liveWeights = weights
+    const pair = weights[col - 1]! + weights[col]!
+    const span = left.width + right.width
+    splitDraggingRef.current = true
+    host.setAttribute("data-pane-resizing", "")
+    const move = (e: PointerEvent) => {
+      const leftWidth = Math.min(span - 240, Math.max(240, left.width + e.clientX - startX))
+      const next = weights.slice()
+      next[col - 1] = pair * leftWidth / span
+      next[col] = pair - next[col - 1]!
+      liveWeights = next
+      host.style.setProperty("--noa-col-tracks", next.map((w) => `minmax(0, ${w}fr)`).join(" "))
+    }
+    const end = () => {
+      handle.removeEventListener("pointermove", move)
+      handle.removeEventListener("pointerup", end)
+      handle.removeEventListener("pointercancel", end)
+      splitDraggingRef.current = false
+      host.removeAttribute("data-pane-resizing")
+      setSplit((layout) => ({ ...layout, weights: liveWeights }))
+      if (primaryPaneRef.current) setPrimaryPaneWidth(primaryPaneRef.current.offsetWidth)
+    }
+    handle.addEventListener("pointermove", move)
+    handle.addEventListener("pointerup", end)
+    handle.addEventListener("pointercancel", end)
+  }
+  // Dragging the rule between stacked panes updates the CSS row variable directly and commits on release.
+  function resizeRows(event: React.PointerEvent<HTMLElement>) {
+    if (event.button !== 0) return
+    event.preventDefault()
+    const host = paneHostRef.current
+    if (!host) return
+    const handle = event.currentTarget
+    const column = handle.closest<HTMLElement>("[data-pane-col]")?.getBoundingClientRect()
+    if (!column) return
+    handle.setPointerCapture(event.pointerId)
+    let liveRow = splitRow
+    splitDraggingRef.current = true
+    host.setAttribute("data-pane-resizing", "")
+    const move = (e: PointerEvent) => {
+      const nextRow = Math.min(ROW_SPLIT.max, Math.max(ROW_SPLIT.min, rowSplitFor((e.clientY - column.top) / column.height, column.height)))
+      liveRow = nextRow
+      host.style.setProperty("--noa-pane-row", String(nextRow))
+      host.style.setProperty("--noa-pane-row-tracks", `minmax(0, ${nextRow * 100}%) minmax(0, 1fr)`)
+    }
+    const end = () => {
+      handle.removeEventListener("pointermove", move)
+      handle.removeEventListener("pointerup", end)
+      handle.removeEventListener("pointercancel", end)
+      splitDraggingRef.current = false
+      host.removeAttribute("data-pane-resizing")
+      setSplit((layout) => ({ ...layout, rowSplit: liveRow }))
+    }
+    handle.addEventListener("pointermove", move)
+    handle.addEventListener("pointerup", end)
+    handle.addEventListener("pointercancel", end)
+  }
+  // Dragging the intersection between a column divider and a row divider updates both CSS variables directly.
+  function resizeCorner(event: React.PointerEvent<HTMLElement>, col: number) {
+    if (event.button !== 0) return
+    event.preventDefault()
+    const host = paneHostRef.current
+    if (!host) return
+    const handle = event.currentTarget
+    handle.setPointerCapture(event.pointerId)
+    const cols = [...host.querySelectorAll<HTMLElement>(":scope > [data-pane-col]")]
+    const left = cols[col]?.getBoundingClientRect()
+    const right = cols[col + 1]?.getBoundingClientRect()
+    if (!left || !right) return
+    const startX = event.clientX
+    const weights = splitWeights.slice()
+    let liveWeights = weights
+    let liveRow = splitRow
+    const pair = weights[col]! + weights[col + 1]!
+    const span = left.width + right.width
+    splitDraggingRef.current = true
+    host.setAttribute("data-pane-resizing", "")
+    const move = (e: PointerEvent) => {
+      const leftWidth = Math.min(span - 240, Math.max(240, left.width + e.clientX - startX))
+      const next = weights.slice()
+      next[col] = pair * leftWidth / span
+      next[col + 1] = pair - next[col]!
+      liveWeights = next
+      const nextRow = Math.min(ROW_SPLIT.max, Math.max(ROW_SPLIT.min, rowSplitFor((e.clientY - left.top) / left.height, left.height)))
+      liveRow = nextRow
+      host.style.setProperty("--noa-col-tracks", next.map((w) => `minmax(0, ${w}fr)`).join(" "))
+      host.style.setProperty("--noa-pane-row", String(nextRow))
+      host.style.setProperty("--noa-pane-row-tracks", `minmax(0, ${nextRow * 100}%) minmax(0, 1fr)`)
+    }
+    const end = () => {
+      handle.removeEventListener("pointermove", move)
+      handle.removeEventListener("pointerup", end)
+      handle.removeEventListener("pointercancel", end)
+      splitDraggingRef.current = false
+      host.removeAttribute("data-pane-resizing")
+      setSplit((layout) => ({ ...layout, weights: liveWeights, rowSplit: liveRow }))
+      if (primaryPaneRef.current) setPrimaryPaneWidth(primaryPaneRef.current.offsetWidth)
+    }
+    handle.addEventListener("pointermove", move)
+    handle.addEventListener("pointerup", end)
+    handle.addEventListener("pointercancel", end)
   }
 
   const footerRef = useRef<HTMLDivElement>(null)
@@ -1005,7 +1383,11 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
               loadedProjects={loadedProjects}
               active={{ cwd: session.cwd, id: customizeOpen ? undefined : activeId }}
               onNewSession={(dir) => { setPage(undefined); newSession(dir) }}
-              onSelect={(dir, id) => { setPage(undefined); selectSession(dir, id) }}
+              onSelect={(dir, id) => { setPage(undefined); showTask(dir, id) }}
+              openTasks={openTaskKeys}
+              onTaskDrag={onTaskDrag}
+              onOpenInSplit={(dir, id) => { setPage(undefined); openInSplit(dir, id) }}
+              splitMenuFor={splitMenuFor}
               onAddProject={() => {
                 setEditingProject(undefined)
                 setAddingProject(true)
@@ -1040,8 +1422,8 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
         className={`noa-content-surface ${moving ? "" : "transition-[left,border-radius,border-left-color] duration-500 ease-in-out"}`}
         style={{ left: sidebarWidth }}
       />
-      {/* One titlebar rule across both columns; shown only while the right panel is open. */}
-      {rightOpen && !customizeOpen && (
+      {/* One titlebar rule across both columns; shown only while the outer right panel is open in single-pane mode. */}
+      {outerRightOpen && !customizeOpen && (
         <div
           aria-hidden="true"
           data-titlebar-divider
@@ -1049,7 +1431,7 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
           style={{ top: 43.5, left: !isNewTask ? sidebarWidth : `calc(100% - ${rightWidth}px)`, right: 0 }}
         />
       )}
-      {rightOpen && !customizeOpen && (
+      {outerRightOpen && !customizeOpen && (
         <ResizeHandle
           label="Resize right panel"
           grow={-1}
@@ -1074,58 +1456,60 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
           style={{ left: sidebarWidth - 4 }}
         />
       )}
-      {/* The right column runs the full height too, so its cards start at the top edge. */}
+      {/* The right column runs the full height too, so its cards start at the top edge. In split view each pane renders its own right panel instead. */}
       <div
         data-right-panel-container
-        data-flush={rightOpen ? undefined : true}
-        inert={!rightOpen || customizeOpen ? true : undefined}
-        className={`noa-right-surface absolute inset-y-0 right-0 z-30 overflow-hidden bg-[var(--surface-page,#F9F9F7)] ${customizeOpen ? "hidden" : ""} ${animate}`}
+        data-flush={outerRightOpen ? undefined : true}
+        inert={!outerRightOpen || customizeOpen ? true : undefined}
+        className={`noa-right-surface absolute inset-y-0 right-0 z-30 overflow-hidden bg-[var(--surface-page,#F9F9F7)] ${customizeOpen || splitActive ? "hidden" : ""} ${animate}`}
         // No-drag and above the titlebar, so the tab row can sit level with the panel toggle.
         style={
           {
             width: rightWidth,
-            "--noa-edge-fade": rightOpen ? "0px" : "28px",
+            "--noa-edge-fade": outerRightOpen ? "0px" : "28px",
             WebkitAppRegion: "no-drag",
           } as React.CSSProperties
         }
       >
         <div
           className="noa-edge-fade-left absolute inset-y-0 right-0 h-full transition-opacity duration-500 ease-in-out"
-          style={{ width: rightTarget, opacity: rightOpen ? 1 : 0 }}
+          style={{ width: rightTarget, opacity: outerRightOpen ? 1 : 0 }}
         >
-          <HoldWhileResizing held={moving}>
-            <RightPanel
-              shortcuts={settings.shortcuts}
-              state={state}
-              onStopTask={stopTask}
-              cwd={session.cwd}
-              open={rightOpen}
-              tabs={rightTabs}
-              onTabs={setRightTabs}
-              newTab={rightNewTab}
-              onNewTab={setRightNewTab}
-              tab={rightTab}
-              onTab={setRightTab}
-              terminalFocusKey={rightTerminalFocus}
-              onBottomTerminal={showBottomTerminal}
-              onReference={(path) => setReference({ path, key: Date.now() })}
-              onWorkspaceChange={() => setRefreshTick((n) => n + 1)}
-              workspaceRefreshKey={refreshTick}
-              focusChange={focusChange}
-              focusFile={focusFile}
-              focusTask={focusTask}
-              turnDiff={turnDiff}
-              sessions={sessionsByProject[worktreeOf ?? session.cwd] ?? []}
-              activeSessionId={activeId}
-              sideChat={{ key: sideChatKey, ready: sideChatReady, draftKey: session.runtimeId, request, focusKey: sideChatFocus }}
-              onRemindThread={coordinatorId ? remindThread : undefined}
-              onResolveThread={coordinatorId ? resolveThread : undefined}
-              onSelectSession={(id) => inCoordinator ? openThread(id) : selectSession(sessionsByProject[worktreeOf ?? session.cwd]?.find((s) => s.id === id)?.cwd ?? worktreeOf ?? session.cwd, id)}
-              thread={paneThread}
-              onOpenThreadFull={() => paneThread && selectSession(paneThread.cwd, paneThread.id)}
-              onCloseThread={() => setThreadPaneId(undefined)}
-            />
-          </HoldWhileResizing>
+          {!splitActive && (
+            <HoldWhileResizing held={moving}>
+              <RightPanel
+                shortcuts={settings.shortcuts}
+                state={state}
+                onStopTask={stopTask}
+                cwd={session.cwd}
+                open={outerRightOpen}
+                tabs={rightTabs}
+                onTabs={setRightTabs}
+                newTab={rightNewTab}
+                onNewTab={setRightNewTab}
+                tab={rightTab}
+                onTab={setRightTab}
+                terminalFocusKey={rightTerminalFocus}
+                onBottomTerminal={showBottomTerminal}
+                onReference={(path) => setReference({ path, key: Date.now() })}
+                onWorkspaceChange={() => setRefreshTick((n) => n + 1)}
+                workspaceRefreshKey={refreshTick}
+                focusChange={focusChange}
+                focusFile={focusFile}
+                focusTask={focusTask}
+                turnDiff={turnDiff}
+                sessions={sessionsByProject[worktreeOf ?? session.cwd] ?? []}
+                activeSessionId={activeId}
+                sideChat={{ key: sideChatKey, ready: sideChatReady, draftKey: session.runtimeId, request, focusKey: sideChatFocus }}
+                onRemindThread={coordinatorId ? remindThread : undefined}
+                onResolveThread={coordinatorId ? resolveThread : undefined}
+                onSelectSession={(id) => inCoordinator ? openThread(id) : selectSession(sessionsByProject[worktreeOf ?? session.cwd]?.find((s) => s.id === id)?.cwd ?? worktreeOf ?? session.cwd, id)}
+                thread={paneThread}
+                onOpenThreadFull={() => paneThread && selectSession(paneThread.cwd, paneThread.id)}
+                onCloseThread={() => setThreadPaneId(undefined)}
+              />
+            </HoldWhileResizing>
+          )}
         </div>
       </div>
 
@@ -1139,7 +1523,7 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
         canForward={!!history && history.index < history.entries.length - 1}
         onBack={() => goHistory(-1)}
         onForward={() => goHistory(1)}
-        center={customizeOpen ? undefined : (
+        center={customizeOpen || splitActive ? undefined : (
           <SessionTitle
             key={activeId ?? session.key}
             title={title}
@@ -1161,8 +1545,8 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
           />
         )}
       />
-      {/* The column toggle is fixed to the window's top-right corner, above the column in either state. */}
-      {!customizeOpen && (
+      {/* In single-pane mode the toggles sit at the window's top-right corner; in split view each pane owns its own controls. */}
+      {!customizeOpen && !splitActive && (
         <div
           className="absolute right-[15px] top-[10px] z-40"
           style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
@@ -1188,12 +1572,114 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
         <div
           ref={chatColumnRef}
           inert={customizeOpen ? true : undefined}
-          className={`relative z-0 flex min-w-0 flex-1 flex-col ${customizeOpen ? "invisible" : ""} ${moving ? "" : "transition-[margin-left,margin-right] duration-500 ease-in-out"}`}
+          // Split panes in the top row rise into the titlebar band, so the column stacks above the titlebar then.
+          className={`relative ${splitActive ? "z-[21]" : "z-0"} flex min-w-0 flex-1 flex-col ${customizeOpen ? "invisible" : ""} ${moving ? "" : "transition-[margin-left,margin-right] duration-500 ease-in-out"}`}
           style={{ marginLeft: sidebarWidth, marginRight: rightWidth }}
         >
+          {/* Split view: CSS Grid pane host spanning full height including the titlebar band. */}
+          <div
+            ref={paneHostRef}
+            data-pane-host=""
+            data-split={splitActive ? "" : undefined}
+            data-cmd-held={cmdHeld ? "" : undefined}
+            data-pane-dragging={paneDrag ? "" : undefined}
+            className="pointer-events-none relative -mt-11 grid min-h-0 flex-1"
+          >
+          {/* Primary pane (column 0, row 0) */}
+          <div
+            ref={primaryPaneRef}
+            role="region"
+            aria-label={title ?? "Primary pane"}
+            aria-current={splitActive && focusedIndex === 0 ? "true" : undefined}
+            data-pane=""
+            data-pane-index={0}
+            data-focused={focusedIndex === 0 ? "" : undefined}
+            className="relative flex min-h-0 min-w-0"
+            style={{ gridColumn: 1, gridRow: splitStacked(0) ? 1 : "1 / -1" }}
+            onPointerDownCapture={() => focusPane(0)}
+            onFocusCapture={() => focusPane(0)}
+            onPointerDown={(event) => onPaneModifierDrag(event, 0, title ?? "Task")}
+          >
+          {splitActive && (
+            <button
+              type="button"
+              aria-hidden="true"
+              tabIndex={-1}
+              title="Drag to move pane"
+              className="noa-pane-grip pointer-events-auto"
+              style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
+              onPointerDown={(event) => startPaneDrag(event, 0, title ?? "Task")}
+              onMouseDown={(e) => e.preventDefault()}
+            />
+          )}
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+          {splitActive ? (
+            <div
+              className="pointer-events-none relative flex h-11 shrink-0 items-center gap-1 pr-2"
+              style={{ paddingLeft: sidebarOpen ? 12 : 164 }}
+            >
+              <div className="flex min-w-0 flex-1 items-center">
+                <div className="pointer-events-auto flex min-w-0 max-w-full items-center" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
+                  <SessionTitle
+                    key={activeId ?? session.key}
+                    title={title}
+                    actions={activeId && <SessionActions
+                      disabled={forkBlocked}
+                      transcriptView={transcriptView}
+                      onTranscriptViewChange={(transcriptView) => setSessionTranscriptViews(prev => ({ ...prev, [activeId]: transcriptView }))}
+                      onFork={forkSession}
+                      resolve={activeThread && !activeThread.status && !state.busy ? { resolved: !!activeThread.resolvedAt, onSelect: () => void resolveThread(activeThread.id, !activeThread.resolvedAt) } : undefined} />}
+                    onRename={
+                      activeId && !state.busy
+                        ? async (name) => {
+                            expectSessionUpdate(session.cwd, activeId)
+                            const updated = await renameSession(session.cwd, activeId, name)
+                            setSessionsByProject((all) => ({ ...all, [session.cwd]: updated }))
+                          }
+                        : undefined
+                    }
+                  />
+                </div>
+              </div>
+              <div
+                className="noa-pane-actions pointer-events-auto flex shrink-0 items-center gap-0.5"
+                style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
+              >
+                <button
+                  type="button"
+                  onClick={toggleOverview}
+                  className="flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-[var(--icon-ink,#52514E)] transition-colors hover:bg-[var(--fill-hover)] hover:text-[var(--text-primary,#2D2D2B)] aria-pressed:bg-[var(--fill-active)]"
+                  title="Overview"
+                  aria-label="Overview"
+                  data-overview-toggle=""
+                  aria-pressed={overviewVisible}
+                >
+                  <ListDetails size={16} />
+                </button>
+                {!rightOpen && (
+                  <>
+                    {panelToggle}
+                    <button
+                      type="button"
+                      onClick={closePrimary}
+                      className="flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-[var(--icon-ink,#52514E)] transition-colors hover:bg-[var(--fill-hover)] hover:text-[var(--text-primary,#2D2D2B)]"
+                      title="Close pane"
+                      aria-label="Close pane"
+                    >
+                      <X size={15} />
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div aria-hidden="true" className="h-11 shrink-0" />
+          )}
+          <div className="relative flex min-h-0 flex-1 flex-col" style={splitActive ? { minWidth: PANE_CHAT_OVERFLOW_MIN } : undefined}>
           {/* The conversation and its floating composer sit above the terminal panel. */}
           <div
-            className="relative flex min-h-0 flex-1 flex-col"
+            ref={primaryCellRef}
+            className="pointer-events-auto relative flex min-h-0 flex-1 flex-col"
             onDragEnter={(event) => {
               if (event.dataTransfer.types.includes("Files")) setDraggingFiles(true)
             }}
@@ -1414,18 +1900,211 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
               onStopTask={stopTask}
             />
           </div>
-          <TerminalPanel
-            cwd={session.cwd}
-            open={terminalOpen}
-            height={terminalHeight}
-            available={chatHeight}
-            styleKey={JSON.stringify(settings.appearance)}
-            focusKey={terminalFocus}
-            onHeight={setTerminalHeight}
-            onHide={() => setTerminalOpen(false)}
-            onDraggingChange={setResizing}
-            onMovedToRight={() => { setRightOpen(true); setRightTab("terminal"); setRightTerminalFocus(n => n + 1) }}
-          />
+          <div className="pointer-events-auto">
+            <TerminalPanel
+              cwd={session.cwd}
+              open={terminalOpen}
+              height={terminalHeight}
+              available={chatHeight}
+              styleKey={JSON.stringify(settings.appearance)}
+              focusKey={terminalFocus}
+              onHeight={setTerminalHeight}
+              onHide={() => setTerminalOpen(false)}
+              onDraggingChange={setResizing}
+              onMovedToRight={() => { setRightOpen(true); setRightTab("terminal"); setRightTerminalFocus(n => n + 1) }}
+            />
+          </div>
+          </div>
+          </div>
+          {/* Primary pane's own inline right sidebar while split view is active (kept mounted after first open). */}
+          {splitActive && primaryInlineRightMounted && (
+            <div
+              data-pane-right-panel=""
+              inert={!rightOpen ? true : undefined}
+              className={`pointer-events-auto relative z-20 flex h-full min-h-0 shrink-0 flex-col border-l-[0.5px] border-[var(--divider-subtle,#E6E2DA)] bg-[var(--surface-page,#F9F9F7)] ${rightOpen ? "" : "hidden"}`}
+              style={{
+                width: `${(primarySideRatio * 100).toFixed(2)}%`,
+                minWidth: PANE_RIGHT_MIN,
+                maxWidth: `calc(100% - ${PANE_LEFT_PEEK_MIN}px)`,
+                WebkitAppRegion: "no-drag",
+              } as React.CSSProperties}
+            >
+              <ResizeHandle
+                label="Resize pane right panel"
+                grow={-1}
+                width={primaryInlineRightWidth}
+                defaultWidth={primaryRightMetrics.defaultWidth}
+                onResize={(nextWidth) => {
+                  if (!primaryPaneWidth) return
+                  const clamped = Math.max(primaryRightMetrics.min, Math.min(primaryRightMetrics.max, nextWidth))
+                  setPrimarySideRatio(clamped / primaryPaneWidth)
+                }}
+                onDraggingChange={setResizing}
+                style={{ top: 44, left: -4, zIndex: 30 }}
+              />
+              <HoldWhileResizing held={moving}>
+                <RightPanel
+                  shortcuts={settings.shortcuts}
+                  state={state}
+                  onStopTask={stopTask}
+                  cwd={session.cwd}
+                  open={rightOpen}
+                  tabs={rightTabs}
+                  onTabs={setRightTabs}
+                  newTab={rightNewTab}
+                  onNewTab={setRightNewTab}
+                  tab={rightTab}
+                  onTab={setRightTab}
+                  terminalFocusKey={rightTerminalFocus}
+                  onBottomTerminal={showBottomTerminal}
+                  onReference={(path) => setReference({ path, key: Date.now() })}
+                  onWorkspaceChange={() => setRefreshTick((n) => n + 1)}
+                  workspaceRefreshKey={refreshTick}
+                  focusChange={focusChange}
+                  focusFile={focusFile}
+                  focusTask={focusTask}
+                  turnDiff={turnDiff}
+                  sessions={sessionsByProject[worktreeOf ?? session.cwd] ?? []}
+                  activeSessionId={activeId}
+                  sideChat={{ key: sideChatKey, ready: sideChatReady, draftKey: session.runtimeId, request, focusKey: sideChatFocus }}
+                  onRemindThread={coordinatorId ? remindThread : undefined}
+                  onResolveThread={coordinatorId ? resolveThread : undefined}
+                  onSelectSession={(id) => inCoordinator ? openThread(id) : selectSession(sessionsByProject[worktreeOf ?? session.cwd]?.find((s) => s.id === id)?.cwd ?? worktreeOf ?? session.cwd, id)}
+                  thread={paneThread}
+                  onOpenThreadFull={() => paneThread && selectSession(paneThread.cwd, paneThread.id)}
+                  onCloseThread={() => setThreadPaneId(undefined)}
+                  headerActions={
+                    <div
+                      className="noa-pane-actions ml-1 flex shrink-0 items-center gap-0.5"
+                      style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
+                    >
+                      {panelToggle}
+                      <button
+                        type="button"
+                        onClick={closePrimary}
+                        className="flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-[var(--icon-ink,#52514E)] transition-colors hover:bg-[var(--fill-hover)] hover:text-[var(--text-primary,#2D2D2B)]"
+                        title="Close pane"
+                        aria-label="Close pane"
+                      >
+                        <X size={15} />
+                      </button>
+                    </div>
+                  }
+                />
+              </HoldWhileResizing>
+            </div>
+          )}
+          </div>
+          {/* Secondary split panes placed directly onto the CSS Grid. */}
+          {shownSplit.panes.map((pane, idx) => {
+            const paneIndex = idx + 1
+            const task = { cwd: pane.cwd, id: pane.id }
+            const paneTitle = sessionTitles(task)
+            const stacked = splitStacked(pane.pos.col)
+            const isFocused = focusedIndex === paneIndex
+            return (
+              <div
+                key={`${pane.cwd}\0${pane.id}`}
+                role="region"
+                aria-label={paneTitle ?? "Secondary pane"}
+                aria-current={isFocused ? "true" : undefined}
+                data-pane=""
+                data-pane-index={paneIndex}
+                data-focused={isFocused ? "" : undefined}
+                className={`pointer-events-auto relative flex min-h-0 min-w-0 flex-col ${pane.pos.row === 1 ? "border-t-[0.5px] border-[var(--divider-subtle,#E6E2DA)]" : ""}`}
+                style={{
+                  gridColumn: pane.pos.col + 1,
+                  gridRow: stacked ? pane.pos.row + 1 : "1 / -1",
+                }}
+                onPointerDownCapture={() => focusPane(paneIndex)}
+                onFocusCapture={() => focusPane(paneIndex)}
+                onPointerDown={(event) => onPaneModifierDrag(event, paneIndex, paneTitle ?? "Task")}
+              >
+                <SplitPane
+                  cwd={pane.cwd}
+                  id={pane.id}
+                  title={paneTitle}
+                  titlebar={pane.pos.row === 0}
+                  focused={isFocused}
+                  settings={settings}
+                  projects={projects}
+                  sessions={sessionsByProject[pane.cwd] ?? []}
+                  onSelectSession={(targetId) => showTask(pane.cwd, targetId)}
+                  onRename={(name) => renameTask(pane.cwd, pane.id, name)}
+                  onClose={() => setSplit((layout) => removePane(layout, task))}
+                  onGripPointerDown={(event) => startPaneDrag(event, paneIndex, paneTitle ?? "Task")}
+                />
+              </div>
+            )
+          })}
+          {/* Column overlay tracks: dividers, vertical sashes, horizontal sashes, and corner resize handles. */}
+          {Array.from({ length: splitColumns }, (_, col) => {
+            const stacked = splitStacked(col)
+            const hasCorner = col < splitColumns - 1 && (stacked || splitStacked(col + 1))
+            return (
+              <div
+                key={col}
+                data-pane-col=""
+                className={`pointer-events-none relative min-w-0 ${col > 0 ? "border-l-[0.5px] border-[var(--divider-subtle,#E6E2DA)]" : ""}`}
+                style={{ gridColumn: col + 1, gridRow: "1 / -1" }}
+              >
+                {col > 0 && (
+                  <div
+                    role="separator"
+                    aria-orientation="vertical"
+                    aria-label="Resize split columns"
+                    className="noa-pane-resize-col"
+                    style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
+                    onPointerDown={(event) => resizeColumns(event, col)}
+                    onDoubleClick={() => setSplit((layout) => ({ ...layout, weights: Array.from({ length: splitColumns }, () => 1) }))}
+                  />
+                )}
+                {stacked && (
+                  <div
+                    role="separator"
+                    aria-orientation="horizontal"
+                    aria-label="Resize split rows"
+                    className="noa-pane-resize-row"
+                    style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
+                    onPointerDown={(event) => resizeRows(event)}
+                    onDoubleClick={() => setSplit((layout) => ({ ...layout, rowSplit: ROW_SPLIT.default }))}
+                  />
+                )}
+                {hasCorner && (
+                  <div
+                    role="separator"
+                    aria-label="Resize split grid intersection"
+                    className="noa-pane-resize-corner"
+                    style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
+                    onPointerDown={(event) => resizeCorner(event, col)}
+                    onDoubleClick={() =>
+                      setSplit((layout) => ({
+                        ...layout,
+                        weights: Array.from({ length: splitColumns }, () => 1),
+                        rowSplit: ROW_SPLIT.default,
+                      }))
+                    }
+                  />
+                )}
+              </div>
+            )
+          })}
+          {(splitHover ?? paneDrag?.hover) && (
+            <div aria-hidden="true" className="noa-split-drop" style={(splitHover ?? paneDrag?.hover)!.rect}>
+              <span className="noa-split-drop-label">{(splitHover ?? paneDrag?.hover)!.label}</span>
+            </div>
+          )}
+          </div>
+          {paneDrag && createPortal(
+            <div
+              aria-hidden="true"
+              className="noa-drag-overlay pointer-events-none fixed z-[100] flex h-[30px] max-w-60 -translate-x-1/2 -translate-y-1/2 items-center overflow-hidden rounded-lg px-3 font-ui text-body"
+              style={{ left: paneDrag.left, top: paneDrag.top }}
+            >
+              <span className="min-w-0 truncate">{paneDrag.label}</span>
+            </div>,
+            document.body,
+          )}
         </div>
       </div>
 

@@ -134,6 +134,15 @@ interface SidebarProps {
   customizeOpen?: boolean
   onSchedule: () => void
   scheduleOpen?: boolean
+  // Tasks open in split-view panes, keyed `${cwd}\0${id}`; they show as active too.
+  openTasks?: ReadonlySet<string>
+  // A task dragged out of the sidebar over the split-view panes. Returns true while the pointer is over a pane
+  // target (on "move") or when the drop opened the task (on "end").
+  onTaskDrag?: (phase: "move" | "end" | "cancel", x: number, y: number, task: { cwd: string; id: string }) => boolean
+  // Opens a task in split view (Alt+Click or context menu).
+  onOpenInSplit?: (cwd: string, id: string) => void
+  // Split-view menu actions for a task that is already open in a split pane.
+  splitMenuFor?: (cwd: string, id: string) => { moves: { label: string; onSelect: () => void }[]; onClose: () => void } | undefined
 }
 
 // Noa's sidebar: search, a Projects toolbar, then one collapsible group per project folder.
@@ -161,6 +170,10 @@ export function Sidebar({
   customizeOpen = false,
   onSchedule,
   scheduleOpen = false,
+  openTasks,
+  onTaskDrag,
+  onOpenInSplit,
+  splitMenuFor,
 }: SidebarProps) {
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set())
   const [unfolded, setUnfolded] = useState<ReadonlySet<string>>(new Set())
@@ -235,6 +248,8 @@ export function Sidebar({
       .sort((a, b) => b.session[key] - a.session[key])
   }, [projects, sessions, recentsProject, recentsPrefs.sort, prefs.pinned])
 
+  const isActive = (cwd: string, id: string) => (active.cwd === cwd && id === active.id) || !!openTasks?.has(`${cwd}\0${id}`)
+
   // Drop the global drag cursor if the sidebar unmounts mid-drag.
   useEffect(() => () => document.body.classList.remove("noa-session-dragging"), [])
 
@@ -261,12 +276,15 @@ export function Sidebar({
   // The task menu's actions, the same wherever the task is listed. A working task can't be renamed or forked yet.
   function taskActions(project: ProjectInfo, session: SessionSummary) {
     const cwd = session.cwd ?? project.path
+    const splitMenu = splitMenuFor?.(cwd, session.id)
     return {
       onTogglePin: () => togglePin(project.path, session.id),
       onDelete: () => onDeleteSession(cwd, session.id, session.title),
       onRename: session.status ? undefined : (title: string) => onRenameSession(cwd, session.id, title),
       onFork: session.status ? undefined : () => onForkSession(cwd, session.id),
       onOpenIn: (target: string) => onOpenSessionIn(cwd, target),
+      onOpenInSplit: !splitMenu && onOpenInSplit ? () => onOpenInSplit(cwd, session.id) : undefined,
+      splitMenu,
     }
   }
 
@@ -336,12 +354,13 @@ export function Sidebar({
   }
 
   // 4px of travel before a press becomes a drag, so click-to-open stays reliable.
-  function startDrag(event: PointerEvent<HTMLElement>, kind: DragKind, path: string, id: string, label: string) {
+  function startDrag(event: PointerEvent<HTMLElement>, kind: DragKind, path: string, id: string, label: string, cwd = path) {
     if (event.button !== 0 || (event.target as HTMLElement).closest("[data-session-action]")) return
     const rect = event.currentTarget.getBoundingClientRect()
     dragRef.current = {
       kind,
       path,
+      cwd,
       id,
       label,
       x: event.clientX,
@@ -370,6 +389,8 @@ export function Sidebar({
   }
 
   function findDropTarget(start: DragStart, x: number, y: number) {
+    // Unpinned tasks keep the server's order; they drag only into split view.
+    if (start.kind === "task") return undefined
     if (start.kind === "project") {
       const container = document.querySelector<HTMLElement>("[data-project-list]") ?? undefined
       const groups = container ? [...container.querySelectorAll<HTMLElement>("[data-project-group]")] : []
@@ -400,7 +421,8 @@ export function Sidebar({
       left: event.clientX - start.offsetX,
       top: event.clientY - start.offsetY,
     })
-    setDropTarget(findDropTarget(start, event.clientX, event.clientY))
+    if (start.kind !== "project" && onTaskDrag?.("move", event.clientX, event.clientY, { cwd: start.cwd, id: start.id })) setDropTarget(undefined)
+    else setDropTarget(findDropTarget(start, event.clientX, event.clientY))
   }
 
   function endDrag(event: PointerEvent<HTMLElement>) {
@@ -419,21 +441,39 @@ export function Sidebar({
     const target = dropTarget
     setDragging(undefined)
     setDropTarget(undefined)
+    if (start.kind !== "project" && onTaskDrag?.("end", event.clientX, event.clientY, { cwd: start.cwd, id: start.id })) return
     if (!target || target.kind !== start.kind) return
     if (start.kind === "project") reorderProject(start.id, target.id, target.edge)
     else reorder(start.id, target.id, target.edge)
   }
 
   function cancelDrag() {
+    const start = dragRef.current
+    if (start?.moved && start.kind !== "project") onTaskDrag?.("cancel", 0, 0, { cwd: start.cwd, id: start.id })
     dragRef.current = undefined
     document.body.classList.remove("noa-session-dragging")
     setDragging(undefined)
     setDropTarget(undefined)
   }
 
-  function selectSession(path: string, id: string) {
+  // Any task row drags into split view.
+  function taskDrag(path: string, session: SessionSummary) {
+    return {
+      dragging: dragging?.kind === "task" && dragging.id === session.id,
+      onPointerDown: (event: PointerEvent<HTMLElement>) => startDrag(event, "task", path, session.id, session.title, session.cwd ?? path),
+      onPointerMove: moveDrag,
+      onPointerUp: endDrag,
+      onPointerCancel: cancelDrag,
+    }
+  }
+
+  function selectSession(path: string, id: string, altKey = false) {
     if (suppressClickRef.current) {
       suppressClickRef.current = false
+      return
+    }
+    if (altKey && onOpenInSplit) {
+      onOpenInSplit(path, id)
       return
     }
     onSelect(path, id)
@@ -536,14 +576,14 @@ export function Sidebar({
                   projectName={project.name}
                   worktree={worktreeName(session, project)}
                   status={session.status}
-                  active={active.cwd === (session.cwd ?? project.path) && session.id === active.id}
+                  active={isActive(session.cwd ?? project.path, session.id)}
                   pinned
                   dragging={dragging?.kind === "session" && dragging.id === session.id}
                   dropEdge={dropTarget?.kind === "session" && dropTarget.id === session.id ? dropTarget.edge : undefined}
-                  onClick={() => selectSession(session.cwd ?? project.path, session.id)}
+                  onClick={(event) => selectSession(session.cwd ?? project.path, session.id, event.altKey)}
                   {...taskActions(project, session)}
                   onMove={direction => moveBy(session.id, direction)}
-                  onPointerDown={event => startDrag(event, "session", project.path, session.id, session.title)}
+                  onPointerDown={event => startDrag(event, "session", project.path, session.id, session.title, session.cwd ?? project.path)}
                   onPointerMove={moveDrag}
                   onPointerUp={endDrag}
                   onPointerCancel={cancelDrag}
@@ -625,10 +665,11 @@ export function Sidebar({
                           worktree={worktreeName(session, project)}
                           // Hidden forks that are working or waiting still show on the task they sit under.
                           status={session.status ?? (forksHidden[session.id] ? forks.find((fork) => fork.status)?.status : undefined)}
-                          active={active.cwd === (session.cwd ?? project.path) && session.id === active.id}
+                          active={isActive(session.cwd ?? project.path, session.id)}
                           indent
                           pinned={isPinned(project.path, session.id)}
-                          onClick={() => selectSession(session.cwd ?? project.path, session.id)}
+                          {...taskDrag(project.path, session)}
+                          onClick={(event) => selectSession(session.cwd ?? project.path, session.id, event.altKey)}
                           {...taskActions(project, session)}
                           forks={forks.length ? { open: !forksHidden[session.id], onToggle: () => toggleForks(project.path, session.id) } : undefined}
                         />
@@ -645,11 +686,12 @@ export function Sidebar({
                                   projectName={project.name}
                                   worktree={worktreeName(fork, project)}
                                   status={fork.status}
-                                  active={active.cwd === (fork.cwd ?? project.path) && fork.id === active.id}
+                                  active={isActive(fork.cwd ?? project.path, fork.id)}
                                   indent
                                   nested
                                   pinned={false}
-                                  onClick={() => selectSession(fork.cwd ?? project.path, fork.id)}
+                                  {...taskDrag(project.path, fork)}
+                                  onClick={(event) => selectSession(fork.cwd ?? project.path, fork.id, event.altKey)}
                                   {...taskActions(project, fork)}
                                 />
                               ))}
@@ -782,9 +824,10 @@ export function Sidebar({
                       projectName={project.name}
                       worktree={worktreeName(session, project)}
                       status={session.status}
-                      active={active.cwd === (session.cwd ?? project.path) && session.id === active.id}
+                      active={isActive(session.cwd ?? project.path, session.id)}
                       pinned={isPinned(project.path, session.id)}
-                      onClick={() => selectSession(session.cwd ?? project.path, session.id)}
+                      {...taskDrag(project.path, session)}
+                      onClick={(event) => selectSession(session.cwd ?? project.path, session.id, event.altKey)}
                       {...taskActions(project, session)}
                     />
                   ))}
@@ -851,8 +894,9 @@ function IconButton({
   )
 }
 
-type DragKind = "session" | "project"
-type DragStart = { kind: DragKind; path: string; id: string; label: string; x: number; y: number; offsetX: number; offsetY: number; moved: boolean }
+// "session" is a pinned task (reorderable), "task" any other task (split view only).
+type DragKind = "session" | "project" | "task"
+type DragStart = { kind: DragKind; path: string; cwd: string; id: string; label: string; x: number; y: number; offsetX: number; offsetY: number; moved: boolean }
 type DragState = { kind: DragKind; path: string; id: string; label: string; left: number; top: number }
 
 // The drop indicator: a 2px accent rule with a hollow ring at its start, on the edge being dropped onto.
@@ -1034,6 +1078,8 @@ function SessionRow({
   onRename,
   onFork,
   onOpenIn,
+  onOpenInSplit,
+  splitMenu,
   onMove,
   onPointerDown,
   onPointerMove,
@@ -1057,13 +1103,15 @@ function SessionRow({
   pinned: boolean
   dragging?: boolean
   dropEdge?: "before" | "after"
-  onClick?: () => void
+  onClick?: (event: { altKey?: boolean }) => void
   onTogglePin?: () => void
   onDelete?: () => void
   // Unset while the task can't be renamed or forked.
   onRename?: (title: string) => Promise<void>
   onFork?: () => void
   onOpenIn?: (target: string) => void
+  onOpenInSplit?: () => void
+  splitMenu?: { moves: { label: string; onSelect: () => void }[]; onClose: () => void }
   onMove?: (direction: -1 | 1) => void
   onPointerDown?: (event: PointerEvent<HTMLElement>) => void
   onPointerMove?: (event: PointerEvent<HTMLElement>) => void
@@ -1079,7 +1127,7 @@ function SessionRow({
     }
     if (onClick && e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) {
       e.preventDefault()
-      onClick()
+      onClick({ altKey: e.altKey })
     }
   }
   const hoverCard = useSessionHoverCard({ title, updatedAt, project: projectName, worktree }, !dragging)
@@ -1208,6 +1256,12 @@ function SessionRow({
                   { key: "finder", label: revealLabel, onSelect: () => onOpenIn("finder") },
                 ],
               },
+              { kind: "separator" as const },
+            ] : []),
+            ...(onOpenInSplit ? [{ label: "Open in split view", onSelect: onOpenInSplit }, { kind: "separator" as const }] : []),
+            ...(splitMenu ? [
+              ...(splitMenu.moves.length > 0 ? [{ label: "Move", submenu: splitMenu.moves }] : []),
+              { label: "Close pane", onSelect: splitMenu.onClose },
               { kind: "separator" as const },
             ] : []),
             { label: pinned ? "Unpin" : "Pin", shortcut: "p", onSelect: onTogglePin },
