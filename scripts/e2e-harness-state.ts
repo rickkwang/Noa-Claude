@@ -262,22 +262,37 @@ try {
   await maintenance('text-pipe-timeout-and-live-writer', async () => {
     if (process.platform === 'win32') return
     const fifo = join(artifacts, 'input.txt')
+    const idleFifo = join(artifacts, 'idle-writer.txt')
     execFileSync('mkfifo', [fifo])
+    execFileSync('mkfifo', [idleFifo])
     const source = resolve(import.meta.dir, '../src/utils/readFileInRange.ts')
     const output = execFileSync('bun', ['-e', `
       import assert from 'node:assert/strict';
-      import { writeFile } from 'node:fs/promises';
+      import { open, writeFile } from 'node:fs/promises';
       const { readFileInRange } = await import(${JSON.stringify(source)});
       const fifo = ${JSON.stringify(fifo)};
       await assert.rejects(readFileInRange(fifo, 0, 1, 1024, AbortSignal.timeout(150)), { name: 'AbortError' });
       const liveRead = readFileInRange(fifo, 0, 1, 1024, AbortSignal.timeout(3000));
       const [result] = await Promise.all([liveRead, writeFile(fifo, 'FIFO_PAYLOAD\\n')]);
       assert.equal(result.content, 'FIFO_PAYLOAD');
+      // A writer that connects but stays silent past the writer wait (e.g. behind an unlock prompt) is still read.
+      const idleWriter = (async () => {
+        await new Promise(r => setTimeout(r, 200));
+        const handle = await open(${JSON.stringify(idleFifo)}, 'w');
+        await new Promise(r => setTimeout(r, 21_000));
+        await handle.writeFile('LATE_PAYLOAD\\n');
+        await handle.close();
+      })();
       const start = performance.now();
-      await assert.rejects(readFileInRange(fifo, 0, 1, 1024), /Timed out waiting for data from the named pipe/);
+      const [, late] = await Promise.all([
+        assert.rejects(readFileInRange(fifo, 0, 1, 1024), /Timed out waiting for data from the named pipe/),
+        readFileInRange(${JSON.stringify(idleFifo)}, 0, 1, 1024),
+        idleWriter,
+      ]);
       assert.ok(performance.now() - start >= 20_000);
+      assert.equal(late.content, 'LATE_PAYLOAD');
       console.log('FIFO_TIMEOUT_AND_LIVE_WRITER_OK');
-    `], { encoding: 'utf8', timeout: 25_000 })
+    `], { encoding: 'utf8', timeout: 30_000 })
     assert.match(output, /FIFO_TIMEOUT_AND_LIVE_WRITER_OK/)
   })
   await maintenance('transcript-torn-tail-sync-and-async', async () => {

@@ -356,8 +356,10 @@ function readFileInRangeStreaming(
   signal?: AbortSignal,
 ): Promise<ReadFileRangeResult> {
   return new Promise((resolve, reject) => {
+    // Only the wait for a writer is bounded: a connected writer may wait for
+    // the user (e.g. an unlock prompt) before sending, so abort ends that wait.
     let sawWriter = false
-    let pipeDeadline = performance.now() + 20_000
+    const writerDeadline = performance.now() + 20_000
     const state: StreamState = {
       stream: createReadStream(filePath, {
         // A blocking FIFO open cannot be interrupted by destroying the stream.
@@ -372,13 +374,10 @@ function readFileInRangeStreaming(
                 read(fd, buffer, offset, length, null, (error, bytesRead) => {
                   if (error?.code === 'EAGAIN') sawWriter = true
                   else if (error || bytesRead > 0 || sawWriter) {
-                    if (bytesRead > 0) {
-                      sawWriter = true
-                      pipeDeadline = performance.now() + 20_000
-                    }
+                    if (bytesRead > 0) sawWriter = true
                     return callback(error, bytesRead, buffer)
                   }
-                  if (performance.now() >= pipeDeadline) {
+                  if (!sawWriter && performance.now() >= writerDeadline) {
                     return callback(new Error('Timed out waiting for data from the named pipe. Check that the writer is running and unlocked.'))
                   }
                   setTimeout(poll, 25)
