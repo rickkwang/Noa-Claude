@@ -20,8 +20,11 @@ export function trackScrollActivity() {
     const onHorizontal = el.scrollWidth > el.clientWidth && event.clientY - rect.top >= el.clientTop + el.clientHeight
     draggingThumb = onVertical || onHorizontal
   }, true)
-  document.addEventListener("pointerup", () => { draggingThumb = false }, true)
-  document.addEventListener("pointercancel", () => { draggingThumb = false }, true)
+  const stopDrag = () => { draggingThumb = false }
+  document.addEventListener("pointerup", stopDrag, true)
+  document.addEventListener("pointercancel", stopDrag, true)
+  window.addEventListener("blur", stopDrag)
+  document.addEventListener("pointermove", (event) => { if (draggingThumb && event.buttons === 0) stopDrag() }, { capture: true, passive: true })
   // Scroll events do not bubble, so listen in the capture phase.
   document.addEventListener("scroll", (event) => {
     if (!draggingThumb && performance.now() - lastInput > INPUT_WINDOW_MS) return
