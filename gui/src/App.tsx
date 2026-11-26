@@ -613,16 +613,24 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
     const startY = event.clientY
     let moved = false
     let latestHover: PaneDragHover | undefined
+    // Pointer moves can outpace the screen; one state update per frame keeps the workspace from re-rendering per event.
+    let frame = 0
+    let pointer = { x: 0, y: 0 }
     const onMove = (e: PointerEvent) => {
       if (!moved) {
         if (Math.hypot(e.clientX - startX, e.clientY - startY) < 4) return
         moved = true
         document.body.classList.add("noa-session-dragging")
       }
-      latestHover = findPaneDragTarget(e.clientX, e.clientY, { ...shownSplit, rowSplit: splitRow }, paneIndex)
-      setPaneDrag({ paneIndex, label, left: e.clientX, top: e.clientY, hover: latestHover })
+      pointer = { x: e.clientX, y: e.clientY }
+      frame ||= requestAnimationFrame(() => {
+        frame = 0
+        latestHover = findPaneDragTarget(pointer.x, pointer.y, { ...shownSplit, rowSplit: splitRow }, paneIndex)
+        setPaneDrag({ paneIndex, label, left: pointer.x, top: pointer.y, hover: latestHover })
+      })
     }
     const onEnd = (e: PointerEvent) => {
+      cancelAnimationFrame(frame)
       window.removeEventListener("pointermove", onMove)
       window.removeEventListener("pointerup", onEnd)
       window.removeEventListener("pointercancel", onCancel)
@@ -633,6 +641,7 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
       if (finalHover) movePaneTo(paneIndex, finalHover.target)
     }
     const onCancel = () => {
+      cancelAnimationFrame(frame)
       window.removeEventListener("pointermove", onMove)
       window.removeEventListener("pointerup", onEnd)
       window.removeEventListener("pointercancel", onCancel)
@@ -1419,6 +1428,33 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
     return () => observer.disconnect()
   }, [])
 
+  // Stable Sidebar callbacks, so the memoized Sidebar skips renders while streamed output updates the workspace.
+  const sidebarActive = useMemo(() => ({ cwd: session.cwd, id: customizeOpen ? undefined : activeId }), [session.cwd, customizeOpen, activeId])
+  const sidebarNewSession = useEvent((dir?: string) => { setPage(undefined); newSession(dir) })
+  const sidebarSelect = useEvent((dir: string, id: string) => { setPage(undefined); showTask(dir, id) })
+  const sidebarOpenInSplit = useEvent((dir: string, id: string) => { setPage(undefined); openInSplit(dir, id) })
+  const sidebarSplitMenuFor = useEvent(splitMenuFor)
+  const sidebarAddProject = useEvent(() => { setEditingProject(undefined); setAddingProject(true) })
+  const sidebarEditProject = useEvent((project: ProjectInfo) => { setAddingProject(false); setEditingProject(project) })
+  const sidebarRemoveProject = useEvent(removeProjectPath)
+  const sidebarRevealProject = useEvent(revealProject)
+  const sidebarOpenCoordinator = useEvent((path: string) => { setPage(undefined); openCoordinator(path).then((id) => selectSession(path, id), (error) => confirm({ title: "Could not open the coordinator", description: (error as Error).message, confirmLabel: "OK", cancelLabel: "Close" })) })
+  const sidebarDeleteSession = useEvent(removeSession)
+  const sidebarRenameSession = useEvent(renameTask)
+  const sidebarForkSession = useEvent((dir: string, id: string) => { setPage(undefined); forkTask(dir, id) })
+  const sidebarOpenSessionIn = useEvent((dir: string, target: string) => openPath(dir, "", target).catch((error) => confirm({ title: "Could not open the task folder", description: (error as Error).message, confirmLabel: "OK", cancelLabel: "Close" })))
+  const sidebarSearch = useEvent(() => setSearchOpen(true))
+  const sidebarSettings = useEvent(() => setSettingsOpen(true))
+  const sidebarCustomize = useEvent(() => setPage("customize"))
+  const sidebarSchedule = useEvent(() => setPage("schedule"))
+  const selectPaneSession = useEvent((cwd: string, id: string) => showTask(cwd, id))
+  const renamePaneSession = useEvent(renameTask)
+  const closePaneSession = useEvent((cwd: string, id: string) => { clearPaneSideOpen(id); setSplit((layout) => removePane(layout, { cwd, id })) })
+  const gripPaneDrag = useEvent((event: React.PointerEvent<HTMLElement>, cwd: string, id: string) => {
+    const paneIndex = shownSplit.panes.findIndex((pane) => sameTask(pane, { cwd, id })) + 1
+    startPaneDrag(event, paneIndex, sessionTitles({ cwd, id }) ?? "Task")
+  })
+
   return (
     <div
       data-sidebar-dock-motion={dockMotion ? "true" : undefined}
@@ -1449,33 +1485,27 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
               projects={projects}
               sessions={sessionsByProject}
               loadedProjects={loadedProjects}
-              active={{ cwd: session.cwd, id: customizeOpen ? undefined : activeId }}
-              onNewSession={(dir) => { setPage(undefined); newSession(dir) }}
-              onSelect={(dir, id) => { setPage(undefined); showTask(dir, id) }}
+              active={sidebarActive}
+              onNewSession={sidebarNewSession}
+              onSelect={sidebarSelect}
               openTasks={openTaskKeys}
               onTaskDrag={onTaskDrag}
-              onOpenInSplit={(dir, id) => { setPage(undefined); openInSplit(dir, id) }}
-              splitMenuFor={splitMenuFor}
-              onAddProject={() => {
-                setEditingProject(undefined)
-                setAddingProject(true)
-              }}
-              onEditProject={(project) => {
-                setAddingProject(false)
-                setEditingProject(project)
-              }}
-              onRemoveProject={removeProjectPath}
-              onRevealProject={revealProject}
-              onOpenCoordinator={(path) => { setPage(undefined); openCoordinator(path).then((id) => selectSession(path, id), (error) => confirm({ title: "Could not open the coordinator", description: (error as Error).message, confirmLabel: "OK", cancelLabel: "Close" })) }}
-              onDeleteSession={removeSession}
-              onRenameSession={renameTask}
-              onForkSession={(dir, id) => { setPage(undefined); forkTask(dir, id) }}
-              onOpenSessionIn={(dir, target) => openPath(dir, "", target).catch((error) => confirm({ title: "Could not open the task folder", description: (error as Error).message, confirmLabel: "OK", cancelLabel: "Close" }))}
-              onSearch={() => setSearchOpen(true)}
-              onSettings={() => setSettingsOpen(true)}
-              onCustomize={() => setPage("customize")}
+              onOpenInSplit={sidebarOpenInSplit}
+              splitMenuFor={sidebarSplitMenuFor}
+              onAddProject={sidebarAddProject}
+              onEditProject={sidebarEditProject}
+              onRemoveProject={sidebarRemoveProject}
+              onRevealProject={sidebarRevealProject}
+              onOpenCoordinator={sidebarOpenCoordinator}
+              onDeleteSession={sidebarDeleteSession}
+              onRenameSession={sidebarRenameSession}
+              onForkSession={sidebarForkSession}
+              onOpenSessionIn={sidebarOpenSessionIn}
+              onSearch={sidebarSearch}
+              onSettings={sidebarSettings}
+              onCustomize={sidebarCustomize}
               customizeOpen={page === "customize"}
-              onSchedule={() => setPage("schedule")}
+              onSchedule={sidebarSchedule}
               scheduleOpen={page === "schedule"}
             />
           </HoldWhileResizing>
@@ -2097,10 +2127,10 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
                   settings={settings}
                   projects={projects}
                   sessions={sessionsByProject[pane.cwd] ?? []}
-                  onSelectSession={(targetId) => showTask(pane.cwd, targetId)}
-                  onRename={(name) => renameTask(pane.cwd, pane.id, name)}
-                  onClose={() => { clearPaneSideOpen(task.id); setSplit((layout) => removePane(layout, task)) }}
-                  onGripPointerDown={(event) => startPaneDrag(event, paneIndex, paneTitle ?? "Task")}
+                  onSelectSession={selectPaneSession}
+                  onRename={renamePaneSession}
+                  onClose={closePaneSession}
+                  onGripPointerDown={gripPaneDrag}
                 />
               </div>
             )

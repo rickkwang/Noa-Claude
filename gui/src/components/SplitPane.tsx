@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react"
+import { memo, useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react"
 import { useAgent } from "../agent/useAgent"
 import { isSubagentTask } from "../agent/reducer"
 import type { TurnDiff, UserContent } from "../agent/protocol"
@@ -28,7 +28,7 @@ const noop = () => {}
 
 // A task opened beside the main one in split view: its own connection, conversation, composer,
 // overview, terminal, and independent right sidebar.
-export function SplitPane({
+function SplitPaneView({
   cwd,
   id,
   title,
@@ -50,10 +50,10 @@ export function SplitPane({
   settings: AppSettings
   projects: ProjectInfo[]
   sessions: SessionSummary[]
-  onSelectSession: (id: string) => void
-  onRename?: (name: string) => Promise<void>
-  onClose: () => void
-  onGripPointerDown: (event: ReactPointerEvent<HTMLElement>) => void
+  onSelectSession: (cwd: string, id: string) => void
+  onRename?: (cwd: string, id: string, name: string) => Promise<void>
+  onClose: (cwd: string, id: string) => void
+  onGripPointerDown: (event: ReactPointerEvent<HTMLElement>, cwd: string, id: string) => void
 }) {
   const [runtimeId] = useState(() => crypto.randomUUID())
   const {
@@ -369,7 +369,7 @@ export function SplitPane({
         title="Drag to move pane"
         className="noa-pane-grip"
         style={noDragRegion}
-        onPointerDown={onGripPointerDown}
+        onPointerDown={(event) => onGripPointerDown(event, cwd, id)}
         onMouseDown={(e) => e.preventDefault()}
       />
 
@@ -378,7 +378,7 @@ export function SplitPane({
         <div className={`relative flex shrink-0 items-center gap-1 pl-3 pr-2 ${titlebar ? "h-11" : "h-9"}`} style={titlebar ? dragRegion : undefined}>
           <div className="flex min-w-0 flex-1 items-center">
             <div className="flex min-w-0 max-w-full items-center" style={noDragRegion}>
-              <SessionTitle title={name} onRename={!state.busy ? onRename : undefined} />
+              <SessionTitle title={name} onRename={!state.busy && onRename ? (name) => onRename(cwd, id, name) : undefined} />
             </div>
           </div>
           <div className="noa-pane-actions flex shrink-0 items-center gap-0.5" style={noDragRegion}>
@@ -406,7 +406,7 @@ export function SplitPane({
                 >
                   <SidebarClosed size={16} style={{ transform: "scaleX(-1)" }} />
                 </button>
-                <button type="button" className={button} onClick={onClose} title="Close pane" aria-label="Close pane">
+                <button type="button" className={button} onClick={() => onClose(cwd, id)} title="Close pane" aria-label="Close pane">
                   <X size={15} />
                 </button>
               </>
@@ -622,7 +622,7 @@ export function SplitPane({
               sessions={sessions}
               activeSessionId={id}
               sideChat={{ key: id, ready: sideChatReady, draftKey: runtimeId, request, focusKey: sideChatFocus }}
-              onSelectSession={onSelectSession}
+              onSelectSession={(targetId) => onSelectSession(cwd, targetId)}
               compactHeader={!titlebar}
               headerActions={
                 <div className="noa-pane-actions ml-1 flex shrink-0 items-center gap-0.5" style={noDragRegion}>
@@ -637,7 +637,7 @@ export function SplitPane({
                   >
                     <SidebarOpen size={16} style={{ transform: "scaleX(-1)" }} />
                   </button>
-                  <button type="button" className={button} onClick={onClose} title="Close pane" aria-label="Close pane">
+                  <button type="button" className={button} onClick={() => onClose(cwd, id)} title="Close pane" aria-label="Close pane">
                     <X size={15} />
                   </button>
                 </div>
@@ -649,3 +649,6 @@ export function SplitPane({
     </div>
   )
 }
+
+// Memoized so streamed output in the main task does not re-render every split pane.
+export const SplitPane = memo(SplitPaneView)

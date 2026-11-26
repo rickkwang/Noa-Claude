@@ -1,4 +1,5 @@
 import {
+  memo,
   useEffect,
   useMemo,
   useRef,
@@ -148,7 +149,7 @@ interface SidebarProps {
 // Noa's sidebar: search, a Projects toolbar, then one collapsible group per project folder.
 const isMac = navigator.platform.includes("Mac")
 
-export function Sidebar({
+function SidebarView({
   projects,
   sessions,
   loadedProjects,
@@ -1275,3 +1276,6 @@ function SessionRow({
     </div>
   )
 }
+
+// Memoized so App-level updates (streamed output, drags) do not re-render the whole session list.
+export const Sidebar = memo(SidebarView)
