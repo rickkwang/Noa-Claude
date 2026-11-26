@@ -70,13 +70,15 @@ const server = createServer(async (req, res) => {
 await new Promise(r => server.listen(0, '127.0.0.1', r));
 const baseUrl = `http://127.0.0.1:${server.address().port}`;
 const configDir = join(artifacts, 'config');
+const homeDir = join(artifacts, 'home');
 mkdirSync(configDir, { recursive: true });
+mkdirSync(homeDir, { recursive: true });
 writeFileSync(join(configDir, 'CLAUDE.md'), '# E2E_USER_RULE_MARKER\n');
 
 function runCli(prompt, tools, runModel = model, extraEnv = {}, extraArgs = []) {
-  const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => ['PATH', 'HOME', 'TMPDIR', 'USER', 'LANG', 'LC_ALL', 'SHELL'].includes(k)));
+  const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => ['PATH', 'TMPDIR', 'USER', 'LANG', 'LC_ALL', 'SHELL'].includes(k)));
   Object.assign(env, {
-    CLAUDE_CONFIG_DIR: configDir, ANTHROPIC_API_KEY: 'local-e2e-dummy', ANTHROPIC_BASE_URL: baseUrl,
+    HOME: homeDir, CLAUDE_CONFIG_DIR: configDir, ANTHROPIC_API_KEY: 'local-e2e-dummy', ANTHROPIC_BASE_URL: baseUrl,
     ANTHROPIC_MODEL: runModel, CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1', CLAUDE_CODE_ALWAYS_ENABLE_EFFORT: '1', DISABLE_AUTOUPDATER: '1',
   }, extraEnv);
   return new Promise(resolveRun => {
