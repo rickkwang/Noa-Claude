@@ -134,11 +134,11 @@ function gatherSection(bugsOnly: boolean): string {
     : `Gather \`git diff @{upstream}...HEAD\`, plus \`git diff HEAD\` for staged and unstaged changes. If there is no upstream, diff against the default branch (\`main\` or \`master\`) with \`git diff <default>...HEAD\`, or use \`git diff HEAD~1\`.`
   return `## Phase 0 — Gather the diff
 Get the unified diff under review:
-- Default (no target): ${committed} Untracked files are not part of the default scope.
+- Default (no target): ${committed} Untracked files are not part of the default scope, but run \`git ls-files --others --exclude-standard\` too: if it lists any, open your report with one short line saying how many untracked files were not reviewed and that a path target covers them, placed before any findings, \`[]\` or \`(none)\`.
 - PR (number, \`#number\`, or URL): \`gh pr view <target>\` for context and \`gh pr diff <target>\` for the diff.
 - Branch name: \`git diff <base>...<branch>\`, where \`<base>\` is the default branch.
-- File path: restrict the diff to that path, and read the non-ignored untracked files under it (\`git ls-files --others --exclude-standard -- <path>\`) as new-file changes.
-If there is nothing in scope, say there is nothing to review and stop. If a file cannot be read, disclose the coverage gap rather than declaring there is nothing to review.${bugsOnly ? `
+- File path: restrict the diff to that path, and read the non-ignored untracked files under it (\`git ls-files --others --exclude-standard -- ':(literal)<path>'\`) as new-file changes. Pass the path as \`':(literal)<path>'\` to every git command so characters like \`[\`, \`*\` and \`?\` do not match other files.
+Say there is nothing to review and stop only when the commands that gather the scope succeed and print nothing; the default case's untracked list is a notice, not scope, so keep its line. If a command fails or is refused, or a file cannot be read, name the scope it left uncovered rather than declaring there is nothing to review.${bugsOnly ? `
 Three forms need permission, so never write them: \`@{upstream}\` or \`@{u}\` next to \`..\` or \`...\`, commands grouped in parentheses, and shell variables such as \`$?\`.` : ''}`
 }
 
@@ -224,7 +224,7 @@ function outputSection(cap: number | 'all', floor?: number, severity = false): s
 ${target}Return ${size} as a JSON array in a \`\`\`json block, ranked most severe first. Each entry has \`file\` (repo-relative path), \`line\`, ${fields}. If nothing survives, return \`[]\`. ${NO_REPORT_TOOL} This review's output contract is the JSON block above.${severity ? `\n\n${SEVERITY_SPEC}` : ''}`
 }
 
-const LOW_READ = `Read the diff. With a path target, also read its untracked files as new-file additions. No subagents, no full-file reads.`
+const LOW_READ = `Read the diff. With a path target, also read its untracked files in full as new-file additions. No subagents, and no full reads of tracked files.`
 const LOW_SKIP_TESTS = ` Skip test and fixture hunks (\`test/\`, \`spec/\`, \`__tests__/\`, \`*_test.*\`, \`*.test.*\`, \`fixtures/\`, \`testdata/\`); test-file changes are not reviewed at this level.`
 const LOW_BUG_FLAGS = `Flag runtime-correctness bugs visible from the hunk alone: inverted or wrong conditions, off-by-one, null/undefined dereference where the adjacent lines show the value can be absent, removed guards, falsy-zero checks, missing \`await\`, wrong-variable copy-paste, errors swallowed in a catch that should propagate.`
 const LOW_CLEANUP_FLAGS = ` Also flag, still from the hunk alone, new code that duplicates a helper visible in the diff context, and dead code the diff leaves behind.`

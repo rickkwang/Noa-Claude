@@ -235,7 +235,9 @@ try {
     });
   }
   await scenario('gather-and-dedup-rules', '/code-review medium', ALL_TOOLS, req => {
-    assert.ok(req.includes('Untracked files are not part of the default scope.'), 'default scope reads untracked files');
+    assert.ok(req.includes('Untracked files are not part of the default scope'), 'default scope reads untracked files');
+    assert.ok(req.includes('how many untracked files were not reviewed'), 'unreviewed untracked files are not disclosed');
+    assert.ok(req.includes("':(literal)<path>'"), 'path target matches git pathspec globs');
     assert.ok(req.includes('same defect, same location, and same cause'), 'dedup rule can merge distinct defects');
   });
   await scenario('comment-without-pr', '/code-review --comment', ALL_TOOLS, req => {
