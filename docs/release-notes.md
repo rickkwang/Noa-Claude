@@ -1,5 +1,56 @@
 # Release Notes
 
+## 1.27.0
+
+- New: `ListAgents` tool lists the subagents in the current session.
+- New: `security-review` skill reviews the pending changes on the current branch.
+- New: `fewer-permission-prompts` skill builds a read-only allowlist from past sessions.
+- New: `ReportFindings` tool, off unless the host renders findings.
+- New: the verification agent is on by default; `Read` accepts `allow_large` for oversized files.
+- New: the Agent tool accepts `effort` on every call, and Agent Teams teammates accept an effort override.
+- Changed: model-invoked forked skills run in the background.
+- New: `/code-review` adds bugs and GitLab recipes.
+- New: model context windows for GPT models resolve from discovery and a models.dev snapshot.
+- New: memory extraction saves missed memories after each turn by default (every 7 turns with user prose); topic files are linked from the index.
+- New: `/compact` adds anti-redo notices, background precompute, and an adaptive load window.
+- Changed: cloud providers route to current default models, with a startup fallback.
+- Changed: the Bash-first steer applies only to models whose prompt bundle enables it; tool guidance respects delegation policy.
+- Changed: 1-hour prompt-cache TTL for forks is aligned; MCP delta is on by default.
+- Removed: the GrowthBook client, OpenTelemetry and Perfetto tracing, the ultraplan remote planning flow, guest passes, Grove consumer-terms prompt, and the official MCP registry prefetch.
+- Privacy: session and device identifiers and request metadata no longer go to third-party endpoints or OpenAI-compatible providers; WebFetch no longer sends fetched domains to api.anthropic.com; MCP servers see the Noa Claude identity.
+- Fixed: Monitor lifecycle and shell shutdown cleanup; a kill escalation finishes at exit; monitors no longer linger after a headless turn.
+- Fixed: retries for thinking-only stream stalls, empty-text 400s and empty-text recovery; user aborts are preserved.
+- Fixed: transcript is flushed before Stop and SubagentStop hooks.
+- Fixed: a named-pipe read waits for its writer instead of hanging.
+- Fixed: rewind reports partial and unverified file restores; worktree removal is blocked while tasks run.
+- Fixed: a forked skill no longer starts itself again in the same call chain.
+- Fixed: session timestamps fall back for cyclic parent chains; MCP remote HTTPS servers retry after 24h.
+- Fixed: `Read`, `grep` and NotebookEdit handle oversized inputs and keep output order and newlines.
+- Fixed: the HTTPS proxy connect times out after 25s.- Fixed: `/compact` summaries stay usable when output-limit recovery resumes them; `max_output_tokens` recovery and resume retry are hardened.
+- Fixed: `TaskStop` cancels an agent that is still resuming; `ReportFindings` stays off unless a host renders findings.
+- Fixed: `/code-review` keeps untracked files out of the default scope and matches path targets literally.
+- Fixed: a conversation resumes in one process at a time.
+- Fixed: cron stopped tasks stay stopped across resume and compaction.
+- Fixed: Opus 4.6 and Sonnet 4.6 keep a 200k context unless `[1m]` is chosen; web search works on Opus 5.x again.
+
+### Desktop app (gui-v1.27.0)
+
+- New: a Scheduled page, and serif and Response font settings.
+- Changed: the Gruvbox theme is removed; unpinned tasks are ordered by recency.
+- New: split view with per-pane sidebars, focus, drag reorder and keyboard shortcuts; parked panes; close panes of missing tasks.
+- New: Clawd dozes off when idle; the composer draft is kept until the bridge confirms the message.
+- New: forks nest under their task in the sidebar; the task menu expands.
+- New: panel tabs fit with a More tabs menu, panel tool shortcuts, and a shared grid.
+- New: sidebar toggles use the open and closed panel glyphs; a fixed icon rail follows sidebar rows.
+- New: the Noa app icon for the macOS build.
+- New: MCP reconnect, enable and disable show progress and results on the server row; refresh, reconnect, copy and upgrade actions report their results.
+- Changed: settings panel UI and modal interactions are polished; the simplified scheduled-task form has Create with Claude.
+- Changed: scrollbars show only while the user scrolls; the image viewer header aligns with the titlebar.
+- Faster: the resize path no longer re-renders the whole app; sidebar and split panes are memoized; session history is cached.
+- Fixed: a task's draft survives until the session is in history; each project refreshes its task list independently.
+- Fixed: an API error shows once, as the turn error.
+- Improved: higher secondary and tertiary text contrast; a single translucent sidebar covers light and dark themes.
+
 ## 1.26.0
 
 - New: `/focus` view in the TUI folds each turn to its prompt, summary and answer.
