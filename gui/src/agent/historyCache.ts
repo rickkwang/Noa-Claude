@@ -11,6 +11,9 @@ export type CachedSessionHistory = {
 const MAX_CACHED_SESSIONS = 24
 const cache = new Map<string, CachedSessionHistory>()
 const inflight = new Map<string, Promise<void>>()
+// Prefetches that cached nothing (failed, empty, or no turns), so a drag doesn't refetch on every pointer move.
+const PREFETCH_RETRY_MS = 10_000
+const emptyPrefetches = new Map<string, number>()
 
 function keyOf(cwd: string | undefined, id: string | undefined) {
   return cwd && id ? `${cwd}\0${id}` : undefined
@@ -41,7 +44,7 @@ export function writeCachedHistory(cwd: string | undefined, id: string | undefin
 // Pre-warms both the server's history cache and the client's parsed turn cache while dragging a task.
 export function prefetchSessionHistory(cwd: string, id: string): void {
   const key = keyOf(cwd, id)
-  if (!key || cache.has(key) || inflight.has(key)) return
+  if (!key || cache.has(key) || inflight.has(key) || Date.now() - (emptyPrefetches.get(key) ?? -Infinity) < PREFETCH_RETRY_MS) return
   const promise = fetch(`/api/session-history${query(cwd)}&id=${encodeURIComponent(id)}`)
     .then(async (res) => {
       if (!res.ok) return
@@ -57,6 +60,7 @@ export function prefetchSessionHistory(cwd: string, id: string): void {
     .catch(() => {})
     .finally(() => {
       inflight.delete(key)
+      if (!cache.has(key)) emptyPrefetches.set(key, Date.now())
     })
   inflight.set(key, promise)
 }

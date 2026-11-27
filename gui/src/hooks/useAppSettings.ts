@@ -3,7 +3,7 @@ import type { AppSettings } from "../types"
 import { migrateAppearance } from "../lib/appearanceMigration"
 import { defaultSettings } from "../theme/settings"
 import { configureStreamSound } from "../lib/streamSound"
-import { SHORTCUT_IDS, isBinding, type ShortcutBindings } from "../lib/shortcuts"
+import { SHORTCUT_IDS, findShortcutConflict, isBinding, type ShortcutBindings } from "../lib/shortcuts"
 
 // Keep only known shortcut ids with well-formed bindings; anything else would break the keydown matcher.
 function validBindings(raw: unknown): Partial<ShortcutBindings> {
@@ -12,12 +12,18 @@ function validBindings(raw: unknown): Partial<ShortcutBindings> {
   return Object.fromEntries(valid) as Partial<ShortcutBindings>
 }
 
-function readShortcuts(): Partial<ShortcutBindings> {
+function readShortcuts(): ShortcutBindings {
+  let stored: Partial<ShortcutBindings> = {}
   try {
-    return validBindings(JSON.parse(localStorage.getItem("noa-agent.shortcuts") ?? "{}"))
-  } catch {
-    return {}
+    stored = validBindings(JSON.parse(localStorage.getItem("noa-agent.shortcuts") ?? "{}"))
+  } catch {}
+  const bindings = { ...defaultSettings.shortcuts, ...stored }
+  // A default added after the user bound the same keys to another action stays unbound.
+  for (const id of SHORTCUT_IDS) {
+    const conflict = id in stored ? null : findShortcutConflict(bindings, id, bindings[id])
+    if (conflict && conflict in stored) bindings[id] = ""
   }
+  return bindings
 }
 
 function loadSettings(): AppSettings {
@@ -38,7 +44,7 @@ function loadSettings(): AppSettings {
       composer: { ...defaultSettings.composer, ...JSON.parse(localStorage.getItem("noa-agent.composer") ?? "{}") },
       terminal: { ...defaultSettings.terminal, ...JSON.parse(localStorage.getItem("noa-agent.terminal") ?? "{}") },
       notifications: { ...defaultSettings.notifications, ...JSON.parse(localStorage.getItem("noa-agent.notifications") ?? "{}") },
-      shortcuts: { ...defaultSettings.shortcuts, ...readShortcuts() },
+      shortcuts: readShortcuts(),
     }
   } catch {
     return defaultSettings

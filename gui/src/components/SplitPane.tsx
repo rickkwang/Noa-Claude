@@ -87,7 +87,7 @@ function SplitPaneView({
   })
 
   // Per-session right sidebar state (open, width share, tabs, active tab).
-  const [sideState, setSideState] = useState(() => loadPaneSideState(id, false))
+  const [sideState, setSideState] = useState(() => loadPaneSideState(id))
   useEffect(() => savePaneSideState(id, sideState), [id, sideState])
   // Mount the right panel lazily on first open, then keep it mounted so toggling avoids re-fetching and layout jitter.
   const [rightMounted, setRightMounted] = useState(() => sideState.open)

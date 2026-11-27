@@ -277,15 +277,16 @@ function SidebarView({
   // The task menu's actions, the same wherever the task is listed. A working task can't be renamed or forked yet.
   function taskActions(project: ProjectInfo, session: SessionSummary) {
     const cwd = session.cwd ?? project.path
-    const splitMenu = splitMenuFor?.(cwd, session.id)
+    const inSplit = !!splitMenuFor?.(cwd, session.id)
     return {
       onTogglePin: () => togglePin(project.path, session.id),
       onDelete: () => onDeleteSession(cwd, session.id, session.title),
       onRename: session.status ? undefined : (title: string) => onRenameSession(cwd, session.id, title),
       onFork: session.status ? undefined : () => onForkSession(cwd, session.id),
       onOpenIn: (target: string) => onOpenSessionIn(cwd, target),
-      onOpenInSplit: !splitMenu && onOpenInSplit ? () => onOpenInSplit(cwd, session.id) : undefined,
-      splitMenu,
+      onOpenInSplit: !inSplit && onOpenInSplit ? () => onOpenInSplit(cwd, session.id) : undefined,
+      // Read when the menu opens: pane moves change with the layout, which doesn't re-render this memoized list.
+      splitMenu: inSplit ? () => splitMenuFor?.(cwd, session.id) : undefined,
     }
   }
 
@@ -1112,7 +1113,7 @@ function SessionRow({
   onFork?: () => void
   onOpenIn?: (target: string) => void
   onOpenInSplit?: () => void
-  splitMenu?: { moves: { label: string; onSelect: () => void }[]; onClose: () => void }
+  splitMenu?: () => { moves: { label: string; onSelect: () => void }[]; onClose: () => void } | undefined
   onMove?: (direction: -1 | 1) => void
   onPointerDown?: (event: PointerEvent<HTMLElement>) => void
   onPointerMove?: (event: PointerEvent<HTMLElement>) => void
@@ -1165,6 +1166,7 @@ function SessionRow({
       className="min-w-0 w-full bg-transparent text-[var(--text-primary,#2D2D2B)] outline-none"
     />
   )
+  const split = menu ? splitMenu?.() : undefined
   return (
     <div className="font-ui mb-0.5 noa-sidebar-tree-item">
       <div
@@ -1260,9 +1262,9 @@ function SessionRow({
               { kind: "separator" as const },
             ] : []),
             ...(onOpenInSplit ? [{ label: "Open in split view", onSelect: onOpenInSplit }, { kind: "separator" as const }] : []),
-            ...(splitMenu ? [
-              ...(splitMenu.moves.length > 0 ? [{ label: "Move", submenu: splitMenu.moves }] : []),
-              { label: "Close pane", onSelect: splitMenu.onClose },
+            ...(split ? [
+              ...(split.moves.length > 0 ? [{ label: "Move", submenu: split.moves }] : []),
+              { label: "Close pane", onSelect: split.onClose },
               { kind: "separator" as const },
             ] : []),
             { label: pinned ? "Unpin" : "Pin", shortcut: "p", onSelect: onTogglePin },

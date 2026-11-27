@@ -65,8 +65,8 @@ export function loadSplitLayout(): SplitLayout {
 
 export function saveSplitLayout(layout: SplitLayout) {
   try {
-    // Persist parked panes if the window is currently constrained so closing a narrow window keeps the layout.
-    const panes = layout.parkedPanes?.length ? layout.parkedPanes : layout.panes
+    // While the window is narrow, save the layout it would restore to: the parked panes plus any opened since.
+    const { panes } = layout.constrained ? setSplitConstrained(layout, false, undefined, MAX_COLUMNS) : layout
     localStorage.setItem(
       STORAGE_KEY,
       JSON.stringify({ panes, weights: layout.weights, rowSplit: layout.rowSplit }),
@@ -176,12 +176,6 @@ export function removePane(layout: SplitLayout, task: SplitTask): SplitLayout {
     layout.panes.filter((_, i) => i !== idx),
     nextFocus,
   )
-}
-
-export function closePaneByIndex(layout: SplitLayout, paneIndex: number): SplitLayout {
-  if (paneIndex <= 0 || paneIndex > layout.panes.length) return layout
-  const pane = layout.panes[paneIndex - 1]!
-  return removePane(layout, pane)
 }
 
 // Closes the primary pane by promoting the first extra pane in reading order to become the new primary.
@@ -396,7 +390,7 @@ export function moveTargetsForPane(
   return out
 }
 
-// Spatial focus navigation between panes (Ctrl+Cmd+Arrows).
+// Spatial focus navigation between panes (the focusPane* shortcuts).
 export function adjacentPaneIndex(
   panes: SplitPane[],
   focusedIndex: number,
@@ -428,11 +422,13 @@ export function cyclePaneIndex(panes: SplitPane[], focusedIndex: number, delta: 
   return order[next]!
 }
 
-// Parks extra panes while the viewport is too narrow for split view, restoring them when widened again.
+// Parks extra panes while the viewport is too narrow for split view, restoring them when widened again. Tasks
+// opened in split while narrow join the restored panes.
 export function setSplitConstrained(
   layout: SplitLayout,
   constrained: boolean,
   primary: SplitTask | undefined,
+  maxColumns: number,
 ): SplitLayout {
   if (!!layout.constrained === constrained) return layout
   if (constrained) {
@@ -442,8 +438,11 @@ export function setSplitConstrained(
   const parked = layout.parkedPanes
   if (!parked?.length) return { ...layout, constrained: false, parkedPanes: undefined }
   const filtered = primary ? parked.filter((pane) => !sameTask(pane, primary)) : parked
-  const restored = withPanes({ ...layout, constrained: false, parkedPanes: undefined }, filtered, 0)
-  return restored
+  const opened = layout.panes.filter((pane) => !filtered.some((parkedPane) => sameTask(parkedPane, pane)))
+  return opened.reduce(
+    (restored, pane) => openTaskInSplit(restored, pane, primary, maxColumns),
+    withPanes({ ...layout, constrained: false, parkedPanes: undefined }, filtered, 0),
+  )
 }
 
 // The share a row may take: each pane keeps at least 320px, and below 640px the rows stay even.

@@ -58,7 +58,6 @@ import {
   ROW_SPLIT,
   SPLIT_CONSTRAINED_WIDTH,
   adjacentPaneIndex,
-  closePaneByIndex,
   closePrimaryPane,
   columnCount,
   cyclePaneIndex,
@@ -159,8 +158,8 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
   const [projects, setProjects] = useState<ProjectInfo[]>([])
   const [refreshTick, setRefreshTick] = useState(0)
   const [sidebarOpen, setSidebarOpen] = useState(true)
-  const [rightOpen, setRightOpen] = useState(() => loadPaneSideState(session.resume, false).open)
-  const [primarySideRatio, setPrimarySideRatio] = useState(() => loadPaneSideState(session.resume, false).widthRatio)
+  const [rightOpen, setRightOpen] = useState(() => loadPaneSideState(session.resume).open)
+  const [primarySideRatio, setPrimarySideRatio] = useState(() => loadPaneSideState(session.resume).widthRatio)
   const [searchOpen, setSearchOpen] = useState(false)
   // The translucent veil animates only for dock motion (never on first paint, when the flag is still off). The flag is derived
   // while rendering, so it lands in the same commit as the new material width; set from an effect it would arrive a
@@ -203,7 +202,7 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
   const [pendingDiffAction, setPendingDiffAction] = useState<number>()
   // The right panel's open tools, remembered per viewer; terminals and the New tab are not.
   const [rightTabs, setRightTabs] = useState<PanelTab[]>(() => {
-    if (session.resume) return loadPaneSideState(session.resume, false).tabs
+    if (session.resume) return loadPaneSideState(session.resume).tabs
     try {
       const saved = JSON.parse(localStorage.getItem("noa-agent.rightTabs") ?? "null")
       return Array.isArray(saved) ? saved.filter((tab): tab is PanelTab => ["files", "changes", "subagents", "threads"].includes(tab)) : DEFAULT_RIGHT_TABS
@@ -213,7 +212,7 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
     try { localStorage.setItem("noa-agent.rightTabs", JSON.stringify(rightTabs)) } catch { /* Storage unavailable. */ }
   }, [rightTabs])
   const [rightNewTab, setRightNewTab] = useState(false)
-  const [rightTab, selectRightTab] = useState<RightTab>(() => (session.resume ? loadPaneSideState(session.resume, false).tab : (rightTabs[0] ?? "new")))
+  const [rightTab, selectRightTab] = useState<RightTab>(() => (session.resume ? loadPaneSideState(session.resume).tab : (rightTabs[0] ?? "new")))
   // Showing a tool opens its tab when it was closed.
   const setRightTab = (tab: RightTab) => {
     if (tab !== "new" && tab !== "terminal" && tab !== "browser") setRightTabs((tabs) => tabs.includes(tab) ? tabs : [...tabs, tab])
@@ -256,7 +255,8 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
   const [syncedSideKey, setSyncedSideKey] = useState(session.key)
   if (syncedSideKey !== session.key) {
     setSyncedSideKey(session.key)
-    const nextSide = loadPaneSideState(session.resume, false)
+    // A session without its own saved state keeps the panel as it is, as before split view.
+    const nextSide = loadPaneSideState(session.resume, { open: rightOpen, widthRatio: primarySideRatio, tabs: rightTabs, tab: rightTab })
     setRightOpen(nextSide.open)
     setPrimarySideRatio(nextSide.widthRatio)
     setRightTabs(nextSide.tabs)
@@ -524,14 +524,18 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
   // Automatically park extra panes while the window is too narrow for split view, and restore them when widened.
   useEffect(() => {
     if (!paneHostSize.width) return
-    setSplit((layout) => setSplitConstrained(layout, paneHostSize.width < SPLIT_CONSTRAINED_WIDTH, primaryTask))
+    setSplit((layout) => setSplitConstrained(layout, paneHostSize.width < SPLIT_CONSTRAINED_WIDTH, primaryTask, maxColumnsFor(paneHostSize.width)))
   }, [paneHostSize.width])
   // A pane showing the main task (reached through history, say) steps aside while it is the main one; the columns
   // close up around it.
   const shownSplit = primaryTask && split.panes.some((pane) => sameTask(pane, primaryTask)) ? removePane(split, primaryTask) : split
   const splitActive = shownSplit.panes.length > 0
   const focusedIndex = Math.min(shownSplit.focusedIndex, shownSplit.panes.length)
-  const focusPane = (index: number) => setSplit((layout) => setFocusedPane(layout, index))
+  // Pane indices count the shown panes; the stored layout may also hold the main task, so map by task.
+  const focusPane = (index: number) => {
+    const task = shownSplit.panes[index - 1]
+    setSplit((layout) => setFocusedPane(layout, task ? paneIndexOf(layout.panes, task) ?? 0 : 0))
+  }
   const openTaskList = shownSplit.panes.map((pane) => `${pane.cwd}\0${pane.id}`).join("\n")
   const openTaskKeys = useMemo(() => new Set(openTaskList ? openTaskList.split("\n") : []), [openTaskList])
   const splitColumns = columnCount(shownSplit.panes)
@@ -583,8 +587,9 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
   }
   const closeSecondaryByIndex = (paneIdx: number) => {
     const target = shownSplit.panes[paneIdx - 1]
-    if (target) clearPaneSideOpen(target.id)
-    setSplit((layout) => closePaneByIndex(layout, paneIdx))
+    if (!target) return
+    clearPaneSideOpen(target.id)
+    setSplit((layout) => removePane(layout, target))
   }
   const movePaneTo = (paneIndex: number, target: PanePos) => {
     const result = moveOrSwapPane(shownSplit, paneIndex, target, primaryTask, maxColumnsFor(paneHostSize.width || window.innerWidth))
@@ -707,7 +712,10 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
       return
     }
     removeSessionBrowserState(cwd, id)
-    setSplit((layout) => layout.panes.filter((pane) => pane.id === id).reduce(removePane, layout))
+    setSplit((layout) => {
+      const next = layout.panes.filter((pane) => pane.id === id).reduce(removePane, layout)
+      return next.parkedPanes ? { ...next, parkedPanes: next.parkedPanes.filter((pane) => pane.id !== id) } : next
+    })
     const owner = projects.find((project) => sessionsByProject[project.path]?.some((item) => item.id === id))?.path ?? cwd
     const updated = await fetchSessions(owner).catch(() => undefined)
     if (updated) setSessionsByProject((all) => ({ ...all, [owner]: updated }))
@@ -727,26 +735,30 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
       const bindings = settings.shortcuts
       // Split-view navigation and close shortcuts.
       if (splitActive && !document.querySelector('dialog[open], [role="dialog"]')) {
-        const splitMod = isMacPlatform
-          ? e.metaKey && e.ctrlKey && !e.altKey && !e.shiftKey
-          : e.ctrlKey && e.altKey && !e.metaKey && !e.shiftKey
-        if (splitMod && e.code === "KeyW") {
+        if (matchesShortcut(e, bindings.closePane)) {
           e.preventDefault()
           if (focusedIndex === 0) closePrimary()
           else closeSecondaryByIndex(focusedIndex)
           return
         }
-        if (splitMod && (e.code === "ArrowLeft" || e.code === "ArrowRight" || e.code === "ArrowUp" || e.code === "ArrowDown")) {
-          const next = adjacentPaneIndex(shownSplit.panes, focusedIndex, e.code)
+        const direction = ([
+          ["focusPaneLeft", "ArrowLeft"],
+          ["focusPaneRight", "ArrowRight"],
+          ["focusPaneUp", "ArrowUp"],
+          ["focusPaneDown", "ArrowDown"],
+        ] as const).find(([id]) => matchesShortcut(e, bindings[id]))?.[1]
+        if (direction) {
+          const next = adjacentPaneIndex(shownSplit.panes, focusedIndex, direction)
           if (next !== undefined && next !== focusedIndex) {
             e.preventDefault()
             focusPane(next)
           }
           return
         }
-        if (e.ctrlKey && !e.metaKey && !e.altKey && e.key === "Tab") {
+        const cycle = matchesShortcut(e, bindings.nextPane) ? 1 : matchesShortcut(e, bindings.previousPane) ? -1 : 0
+        if (cycle) {
           e.preventDefault()
-          focusPane(cyclePaneIndex(shownSplit.panes, focusedIndex, e.shiftKey ? -1 : 1))
+          focusPane(cyclePaneIndex(shownSplit.panes, focusedIndex, cycle))
           return
         }
       }
@@ -799,7 +811,7 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
     }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
-  }, [state.busy, activeId, session, history, settings.terminal.defaultLocation, settings.shortcuts, splitActive, focusedIndex, shownSplit.panes, isMacPlatform])
+  }, [state.busy, activeId, session, history, settings.terminal.defaultLocation, settings.shortcuts, splitActive, focusedIndex, shownSplit.panes])
 
   // The terminal shortcut opens the bottom panel or a right-panel terminal, as settings choose.
   function openDefaultTerminal() {
@@ -2126,7 +2138,8 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
                   focused={isFocused}
                   settings={settings}
                   projects={projects}
-                  sessions={sessionsByProject[pane.cwd] ?? []}
+                  // A worktree task's list lives under its project, not under the worktree path.
+                  sessions={sessionsByProject[pane.cwd] ?? Object.values(sessionsByProject).find((list) => list.some((item) => item.id === pane.id)) ?? []}
                   onSelectSession={selectPaneSession}
                   onRename={renamePaneSession}
                   onClose={closePaneSession}

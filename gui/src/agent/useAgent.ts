@@ -97,6 +97,8 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
   useEffect(() => {
     // Skip writes until the reset effect below has aligned state to the current session.
     if (syncedTokenRef.current !== sessionToken) return
+    // After /clear the CLI reports a new session id; its turns must not be cached under the resumed one.
+    if (resume && state.sessionId && state.sessionId !== resume) return
     const id = resume ?? state.sessionId
     if (!cwd || !id || state.turns.length === 0) return
     writeCachedHistory(cwd, id, { turns: state.turns, historyBefore: state.historyBefore, tasks: state.tasks })

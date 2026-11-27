@@ -42,26 +42,29 @@ function writeAll(map: StoredMap) {
   }
 }
 
-export function loadPaneSideState(sessionKey: string | undefined, fallbackOpen = false): PaneSideState {
-  if (!sessionKey) {
-    return { open: fallbackOpen, widthRatio: DEFAULT_RATIO, tabs: DEFAULT_RIGHT_TABS, tab: DEFAULT_RIGHT_TABS[0] ?? "files" }
+export function loadPaneSideState(sessionKey: string | undefined, fallback: Partial<PaneSideState> = {}): PaneSideState {
+  const tabs = fallback.tabs ?? DEFAULT_RIGHT_TABS
+  const base: PaneSideState = {
+    open: fallback.open ?? false,
+    widthRatio: fallback.widthRatio ?? DEFAULT_RATIO,
+    tabs,
+    tab: fallback.tab ?? tabs[0] ?? "files",
   }
-  const open = liveOpenState.has(sessionKey) ? liveOpenState.get(sessionKey)! : fallbackOpen
+  if (!sessionKey) return base
+  const open = liveOpenState.has(sessionKey) ? liveOpenState.get(sessionKey)! : base.open
   const saved = readAll()[sessionKey]
-  if (!saved) {
-    return { open, widthRatio: DEFAULT_RATIO, tabs: DEFAULT_RIGHT_TABS, tab: DEFAULT_RIGHT_TABS[0] ?? "files" }
-  }
-  const tabs = Array.isArray(saved.tabs)
+  if (!saved) return { ...base, open }
+  const savedTabs = Array.isArray(saved.tabs)
     ? saved.tabs.filter((t): t is PanelTab => VALID_PANEL_TABS.has(t as PanelTab))
     : DEFAULT_RIGHT_TABS
   const widthRatio = typeof saved.widthRatio === "number" && Number.isFinite(saved.widthRatio)
     ? Math.max(0.2, Math.min(0.75, saved.widthRatio))
     : DEFAULT_RATIO
-  const tab: RightTab = typeof saved.tab === "string" ? (saved.tab as RightTab) : (tabs[0] ?? "files")
+  const tab: RightTab = typeof saved.tab === "string" ? (saved.tab as RightTab) : (savedTabs[0] ?? "files")
   return {
     open,
     widthRatio,
-    tabs: tabs.length ? tabs : DEFAULT_RIGHT_TABS,
+    tabs: savedTabs.length ? savedTabs : DEFAULT_RIGHT_TABS,
     tab,
   }
 }

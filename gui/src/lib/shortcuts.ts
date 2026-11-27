@@ -3,7 +3,10 @@ import type { AppSettings } from '../types';
 // Customizable global shortcuts. A binding is "+"-joined modifiers then a KeyboardEvent.code, e.g. "mod+KeyN".
 // "mod" is Command on macOS and Ctrl elsewhere; "ctrl" is always the Control key. An empty string means unbound.
 
-export const SHORTCUT_IDS = ['newTask', 'findTasks', 'settings', 'bottomPanel', 'terminal', 'changes', 'files', 'browser', 'sideChat'] as const
+export const SHORTCUT_IDS = [
+  'newTask', 'findTasks', 'settings', 'bottomPanel', 'terminal', 'changes', 'files', 'browser', 'sideChat',
+  'closePane', 'focusPaneLeft', 'focusPaneRight', 'focusPaneUp', 'focusPaneDown', 'nextPane', 'previousPane',
+] as const
 export type ShortcutId = (typeof SHORTCUT_IDS)[number]
 export type ShortcutBindings = Record<ShortcutId, string>
 
@@ -17,7 +20,18 @@ export const SHORTCUT_LABELS: Record<ShortcutId, string> = {
   files: 'Open files',
   browser: 'Open browser',
   sideChat: 'Open side chat',
+  closePane: 'Close split pane',
+  focusPaneLeft: 'Focus pane on the left',
+  focusPaneRight: 'Focus pane on the right',
+  focusPaneUp: 'Focus pane above',
+  focusPaneDown: 'Focus pane below',
+  nextPane: 'Focus next pane',
+  previousPane: 'Focus previous pane',
 }
+
+const isMac = typeof navigator !== 'undefined' && navigator.platform.includes('Mac')
+// Split-view keys: Control+Command on macOS, Ctrl+Alt elsewhere (written as "mod+alt", the form the recorder produces).
+const splitMod = isMac ? 'mod+ctrl' : 'mod+alt'
 
 export const defaultShortcuts: ShortcutBindings = {
   newTask: 'mod+KeyN',
@@ -29,9 +43,14 @@ export const defaultShortcuts: ShortcutBindings = {
   files: 'mod+shift+KeyF',
   browser: 'mod+shift+KeyB',
   sideChat: 'mod+Semicolon',
+  closePane: `${splitMod}+KeyW`,
+  focusPaneLeft: `${splitMod}+ArrowLeft`,
+  focusPaneRight: `${splitMod}+ArrowRight`,
+  focusPaneUp: `${splitMod}+ArrowUp`,
+  focusPaneDown: `${splitMod}+ArrowDown`,
+  nextPane: 'ctrl+Tab',
+  previousPane: 'ctrl+shift+Tab',
 }
-
-const isMac = typeof navigator !== 'undefined' && navigator.platform.includes('Mac')
 
 // Off macOS, "mod" and "ctrl" are the same key; normalizing lets conflict checks compare them correctly.
 export function normalizeBinding(binding: string): string {
@@ -85,7 +104,7 @@ export function formatBinding(binding: string): string[] {
     if (part === 'alt') return isMac ? '⌥' : 'Alt'
     return isMac ? '⇧' : 'Shift'
   })
-  const label = code.startsWith('Key') ? code.slice(3) : code.startsWith('Digit') ? code.slice(5) : (({ Comma: ',', Backquote: '`', Semicolon: ';' } as Record<string, string>)[code] ?? code)
+  const label = code.startsWith('Key') ? code.slice(3) : code.startsWith('Digit') ? code.slice(5) : (({ Comma: ',', Backquote: '`', Semicolon: ';', ArrowLeft: '←', ArrowRight: '→', ArrowUp: '↑', ArrowDown: '↓' } as Record<string, string>)[code] ?? code)
   return [...keys, label]
 }
 
