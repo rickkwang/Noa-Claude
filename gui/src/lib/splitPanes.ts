@@ -12,9 +12,10 @@ export type SplitLayout = {
   rowSplit: number
   // 0 for the primary pane, 1..panes.length for extra panes.
   focusedIndex: number
-  // Extra panes temporarily hidden while the window is too narrow for split view.
+  // Extra panes hidden while the window is too narrow for their columns, at their positions in the full layout.
   parkedPanes?: SplitPane[]
-  constrained?: boolean
+  // The widths of the parked columns, which continue `weights`.
+  parkedWeights?: number[]
 }
 // "left" opens the task as the new main task in a new first column; "above" opens it as the main task with
 // the current one moved below it. Both need a main task that has been saved.
@@ -24,7 +25,6 @@ export type MoveDir = "left" | "right" | "up" | "down"
 const STORAGE_KEY = "noa-agent.splitView"
 export const ROW_SPLIT = { min: 0.15, max: 0.85, default: 0.5 }
 export const COLUMN_MIN_WIDTH = 360
-export const SPLIT_CONSTRAINED_WIDTH = COLUMN_MIN_WIDTH * 2
 const MAX_COLUMNS = 5
 
 const emptyLayout: SplitLayout = { panes: [], weights: [], rowSplit: ROW_SPLIT.default, focusedIndex: 0 }
@@ -65,11 +65,11 @@ export function loadSplitLayout(): SplitLayout {
 
 export function saveSplitLayout(layout: SplitLayout) {
   try {
-    // While the window is narrow, save the layout it would restore to: the parked panes plus any opened since.
-    const { panes } = layout.constrained ? setSplitConstrained(layout, false, undefined, MAX_COLUMNS) : layout
+    // While panes are parked, save the layout a wide window would show: the parked panes plus any opened since.
+    const { panes, weights } = unparked(layout, undefined)
     localStorage.setItem(
       STORAGE_KEY,
-      JSON.stringify({ panes, weights: layout.weights, rowSplit: layout.rowSplit }),
+      JSON.stringify({ panes, weights, rowSplit: layout.rowSplit }),
     )
   } catch {
     /* Storage unavailable. */
@@ -422,27 +422,51 @@ export function cyclePaneIndex(panes: SplitPane[], focusedIndex: number, delta: 
   return order[next]!
 }
 
-// Parks extra panes while the viewport is too narrow for split view, restoring them when widened again. Tasks
-// opened in split while narrow join the restored panes.
-export function setSplitConstrained(
-  layout: SplitLayout,
-  constrained: boolean,
-  primary: SplitTask | undefined,
-  maxColumns: number,
-): SplitLayout {
-  if (!!layout.constrained === constrained) return layout
-  if (constrained) {
-    if (layout.panes.length === 0) return { ...layout, constrained: true, focusedIndex: 0 }
-    return { ...layout, constrained: true, parkedPanes: layout.panes, panes: [], focusedIndex: 0 }
+// The full layout with parked panes back in place. A task opened while panes were parked keeps its cell unless
+// a parked pane holds it, and then takes the next free one. Column widths and the row split carry over while the
+// column count still matches.
+function unparked(layout: SplitLayout, primary: SplitTask | undefined): SplitLayout {
+  const parked = (layout.parkedPanes ?? []).filter((pane) => !primary || !sameTask(pane, primary))
+  const base = { ...layout, parkedPanes: undefined, parkedWeights: undefined }
+  if (!parked.length) return layout.parkedPanes ? base : layout
+  const free = (pane: SplitPane) => !parked.some((other) => sameTask(other, pane) || samePos(other.pos, pane.pos))
+  const full = layout.panes
+    .filter((pane) => !free(pane))
+    .reduce((next, pane) => openTaskInSplit(next, pane, primary, MAX_COLUMNS), withPanes(base, [...layout.panes.filter(free), ...parked]))
+  const weights = [...layout.weights, ...(layout.parkedWeights ?? [])]
+  return {
+    ...full,
+    weights: weights.length === full.weights.length ? weights : full.weights,
+    rowSplit: full.panes.some((pane) => pane.pos.row === 1) ? layout.rowSplit : full.rowSplit,
   }
-  const parked = layout.parkedPanes
-  if (!parked?.length) return { ...layout, constrained: false, parkedPanes: undefined }
-  const filtered = primary ? parked.filter((pane) => !sameTask(pane, primary)) : parked
-  const opened = layout.panes.filter((pane) => !filtered.some((parkedPane) => sameTask(parkedPane, pane)))
-  return opened.reduce(
-    (restored, pane) => openTaskInSplit(restored, pane, primary, maxColumns),
-    withPanes({ ...layout, constrained: false, parkedPanes: undefined }, filtered, 0),
-  )
+}
+
+// Shows the columns the window fits and parks the rest; when only the main column fits, every extra pane is
+// parked. Parked panes come back as the window widens.
+export function fitSplitToWidth(layout: SplitLayout, maxColumns: number, primary: SplitTask | undefined): SplitLayout {
+  const fits = (pane: SplitPane) => maxColumns > 1 && pane.pos.col < maxColumns
+  if (!layout.parkedPanes?.length && layout.panes.every(fits)) return layout
+  const full = unparked(layout, primary)
+  const parked = full.panes.filter((pane) => !fits(pane))
+  const shown = withPanes(full, full.panes.filter(fits))
+  const shownColumns = columnCount(shown.panes)
+  const focused = layout.panes[layout.focusedIndex - 1]
+  return {
+    ...shown,
+    weights: full.weights.slice(0, shownColumns),
+    rowSplit: full.rowSplit,
+    focusedIndex: focused ? paneIndexOf(shown.panes, focused) ?? 0 : 0,
+    parkedPanes: parked.length ? parked : undefined,
+    parkedWeights: parked.length ? full.weights.slice(shownColumns) : undefined,
+  }
+}
+
+// Closes every pane, shown or parked, whose task matches.
+export function removeTasks(layout: SplitLayout, matches: (task: SplitTask) => boolean): SplitLayout {
+  const next = layout.panes.filter(matches).reduce(removePane, layout)
+  const parked = layout.parkedPanes?.filter((pane) => !matches(pane))
+  if (parked?.length === layout.parkedPanes?.length) return next
+  return { ...next, parkedPanes: parked?.length ? parked : undefined, parkedWeights: parked?.length ? next.parkedWeights : undefined }
 }
 
 // The share a row may take: each pane keeps at least 320px, and below 640px the rows stay even.

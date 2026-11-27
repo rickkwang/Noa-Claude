@@ -56,7 +56,6 @@ import { SplitPane } from "./components/SplitPane"
 import { PANE_CHAT_OVERFLOW_MIN, PANE_LEFT_PEEK_MIN, PANE_RIGHT_MIN, clearPaneSideOpen, loadPaneSideState, paneRightWidth, savePaneSideState } from "./lib/panePrefs"
 import {
   ROW_SPLIT,
-  SPLIT_CONSTRAINED_WIDTH,
   adjacentPaneIndex,
   closePrimaryPane,
   columnCount,
@@ -68,17 +67,18 @@ import {
   maxColumnsFor,
   moveOrSwapPane,
   moveTargetsForPane,
+  fitSplitToWidth,
   openTaskInSplit,
   paneAt,
   paneIndexOf,
   placeTask,
   promotePane,
   removePane,
+  removeTasks,
   rowSplitFor,
   sameTask,
   saveSplitLayout,
   setFocusedPane,
-  setSplitConstrained,
   type PaneDragHover,
   type PanePos,
   type SplitHover,
@@ -482,6 +482,10 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
   // Split view: tasks opened beside the main one via drag, Alt+Click, or menu.
   const [split, setSplit] = useState<SplitLayout>(loadSplitLayout)
   useEffect(() => saveSplitLayout(split), [split])
+  // A pane whose task is gone (deleted outside this window, say) closes once its project's full list has loaded.
+  useEffect(() => {
+    setSplit((layout) => removeTasks(layout, (pane) => loadedProjects.has(pane.cwd) && !sessionsByProject[pane.cwd]?.some((item) => item.id === pane.id)))
+  }, [loadedProjects, sessionsByProject])
   const [splitHover, setSplitHover] = useState<SplitHover>()
   const [paneDrag, setPaneDrag] = useState<{ paneIndex: number; label: string; left: number; top: number; hover?: PaneDragHover }>()
   const [cmdHeld, setCmdHeld] = useState(false)
@@ -521,11 +525,13 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
     }
   }, [])
   const primaryTask: SplitTask | undefined = activeId ? { cwd: session.cwd, id: activeId } : undefined
-  // Automatically park extra panes while the window is too narrow for split view, and restore them when widened.
+  // Park the columns the window can't fit at their minimum width, and restore them when it widens or a closed
+  // column frees room.
+  const fitColumns = paneHostSize.width ? maxColumnsFor(paneHostSize.width) : 0
+  const shownColumns = columnCount(split.panes)
   useEffect(() => {
-    if (!paneHostSize.width) return
-    setSplit((layout) => setSplitConstrained(layout, paneHostSize.width < SPLIT_CONSTRAINED_WIDTH, primaryTask, maxColumnsFor(paneHostSize.width)))
-  }, [paneHostSize.width])
+    if (fitColumns) setSplit((layout) => fitSplitToWidth(layout, fitColumns, primaryTask))
+  }, [fitColumns, shownColumns])
   // A pane showing the main task (reached through history, say) steps aside while it is the main one; the columns
   // close up around it.
   const shownSplit = primaryTask && split.panes.some((pane) => sameTask(pane, primaryTask)) ? removePane(split, primaryTask) : split
@@ -712,10 +718,7 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
       return
     }
     removeSessionBrowserState(cwd, id)
-    setSplit((layout) => {
-      const next = layout.panes.filter((pane) => pane.id === id).reduce(removePane, layout)
-      return next.parkedPanes ? { ...next, parkedPanes: next.parkedPanes.filter((pane) => pane.id !== id) } : next
-    })
+    setSplit((layout) => removeTasks(layout, (pane) => pane.id === id))
     const owner = projects.find((project) => sessionsByProject[project.path]?.some((item) => item.id === id))?.path ?? cwd
     const updated = await fetchSessions(owner).catch(() => undefined)
     if (updated) setSessionsByProject((all) => ({ ...all, [owner]: updated }))

@@ -1,5 +1,6 @@
 // Mounts the full App in Electron with a mocked bridge and drives split view: pane focus, the split shortcuts,
-// pane drag, closing the main pane, narrow-window parking, and deleting or opening tasks while panes are parked.
+// pane drag, closing the main pane, parking columns the window can't fit, deleting or opening tasks while panes are
+// parked, and closing panes whose task no longer exists.
 import { mkdtempSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
@@ -88,6 +89,25 @@ window.runChecks=async()=>{
  await check('sidebarMoveMenuFollowsLayout',async()=>{await mount('A',[['B',1,0],['C',2,0]]);await openTaskMenu('Task B');menuItem('Move').click();await wait(()=>menuItem('Move right'));menuItem('Move right').click();await wait(()=>pane('B').style.gridColumn==='3');
   await openTaskMenu('Task B');menuItem('Move').click();await wait(()=>menuItem('Move left'));const labels=['Move left','Move right'].filter(menuItem).join(',');document.body.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));return labels==='Move left'||'moves '+labels});
  await check('customBindingKeepsKeysFromNewDefault',async()=>{await mount('A',[['B',1,0]],{findTasks:'ctrl+Tab'});await focusPane('A');press('Tab',{ctrlKey:true,key:'Tab'});await frames();const stillA=focused()==='A';const searchOpened=await wait(()=>document.querySelector('dialog[aria-label="Search Noa"][open]'),1000);press('Escape',{key:'Escape'});return (stillA&&searchOpened)||'focused '+focused()+' search '+searchOpened});
+ // Columns the window can't fit at their minimum width are parked, and come back as it widens.
+ await check('columnsFitWindowWidth',async()=>{await resize(1800);await mount('A',[['B',1,0],['C',2,0],['D',3,0],['E',4,0]]);
+  const narrowest=()=>Math.min(...[...document.querySelectorAll('[data-pane]')].map(el=>el.getBoundingClientRect().width));
+  const steps=[];for(const w of [1800,1300,1800]){await resize(w);await pause(300);steps.push(w+':'+shown()+'@'+Math.round(narrowest()))}
+  const stored=JSON.parse(localStorage.getItem('noa-agent.splitView')).panes.length;
+  return (steps.every(step=>+step.split('@')[1]>=359)&&steps[0].split('@')[0]===steps[2].split('@')[0]&&stored===4)||steps.join(' ')+' stored '+stored});
+ // Parking a column and bringing it back keeps the column widths the user set.
+ await check('columnWidthsSurviveParking',async()=>{await resize(1800);await mount('A',[['B',1,0],['C',2,0],['D',3,0]]);
+  const saved=JSON.parse(localStorage.getItem('noa-agent.splitView'));localStorage.setItem('noa-agent.splitView',JSON.stringify({...saved,weights:[1,2,1,1]}));await remount();
+  const ratio=()=>Math.round(pane('B').getBoundingClientRect().width/pane('C').getBoundingClientRect().width*10)/10;const before=ratio();
+  await resize(1300);await pause(300);const narrow=shown();await resize(1800);await pause(300);
+  return (before===2&&narrow!=='BCD'&&shown()==='BCD'&&ratio()===2&&JSON.stringify(JSON.parse(localStorage.getItem('noa-agent.splitView')).weights)==='[1,2,1,1]')||'before '+before+' narrow '+narrow+' after '+shown()+' ratio '+ratio()+' weights '+JSON.stringify(JSON.parse(localStorage.getItem('noa-agent.splitView')).weights)});
+ // Closing a pane frees room for a parked column, which comes back without a resize.
+ await check('closingPaneUnparksColumn',async()=>{await resize(1800);await mount('A',[['B',1,0],['C',2,0],['D',3,0],['E',4,0]]);const before=shown();await focusPane('B');press('KeyW',splitMod);await pause(300);return (before==='BCD'&&shown()==='CDE')||'before '+before+' after '+shown()});
+ // A stored pane whose task is gone (deleted outside this window) closes once the task list has loaded.
+ await check('missingTaskPaneCloses',async()=>{await mount('A',[['B',1,0]]);const gone='10000000-0000-4000-8000-0000000000ff';
+  localStorage.setItem('noa-agent.splitView',JSON.stringify({panes:[{cwd:'/fixture',id:ids.B,pos:{col:1,row:0}},{cwd:'/fixture',id:gone,pos:{col:2,row:0}}],weights:[],rowSplit:0.5}));
+  await remount();await wait(()=>row('Task B'));await pause(300);const stored=localStorage.getItem('noa-agent.splitView');
+  return (shown()==='B'&&!stored.includes(gone))||'shown '+shown()+' stored '+stored});
  await check('settingsListSplitShortcuts',async()=>{await mount('A',[['B',1,0]]);press('Comma',{metaKey:true});await wait(()=>document.querySelector('[role="dialog"] nav button'));
   [...document.querySelectorAll('[role="dialog"] nav button')].find(b=>b.innerText.trim()==='Keyboard shortcuts').click();
   const keys=label=>[...document.querySelectorAll('[data-settings-label="'+label+'"] kbd')].map(k=>k.textContent).join('');
