@@ -36,7 +36,6 @@ import session from './commands/session/index.js'
 import skills from './commands/skills/index.js'
 import status from './commands/status/index.js'
 import tasks from './commands/tasks/index.js'
-import securityReview from './commands/security-review.js'
 import terminalSetup from './commands/terminalSetup/index.js'
 import usage from './commands/usage/index.js'
 import theme from './commands/theme/index.js'
@@ -219,7 +218,6 @@ const COMMANDS = memoize((): Command[] => [
   focus,
   feedback,
   rewind,
-  securityReview,
   terminalSetup,
   usageCredits,
   usageCreditsNonInteractive,
