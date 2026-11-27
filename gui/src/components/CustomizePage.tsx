@@ -3,10 +3,11 @@ import { createPortal } from "react-dom"
 import type { AgentState } from "../agent/reducer"
 import { fetchPlugins, fetchSkillsState, runPluginAction, runSkillAction, type SkillsState, type PluginAction, type PluginCatalog } from "../api"
 import { ArrowUpDown, Check, ChevronDown, ChevronLeft, Download, Plug, Plus, Search, Trash2, X } from "../lib/icons"
+import { useFlash } from "../hooks/useActionFeedback"
 import { useConfirm } from "./ConfirmDialog"
 import { Markdown } from "./Markdown"
 import { Row, Section, Toggle } from "./settings/controls"
-import { mcpActionStatus, sourceLabels } from "./settings/ConfigurationPages"
+import { mcpActionStatus, mcpReconnected, sourceLabels } from "./settings/ConfigurationPages"
 
 type PluginsTab = "plugins" | "skills" | "connectors" | "marketplace"
 type SkillCommand = AgentState["commands"][number]
@@ -45,6 +46,8 @@ export function CustomizePage({ skills: promptCommands, mcpServers, mcpAction, m
   const [loadError, setLoadError] = useState<string>()
   const [busy, setBusy] = useState<string>()
   const [error, setError] = useState<string>()
+  const [notice, flashNotice] = useFlash<string>()
+  const [upgraded, flashUpgraded] = useFlash<string>()
   const [tab, setTab] = useState<PluginsTab>("skills")
   const [descending, setDescending] = useState(false)
   const [browsing, setBrowsing] = useState(false)
@@ -362,7 +365,7 @@ export function CustomizePage({ skills: promptCommands, mcpServers, mcpAction, m
                   {own && (
                     <>
                       <button type="button" role="menuitem" className="h-8 rounded-lg px-2.5 text-left text-body hover:bg-[var(--settings-fill-hover)]" onClick={() => { setRowMenu(undefined); void runSkillAction("reveal", command.name).catch((e: Error) => setError(e.message)) }}>Reveal in Finder</button>
-                      <button type="button" role="menuitem" className="h-8 rounded-lg px-2.5 text-left text-body hover:bg-[var(--settings-fill-hover)]" onClick={() => { setRowMenu(undefined); void runSkillAction("read", command.name).then((result) => navigator.clipboard.writeText(result.content ?? ""), (e: Error) => setError(e.message)) }}>Copy Markdown</button>
+                      <button type="button" role="menuitem" className="h-8 rounded-lg px-2.5 text-left text-body hover:bg-[var(--settings-fill-hover)]" onClick={() => { setRowMenu(undefined); void runSkillAction("read", command.name).then((result) => navigator.clipboard.writeText(result.content ?? "")).then(() => flashNotice("Copied Markdown"), (e: Error) => setError(e.message)) }}>Copy Markdown</button>
                       <button type="button" role="menuitem" className="h-8 rounded-lg px-2.5 text-left text-body text-[#C24444] hover:bg-[var(--settings-fill-hover)]" onClick={() => { setRowMenu(undefined); void uninstallSkill(command.name) }}>Uninstall</button>
                     </>
                   )}
@@ -386,7 +389,7 @@ export function CustomizePage({ skills: promptCommands, mcpServers, mcpAction, m
             <span className="block truncate text-chat-sm font-medium leading-[18px] text-[var(--text-primary)]">{server.name}</span>
             <span role="status" title={action?.failed ? status : undefined} className={`mt-0.5 block truncate text-caption leading-[17px] ${action?.failed ? "text-[var(--text-danger)]" : "text-[var(--sidebar-text-muted)]"}`}>{status}</span>
           </span>
-          {server.status !== "disabled" && server.status !== "pending" && <button type="button" className={outlineButton} disabled={mcpLocked} onClick={() => onChangeMcp(server.name)}>Reconnect</button>}
+          {server.status !== "disabled" && server.status !== "pending" && <button type="button" className={outlineButton} disabled={mcpLocked} onClick={() => onChangeMcp(server.name)}>{mcpReconnected(mcpAction, server.name) ? <><Check size={14} />Reconnected</> : "Reconnect"}</button>}
           <Toggle checked={server.status !== "disabled"} label={server.status === "disabled" ? "Enable connector" : "Disable connector"} onChange={(enabled) => onChangeMcp(server.name, enabled)} />
         </div>
       )
@@ -407,9 +410,9 @@ export function CustomizePage({ skills: promptCommands, mcpServers, mcpAction, m
             className={outlineButton}
             title={local ? "Only Git marketplaces can be upgraded" : undefined}
             disabled={busyAny || local}
-            onClick={() => run(`update:${market.name}`, "marketplace-update", market.name, undefined, "Unable to upgrade the marketplace.")}
+            onClick={() => void run(`update:${market.name}`, "marketplace-update", market.name, undefined, "Unable to upgrade the marketplace.").then((ok) => { if (ok) flashUpgraded(market.name) })}
           >
-            {busy === `update:${market.name}` ? "Upgrading…" : "Upgrade"}
+            {busy === `update:${market.name}` ? "Upgrading…" : upgraded === market.name ? <><Check size={14} />Upgraded</> : "Upgrade"}
           </button>
           <button type="button" aria-label={`Remove ${market.name}`} title="Remove marketplace" className={iconButton} disabled={busyAny} onClick={() => void removeMarketplace(market.name)}>
             <Trash2 size={17} />
@@ -562,7 +565,7 @@ export function CustomizePage({ skills: promptCommands, mcpServers, mcpAction, m
                         <button type="button" aria-label="Close menu" className="fixed inset-0 z-10 cursor-default" onClick={() => setSkillMenu(false)} />
                         <div role="menu" className="noa-floating-panel absolute right-0 top-full z-20 mt-1 flex min-w-44 flex-col rounded-[var(--menu-popover-radius)] bg-[var(--bg-card)] p-1 shadow-[var(--menu-shadow)]">
                           <button type="button" role="menuitem" className="h-8 rounded-lg px-2.5 text-left text-body hover:bg-[var(--settings-fill-hover)]" onClick={() => { setSkillMenu(false); void runSkillAction("reveal", currentSkill.name).catch((e: Error) => setError(e.message)) }}>Reveal in Finder</button>
-                          <button type="button" role="menuitem" disabled={skillText === undefined} className="h-8 rounded-lg px-2.5 text-left text-body hover:bg-[var(--settings-fill-hover)] disabled:opacity-40" onClick={() => { setSkillMenu(false); void navigator.clipboard.writeText(skillText ?? "") }}>Copy Markdown</button>
+                          <button type="button" role="menuitem" disabled={skillText === undefined} className="h-8 rounded-lg px-2.5 text-left text-body hover:bg-[var(--settings-fill-hover)] disabled:opacity-40" onClick={() => { setSkillMenu(false); void navigator.clipboard.writeText(skillText ?? "").then(() => flashNotice("Copied Markdown"), (e: Error) => setError(e.message)) }}>Copy Markdown</button>
                         </div>
                       </>
                     )}
@@ -595,6 +598,7 @@ export function CustomizePage({ skills: promptCommands, mcpServers, mcpAction, m
       {error && (
         <p role="alert" className="noa-selectable m-0 whitespace-pre-wrap rounded-xl bg-[color-mix(in_srgb,#C24444_10%,transparent)] px-3 py-2 text-body text-[#C24444]">{error}</p>
       )}
+      {notice && !error && <p role="status" className="m-0 inline-flex items-center gap-1.5 text-chat-sm text-[var(--sidebar-text-muted)]"><Check size={14} />{notice}</p>}
       {body}
       {dialog}
     </>

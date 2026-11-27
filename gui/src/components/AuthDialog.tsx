@@ -17,7 +17,7 @@ export function AuthDialog({ auth, account, onClose, onRetry, onSubmitCode }: Au
   const cardRef = useRef<HTMLDivElement>(null)
   const firstActionRef = useRef<HTMLButtonElement>(null)
   const [code, setCode] = useState("")
-  const [copied, setCopied] = useState(false)
+  const [copied, setCopied] = useState<"idle" | "done" | "failed">("idle")
   const [manual, setManual] = useState(false)
   const waiting = auth.status === "waiting"
   const complete = auth.status === "complete"
@@ -173,12 +173,11 @@ export function AuthDialog({ auth, account, onClose, onRetry, onSubmitCode }: Au
                       onClick={() => {
                         if (!auth.manualUrl) return
                         void navigator.clipboard.writeText(auth.manualUrl)
-                          .then(() => setCopied(true))
-                          .catch(() => {})
+                          .then(() => setCopied("done"), () => setCopied("failed"))
                       }}
                       className="noa-auth-dialog__link"
                     >
-                      {copied ? "Link copied" : "Copy sign-in link"}
+                      {copied === "done" ? "Link copied" : copied === "failed" ? "Copy failed. Try again" : "Copy sign-in link"}
                     </button>
                   ) : (
                     <button type="button" onClick={() => setManual(true)} className="noa-auth-dialog__link">

@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from "react"
 import { query } from "../api"
+import { useFlash } from "../hooks/useActionFeedback"
 import { useConfirm } from "./ConfirmDialog"
 import { FileMenu, loadEditors, openPath, revealLabel, type Editor, type FileMenuTarget } from "./FileMenu"
 import { useDiffPref } from "../lib/diffPrefs"
@@ -154,6 +155,17 @@ export function WorkspaceFiles({ cwd, changes = false, scope: scopeProp, focus, 
   const [loading, setLoading] = useState(false)
   const [truncated, setTruncated] = useState(false)
   const [tick, setTick] = useState(0)
+  const [refreshing, setRefreshing] = useState(false)
+  const [notice, flashNotice] = useFlash<string>()
+  // A manual refresh settles when the load it started (or a later one) finishes: the changes list
+  // loads through the status request, everything else through the preview/tree request.
+  const refreshWaiter = useRef<{ tick: number; status: boolean; done: (ok: boolean) => void }>(undefined)
+  const settleRefresh = (loadTick: number, status: boolean, ok: boolean) => {
+    const waiter = refreshWaiter.current
+    if (!waiter || waiter.status !== status || loadTick < waiter.tick) return
+    refreshWaiter.current = undefined
+    waiter.done(ok)
+  }
   const [filter, setFilter] = useState("")
   const [search, setSearch] = useState("")
   // Diff layout comes from the shared Changes options; the file viewer keeps its own wrap setting.
@@ -207,7 +219,7 @@ export function WorkspaceFiles({ cwd, changes = false, scope: scopeProp, focus, 
   useEffect(() => {
     if (!active) return
     const controller = new AbortController()
-    load<Changes>("changes", cwd, { scope }, controller.signal).then((value) => { if (!controller.signal.aborted) { setStatus({ ...value, scope }); setStatusError(undefined) } }).catch((e) => { if (!controller.signal.aborted) setStatusError(e.message) })
+    load<Changes>("changes", cwd, { scope }, controller.signal).then((value) => { if (!controller.signal.aborted) { setStatus({ ...value, scope }); setStatusError(undefined); settleRefresh(tick, true, true) } }).catch((e) => { if (!controller.signal.aborted) { setStatusError(e.message); settleRefresh(tick, true, false) } })
     return () => controller.abort()
   }, [cwd, scope, tick, refreshKey, active, changes])
   useEffect(() => {
@@ -232,7 +244,7 @@ export function WorkspaceFiles({ cwd, changes = false, scope: scopeProp, focus, 
           const body = await load<{ entries: Entry[]; truncated: boolean }>("files", cwd, { path }, controller.signal)
           return [path, body] as const
         })).then((entries) => { setTree(Object.fromEntries(entries.map(([path, body]) => [path, body.entries]))); setTruncated(entries.some(([, body]) => body.truncated)) })
-    request.catch((e) => { if (!controller.signal.aborted) setError(e.message) }).finally(() => { if (!controller.signal.aborted) setLoading(false) })
+    request.then(() => { if (!controller.signal.aborted) settleRefresh(tick, false, true) }, (e) => { if (!controller.signal.aborted) { setError(e.message); settleRefresh(tick, false, false) } }).finally(() => { if (!controller.signal.aborted) setLoading(false) })
     return () => controller.abort()
   }, [cwd, selected, view, scope, expanded, search, changes, tick, refreshKey, active, editing, context])
 
@@ -374,7 +386,16 @@ export function WorkspaceFiles({ cwd, changes = false, scope: scopeProp, focus, 
       setPreview({ ...body, path: selected!, scope, view }); setEditing(false); setTick((n) => n + 1); onUpdated?.()
     } catch (e) { setError((e as Error).message) } finally { setAction("") }
   }
-  const copyPath = () => navigator.clipboard.writeText(selected ?? cwd).catch((e) => setError(`Could not copy path: ${e.message}`))
+  const copyText = (text: string, what: string) => navigator.clipboard.writeText(text).then(() => { setActionError(undefined); flashNotice(`Copied ${what}`) }, (e) => setActionError(`Copy failed: ${e.message}`))
+  const copyPath = () => copyText(selected ?? cwd, "path")
+  // Menus close on click, so the result shows in the panel's notice line; a failure shows as the load error.
+  const refresh = () => {
+    setRefreshing(true)
+    const done = (ok: boolean) => { setRefreshing(false); if (ok) flashNotice("Refreshed") }
+    const status = changes && !selected
+    // Record the tick this click produces, so a load that started before the click cannot settle it.
+    setTick((n) => { refreshWaiter.current = { tick: n + 1, status, done }; return n + 1 })
+  }
   const count = (file: Change) => <span className="noa-change-count">{file.binary ? "Binary" : <><span className="is-added">+{file.additions}</span><span className="is-removed">−{file.deletions}</span></>}</span>
   const toggleClosed = (key: string) => setClosed((previous) => { const next = new Set(previous); if (!next.delete(key)) next.add(key); return next })
   const dirty_ = (prefix: string) => status?.files.some((f) => f.path.startsWith(prefix + "/"))
@@ -532,7 +553,7 @@ export function WorkspaceFiles({ cwd, changes = false, scope: scopeProp, focus, 
           <div className="noa-review-menu-separator" role="separator" />
           {!selectedChange?.status.includes("D") && <button type="button" role="menuitem" className={button} onClick={() => onReference(selected)}>Attach as context</button>}
           <button type="button" role="menuitem" className={button} onClick={copyPath}>Copy path</button>
-          {view === "file" && current?.kind === "text" && <button type="button" role="menuitem" className={button} onClick={() => navigator.clipboard.writeText(current.content ?? "").catch((e) => setActionError(`Copy failed: ${e.message}`))}>Copy file contents</button>}
+          {view === "file" && current?.kind === "text" && <button type="button" role="menuitem" className={button} onClick={() => copyText(current.content ?? "", "file contents")}>Copy file contents</button>}
           {view === "file" && current && current.kind !== "binary" && <button type="button" role="menuitem" className={button} onClick={download}>Download file</button>}
           {changes && onRevealInTree && !selectedChange?.status.includes("D") && <button type="button" role="menuitem" className={button} onClick={() => onRevealInTree(selected)}>Reveal in file tree</button>}
           {view === "file" && current && <>
@@ -542,7 +563,7 @@ export function WorkspaceFiles({ cwd, changes = false, scope: scopeProp, focus, 
             <button type="button" role="menuitem" className={button} onClick={() => openPath(cwd, selected, "finder").catch((e) => setActionError(e.message))}>{revealLabel}</button>
           </>}
           <div className="noa-review-menu-separator" role="separator" />
-          <button type="button" role="menuitem" className={button} disabled={!!action} onClick={() => setTick((n) => n + 1)}>{view === "diff" ? "Refresh" : "Reload file"}</button>
+          <button type="button" role="menuitem" className={button} disabled={!!action || refreshing} onClick={refresh}>{view === "diff" ? "Refresh" : "Reload file"}</button>
         </div>
       </details>}
       {split && treeToggle}
@@ -550,14 +571,14 @@ export function WorkspaceFiles({ cwd, changes = false, scope: scopeProp, focus, 
   const fileHeader = selected ? <div className="noa-panel-toolbar noa-file-header">{fileHeaderItems}</div> : <div className="noa-panel-toolbar noa-file-header">
       <span className="noa-panel-title" title={selectedChange?.oldPath ? `Renamed from ${selectedChange.oldPath}` : selected ?? cwd}>{selected ? <MiddlePath path={selected} crumbs /> : (changes ? <span className="noa-branch">{status?.isGit && <GitBranch size={14} />}{status?.branch || "Changes"}</span> : "Project files")}</span>
       {!selected && changes && currentStatus?.isGit && (currentStatus.additions > 0 || currentStatus.deletions > 0) && <span className="noa-row-stats"><span className="is-added">+{currentStatus.additions}</span><span className="is-removed">-{currentStatus.deletions}</span></span>}
-      {!selected && <button type="button" className={button} aria-label={changes ? "Refresh changes" : "Refresh files"} title="Refresh" disabled={!!action} onClick={() => setTick((n) => n + 1)}><RefreshCcw size={14} /></button>}
+      {!selected && <button type="button" className={button} aria-label={changes ? "Refresh changes" : "Refresh files"} title="Refresh" disabled={!!action || refreshing} onClick={refresh}><RefreshCcw size={14} /></button>}
   </div>
   const rootChip = <span className="noa-file-root-chip" title={cwd}><Folder size={14} />{cwd.split("/").filter(Boolean).pop() ?? "/"}</span>
   const rootMenu = <>
         <details className="noa-review-menu" onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) event.currentTarget.open = false }} onKeyDown={(event) => { if (event.key === "Escape") event.currentTarget.open = false }} onClick={(event) => { if ((event.target as HTMLElement).closest("button")) event.currentTarget.open = false }}>
           <summary role="button" className={button} aria-label="File actions" title="File actions"><MoreHorizontal size={16} /></summary>
           <div className="noa-review-menu-content noa-floating-panel">
-            <button type="button" className={button} disabled={editing || !!action} onClick={() => setTick((n) => n + 1)}><RefreshCcw size={13} />Refresh</button>
+            <button type="button" className={button} disabled={editing || !!action || refreshing} onClick={refresh}><RefreshCcw size={13} />Refresh</button>
             <button type="button" className={button} disabled={expanded.size === 0} onClick={() => setExpanded(new Set())}>Collapse all</button>
             <button type="button" className={button} onClick={copyPath}><Copy size={13} />Copy path</button>
           </div>
@@ -576,6 +597,7 @@ export function WorkspaceFiles({ cwd, changes = false, scope: scopeProp, focus, 
     {error && <p className="noa-panel-error" role="alert">{error}</p>}
     {actionError && <p className="noa-panel-error" role="alert">{actionError}</p>}
     {diskNotice && editing && <p className="noa-panel-notice" role="status">{diskNotice}</p>}
+    {notice && !actionError && <p className="noa-panel-notice" role="status">{notice}</p>}
     {statusError && <p className="noa-panel-error" role="alert">Could not load changes: {statusError}{currentStatus && " · Showing last result"} <button type="button" className={button} onClick={() => setTick((n) => n + 1)}>Retry</button></p>}
     {loading && !current && selected && <p className="noa-panel-empty" role="status">Loading…</p>}
   </>
@@ -588,7 +610,7 @@ export function WorkspaceFiles({ cwd, changes = false, scope: scopeProp, focus, 
           {(search || !closed.has("@all")) && (sectioned ? <div role="group">{treeRows("")}</div> : treeRows(""))}{loading && !tree[""] && <p className="noa-panel-empty" role="status">{search ? "Searching files…" : "Loading directory entries…"}</p>}{!loading && !error && (search ? !matches.length : !tree[""]?.length) && <p className="noa-panel-empty">{search ? "No matching files" : "No files in this folder"}</p>}</div>
   return <div ref={rootRef} className={`noa-workspace-panel${changes ? " is-review" : ""}`}>
     {dialog}
-    {menu && <FileMenu cwd={cwd} target={menu} onClose={() => setMenu(undefined)} onReference={onReference} onRevealInTree={onRevealInTree} onError={setActionError} />}
+    {menu && <FileMenu cwd={cwd} target={menu} onClose={() => setMenu(undefined)} onReference={onReference} onRevealInTree={onRevealInTree} onCopy={copyText} onError={setActionError} />}
     {(selected || changes) && !showTree ? fileHeader : null}
     {/* The file and the tree side by side under the tab strip; the file's header row spans only its own column. */}
     {showTree ? <div className="noa-files-split">

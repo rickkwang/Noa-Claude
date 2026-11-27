@@ -57,15 +57,18 @@ export async function addProject(paths: string[], name?: string): Promise<Projec
 
 export async function removeProject(path: string): Promise<ProjectInfo[]> {
   const response = await fetch(`/api/projects?path=${encodeURIComponent(path)}`, { method: "DELETE" })
-  return (await response.json()) as ProjectInfo[]
+  const body = await response.json()
+  if (!response.ok) throw new Error(body.error ?? `HTTP ${response.status}`)
+  return body as ProjectInfo[]
 }
 
 export async function revealProject(path: string): Promise<void> {
-  await fetch("/api/projects/reveal", {
+  const response = await fetch("/api/projects/reveal", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ path }),
   })
+  if (!response.ok) throw new Error((await response.json().catch(() => ({}))).error ?? `HTTP ${response.status}`)
 }
 
 interface MarketplaceInfo {

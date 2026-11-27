@@ -171,21 +171,25 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
   )
 
   // A timeout or an aborted signal also tells the CLI to cancel, so it stops working on the request.
-  const request = useCallback((request: ControlRequest, { timeoutMs = 60000, signal }: { timeoutMs?: number; signal?: AbortSignal } = {}): Promise<any> => new Promise((resolve, reject) => {
+  // With `expects`, the response is also applied to the state as a `control` call with that kind would be.
+  const request = useCallback((request: ControlRequest, { timeoutMs = 60000, signal, expects }: { timeoutMs?: number; signal?: AbortSignal; expects?: ResponseKind } = {}): Promise<any> => new Promise((resolve, reject) => {
     const requestId = crypto.randomUUID()
     const cancel = (error: Error) => {
       if (!requestsRef.current.has(requestId)) return
       clearTimeout(timer)
       requestsRef.current.delete(requestId)
+      pendingRef.current.delete(requestId)
       write({ type: "control_cancel_request", request_id: requestId })
       reject(error)
     }
     const timer = setTimeout(() => cancel(new Error("Request timed out. Reconnect before trying again.")), timeoutMs)
     requestsRef.current.set(requestId, { resolve, reject, timer })
+    if (expects) pendingRef.current.set(requestId, expects)
     signal?.addEventListener("abort", () => cancel(new DOMException("Cancelled", "AbortError")), { once: true })
     if (!write({ type: "control_request", request_id: requestId, request })) {
       clearTimeout(timer)
       requestsRef.current.delete(requestId)
+      pendingRef.current.delete(requestId)
       reject(new Error("Noa is disconnected."))
     }
   }), [write])
@@ -624,7 +628,8 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
     if (write({ type: "history_before", before: state.historyBefore })) dispatch({ type: "history-loading" })
   }, [write, state.historyBefore, state.historyLoading])
 
-  const refreshSettings = useCallback(() => control({ subtype: "get_settings" }, "settings"), [control])
+  // Both resolve once the response is applied, or to false when it failed; a CLI error also shows on the settings page.
+  const refreshSettings = useCallback(() => request({ subtype: "get_settings" }, { expects: "settings" }).then(() => true, () => false), [request])
   const changeMcp = useCallback((serverName: string, enabled?: boolean) => {
     const sent = control(enabled === undefined ? { subtype: "mcp_reconnect", serverName } : { subtype: "mcp_toggle", serverName, enabled }, "mcp_action")
     if (sent) {
@@ -633,7 +638,7 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
       dispatch({ type: "mcp-pending", pending: true, action })
     }
   }, [control])
-  const refreshMcp = useCallback(() => control({ subtype: "mcp_status" }, "mcp_status"), [control])
+  const refreshMcp = useCallback(() => request({ subtype: "mcp_status" }, { expects: "mcp_status" }).then(() => true, () => false), [request])
   const refreshContext = useCallback(() => control({ subtype: "get_context_usage", detail: "full" }, "context_usage"), [control])
 
   const answerPermission = useCallback(

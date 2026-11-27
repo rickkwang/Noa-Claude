@@ -1,6 +1,6 @@
 import type { AgentState, McpAction } from "../../agent/reducer"
 import type { PermissionMode } from "../../agent/protocol"
-import { ChevronDown } from "../../lib/icons"
+import { Check, ChevronDown } from "../../lib/icons"
 import { findModel } from "../../lib/models"
 import { outputStyleDescription, outputStyleOptions } from "../../lib/outputStyles"
 import { Row, Section, Select, actionButton } from "./controls"
@@ -196,9 +196,11 @@ export function mcpActionStatus(action: McpAction | undefined, server: string): 
   if (action?.server !== server) return
   if (!action.done) return { label: action.kind === "reconnect" ? "Reconnecting…" : action.kind === "enable" ? "Enabling…" : "Disabling…", dotClass: "bg-[var(--accent-color)]" }
   if (action.error) return { label: `Couldn't ${action.kind}: ${action.error}`, dotClass: "bg-[var(--text-danger)]", failed: true }
-  // A finished enable or disable already shows as the server's new status.
-  return action.kind === "reconnect" ? { label: "Reconnected", dotClass: "bg-emerald-500" } : undefined
+  // A finished enable or disable already shows as the server's new status; a finished reconnect shows on its button.
 }
+
+export const mcpReconnected = (action: McpAction | undefined, server: string) =>
+  action?.server === server && action.kind === "reconnect" && !!action.done && !action.error
 
 export function McpPage({ agent, onChangeMcp }: { agent: AgentState; onChangeMcp: (name: string, enabled?: boolean) => void }) {
   const locked = agent.connection !== "ready" || agent.busy
@@ -228,7 +230,7 @@ export function McpPage({ agent, onChangeMcp }: { agent: AgentState; onChangeMcp
                   className={actionButton}
                   onClick={() => onChangeMcp(server.name)}
                 >
-                  Reconnect
+                  {mcpReconnected(agent.mcpAction, server.name) ? <><Check size={14} />Reconnected</> : "Reconnect"}
                 </button>
                 <button
                   type="button"

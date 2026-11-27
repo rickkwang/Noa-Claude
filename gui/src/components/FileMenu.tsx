@@ -25,14 +25,15 @@ export function openPath(cwd: string, path: string, target: string): Promise<voi
 
 export type FileMenuTarget = { x: number; y: number; path: string; directory: boolean; gone?: boolean }
 
-// Claude Code's file row menu: Attach as context, Copy ▸, Open in ▸ (installed editors), and reveal in
+// The file row menu: Attach as context, Copy ▸, Open in ▸ (installed editors), and reveal in
 // the system file manager. "Reveal in file tree" is offered where the row is not already in the tree.
-export function FileMenu({ cwd, target, onClose, onReference, onRevealInTree, onError }: {
+export function FileMenu({ cwd, target, onClose, onReference, onRevealInTree, onCopy, onError }: {
   cwd: string
   target: FileMenuTarget
   onClose: () => void
   onReference: (path: string) => void
   onRevealInTree?: (path: string) => void
+  onCopy: (text: string, what: string) => Promise<void>
   onError: (message: string) => void
 }) {
   const [editors, setEditors] = useState<Editor[]>([])
@@ -42,7 +43,7 @@ export function FileMenu({ cwd, target, onClose, onReference, onRevealInTree, on
   useEffect(() => { void loadEditors(cwd).then(setEditors) }, [cwd])
 
   const absolute = target.path ? `${cwd.replace(/\/$/, "")}/${target.path}` : cwd
-  const copy = (text: string) => { navigator.clipboard.writeText(text).catch((e) => onError(`Copy failed: ${e.message}`)); onClose() }
+  const copy = (text: string, what: string) => { void onCopy(text, what); onClose() }
   const openIn = (where: string) => {
     onClose()
     openPath(cwd, target.path, where).catch((e) => onError(e.message))
@@ -50,9 +51,9 @@ export function FileMenu({ cwd, target, onClose, onReference, onRevealInTree, on
   const items: Item[] = [
     ...(!target.gone ? [{ label: "Attach as context", onSelect: () => { onReference(target.path); onClose() } }] : []),
     { label: "Copy", items: [
-      { label: "Absolute path", onSelect: () => copy(absolute) },
-      ...(target.path ? [{ label: "Relative path", onSelect: () => copy(target.path) }] : []),
-      { label: "Filename", onSelect: () => copy(absolute.split("/").pop() ?? absolute) },
+      { label: "Absolute path", onSelect: () => copy(absolute, "path") },
+      ...(target.path ? [{ label: "Relative path", onSelect: () => copy(target.path, "path") }] : []),
+      { label: "Filename", onSelect: () => copy(absolute.split("/").pop() ?? absolute, "filename") },
     ] },
     ...(!target.gone && editors.length ? [{ label: "Open in", separatorBefore: true, items: editors.map((editor) => ({ label: editor.name, onSelect: () => openIn(editor.type) })) }] : []),
     ...(!target.gone ? [{ label: revealLabel, separatorBefore: !editors.length, onSelect: () => openIn("finder") }] : []),

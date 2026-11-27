@@ -3,10 +3,11 @@ import { createPortal } from "react-dom"
 import type { AppSettings } from "../types"
 import type { AgentState } from "../agent/reducer"
 import type { PermissionMode, AccountInfo, ControlRequest } from "../agent/protocol"
-import { ArrowLeft, Cloud, Keyboard, List, Palette, Plug, RefreshCcw, Search, Settings, SlidersHorizontal, X } from "../lib/icons"
+import { ArrowLeft, Check, Cloud, Keyboard, List, Palette, Plug, RefreshCcw, Search, Settings, SlidersHorizontal, X } from "../lib/icons"
 import { findModel } from "../lib/models"
 import type { ProviderDraft } from "../lib/providerCatalog"
 import { supportsSidebarTranslucency } from "../lib/translucency"
+import { useActionFeedback } from "../hooks/useActionFeedback"
 import { useConfirm } from "./ConfirmDialog"
 import { AuthDialog } from "./AuthDialog"
 import { AppearancePage } from "./settings/AppearancePage"
@@ -69,8 +70,8 @@ export function SettingsDialog({
   agent: AgentState
   request: (request: ControlRequest) => Promise<any>
   onReconnect: () => Promise<void>
-  onRefreshSettings: () => void
-  onRefreshMcp: () => void
+  onRefreshSettings: () => Promise<boolean>
+  onRefreshMcp: () => Promise<boolean>
   onChangeMcp: (name: string, enabled?: boolean) => void
   onModel: (model: string) => void
   onProvider: (providerId: string) => void
@@ -142,6 +143,10 @@ export function SettingsDialog({
   }
   const disconnected = agent.connection !== "ready"
   const activeModel = findModel(agent.models, agent.model)
+  const [refreshResult, runRefresh] = useActionFeedback()
+  // The configuration, hooks and MCP pages share one Refresh button; its result belongs to the page it ran on.
+  const [refreshedPage, setRefreshedPage] = useState(page)
+  const refresh = refreshResult === "pending" || refreshedPage === page ? refreshResult : "idle"
 
   useEffect(() => {
     if (disconnected) return
@@ -360,12 +365,12 @@ export function SettingsDialog({
             {(page === "configuration" || page === "hooks" || page === "mcp") && (
               <button
                 type="button"
-                disabled={disconnected || agent.mcpPending}
-                className={actionButton}
-                onClick={page === "mcp" ? onRefreshMcp : onRefreshSettings}
+                disabled={disconnected || agent.mcpPending || refresh === "pending"}
+                className={`${actionButton}${refresh === "failed" ? " !text-[var(--text-danger)]" : ""}`}
+                onClick={() => { setRefreshedPage(page); void runRefresh(page === "mcp" ? onRefreshMcp : onRefreshSettings) }}
               >
-                <RefreshCcw size={14} />
-                Refresh
+                {refresh === "done" ? <Check size={14} /> : <RefreshCcw size={14} className={refresh === "pending" ? "animate-spin" : undefined} />}
+                {{ idle: "Refresh", pending: "Refreshing…", done: "Refreshed", failed: "Refresh failed" }[refresh]}
               </button>
             )}
           </div>
@@ -391,7 +396,7 @@ export function SettingsDialog({
           {(page === "configuration" || page === "hooks" || page === "mcp") && (
             <RefreshBar agent={agent} />
           )}
-          <div style={{ display: page === "configuration" ? "contents" : "none" }}><ConfigurationPage agent={agent} onModel={onModel} onEffort={onEffort} onOutputStyle={onOutputStyle} onMode={onMode} /><ConfigurationEditor kind="permissions" disabled={disconnected || agent.busy} request={request} onSaved={() => onRefreshSettings()} onDirtyChange={setConfigurationDirty} /></div>
+          <div style={{ display: page === "configuration" ? "contents" : "none" }}><ConfigurationPage agent={agent} onModel={onModel} onEffort={onEffort} onOutputStyle={onOutputStyle} onMode={onMode} /><ConfigurationEditor kind="permissions" disabled={disconnected || agent.busy} request={request} onSaved={async () => { await onRefreshSettings() }} onDirtyChange={setConfigurationDirty} /></div>
           <div style={{ display: page === "providers" ? "contents" : "none" }}>
             <ProvidersPage
               providers={agent.providers}
@@ -405,7 +410,7 @@ export function SettingsDialog({
               onDirtyChange={setProvidersDirty}
             />
           </div>
-          <div style={{ display: page === "mcp" ? "contents" : "none" }}><McpPage agent={agent} onChangeMcp={onChangeMcp} /><ConfigurationEditor kind="mcp" disabled={disconnected || agent.busy || !!agent.queue.length || agent.tasks.some(task => task.status === "running")} request={request} onDirtyChange={setMcpDirty} onSaved={restart => restart ? onReconnect() : onRefreshMcp()} /></div>
+          <div style={{ display: page === "mcp" ? "contents" : "none" }}><McpPage agent={agent} onChangeMcp={onChangeMcp} /><ConfigurationEditor kind="mcp" disabled={disconnected || agent.busy || !!agent.queue.length || agent.tasks.some(task => task.status === "running")} request={request} onDirtyChange={setMcpDirty} onSaved={async restart => { await (restart ? onReconnect() : onRefreshMcp()) }} /></div>
           {page === "hooks" && <HooksPage agent={agent} />}
           {page === "shortcuts" && <ShortcutsPage settings={settings} onChange={onChange} />}
         </div>

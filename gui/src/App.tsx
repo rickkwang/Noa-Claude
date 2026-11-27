@@ -730,7 +730,11 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
     } : h)
   }
   async function removeProjectPath(path: string) {
-    setProjects(await removeProject(path))
+    try {
+      setProjects(await removeProject(path))
+    } catch (error) {
+      await confirm({ title: "Could not remove the project", description: (error as Error).message, confirmLabel: "OK", cancelLabel: "Close" })
+    }
   }
 
   useEffect(() => {
@@ -1452,7 +1456,8 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
   const sidebarAddProject = useEvent(() => { setEditingProject(undefined); setAddingProject(true) })
   const sidebarEditProject = useEvent((project: ProjectInfo) => { setAddingProject(false); setEditingProject(project) })
   const sidebarRemoveProject = useEvent(removeProjectPath)
-  const sidebarRevealProject = useEvent(revealProject)
+  const sidebarRevealProject = useEvent((path: string) => revealProject(path).catch((error: Error) =>
+    confirm({ title: "Could not reveal the project", description: error.message, confirmLabel: "OK", cancelLabel: "Close" })))
   const sidebarOpenCoordinator = useEvent((path: string) => { setPage(undefined); openCoordinator(path).then((id) => selectSession(path, id), (error) => confirm({ title: "Could not open the coordinator", description: (error as Error).message, confirmLabel: "OK", cancelLabel: "Close" })) })
   const sidebarDeleteSession = useEvent(removeSession)
   const sidebarRenameSession = useEvent(renameTask)
@@ -2268,7 +2273,7 @@ function Workspace({ cwd, userName }: { cwd: string; userName?: string }) {
             borderRadius: sidebarOpen ? "var(--noa-surface-radius) 0 0 var(--noa-surface-radius)" : 0,
           }}
         >
-          <div className="h-full overflow-y-auto pt-11">
+          <div className="h-full overflow-y-auto pt-11 [scrollbar-gutter:stable_both-edges]">
             <div className="mx-auto flex max-w-[960px] flex-col gap-5 px-8 pb-12 pt-8">
               {page === "schedule" ? (
                 <SchedulePage projects={projects} activeCwd={session.cwd} onOpenTask={(dir, id) => { setPage(undefined); selectSession(dir, id) }} />
